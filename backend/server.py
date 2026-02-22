@@ -1997,6 +1997,24 @@ api_router.include_router(notifications_router)
 
 app.include_router(api_router)
 
+# Add middleware to handle HTTPS redirects behind proxy
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import RedirectResponse
+
+class HTTPSRedirectMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        # If it's a redirect and we're behind HTTPS proxy, fix the Location header
+        if response.status_code in (307, 308, 301, 302):
+            location = response.headers.get('location', '')
+            x_forwarded_proto = request.headers.get('x-forwarded-proto', 'http')
+            if x_forwarded_proto == 'https' and location.startswith('http://'):
+                new_location = location.replace('http://', 'https://', 1)
+                return RedirectResponse(url=new_location, status_code=response.status_code)
+        return response
+
+app.add_middleware(HTTPSRedirectMiddleware)
+
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
