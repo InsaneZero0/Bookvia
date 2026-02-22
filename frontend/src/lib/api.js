@@ -22,6 +22,14 @@ const api = axios.create({
 
 // Add auth token to requests
 api.interceptors.request.use((config) => {
+  // Force HTTPS in production
+  if (config.url && config.baseURL) {
+    const fullUrl = config.baseURL + config.url;
+    if (window.location.protocol === 'https:' && fullUrl.includes('http://')) {
+      config.baseURL = config.baseURL.replace('http://', 'https://');
+    }
+  }
+  
   const token = localStorage.getItem('bookvia-token');
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
