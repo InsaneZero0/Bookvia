@@ -1,0 +1,128 @@
+import { Link } from 'react-router-dom';
+import { Card, CardContent } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { StarRating } from '@/components/StarRating';
+import { useI18n } from '@/lib/i18n';
+import { formatCurrency } from '@/lib/utils';
+import { MapPin, Clock, Heart } from 'lucide-react';
+
+export function BusinessCard({ business, onFavorite, isFavorite = false }) {
+  const { t, language } = useI18n();
+
+  const getCategoryIcon = (slug) => {
+    const icons = {
+      'belleza-estetica': '💇',
+      'salud': '🏥',
+      'fitness-bienestar': '💪',
+      'spa-masajes': '🧖',
+      'servicios-legales': '⚖️',
+      'consultoria': '💼',
+      'automotriz': '🚗',
+      'veterinaria': '🐾',
+    };
+    return icons[slug] || '📍';
+  };
+
+  return (
+    <Card 
+      className="group overflow-hidden border border-border/50 hover:border-[#F05D5E]/30 card-hover"
+      data-testid={`business-card-${business.id}`}
+    >
+      <div className="relative aspect-[4/3] overflow-hidden">
+        <img
+          src={business.photos?.[0] || business.logo_url || 'https://images.unsplash.com/photo-1560066984-138dadb4c035?w=400'}
+          alt={business.name}
+          className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+        />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
+        
+        {/* Badges */}
+        <div className="absolute top-3 left-3 flex gap-2">
+          {business.badges?.includes('nuevo') && (
+            <Badge className="bg-[#F05D5E] text-white border-0">
+              {t('badge.new')}
+            </Badge>
+          )}
+          {business.badges?.includes('verificado') && (
+            <Badge className="bg-green-500 text-white border-0">
+              {t('badge.verified')}
+            </Badge>
+          )}
+          {business.is_featured && (
+            <Badge className="bg-yellow-500 text-white border-0">
+              {t('badge.featured')}
+            </Badge>
+          )}
+        </div>
+
+        {/* Favorite Button */}
+        {onFavorite && (
+          <button
+            onClick={(e) => { e.preventDefault(); onFavorite(business.id); }}
+            className="absolute top-3 right-3 p-2 rounded-full bg-white/90 hover:bg-white transition-colors"
+            data-testid={`favorite-btn-${business.id}`}
+          >
+            <Heart 
+              className={`h-5 w-5 transition-colors ${
+                isFavorite ? 'fill-[#F05D5E] text-[#F05D5E]' : 'text-slate-600'
+              }`} 
+            />
+          </button>
+        )}
+
+        {/* Category & Rating */}
+        <div className="absolute bottom-3 left-3 right-3 flex items-end justify-between">
+          <Badge variant="secondary" className="bg-white/90 text-slate-900">
+            {getCategoryIcon(business.category_slug)} {business.category_name}
+          </Badge>
+          {business.rating > 0 && (
+            <div className="bg-white/90 rounded-full px-2 py-1 flex items-center gap-1">
+              <StarRating rating={business.rating} showValue={false} size="small" />
+              <span className="text-xs font-bold text-slate-900">{business.rating.toFixed(1)}</span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <CardContent className="p-4 space-y-3">
+        <div>
+          <Link to={`/business/${business.slug}`}>
+            <h3 className="font-heading font-bold text-lg hover:text-[#F05D5E] transition-colors line-clamp-1">
+              {business.name}
+            </h3>
+          </Link>
+          <p className="text-sm text-muted-foreground line-clamp-2 mt-1">
+            {business.description}
+          </p>
+        </div>
+
+        <div className="flex items-center gap-4 text-sm text-muted-foreground">
+          <div className="flex items-center gap-1">
+            <MapPin className="h-4 w-4" />
+            <span className="line-clamp-1">{business.city}</span>
+          </div>
+          {business.review_count > 0 && (
+            <span className="text-xs">
+              ({business.review_count} {t('business.reviews')})
+            </span>
+          )}
+        </div>
+
+        <div className="flex items-center justify-between pt-2 border-t border-border/50">
+          <div>
+            <span className="text-xs text-muted-foreground">{t('common.from')}</span>
+            <span className="font-bold text-lg ml-1">
+              {formatCurrency(business.min_price || 299, 'MXN')}
+            </span>
+          </div>
+          <Button asChild className="btn-coral text-sm px-4 py-2" data-testid={`book-btn-${business.id}`}>
+            <Link to={`/business/${business.slug}`}>
+              {t('business.bookNow')}
+            </Link>
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
