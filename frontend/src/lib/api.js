@@ -1,13 +1,12 @@
 import axios from 'axios';
 
-// Ensure HTTPS in production
+// Use window.location.origin for same-origin requests (HTTPS)
 const getBackendUrl = () => {
-  const url = process.env.REACT_APP_BACKEND_URL || '';
-  // Force HTTPS if we're on HTTPS
-  if (window.location.protocol === 'https:' && url.startsWith('http://')) {
-    return url.replace('http://', 'https://');
+  // In production, use same origin (which will be HTTPS)
+  if (typeof window !== 'undefined') {
+    return window.location.origin;
   }
-  return url;
+  return process.env.REACT_APP_BACKEND_URL || '';
 };
 
 const BACKEND_URL = getBackendUrl();
