@@ -43,8 +43,8 @@ TWILIO_PHONE_NUMBER = os.environ.get('TWILIO_PHONE_NUMBER', '')
 # Stripe Config
 STRIPE_API_KEY = os.environ.get('STRIPE_API_KEY', 'sk_test_emergent')
 
-# Create the main app
-app = FastAPI(title="Bookvia API", version="1.0.0")
+# Create the main app - disable redirect_slashes to avoid HTTP redirects
+app = FastAPI(title="Bookvia API", version="1.0.0", redirect_slashes=False)
 
 # Create routers
 api_router = APIRouter(prefix="/api")
