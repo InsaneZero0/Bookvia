@@ -1,6 +1,16 @@
 import axios from 'axios';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+// Ensure HTTPS in production
+const getBackendUrl = () => {
+  const url = process.env.REACT_APP_BACKEND_URL || '';
+  // Force HTTPS if we're on HTTPS
+  if (window.location.protocol === 'https:' && url.startsWith('http://')) {
+    return url.replace('http://', 'https://');
+  }
+  return url;
+};
+
+const BACKEND_URL = getBackendUrl();
 const API_BASE = `${BACKEND_URL}/api`;
 
 // Create axios instance
