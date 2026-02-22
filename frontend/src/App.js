@@ -1,52 +1,100 @@
-import { useEffect } from "react";
-import "@/App.css";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-import axios from "axios";
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { Toaster } from '@/components/ui/sonner';
+import { ThemeProvider } from '@/components/ThemeProvider';
+import { AuthProvider } from '@/lib/auth';
+import { I18nProvider } from '@/lib/i18n';
+import { Navbar } from '@/components/Navbar';
+import { Footer } from '@/components/Footer';
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
-const API = `${BACKEND_URL}/api`;
+// Pages
+import HomePage from '@/pages/HomePage';
+import SearchPage from '@/pages/SearchPage';
+import LoginPage from '@/pages/LoginPage';
+import RegisterPage from '@/pages/RegisterPage';
+import BusinessProfilePage from '@/pages/BusinessProfilePage';
+import UserDashboardPage from '@/pages/UserDashboardPage';
+import UserBookingsPage from '@/pages/UserBookingsPage';
+import BusinessDashboardPage from '@/pages/BusinessDashboardPage';
+import AdminDashboardPage from '@/pages/AdminDashboardPage';
+import AdminLoginPage from '@/pages/AdminLoginPage';
+import NotFoundPage from '@/pages/NotFoundPage';
 
-const Home = () => {
-  const helloWorldApi = async () => {
-    try {
-      const response = await axios.get(`${API}/`);
-      console.log(response.data.message);
-    } catch (e) {
-      console.error(e, `errored out requesting / api`);
-    }
-  };
-
-  useEffect(() => {
-    helloWorldApi();
-  }, []);
-
+// Layout wrapper
+function Layout({ children, showFooter = true }) {
   return (
-    <div>
-      <header className="App-header">
-        <a
-          className="App-link"
-          href="https://emergent.sh"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <img src="https://avatars.githubusercontent.com/in/1201222?s=120&u=2686cf91179bbafbc7a71bfbc43004cf9ae1acea&v=4" />
-        </a>
-        <p className="mt-5">Building something incredible ~!</p>
-      </header>
+    <div className="flex flex-col min-h-screen">
+      <Navbar />
+      <main className="flex-1">{children}</main>
+      {showFooter && <Footer />}
     </div>
   );
-};
+}
 
 function App() {
   return (
-    <div className="App">
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Home />}>
-            <Route index element={<Home />} />
-          </Route>
-        </Routes>
-      </BrowserRouter>
+    <ThemeProvider defaultTheme="light" storageKey="bookvia-theme">
+      <I18nProvider>
+        <AuthProvider>
+          <BrowserRouter>
+            <Routes>
+              {/* Public Pages */}
+              <Route path="/" element={<Layout><HomePage /></Layout>} />
+              <Route path="/search" element={<Layout><SearchPage /></Layout>} />
+              <Route path="/categories" element={<Layout><SearchPage /></Layout>} />
+              <Route path="/business/:slug" element={<Layout><BusinessProfilePage /></Layout>} />
+              
+              {/* Auth Pages */}
+              <Route path="/login" element={<LoginPage />} />
+              <Route path="/register" element={<RegisterPage />} />
+              
+              {/* User Pages */}
+              <Route path="/dashboard" element={<Layout><UserDashboardPage /></Layout>} />
+              <Route path="/bookings" element={<Layout><UserBookingsPage /></Layout>} />
+              <Route path="/favorites" element={<Layout><SearchPage /></Layout>} />
+              <Route path="/notifications" element={<Layout><UserDashboardPage /></Layout>} />
+              
+              {/* Business Pages */}
+              <Route path="/business/dashboard" element={<Layout showFooter={false}><BusinessDashboardPage /></Layout>} />
+              <Route path="/for-business" element={<Layout><ForBusinessPage /></Layout>} />
+              <Route path="/business/register" element={<BusinessRegisterPage />} />
+              
+              {/* Admin Pages */}
+              <Route path="/admin/login" element={<AdminLoginPage />} />
+              <Route path="/admin" element={<Layout showFooter={false}><AdminDashboardPage /></Layout>} />
+              
+              {/* Catch all */}
+              <Route path="*" element={<Layout><NotFoundPage /></Layout>} />
+            </Routes>
+            <Toaster position="top-center" richColors />
+          </BrowserRouter>
+        </AuthProvider>
+      </I18nProvider>
+    </ThemeProvider>
+  );
+}
+
+// Placeholder pages
+function ForBusinessPage() {
+  return (
+    <div className="min-h-screen pt-20 bg-background">
+      <div className="container-app py-16 text-center">
+        <h1 className="text-4xl font-heading font-bold mb-4">Para Negocios</h1>
+        <p className="text-muted-foreground mb-8">Únete a la plataforma de reservas líder</p>
+        <a href="/business/register" className="btn-coral inline-block px-8 py-4 rounded-full">
+          Registrar mi Negocio
+        </a>
+      </div>
+    </div>
+  );
+}
+
+function BusinessRegisterPage() {
+  return (
+    <div className="min-h-screen pt-20 bg-background">
+      <div className="container-app py-16">
+        <h1 className="text-3xl font-heading font-bold text-center mb-8">Registra tu Negocio</h1>
+        <p className="text-center text-muted-foreground">Página de registro de negocio - En construcción</p>
+      </div>
     </div>
   );
 }
