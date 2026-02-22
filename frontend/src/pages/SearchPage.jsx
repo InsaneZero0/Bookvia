@@ -92,7 +92,7 @@ export default function SearchPage() {
     const params = new URLSearchParams();
     if (query) params.set('q', query);
     if (city) params.set('city', city);
-    if (categoryId) params.set('category', categoryId);
+    if (categoryId && categoryId !== 'all') params.set('category', categoryId);
     if (minRating[0] > 0) params.set('rating', minRating[0].toString());
     if (homeService) params.set('home_service', 'true');
     setSearchParams(params);
