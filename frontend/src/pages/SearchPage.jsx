@@ -141,7 +141,7 @@ export default function SearchPage() {
             <SelectValue placeholder={language === 'es' ? 'Todas las categorías' : 'All categories'} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="">
+            <SelectItem value="all">
               {language === 'es' ? 'Todas las categorías' : 'All categories'}
             </SelectItem>
             {categories.map(cat => (
