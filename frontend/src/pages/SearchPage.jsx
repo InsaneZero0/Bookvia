@@ -71,7 +71,7 @@ export default function SearchPage() {
     try {
       const params = {
         query: query || undefined,
-        category_id: categoryId || undefined,
+        category_id: categoryId && categoryId !== 'all' ? categoryId : undefined,
         city: city || undefined,
         min_rating: minRating[0] > 0 ? minRating[0] : undefined,
         is_home_service: homeService || undefined,
