@@ -9,11 +9,6 @@ Plataforma de marketplace de reservas profesionales API-first, escalable, prepar
 - Autenticación JWT con 2FA obligatorio para admin
 - Integración de pagos con Stripe
 
-## User Personas
-1. **Usuario Final**: Busca y reserva servicios profesionales
-2. **Negocio**: Ofrece servicios, gestiona trabajadores, horarios y finanzas
-3. **Admin**: Aprueba negocios, gestiona liquidaciones, supervisa plataforma
-
 ---
 
 ## Implementation Status
@@ -38,38 +33,77 @@ Plataforma de marketplace de reservas profesionales API-first, escalable, prepar
 - Financial dashboard for businesses
 - Monthly settlement generation
 - Admin panel for payment holds
-- Settlement management (PENDING/PAID/HELD)
 
 ### Phase P2.5 - Workers & Schedules ✅ COMPLETE (Feb 23, 2026)
-- **Worker CRUD**: Create, Read, Update, Soft Delete, Reactivate
-- **Schedule Management**: 
-  - Multiple blocks per day (morning/afternoon shifts)
-  - Overlap validation for schedule blocks
-- **Exceptions (Vacations/Blocks)**:
-  - Full day and date range exceptions
-  - Partial day blocks with specific hours
-  - Reason tracking for each exception
-- **Availability Engine**:
-  - Considers worker schedules, exceptions, existing bookings
-  - Returns detailed status and reason per slot
-  - Supports business timezone
-  - Filters workers by service (allowed_worker_ids)
-- **Auto-assignment**: Workers assigned by least load
-- **Frontend UI**: Team tab, Calendar tab, dialogs for schedule/exceptions
+- Worker CRUD with soft delete
+- Schedule management with multiple blocks
+- Exceptions (vacations/blocks) with date ranges
+- Availability engine with detailed status
+- Auto-assignment by least load
+
+### Phase P3 - Refactor & Stability ✅ COMPLETE (Feb 23, 2026)
+
+#### Backend Refactoring
+New modular structure created:
+```
+backend/
+├── main.py                 # New entry point (optional)
+├── server.py               # Legacy monolith (still used by supervisor)
+├── core/
+│   ├── config.py          # Environment configuration
+│   ├── database.py        # MongoDB connection
+│   ├── security.py        # JWT, password hashing, 2FA
+│   └── dependencies.py    # Auth dependencies
+├── models/
+│   └── enums.py           # All enums (UserRole, AppointmentStatus, etc.)
+├── schemas/
+│   ├── auth.py            # User auth schemas
+│   ├── business.py        # Business schemas
+│   ├── worker.py          # Worker schemas
+│   ├── booking.py         # Booking schemas
+│   └── finance.py         # Finance schemas
+├── services/
+│   ├── sms.py             # SMS service (Twilio/mock)
+│   ├── email.py           # Email service (Resend/mock)
+│   └── notifications.py   # Internal notifications
+├── utils/
+│   └── helpers.py         # Utility functions
+└── docs/
+    └── ENV_VARIABLES.md   # Environment variables documentation
+```
+
+#### SMS Service (Twilio Ready)
+- ✅ Mock mode in development
+- ✅ Rate limiting (3 attempts/hour per phone)
+- ✅ Code expiration (5 minutes)
+- ✅ Error logging
+- ✅ Ready for Twilio credentials (TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER)
+- ✅ Production mode requires credentials or returns 503 error
+
+#### Email Service (Resend Ready)
+- ✅ Mock mode stores emails in `sent_emails` collection
+- ✅ Admin can view sent emails at `/api/admin/emails`
+- ✅ Email templates for booking confirmation, worker assignment, cancellation
+- ✅ Ready for Resend credentials (RESEND_API_KEY, FROM_EMAIL)
+
+#### Worker Notifications
+- ✅ Email notification when booking confirmed (mock)
+- ✅ Internal notification in dashboard
+- ✅ Template: `send_worker_assignment()`
 
 ---
 
 ## Upcoming Tasks
 
-### Phase P3 - SEO & Optimization (P1 Priority)
+### Phase P4 - SEO & Optimization (P1 Priority)
 - [ ] Implement friendly URLs
 - [ ] Generate dynamic sitemap.xml
 - [ ] Implement dynamic meta-tags
 
 ### Future Tasks (P2-P3 Priority)
-- [ ] Real SMS Integration (replace Twilio mock)
 - [ ] Automatic Payouts via Stripe Connect
-- [ ] Backend refactoring (split server.py into routers/models/services)
+- [ ] Push notifications
+- [ ] Mobile app
 
 ---
 
@@ -78,57 +112,67 @@ Plataforma de marketplace de reservas profesionales API-first, escalable, prepar
 ```
 /app/
 ├── backend/
-│   └── server.py        # Monolith (~3800 lines)
+│   ├── server.py        # Main app (monolith, ~4100 lines)
+│   ├── main.py          # Alternative entry point
+│   ├── core/            # Configuration & security
+│   ├── models/          # Enums
+│   ├── schemas/         # Pydantic schemas
+│   ├── services/        # SMS, Email, Notifications
+│   └── utils/           # Helpers
 ├── frontend/
 │   └── src/
 │       ├── components/
 │       ├── lib/
-│       │   ├── api.js   # API client
-│       │   ├── auth.js  # Auth context
-│       │   └── i18n.js  # Internationalization
+│       │   ├── api.js
+│       │   ├── auth.js
+│       │   └── i18n.js
 │       └── pages/
-│           ├── TeamSchedulePage.jsx    # NEW: Workers & Schedules
+│           ├── TeamSchedulePage.jsx
 │           ├── BusinessDashboardPage.jsx
-│           ├── BusinessFinancePage.jsx
 │           └── ...
 └── memory/
     └── PRD.md
 ```
 
-## Key API Endpoints
+## Environment Variables
 
-### Workers (requires business auth)
-- `POST /api/businesses/my/workers` - Create worker
-- `GET /api/businesses/my/workers` - List workers (include_inactive param)
-- `PUT /api/businesses/my/workers/{id}` - Update worker
-- `DELETE /api/businesses/my/workers/{id}` - Soft delete
-- `PUT /api/businesses/my/workers/{id}/reactivate` - Reactivate
-- `PUT /api/businesses/my/workers/{id}/schedule` - Update schedule
-- `POST /api/businesses/my/workers/{id}/exceptions` - Add exception
-- `DELETE /api/businesses/my/workers/{id}/exceptions/{exc_id}` - Remove exception
+See `/app/backend/docs/ENV_VARIABLES.md` for complete documentation.
 
-### Availability
-- `GET /api/bookings/availability/{business_id}` - Get available slots
-  - Params: date, service_id, worker_id, include_unavailable
+### Quick Reference:
+```bash
+# Required
+MONGO_URL, DB_NAME, JWT_SECRET
 
-### Finance
-- `GET /api/finance/summary` - Business financial summary
-- `POST /api/admin/settlements/generate` - Generate monthly settlements
-- `PUT /api/admin/settlements/{id}/hold` - Hold settlement payment
+# SMS (Production)
+TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER
+
+# Email (Production)
+RESEND_API_KEY, FROM_EMAIL
+
+# Payments
+STRIPE_API_KEY, STRIPE_WEBHOOK_SECRET
+
+# Admin
+ADMIN_EMAIL, ADMIN_INITIAL_PASSWORD
+```
 
 ## Database Collections
 - `users` - User accounts with roles
-- `businesses` - Business profiles with timezone
-- `workers` - Worker profiles with schedule and exceptions
+- `businesses` - Business profiles
+- `workers` - Worker profiles with schedule
 - `services` - Services with allowed_worker_ids
-- `bookings` - Appointments with HOLD/CONFIRMED status
+- `bookings` - Appointments
 - `payment_transactions` - Stripe transactions
 - `ledger_entries` - Double-entry accounting
 - `settlements` - Monthly settlements
 - `audit_logs` - Admin action logs
+- `phone_codes` - SMS verification codes (with expiration)
+- `sent_emails` - Email log (for admin visibility)
+- `notifications` - Internal notifications
 
 ## Mocked Features
-- SMS verification (Twilio mock)
+- SMS verification (use mock in development, Twilio in production)
+- Email sending (use mock, stored in DB for admin view)
 - Settlement payouts (manual "mark as paid")
 
 ## Test Credentials
