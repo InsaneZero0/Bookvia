@@ -99,6 +99,20 @@ class PaymentStatus(str, Enum):
     REFUNDED = "refunded"
     FAILED = "failed"
 
+class TransactionStatus(str, Enum):
+    CREATED = "created"  # Checkout creado / hold activo
+    PAID = "paid"  # Confirmado por webhook
+    REFUND_PARTIAL = "refund_partial"  # Cliente cancela >24h, se devuelve anticipo-fee
+    REFUND_FULL = "refund_full"  # Negocio cancela, se devuelve 100% al cliente
+    NO_SHOW_PAYOUT = "no_show_payout"  # Cliente no asiste, negocio recibe anticipo-fee
+    BUSINESS_CANCEL_FEE = "business_cancel_fee"  # Negocio cancela, se le cobra 8%
+    EXPIRED = "expired"  # Hold expirado sin pago
+
+# Platform fee constant
+PLATFORM_FEE_PERCENT = 0.08  # 8%
+HOLD_EXPIRATION_MINUTES = 30
+MIN_DEPOSIT_AMOUNT = 50.0  # MXN
+
 class AuditAction(str, Enum):
     BUSINESS_APPROVE = "business_approve"
     BUSINESS_REJECT = "business_reject"
