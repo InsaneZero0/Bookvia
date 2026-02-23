@@ -11,6 +11,7 @@ import HomePage from '@/pages/HomePage';
 import SearchPage from '@/pages/SearchPage';
 import LoginPage from '@/pages/LoginPage';
 import RegisterPage from '@/pages/RegisterPage';
+import BusinessRegisterPage from '@/pages/BusinessRegisterPage';
 import BusinessProfilePage from '@/pages/BusinessProfilePage';
 import UserDashboardPage from '@/pages/UserDashboardPage';
 import UserBookingsPage from '@/pages/UserBookingsPage';
