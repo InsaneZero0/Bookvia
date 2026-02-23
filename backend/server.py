@@ -4001,6 +4001,41 @@ async def get_held_payments(page: int = 1, limit: int = 50, token_data: TokenDat
     ).sort("held_at", -1).skip(skip).limit(limit).to_list(limit)
     return payments
 
+# ========================== ADMIN CREATION ==========================
+
+async def ensure_admin_exists():
+    """Create admin user if configured in environment and doesn't exist"""
+    if not ADMIN_EMAIL or not ADMIN_INITIAL_PASSWORD:
+        logger.info("ADMIN_EMAIL or ADMIN_INITIAL_PASSWORD not set - skipping admin creation")
+        return False
+    
+    # Check if admin already exists
+    existing_admin = await db.users.find_one({"email": ADMIN_EMAIL})
+    if existing_admin:
+        logger.info(f"Admin user already exists: {ADMIN_EMAIL}")
+        return True
+    
+    # Create admin
+    admin_doc = {
+        "id": generate_id(),
+        "email": ADMIN_EMAIL,
+        "password_hash": hash_password(ADMIN_INITIAL_PASSWORD),
+        "full_name": "Admin Bookvia",
+        "phone": "+521234567890",
+        "phone_verified": True,
+        "role": UserRole.ADMIN,
+        "totp_enabled": False,
+        "totp_secret": None,
+        "backup_codes": [],
+        "must_change_password": False,
+        "preferred_language": "es",
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    
+    await db.users.insert_one(admin_doc)
+    logger.info(f"Admin user created: {ADMIN_EMAIL}")
+    return True
+
 # ========================== SEED DATA ==========================
 
 @api_router.post("/seed")
