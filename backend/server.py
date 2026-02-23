@@ -2273,9 +2273,6 @@ async def cancel_booking_by_user(
             refund_status = TransactionStatus.REFUND_PARTIAL
             refund_reason = "client_cancel_gt_24h"
             
-            # TODO: Process actual Stripe refund
-            # For now, just update transaction status
-            
             logger.info(f"Partial refund: ${refund_amount} for booking {booking_id}")
         else:
             # <24h: No refund (business keeps the deposit minus fee)
@@ -2296,6 +2293,11 @@ async def cancel_booking_by_user(
                 "updated_at": now.isoformat()
             }}
         )
+        
+        # Create ledger entries for refund (if >24h)
+        if hours_until > 24 and refund_amount > 0:
+            updated_tx = {**transaction, "refund_amount": refund_amount}
+            await create_transaction_ledger_entries(updated_tx, TransactionStatus.REFUND_PARTIAL)
         
         refund_result = {
             "refund_amount": refund_amount,
