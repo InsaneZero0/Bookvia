@@ -1608,7 +1608,7 @@ async def delete_worker(worker_id: str, token_data: TokenData = Depends(require_
     )
     return {"message": "Worker deactivated", "worker_id": worker_id}
 
-@businesses_router.put("/workers/{worker_id}/reactivate")
+@businesses_router.put("/my/workers/{worker_id}/reactivate")
 async def reactivate_worker(worker_id: str, token_data: TokenData = Depends(require_business)):
     """Reactivate a previously deactivated worker"""
     user = await db.users.find_one({"id": token_data.user_id})
