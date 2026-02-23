@@ -251,8 +251,10 @@ class BusinessResponse(BaseModel):
     category_name: Optional[str] = None
     address: str
     city: str
+    city_slug: Optional[str] = None
     state: str
     country: str
+    country_code: str = "MX"
     zip_code: str
     latitude: Optional[float] = None
     longitude: Optional[float] = None
