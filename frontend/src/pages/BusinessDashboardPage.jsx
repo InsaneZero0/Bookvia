@@ -15,7 +15,7 @@ import { es, enUS } from 'date-fns/locale';
 import { toast } from 'sonner';
 import {
   Calendar as CalendarIcon, DollarSign, Star, Users, Clock, CheckCircle2, 
-  XCircle, AlertTriangle, TrendingUp, Settings, BarChart3
+  XCircle, AlertTriangle, TrendingUp, Settings, BarChart3, UserCog
 } from 'lucide-react';
 
 export default function BusinessDashboardPage() {
