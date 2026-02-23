@@ -10,9 +10,12 @@ import { seoAPI, categoriesAPI } from '@/lib/api';
  * Shows all businesses in that category for the city
  */
 export default function CategoryPage() {
-  const { country, city, category } = useParams();
+  const { country, city, category, slugOrCategory } = useParams();
   const [searchParams] = useSearchParams();
   const page = parseInt(searchParams.get('page') || '1', 10);
+  
+  // Handle both direct route and SEORouter
+  const categorySlug = category || slugOrCategory;
   
   const [cityData, setCityData] = useState(null);
   const [categoryData, setCategoryData] = useState(null);
@@ -21,6 +24,8 @@ export default function CategoryPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (!categorySlug) return;
+    
     const fetchData = async () => {
       try {
         setLoading(true);
@@ -35,12 +40,12 @@ export default function CategoryPage() {
         // Fetch categories to get category info
         const categoriesRes = await seoAPI.getCategories();
         const catInfo = categoriesRes.data.find(
-          c => c.slug.toLowerCase() === category.toLowerCase()
+          c => c.slug.toLowerCase() === categorySlug.toLowerCase()
         );
-        setCategoryData(catInfo || { name_es: category, slug: category });
+        setCategoryData(catInfo || { name_es: categorySlug, slug: categorySlug });
         
         // Fetch businesses for this city and category
-        const businessesRes = await seoAPI.getBusinesses(country, city, category, page);
+        const businessesRes = await seoAPI.getBusinesses(country, city, categorySlug, page);
         setBusinesses(businessesRes.data?.businesses || []);
         setTotalPages(businessesRes.data?.pages || 1);
         
@@ -52,7 +57,7 @@ export default function CategoryPage() {
     };
     
     fetchData();
-  }, [country, city, category, page]);
+  }, [country, city, categorySlug, page]);
 
   if (loading) {
     return (
