@@ -2179,6 +2179,9 @@ async def stripe_webhook(request: Request):
                 }}
             )
             
+            # Create ledger entries for payment
+            await create_transaction_ledger_entries(transaction, TransactionStatus.PAID)
+            
             # Update booking to CONFIRMED
             await db.bookings.update_one(
                 {"id": transaction["booking_id"]},
