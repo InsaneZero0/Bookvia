@@ -140,6 +140,10 @@ export default function BusinessDashboardPage() {
             <Settings className="h-4 w-4 mr-2" />
             {language === 'es' ? 'Configuración' : 'Settings'}
           </Button>
+          <Button variant="outline" onClick={() => navigate('/business/team')}>
+            <UserCog className="h-4 w-4 mr-2" />
+            {language === 'es' ? 'Equipo' : 'Team'}
+          </Button>
         </div>
 
         {/* Status Alert */}
