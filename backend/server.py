@@ -2672,6 +2672,475 @@ async def mark_all_read(token_data: TokenData = Depends(require_auth)):
     )
     return {"message": "All marked as read"}
 
+# ========================== BUSINESS FINANCE ROUTES ==========================
+
+@finance_router.get("/summary", response_model=BusinessFinanceSummary)
+async def get_finance_summary(token_data: TokenData = Depends(require_business)):
+    """Get financial summary for the business"""
+    user = await db.users.find_one({"id": token_data.user_id})
+    if not user or not user.get("business_id"):
+        raise HTTPException(status_code=404, detail="Business not found")
+    
+    business_id = user["business_id"]
+    
+    # Calculate from ledger
+    summary = await calculate_business_ledger_summary(business_id)
+    
+    # Get settlement totals
+    paid_settlements = await db.settlements.find({
+        "business_id": business_id,
+        "status": SettlementStatus.PAID
+    }).to_list(1000)
+    paid_payout = sum(s.get("net_payout", 0) for s in paid_settlements)
+    
+    held_settlements = await db.settlements.find({
+        "business_id": business_id,
+        "status": SettlementStatus.HELD
+    }).to_list(100)
+    held_payout = sum(s.get("net_payout", 0) for s in held_settlements)
+    
+    # Calculate next settlement date (1st of next month)
+    now = datetime.now(timezone.utc)
+    if now.month == 12:
+        next_settlement = datetime(now.year + 1, 1, 1, tzinfo=timezone.utc)
+    else:
+        next_settlement = datetime(now.year, now.month + 1, 1, tzinfo=timezone.utc)
+    
+    return BusinessFinanceSummary(
+        gross_revenue=summary["gross_revenue"],
+        total_fees=summary["total_fees"],
+        total_refunds=summary["total_refunds"],
+        total_penalties=summary["total_penalties"],
+        net_earnings=summary["net_earnings"],
+        pending_payout=summary["pending_payout"],
+        paid_payout=round(paid_payout, 2),
+        held_payout=round(held_payout, 2),
+        next_settlement_date=next_settlement.isoformat()
+    )
+
+@finance_router.get("/transactions", response_model=List[TransactionResponse])
+async def get_finance_transactions(
+    status: Optional[str] = None,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    page: int = 1,
+    limit: int = 50,
+    token_data: TokenData = Depends(require_business)
+):
+    """Get business transactions with filters"""
+    user = await db.users.find_one({"id": token_data.user_id})
+    if not user or not user.get("business_id"):
+        raise HTTPException(status_code=404, detail="Business not found")
+    
+    filters = {"business_id": user["business_id"]}
+    
+    if status:
+        filters["status"] = status
+    if start_date and end_date:
+        filters["created_at"] = {"$gte": start_date, "$lte": end_date}
+    
+    skip = (page - 1) * limit
+    transactions = await db.transactions.find(filters, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
+    
+    return [TransactionResponse(**t) for t in transactions]
+
+@finance_router.get("/ledger", response_model=List[LedgerEntryResponse])
+async def get_finance_ledger(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    account: Optional[str] = None,
+    page: int = 1,
+    limit: int = 100,
+    token_data: TokenData = Depends(require_business)
+):
+    """Get ledger entries for the business"""
+    user = await db.users.find_one({"id": token_data.user_id})
+    if not user or not user.get("business_id"):
+        raise HTTPException(status_code=404, detail="Business not found")
+    
+    filters = {"business_id": user["business_id"]}
+    
+    if account:
+        filters["account"] = account
+    if start_date and end_date:
+        filters["created_at"] = {"$gte": start_date, "$lte": end_date}
+    
+    skip = (page - 1) * limit
+    entries = await db.ledger_entries.find(filters, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
+    
+    return [LedgerEntryResponse(**e) for e in entries]
+
+@finance_router.get("/settlements", response_model=List[SettlementResponse])
+async def get_finance_settlements(
+    status: Optional[str] = None,
+    token_data: TokenData = Depends(require_business)
+):
+    """Get settlement history for the business"""
+    user = await db.users.find_one({"id": token_data.user_id})
+    if not user or not user.get("business_id"):
+        raise HTTPException(status_code=404, detail="Business not found")
+    
+    filters = {"business_id": user["business_id"]}
+    if status:
+        filters["status"] = status
+    
+    settlements = await db.settlements.find(filters, {"_id": 0}).sort("period_start", -1).to_list(100)
+    
+    # Add business name
+    business = await db.businesses.find_one({"id": user["business_id"]})
+    for s in settlements:
+        s["business_name"] = business["name"] if business else None
+    
+    return [SettlementResponse(**s) for s in settlements]
+
+# ========================== SETTLEMENT GENERATION ==========================
+
+async def generate_monthly_settlements(
+    year: int, 
+    month: int, 
+    idempotency_key: str,
+    admin_id: str = None,
+    request: Request = None
+) -> dict:
+    """Generate monthly settlements for all businesses - IDEMPOTENT"""
+    
+    period_start = datetime(year, month, 1, tzinfo=timezone.utc)
+    if month == 12:
+        period_end = datetime(year + 1, 1, 1, tzinfo=timezone.utc) - timedelta(seconds=1)
+    else:
+        period_end = datetime(year, month + 1, 1, tzinfo=timezone.utc) - timedelta(seconds=1)
+    
+    period_key = f"MX-{year}-{str(month).zfill(2)}"
+    
+    # Get all approved businesses
+    businesses = await db.businesses.find({"status": BusinessStatus.APPROVED}).to_list(1000)
+    
+    results = {
+        "period_key": period_key,
+        "processed": 0,
+        "skipped": 0,
+        "held": 0,
+        "errors": []
+    }
+    
+    for business in businesses:
+        business_id = business["id"]
+        
+        # Idempotency check - skip if settlement already exists for this period
+        existing = await db.settlements.find_one({
+            "business_id": business_id,
+            "period_key": period_key
+        })
+        if existing:
+            results["skipped"] += 1
+            continue
+        
+        try:
+            # Calculate from ledger for this period
+            summary = await calculate_business_ledger_summary(
+                business_id,
+                period_start.isoformat(),
+                period_end.isoformat()
+            )
+            
+            # Check if business is on payout hold
+            is_held = business.get("payout_hold", False)
+            held_reason = business.get("payout_hold_reason") if is_held else None
+            
+            settlement = {
+                "id": generate_id(),
+                "business_id": business_id,
+                "period_key": period_key,
+                "period_start": period_start.isoformat(),
+                "period_end": period_end.isoformat(),
+                "gross_paid": summary["gross_revenue"],
+                "total_fees": summary["total_fees"],
+                "total_refunds": summary["total_refunds"],
+                "total_penalties": summary["total_penalties"],
+                "net_payout": summary["pending_payout"],
+                "currency": "MXN",
+                "country": "MX",
+                "status": SettlementStatus.HELD if is_held else SettlementStatus.PENDING,
+                "held_reason": held_reason,
+                "idempotency_key": idempotency_key,
+                "payout_reference": None,
+                "paid_at": None,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "updated_at": None
+            }
+            
+            await db.settlements.insert_one(settlement)
+            
+            if is_held:
+                results["held"] += 1
+            else:
+                results["processed"] += 1
+            
+            logger.info(f"Settlement created for business {business_id}: ${summary['pending_payout']} ({settlement['status']})")
+            
+        except Exception as e:
+            results["errors"].append({"business_id": business_id, "error": str(e)})
+            logger.error(f"Error creating settlement for {business_id}: {e}")
+    
+    # Create audit log
+    if admin_id:
+        await create_audit_log(
+            admin_id=admin_id,
+            admin_email="system",
+            action=AuditAction.SETTLEMENT_GENERATE,
+            target_type="settlement",
+            target_id=period_key,
+            details=results,
+            request=request
+        )
+    
+    return results
+
+# ========================== ADMIN SETTLEMENTS ==========================
+
+@admin_router.post("/settlements/generate")
+async def admin_generate_settlements(
+    request: Request,
+    year: int,
+    month: int,
+    token_data: TokenData = Depends(require_admin)
+):
+    """Admin endpoint to generate monthly settlements"""
+    # Generate idempotency key based on job run
+    idempotency_key = f"job-{year}-{month}-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M')}"
+    
+    results = await generate_monthly_settlements(
+        year, month, idempotency_key,
+        admin_id=token_data.user_id,
+        request=request
+    )
+    
+    return results
+
+@admin_router.get("/settlements", response_model=List[SettlementResponse])
+async def admin_get_settlements(
+    status: Optional[str] = None,
+    period_key: Optional[str] = None,
+    business_id: Optional[str] = None,
+    page: int = 1,
+    limit: int = 50,
+    token_data: TokenData = Depends(require_admin)
+):
+    """Admin: Get all settlements with filters"""
+    filters = {}
+    if status:
+        filters["status"] = status
+    if period_key:
+        filters["period_key"] = period_key
+    if business_id:
+        filters["business_id"] = business_id
+    
+    skip = (page - 1) * limit
+    settlements = await db.settlements.find(filters, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
+    
+    # Add business names
+    for s in settlements:
+        business = await db.businesses.find_one({"id": s["business_id"]})
+        s["business_name"] = business["name"] if business else None
+    
+    return [SettlementResponse(**s) for s in settlements]
+
+@admin_router.put("/settlements/{settlement_id}/pay")
+async def admin_mark_settlement_paid(
+    settlement_id: str,
+    request: Request,
+    pay_req: SettlementMarkPaidRequest,
+    token_data: TokenData = Depends(require_admin)
+):
+    """Admin: Mark settlement as paid (manual)"""
+    settlement = await db.settlements.find_one({"id": settlement_id})
+    if not settlement:
+        raise HTTPException(status_code=404, detail="Settlement not found")
+    
+    if settlement["status"] not in [SettlementStatus.PENDING, SettlementStatus.HELD]:
+        raise HTTPException(status_code=400, detail=f"Cannot mark settlement with status {settlement['status']} as paid")
+    
+    now = datetime.now(timezone.utc)
+    
+    await db.settlements.update_one(
+        {"id": settlement_id},
+        {"$set": {
+            "status": SettlementStatus.PAID,
+            "payout_reference": pay_req.payout_reference,
+            "paid_at": now.isoformat(),
+            "updated_at": now.isoformat()
+        }}
+    )
+    
+    # Create payout ledger entry
+    await create_ledger_entry(
+        transaction_id=settlement_id,
+        business_id=settlement["business_id"],
+        direction=LedgerDirection.CREDIT,
+        account=LedgerAccount.PAYOUT,
+        amount=settlement["net_payout"],
+        description=f"Payout {settlement['period_key']} - {pay_req.payout_reference}",
+        created_by="admin"
+    )
+    
+    # Create audit log
+    await create_audit_log(
+        admin_id=token_data.user_id,
+        admin_email=token_data.email,
+        action=AuditAction.SETTLEMENT_MARK_PAID,
+        target_type="settlement",
+        target_id=settlement_id,
+        details={
+            "business_id": settlement["business_id"],
+            "net_payout": settlement["net_payout"],
+            "payout_reference": pay_req.payout_reference
+        },
+        request=request
+    )
+    
+    return {"message": "Settlement marked as paid", "payout_reference": pay_req.payout_reference}
+
+@admin_router.put("/businesses/{business_id}/payout-hold")
+async def admin_toggle_payout_hold(
+    business_id: str,
+    request: Request,
+    hold_req: PayoutHoldRequest,
+    token_data: TokenData = Depends(require_admin)
+):
+    """Admin: Toggle payout hold for a business"""
+    business = await db.businesses.find_one({"id": business_id})
+    if not business:
+        raise HTTPException(status_code=404, detail="Business not found")
+    
+    await db.businesses.update_one(
+        {"id": business_id},
+        {"$set": {
+            "payout_hold": hold_req.hold,
+            "payout_hold_reason": hold_req.reason if hold_req.hold else None
+        }}
+    )
+    
+    # If releasing hold, update any HELD settlements to PENDING
+    if not hold_req.hold:
+        await db.settlements.update_many(
+            {"business_id": business_id, "status": SettlementStatus.HELD},
+            {"$set": {"status": SettlementStatus.PENDING, "held_reason": None}}
+        )
+    
+    # Create audit log
+    await create_audit_log(
+        admin_id=token_data.user_id,
+        admin_email=token_data.email,
+        action=AuditAction.PAYOUT_HOLD if hold_req.hold else AuditAction.PAYOUT_RELEASE,
+        target_type="business",
+        target_id=business_id,
+        details={"hold": hold_req.hold, "reason": hold_req.reason},
+        request=request
+    )
+    
+    return {"message": f"Payout {'held' if hold_req.hold else 'released'} for business {business_id}"}
+
+# ========================== ADMIN EXPORT (CSV) ==========================
+
+@admin_router.get("/export/transactions")
+async def admin_export_transactions(
+    year: int,
+    month: int,
+    token_data: TokenData = Depends(require_admin)
+):
+    """Admin: Export transactions as CSV"""
+    import csv
+    import io
+    from fastapi.responses import StreamingResponse
+    
+    period_start = datetime(year, month, 1, tzinfo=timezone.utc)
+    if month == 12:
+        period_end = datetime(year + 1, 1, 1, tzinfo=timezone.utc)
+    else:
+        period_end = datetime(year, month + 1, 1, tzinfo=timezone.utc)
+    
+    transactions = await db.transactions.find({
+        "created_at": {"$gte": period_start.isoformat(), "$lt": period_end.isoformat()}
+    }, {"_id": 0}).to_list(10000)
+    
+    # Create CSV
+    output = io.StringIO()
+    writer = csv.writer(output)
+    
+    # Header
+    writer.writerow([
+        "ID", "Booking ID", "User ID", "Business ID",
+        "Amount Total", "Fee Amount", "Payout Amount", "Currency",
+        "Status", "Refund Amount", "Refund Reason", "Cancelled By",
+        "Created At", "Paid At"
+    ])
+    
+    # Data
+    for t in transactions:
+        writer.writerow([
+            t.get("id"), t.get("booking_id"), t.get("user_id"), t.get("business_id"),
+            t.get("amount_total"), t.get("fee_amount"), t.get("payout_amount"), t.get("currency"),
+            t.get("status"), t.get("refund_amount"), t.get("refund_reason"), t.get("cancelled_by"),
+            t.get("created_at"), t.get("paid_at")
+        ])
+    
+    output.seek(0)
+    
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=transactions_{year}_{month:02d}.csv"}
+    )
+
+@admin_router.get("/export/settlements")
+async def admin_export_settlements(
+    year: int,
+    month: int,
+    token_data: TokenData = Depends(require_admin)
+):
+    """Admin: Export settlements as CSV"""
+    import csv
+    import io
+    from fastapi.responses import StreamingResponse
+    
+    period_key = f"MX-{year}-{str(month).zfill(2)}"
+    
+    settlements = await db.settlements.find({
+        "period_key": period_key
+    }, {"_id": 0}).to_list(10000)
+    
+    # Add business names
+    for s in settlements:
+        business = await db.businesses.find_one({"id": s["business_id"]})
+        s["business_name"] = business["name"] if business else "Unknown"
+    
+    # Create CSV
+    output = io.StringIO()
+    writer = csv.writer(output)
+    
+    # Header
+    writer.writerow([
+        "ID", "Business ID", "Business Name", "Period Key",
+        "Gross Paid", "Total Fees", "Total Refunds", "Total Penalties", "Net Payout",
+        "Currency", "Status", "Held Reason", "Payout Reference", "Paid At", "Created At"
+    ])
+    
+    # Data
+    for s in settlements:
+        writer.writerow([
+            s.get("id"), s.get("business_id"), s.get("business_name"), s.get("period_key"),
+            s.get("gross_paid"), s.get("total_fees"), s.get("total_refunds"), s.get("total_penalties"), s.get("net_payout"),
+            s.get("currency"), s.get("status"), s.get("held_reason"), s.get("payout_reference"), s.get("paid_at"), s.get("created_at")
+        ])
+    
+    output.seek(0)
+    
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=settlements_{year}_{month:02d}.csv"}
+    )
+
 # ========================== ADMIN ROUTES ==========================
 
 @admin_router.get("/stats")
