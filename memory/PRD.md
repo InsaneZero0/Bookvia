@@ -53,54 +53,75 @@ backend/
 │   ├── config.py          # Environment configuration
 │   ├── database.py        # MongoDB connection
 │   ├── security.py        # JWT, password hashing, 2FA
+│   ├── logging_config.py  # Structured logging (NEW)
 │   └── dependencies.py    # Auth dependencies
+├── middleware/
+│   ├── __init__.py
+│   └── rate_limit.py      # Global rate limiting (NEW)
 ├── models/
-│   └── enums.py           # All enums
-├── schemas/
-│   ├── auth.py            # User auth schemas
-│   ├── business.py        # Business schemas
-│   ├── worker.py          # Worker schemas
-│   ├── booking.py         # Booking schemas
-│   └── finance.py         # Finance schemas
+│   ├── enums.py           # All enums
+│   └── country.py         # Country model (NEW)
+├── routers/
+│   └── seo.py             # SEO router (NEW)
 ├── services/
 │   ├── sms.py             # SMS service (Twilio/mock)
 │   ├── email.py           # Email service (Resend/mock)
 │   └── notifications.py   # Internal notifications
 ├── utils/
-│   └── helpers.py         # Utility functions
-└── docs/
-    └── ENV_VARIABLES.md   # Environment documentation
+│   └── helpers.py         # Utility functions (with slug generation)
+└── tests/
+    └── test_p4_seo.py     # SEO tests
 ```
 
-#### SMS Service (Twilio Ready)
-- ✅ Mock mode in development
-- ✅ Rate limiting (3 attempts/hour per phone)
-- ✅ Code expiration (5 minutes)
-- ✅ Error logging
-- ✅ Production requires credentials (503 if missing)
+### Phase P4 - SEO & Multi-Country ✅ COMPLETE (Feb 23, 2026)
 
-#### Email Service (Resend Ready)
-- ✅ Mock mode stores in `sent_emails` collection
-- ✅ Admin can view at `/api/admin/emails`
-- ✅ Templates: booking confirmation, worker assignment, cancellation
+#### Multi-Country Architecture
+- `country_code` field added to Business model (default: "MX")
+- `countries` collection with Mexico as default
+- `cities` collection with 10 Mexican cities seeded
+- All existing businesses auto-updated with `country_code: "MX"`
 
-#### Worker Notifications
-- ✅ Email notification on booking confirmation (mock)
-- ✅ Internal notification in dashboard
+#### SEO Implementation
+- **Sitemap.xml**: Dynamic generation at `/api/seo/sitemap.xml`
+  - 94 URLs: countries, cities, categories, businesses
+  - Auto-updates with new content
+- **Robots.txt**: Available at `/api/seo/robots.txt` and `/robots.txt`
+- **Meta Tags**: Dynamic generation via `/api/seo/meta/{type}/{slug}`
+- **Canonical URLs**: Implemented in SEOHead component
+
+#### SEO Pages (Frontend)
+- `/mx` - Country page (shows 10 cities + categories)
+- `/mx/{city}` - City page (shows all categories)
+- `/mx/{city}/{category}` - Category listing page
+- `/mx/{city}/{business-slug}` - Business detail (SEO version)
+
+#### Rate Limiting
+- Global middleware with per-endpoint limits
+- Auth endpoints: 5-10 requests/min
+- API endpoints: 100 requests/min
+- SEO endpoints: 60 requests/min
+- Headers: `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`
+
+#### Staging-Ready Features
+- Logging configured (development: colored, production: JSON structured)
+- Rate limiting active
+- Mocks auto-disabled when credentials provided
 
 ---
 
 ## Upcoming Tasks
 
-### Phase P4 - SEO & Optimization (P1 Priority)
-- [ ] Implement friendly URLs
-- [ ] Generate dynamic sitemap.xml
-- [ ] Implement dynamic meta-tags
+### Phase P5 - Staging Deployment (P1 Priority)
+- [ ] Configure production environment variables
+- [ ] Enable real SMS (Twilio) and Email (Resend) services
+- [ ] Set up Stripe live mode
+- [ ] Configure proper domain for sitemap URLs
 
 ### Future Tasks (P2-P3 Priority)
 - [ ] Automatic Payouts via Stripe Connect
 - [ ] Push notifications
 - [ ] Mobile app
+- [ ] Multi-language support (English)
 
 ---
 
@@ -131,3 +152,20 @@ STRIPE_API_KEY, STRIPE_WEBHOOK_SECRET
 - SMS (mock in dev, Twilio in prod)
 - Email (mock, stored in DB)
 - Settlement payouts (manual)
+
+## API Endpoints Reference
+
+### SEO Endpoints
+- `GET /api/seo/countries` - List active countries
+- `GET /api/seo/cities/{country_code}` - List cities for country
+- `GET /api/seo/categories` - List categories with business counts
+- `GET /api/seo/meta/{page_type}/{slug}` - Get meta tags
+- `GET /api/seo/businesses/{country}/{city}` - List businesses by location
+- `GET /api/seo/business/{country}/{city}/{slug}` - Get business details
+- `GET /api/seo/sitemap.xml` - Dynamic sitemap
+- `GET /api/seo/robots.txt` - Robots.txt
+
+### Key Changes in P4
+- BusinessResponse now includes `country_code` and `city_slug`
+- Rate limiting headers on all API responses
+- SEO pages accessible at friendly URLs
