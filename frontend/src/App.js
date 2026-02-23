@@ -17,6 +17,7 @@ import UserDashboardPage from '@/pages/UserDashboardPage';
 import UserBookingsPage from '@/pages/UserBookingsPage';
 import BusinessDashboardPage from '@/pages/BusinessDashboardPage';
 import BusinessFinancePage from '@/pages/BusinessFinancePage';
+import TeamSchedulePage from '@/pages/TeamSchedulePage';
 import AdminDashboardPage from '@/pages/AdminDashboardPage';
 import AdminLoginPage from '@/pages/AdminLoginPage';
 import PaymentSuccessPage from '@/pages/PaymentSuccessPage';
