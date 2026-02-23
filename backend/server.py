@@ -1409,13 +1409,13 @@ async def create_booking(booking: BookingCreate, token_data: TokenData = Depends
         if not workers:
             raise HTTPException(status_code=400, detail="No workers available")
         
-        # Count appointments per worker for this date
+        # Count appointments per worker for this date (include HOLD status)
         worker_counts = {}
         for w in workers:
             count = await db.bookings.count_documents({
                 "worker_id": w["id"],
                 "date": booking.date,
-                "status": {"$in": [AppointmentStatus.PENDING, AppointmentStatus.CONFIRMED]}
+                "status": {"$in": [AppointmentStatus.HOLD, AppointmentStatus.CONFIRMED]}
             })
             worker_counts[w["id"]] = count
         
@@ -1425,11 +1425,29 @@ async def create_booking(booking: BookingCreate, token_data: TokenData = Depends
     if not worker:
         raise HTTPException(status_code=404, detail="Worker not found")
     
-    # Calculate end time
-    start_time = datetime.strptime(booking.time, "%H:%M")
-    end_time = start_time + timedelta(minutes=service["duration_minutes"])
+    # Check if slot is already taken (including HOLD)
+    existing_booking = await db.bookings.find_one({
+        "worker_id": worker_id,
+        "date": booking.date,
+        "time": booking.time,
+        "status": {"$in": [AppointmentStatus.HOLD, AppointmentStatus.CONFIRMED]}
+    })
+    if existing_booking:
+        raise HTTPException(status_code=409, detail="Slot already taken")
     
-    # Create booking
+    # Calculate end time
+    start_time_dt = datetime.strptime(booking.time, "%H:%M")
+    end_time_dt = start_time_dt + timedelta(minutes=service["duration_minutes"])
+    
+    # Calculate deposit amount (minimum 50 MXN)
+    deposit_amount = max(
+        business.get("deposit_amount", MIN_DEPOSIT_AMOUNT) if business.get("requires_deposit") else MIN_DEPOSIT_AMOUNT,
+        MIN_DEPOSIT_AMOUNT
+    )
+    
+    # Create booking with HOLD status
+    hold_expires_at = datetime.now(timezone.utc) + timedelta(minutes=HOLD_EXPIRATION_MINUTES)
+    
     booking_doc = {
         "id": generate_id(),
         "user_id": token_data.user_id,
@@ -1438,17 +1456,22 @@ async def create_booking(booking: BookingCreate, token_data: TokenData = Depends
         "worker_id": worker_id,
         "date": booking.date,
         "time": booking.time,
-        "end_time": end_time.strftime("%H:%M"),
-        "status": AppointmentStatus.PENDING,
+        "end_time": end_time_dt.strftime("%H:%M"),
+        "status": AppointmentStatus.HOLD,
         "notes": booking.notes,
         "is_home_service": booking.is_home_service,
         "address": booking.address,
-        "deposit_amount": business["deposit_amount"] if business["requires_deposit"] else None,
+        "deposit_amount": deposit_amount,
         "deposit_paid": False,
         "total_amount": service["price"],
-        "payment_id": None,
+        "transaction_id": None,
+        "stripe_session_id": None,
+        "hold_expires_at": hold_expires_at.isoformat(),
         "created_at": datetime.now(timezone.utc).isoformat(),
-        "slot_expires_at": (datetime.now(timezone.utc) + timedelta(minutes=30)).isoformat()
+        "confirmed_at": None,
+        "cancelled_at": None,
+        "cancelled_by": None,
+        "cancellation_reason": None
     }
     
     await db.bookings.insert_one(booking_doc)
@@ -1459,11 +1482,11 @@ async def create_booking(booking: BookingCreate, token_data: TokenData = Depends
         {"$inc": {"active_appointments_count": 1}}
     )
     
-    # Create notification for business
+    # Create notification for business (hold pending payment)
     await create_notification(
         business["user_id"],
-        "Nueva Reserva",
-        f"Nueva reserva de {user['full_name']} para {service['name']}",
+        "Nueva Reserva (Pendiente de Pago)",
+        f"Nueva reserva de {user['full_name']} para {service['name']} - Esperando pago del anticipo",
         "booking",
         {"booking_id": booking_doc["id"]}
     )
