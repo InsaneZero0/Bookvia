@@ -1700,7 +1700,7 @@ async def add_worker_exception(
     
     return {"message": "Exception added", "exception_id": exception_dict["id"]}
 
-@businesses_router.delete("/workers/{worker_id}/exceptions/{exception_id}")
+@businesses_router.delete("/my/workers/{worker_id}/exceptions/{exception_id}")
 async def remove_worker_exception(
     worker_id: str,
     exception_id: str,
