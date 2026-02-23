@@ -1584,69 +1584,6 @@ async def get_business_bookings(
     
     return [BookingResponse(**b) for b in bookings]
 
-@bookings_router.put("/{booking_id}/cancel")
-async def cancel_booking(booking_id: str, token_data: TokenData = Depends(require_auth)):
-    booking = await db.bookings.find_one({"id": booking_id})
-    if not booking:
-        raise HTTPException(status_code=404, detail="Booking not found")
-    
-    # Check if user owns booking or is business owner
-    is_user = booking["user_id"] == token_data.user_id
-    is_business = False
-    
-    if not is_user:
-        user = await db.users.find_one({"id": token_data.user_id})
-        is_business = user.get("business_id") == booking["business_id"]
-    
-    if not is_user and not is_business:
-        raise HTTPException(status_code=403, detail="Not authorized")
-    
-    # Check if cancellation is >24h before
-    booking_datetime = datetime.strptime(f"{booking['date']} {booking['time']}", "%Y-%m-%d %H:%M")
-    booking_datetime = booking_datetime.replace(tzinfo=timezone.utc)
-    hours_until = (booking_datetime - datetime.now(timezone.utc)).total_seconds() / 3600
-    
-    await db.bookings.update_one(
-        {"id": booking_id},
-        {"$set": {"status": AppointmentStatus.CANCELLED, "cancelled_at": datetime.now(timezone.utc).isoformat()}}
-    )
-    
-    # Update user stats
-    if is_user:
-        await db.users.update_one(
-            {"id": token_data.user_id},
-            {
-                "$inc": {"active_appointments_count": -1, "cancellation_count": 1}
-            }
-        )
-        
-        # Check for suspension
-        user = await db.users.find_one({"id": token_data.user_id})
-        if user["cancellation_count"] >= 4:
-            suspended_until = (datetime.now(timezone.utc) + timedelta(days=15)).isoformat()
-            await db.users.update_one(
-                {"id": token_data.user_id},
-                {"$set": {"suspended_until": suspended_until}}
-            )
-    
-    # Handle deposit refund logic would go here
-    refund_info = None
-    if booking.get("deposit_paid") and booking.get("deposit_amount"):
-        if is_user and hours_until > 24:
-            # Refund deposit minus 8%
-            refund_info = {
-                "refund_amount": booking["deposit_amount"] * 0.92,
-                "retained_fee": booking["deposit_amount"] * 0.08
-            }
-        elif is_business:
-            # Full refund to customer
-            refund_info = {
-                "refund_amount": booking["deposit_amount"],
-                "business_charged": booking["deposit_amount"] * 0.08
-            }
-    
-    return {"message": "Booking cancelled", "refund_info": refund_info}
-
 @bookings_router.put("/{booking_id}/reschedule")
 async def reschedule_booking(
     booking_id: str,
