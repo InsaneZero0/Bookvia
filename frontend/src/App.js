@@ -62,6 +62,7 @@ function App() {
               {/* Business Pages */}
               <Route path="/business/dashboard" element={<Layout showFooter={false}><BusinessDashboardPage /></Layout>} />
               <Route path="/business/finance" element={<Layout showFooter={false}><BusinessFinancePage /></Layout>} />
+              <Route path="/business/team" element={<Layout showFooter={false}><TeamSchedulePage /></Layout>} />
               <Route path="/for-business" element={<Layout><ForBusinessPage /></Layout>} />
               <Route path="/business/register" element={<BusinessRegisterPage />} />
               
