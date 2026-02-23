@@ -255,6 +255,7 @@ class BusinessResponse(BaseModel):
     zip_code: str
     latitude: Optional[float] = None
     longitude: Optional[float] = None
+    timezone: str = "America/Mexico_City"
     status: str = "pending"
     rating: float = 0.0
     review_count: int = 0
@@ -262,6 +263,7 @@ class BusinessResponse(BaseModel):
     badges: List[str] = []
     requires_deposit: bool = False
     deposit_amount: float = 50.0
+    min_time_between_appointments: int = 0
     photos: List[str] = []
     logo_url: Optional[str] = None
     slug: str
