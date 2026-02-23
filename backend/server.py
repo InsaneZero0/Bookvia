@@ -80,11 +80,12 @@ class UserRole(str, Enum):
     ADMIN = "admin"
 
 class AppointmentStatus(str, Enum):
-    PENDING = "pending"
-    CONFIRMED = "confirmed"
-    COMPLETED = "completed"
-    CANCELLED = "cancelled"
-    NO_SHOW = "no_show"
+    HOLD = "hold"  # Slot reservado, esperando pago (30 min)
+    CONFIRMED = "confirmed"  # Pago completado
+    COMPLETED = "completed"  # Cita finalizada
+    CANCELLED = "cancelled"  # Cancelada por cliente o negocio
+    NO_SHOW = "no_show"  # Cliente no asistió
+    EXPIRED = "expired"  # Hold expirado sin pago
 
 class BusinessStatus(str, Enum):
     PENDING = "pending"
