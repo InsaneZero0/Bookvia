@@ -1956,48 +1956,67 @@ async def reject_business(business_id: str, request: Request, reason: str = "", 
     return {"message": "Business rejected"}
 
 @admin_router.put("/businesses/{business_id}/suspend")
-async def suspend_business(business_id: str, token_data: TokenData = Depends(require_admin)):
-    result = await db.businesses.update_one(
-        {"id": business_id},
-        {"$set": {"status": BusinessStatus.SUSPENDED}}
-    )
-    if result.modified_count == 0:
+async def suspend_business(business_id: str, request: Request, reason: str = "", token_data: TokenData = Depends(require_admin)):
+    business = await db.businesses.find_one({"id": business_id})
+    if not business:
         raise HTTPException(status_code=404, detail="Business not found")
     
-    await db.audit_logs.insert_one({
-        "id": generate_id(),
-        "admin_id": token_data.user_id,
-        "action": "suspend_business",
-        "target_id": business_id,
-        "created_at": datetime.now(timezone.utc).isoformat()
-    })
+    result = await db.businesses.update_one(
+        {"id": business_id},
+        {"$set": {"status": BusinessStatus.SUSPENDED, "suspension_reason": reason}}
+    )
+    
+    # Create audit log
+    await create_audit_log(
+        admin_id=token_data.user_id,
+        admin_email=token_data.email,
+        action=AuditAction.BUSINESS_SUSPEND,
+        target_type="business",
+        target_id=business_id,
+        details={"business_name": business.get("name"), "reason": reason},
+        request=request
+    )
+    
+    # Notify business owner
+    if business.get("user_id"):
+        await create_notification(
+            business["user_id"],
+            "Negocio Suspendido",
+            f"Tu negocio ha sido suspendido. Razón: {reason or 'No especificada'}",
+            "system",
+            {"business_id": business_id}
+        )
     
     return {"message": "Business suspended"}
 
 @admin_router.put("/users/{user_id}/suspend")
-async def suspend_user(user_id: str, days: int = 15, token_data: TokenData = Depends(require_admin)):
+async def suspend_user(user_id: str, request: Request, days: int = 15, reason: str = "", token_data: TokenData = Depends(require_admin)):
+    user = await db.users.find_one({"id": user_id})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
     suspended_until = (datetime.now(timezone.utc) + timedelta(days=days)).isoformat()
     
     result = await db.users.update_one(
         {"id": user_id},
-        {"$set": {"suspended_until": suspended_until}}
+        {"$set": {"suspended_until": suspended_until, "suspension_reason": reason}}
     )
-    if result.modified_count == 0:
-        raise HTTPException(status_code=404, detail="User not found")
     
-    await db.audit_logs.insert_one({
-        "id": generate_id(),
-        "admin_id": token_data.user_id,
-        "action": "suspend_user",
-        "target_id": user_id,
-        "days": days,
-        "created_at": datetime.now(timezone.utc).isoformat()
-    })
+    # Create audit log
+    await create_audit_log(
+        admin_id=token_data.user_id,
+        admin_email=token_data.email,
+        action=AuditAction.USER_SUSPEND,
+        target_type="user",
+        target_id=user_id,
+        details={"user_email": user.get("email"), "days": days, "reason": reason},
+        request=request
+    )
     
     return {"message": f"User suspended for {days} days"}
 
 @admin_router.delete("/reviews/{review_id}")
-async def delete_review(review_id: str, token_data: TokenData = Depends(require_admin)):
+async def delete_review(review_id: str, request: Request, reason: str = "", token_data: TokenData = Depends(require_admin)):
     review = await db.reviews.find_one({"id": review_id})
     if not review:
         raise HTTPException(status_code=404, detail="Review not found")
@@ -2016,28 +2035,64 @@ async def delete_review(review_id: str, token_data: TokenData = Depends(require_
     
     await db.reviews.delete_one({"id": review_id})
     
-    await db.audit_logs.insert_one({
-        "id": generate_id(),
-        "admin_id": token_data.user_id,
-        "action": "delete_review",
-        "target_id": review_id,
-        "created_at": datetime.now(timezone.utc).isoformat()
-    })
+    # Create audit log
+    await create_audit_log(
+        admin_id=token_data.user_id,
+        admin_email=token_data.email,
+        action=AuditAction.REVIEW_DELETE,
+        target_type="review",
+        target_id=review_id,
+        details={
+            "business_id": review.get("business_id"),
+            "user_id": review.get("user_id"),
+            "rating": review.get("rating"),
+            "reason": reason
+        },
+        request=request
+    )
     
     return {"message": "Review deleted"}
 
-@admin_router.get("/audit-logs")
-async def get_audit_logs(page: int = 1, limit: int = 50, token_data: TokenData = Depends(require_admin)):
+@admin_router.get("/audit-logs", response_model=List[AuditLogResponse])
+async def get_audit_logs(
+    page: int = 1,
+    limit: int = 50,
+    action: Optional[str] = None,
+    admin_id: Optional[str] = None,
+    token_data: TokenData = Depends(require_admin)
+):
+    filters = {}
+    if action:
+        filters["action"] = action
+    if admin_id:
+        filters["admin_id"] = admin_id
+    
     skip = (page - 1) * limit
-    logs = await db.audit_logs.find({}, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
-    return logs
+    logs = await db.audit_logs.find(filters, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
+    return [AuditLogResponse(**log) for log in logs]
 
 @admin_router.put("/businesses/{business_id}/feature")
-async def toggle_featured(business_id: str, featured: bool = True, token_data: TokenData = Depends(require_admin)):
+async def toggle_featured(business_id: str, request: Request, featured: bool = True, token_data: TokenData = Depends(require_admin)):
+    business = await db.businesses.find_one({"id": business_id})
+    if not business:
+        raise HTTPException(status_code=404, detail="Business not found")
+    
     await db.businesses.update_one(
         {"id": business_id},
         {"$set": {"is_featured": featured}}
     )
+    
+    # Create audit log
+    await create_audit_log(
+        admin_id=token_data.user_id,
+        admin_email=token_data.email,
+        action=AuditAction.BUSINESS_FEATURE,
+        target_type="business",
+        target_id=business_id,
+        details={"business_name": business.get("name"), "featured": featured},
+        request=request
+    )
+    
     return {"message": f"Business {'featured' if featured else 'unfeatured'}"}
 
 # ========================== SEED DATA ==========================
