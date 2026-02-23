@@ -139,6 +139,18 @@ async def get_sitemap(request: Request):
     )
 
 
+@seo_router.get("/api/seo/sitemap.xml", response_class=Response)
+async def get_sitemap_api(request: Request):
+    """Generate and return sitemap.xml (API route for ingress compatibility)"""
+    base_url = get_base_url(request)
+    xml_content = await generate_sitemap_xml(base_url)
+    return Response(
+        content=xml_content,
+        media_type="application/xml",
+        headers={"Cache-Control": "public, max-age=3600"}  # Cache 1 hour
+    )
+
+
 @seo_router.get("/robots.txt", response_class=PlainTextResponse)
 async def get_robots(request: Request):
     """Generate robots.txt"""
