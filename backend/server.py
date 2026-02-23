@@ -2095,6 +2095,68 @@ async def toggle_featured(business_id: str, request: Request, featured: bool = T
     
     return {"message": f"Business {'featured' if featured else 'unfeatured'}"}
 
+# Payment hold/release endpoints for admin
+@admin_router.put("/payments/{payment_id}/hold")
+async def hold_payment(payment_id: str, request: Request, reason: str = "", token_data: TokenData = Depends(require_admin)):
+    """Put a payment on hold - prevents payout to business"""
+    payment = await db.payment_transactions.find_one({"id": payment_id})
+    if not payment:
+        raise HTTPException(status_code=404, detail="Payment not found")
+    
+    await db.payment_transactions.update_one(
+        {"id": payment_id},
+        {"$set": {"on_hold": True, "hold_reason": reason, "held_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    
+    # Create audit log
+    await create_audit_log(
+        admin_id=token_data.user_id,
+        admin_email=token_data.email,
+        action=AuditAction.PAYMENT_HOLD,
+        target_type="payment",
+        target_id=payment_id,
+        details={"amount": payment.get("amount"), "reason": reason},
+        request=request
+    )
+    
+    return {"message": "Payment put on hold"}
+
+@admin_router.put("/payments/{payment_id}/release")
+async def release_payment(payment_id: str, request: Request, token_data: TokenData = Depends(require_admin)):
+    """Release a payment from hold"""
+    payment = await db.payment_transactions.find_one({"id": payment_id})
+    if not payment:
+        raise HTTPException(status_code=404, detail="Payment not found")
+    
+    await db.payment_transactions.update_one(
+        {"id": payment_id},
+        {"$set": {"on_hold": False, "released_at": datetime.now(timezone.utc).isoformat()},
+         "$unset": {"hold_reason": ""}}
+    )
+    
+    # Create audit log
+    await create_audit_log(
+        admin_id=token_data.user_id,
+        admin_email=token_data.email,
+        action=AuditAction.PAYMENT_RELEASE,
+        target_type="payment",
+        target_id=payment_id,
+        details={"amount": payment.get("amount")},
+        request=request
+    )
+    
+    return {"message": "Payment released"}
+
+@admin_router.get("/payments/held")
+async def get_held_payments(page: int = 1, limit: int = 50, token_data: TokenData = Depends(require_admin)):
+    """Get all payments currently on hold"""
+    skip = (page - 1) * limit
+    payments = await db.payment_transactions.find(
+        {"on_hold": True},
+        {"_id": 0}
+    ).sort("held_at", -1).skip(skip).limit(limit).to_list(limit)
+    return payments
+
 # ========================== SEED DATA ==========================
 
 @api_router.post("/seed")
