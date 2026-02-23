@@ -3551,6 +3551,7 @@ api_router.include_router(categories_router)
 api_router.include_router(payments_router)
 api_router.include_router(admin_router)
 api_router.include_router(notifications_router)
+api_router.include_router(finance_router)
 
 app.include_router(api_router)
 
