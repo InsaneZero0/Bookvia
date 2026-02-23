@@ -836,7 +836,7 @@ async def verify_admin_2fa(verify: Admin2FAVerify, token_data: TokenData = Depen
     return {"message": "2FA enabled successfully"}
 
 @auth_router.post("/admin/login", response_model=dict)
-async def admin_login(credentials: AdminLogin):
+async def admin_login(credentials: AdminLogin, request: Request):
     user = await db.users.find_one({"email": credentials.email, "role": UserRole.ADMIN})
     if not user:
         raise HTTPException(status_code=401, detail="Invalid credentials")
@@ -844,29 +844,49 @@ async def admin_login(credentials: AdminLogin):
     if not verify_password(credentials.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid credentials")
     
+    # Check if 2FA is enabled - REQUIRED for admin
+    if not user.get("totp_enabled"):
+        # Return special response indicating 2FA setup required
+        temp_token = create_token(user["id"], UserRole.ADMIN, user["email"])
+        return {
+            "requires_2fa_setup": True,
+            "temp_token": temp_token,
+            "message": "2FA setup required before accessing admin panel"
+        }
+    
     # Verify 2FA
-    if user.get("totp_enabled"):
-        totp = pyotp.TOTP(user["totp_secret"])
-        if not totp.verify(credentials.totp_code):
-            # Check backup codes
-            valid_backup = False
-            for i, hashed_code in enumerate(user.get("backup_codes", [])):
-                if verify_password(credentials.totp_code, hashed_code):
-                    valid_backup = True
-                    # Remove used backup code
-                    backup_codes = user["backup_codes"]
-                    backup_codes.pop(i)
-                    await db.users.update_one(
-                        {"id": user["id"]},
-                        {"$set": {"backup_codes": backup_codes}}
-                    )
-                    break
-            
-            if not valid_backup:
-                raise HTTPException(status_code=401, detail="Invalid 2FA code")
+    totp = pyotp.TOTP(user["totp_secret"])
+    if not totp.verify(credentials.totp_code):
+        # Check backup codes
+        valid_backup = False
+        for i, hashed_code in enumerate(user.get("backup_codes", [])):
+            if verify_password(credentials.totp_code, hashed_code):
+                valid_backup = True
+                # Remove used backup code
+                backup_codes = user["backup_codes"]
+                backup_codes.pop(i)
+                await db.users.update_one(
+                    {"id": user["id"]},
+                    {"$set": {"backup_codes": backup_codes}}
+                )
+                break
+        
+        if not valid_backup:
+            raise HTTPException(status_code=401, detail="Invalid 2FA code")
+    
+    # Create audit log for admin login
+    await create_audit_log(
+        admin_id=user["id"],
+        admin_email=user["email"],
+        action=AuditAction.ADMIN_LOGIN,
+        target_type="admin",
+        target_id=user["id"],
+        details={"login_successful": True},
+        request=request
+    )
     
     token = create_token(user["id"], UserRole.ADMIN, user["email"])
-    return {"token": token, "user": UserResponse(**user).model_dump()}
+    return {"token": token, "user": UserResponse(**user).model_dump(), "totp_enabled": True}
 
 # ========================== USER ROUTES ==========================
 
