@@ -1570,7 +1570,7 @@ async def get_worker(worker_id: str, token_data: TokenData = Depends(require_bus
         raise HTTPException(status_code=404, detail="Worker not found")
     return WorkerResponse(**worker)
 
-@businesses_router.put("/workers/{worker_id}", response_model=WorkerResponse)
+@businesses_router.put("/my/workers/{worker_id}", response_model=WorkerResponse)
 async def update_worker(
     worker_id: str,
     update: WorkerUpdate,
