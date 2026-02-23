@@ -359,6 +359,16 @@ class ServiceCreate(BaseModel):
     price: float
     category_id: Optional[str] = None
     is_home_service: bool = False
+    allowed_worker_ids: List[str] = []  # Empty = all workers can perform this service
+
+class ServiceUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    duration_minutes: Optional[int] = None
+    price: Optional[float] = None
+    category_id: Optional[str] = None
+    is_home_service: Optional[bool] = None
+    allowed_worker_ids: Optional[List[str]] = None
 
 class ServiceResponse(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -370,6 +380,7 @@ class ServiceResponse(BaseModel):
     price: float
     category_id: Optional[str] = None
     is_home_service: bool = False
+    allowed_worker_ids: List[str] = []
     active: bool = True
 
 # Booking Models
