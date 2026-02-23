@@ -4106,13 +4106,94 @@ async def seed_data():
         "note": "2FA setup required on first admin login"
     }
 
-# ========================== CITIES ==========================
+# ========================== CITIES & COUNTRIES ==========================
 
 @api_router.get("/cities")
-async def get_cities():
-    """Get list of cities with businesses"""
-    cities = await db.businesses.distinct("city", {"status": BusinessStatus.APPROVED})
-    return [{"name": city, "slug": generate_slug(city)} for city in cities if city]
+async def get_cities(country_code: str = "MX"):
+    """Get list of cities with businesses for a country"""
+    # First check if we have cities in the cities collection
+    cities_from_db = await db.cities.find(
+        {"country_code": country_code.upper(), "active": True},
+        {"_id": 0}
+    ).to_list(500)
+    
+    if cities_from_db:
+        return cities_from_db
+    
+    # Fallback: get from businesses
+    cities = await db.businesses.distinct("city", {
+        "status": BusinessStatus.APPROVED,
+        "country_code": country_code.upper()
+    })
+    return [{"name": city, "slug": generate_slug(city), "country_code": country_code.upper()} for city in cities if city]
+
+
+@api_router.post("/seed/countries")
+async def seed_countries():
+    """Seed countries and cities for multi-country support"""
+    # Default countries
+    countries = [
+        {
+            "code": "MX",
+            "name_es": "México",
+            "name_en": "Mexico",
+            "currency_code": "MXN",
+            "default_language": "es",
+            "timezone_default": "America/Mexico_City",
+            "phone_prefix": "+52",
+            "active": True
+        }
+    ]
+    
+    # Default Mexican cities
+    cities = [
+        {"country_code": "MX", "name": "Ciudad de México", "slug": "cdmx", "state": "CDMX", "timezone": "America/Mexico_City", "active": True, "business_count": 0},
+        {"country_code": "MX", "name": "Guadalajara", "slug": "guadalajara", "state": "Jalisco", "timezone": "America/Mexico_City", "active": True, "business_count": 0},
+        {"country_code": "MX", "name": "Monterrey", "slug": "monterrey", "state": "Nuevo León", "timezone": "America/Monterrey", "active": True, "business_count": 0},
+        {"country_code": "MX", "name": "Puebla", "slug": "puebla", "state": "Puebla", "timezone": "America/Mexico_City", "active": True, "business_count": 0},
+        {"country_code": "MX", "name": "Tijuana", "slug": "tijuana", "state": "Baja California", "timezone": "America/Tijuana", "active": True, "business_count": 0},
+        {"country_code": "MX", "name": "León", "slug": "leon", "state": "Guanajuato", "timezone": "America/Mexico_City", "active": True, "business_count": 0},
+        {"country_code": "MX", "name": "Cancún", "slug": "cancun", "state": "Quintana Roo", "timezone": "America/Cancun", "active": True, "business_count": 0},
+        {"country_code": "MX", "name": "Mérida", "slug": "merida", "state": "Yucatán", "timezone": "America/Merida", "active": True, "business_count": 0},
+        {"country_code": "MX", "name": "Querétaro", "slug": "queretaro", "state": "Querétaro", "timezone": "America/Mexico_City", "active": True, "business_count": 0},
+        {"country_code": "MX", "name": "San Luis Potosí", "slug": "san-luis-potosi", "state": "San Luis Potosí", "timezone": "America/Mexico_City", "active": True, "business_count": 0},
+    ]
+    
+    # Check if already seeded
+    existing_countries = await db.countries.count_documents({})
+    if existing_countries > 0:
+        return {"message": "Countries already seeded", "countries": existing_countries}
+    
+    # Insert countries
+    await db.countries.insert_many(countries)
+    
+    # Insert cities
+    await db.cities.insert_many(cities)
+    
+    # Update existing businesses to have country_code = MX if missing
+    await db.businesses.update_many(
+        {"country_code": {"$exists": False}},
+        {"$set": {"country_code": "MX"}}
+    )
+    
+    # Update existing ledger_entries to have country_code = MX if missing
+    await db.ledger_entries.update_many(
+        {"country_code": {"$exists": False}},
+        {"$set": {"country_code": "MX"}}
+    )
+    
+    # Update existing settlements to have country_code = MX if missing
+    await db.settlements.update_many(
+        {"country_code": {"$exists": False}},
+        {"$set": {"country_code": "MX"}}
+    )
+    
+    return {
+        "message": "Countries and cities seeded successfully",
+        "countries_created": len(countries),
+        "cities_created": len(cities)
+    }
+
 
 # ========================== INCLUDE ROUTERS ==========================
 
