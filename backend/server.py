@@ -2382,8 +2382,6 @@ async def cancel_booking_by_business(
         refund_amount = transaction["amount_total"]  # 100% refund
         fee_penalty = transaction["fee_amount"]  # 8% fee charged to business
         
-        # TODO: Process actual Stripe refund
-        
         # Update transaction
         await db.transactions.update_one(
             {"id": transaction["id"]},
@@ -2395,6 +2393,10 @@ async def cancel_booking_by_business(
                 "updated_at": now.isoformat()
             }}
         )
+        
+        # Create ledger entries for full refund
+        updated_tx = {**transaction, "refund_amount": refund_amount}
+        await create_transaction_ledger_entries(updated_tx, TransactionStatus.REFUND_FULL)
         
         # Create fee penalty transaction for business
         penalty_tx = {
@@ -2417,6 +2419,9 @@ async def cancel_booking_by_business(
             "paid_at": None
         }
         await db.transactions.insert_one(penalty_tx)
+        
+        # Create ledger entries for penalty
+        await create_transaction_ledger_entries(penalty_tx, TransactionStatus.BUSINESS_CANCEL_FEE)
         
         # Update business balance (deduct pending and add penalty)
         await db.businesses.update_one(
