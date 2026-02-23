@@ -113,7 +113,8 @@ export const bookingsAPI = {
   create: (data) => api.post('/bookings', data),
   getMy: (params) => api.get('/bookings/my', { params }),
   getBusiness: (params) => api.get('/bookings/business', { params }),
-  cancel: (id) => api.put(`/bookings/${id}/cancel`),
+  cancelByUser: (id, reason) => api.put(`/bookings/${id}/cancel/user`, { reason }),
+  cancelByBusiness: (id, reason) => api.put(`/bookings/${id}/cancel/business`, { reason }),
   reschedule: (id, newDate, newTime) => 
     api.put(`/bookings/${id}/reschedule`, null, { params: { new_date: newDate, new_time: newTime } }),
   confirm: (id) => api.put(`/bookings/${id}/confirm`),
@@ -129,8 +130,14 @@ export const reviewsAPI = {
 
 // Payments API
 export const paymentsAPI = {
-  createCheckoutSession: (data) => api.post('/payments/checkout/session', data),
+  // Deposit checkout for bookings
+  createDepositCheckout: (bookingId) => api.post('/payments/deposit/checkout', { booking_id: bookingId }),
   getCheckoutStatus: (sessionId) => api.get(`/payments/checkout/status/${sessionId}`),
+  getTransaction: (transactionId) => api.get(`/payments/transaction/${transactionId}`),
+  getMyTransactions: (params) => api.get('/payments/my-transactions', { params }),
+  getBusinessTransactions: (params) => api.get('/payments/business-transactions', { params }),
+  // Legacy checkout for subscriptions
+  createCheckoutSession: (data) => api.post('/payments/checkout/session', data),
 };
 
 // Notifications API
