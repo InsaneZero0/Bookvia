@@ -318,7 +318,7 @@ export default function TeamSchedulePage() {
     }
   };
 
-  if (loading) {
+  if (authLoading || loading) {
     return (
       <div className="min-h-screen pt-20 bg-background">
         <div className="container-app py-8">
