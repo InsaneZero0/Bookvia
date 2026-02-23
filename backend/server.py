@@ -65,6 +65,8 @@ categories_router = APIRouter(prefix="/categories", tags=["Categories"])
 payments_router = APIRouter(prefix="/payments", tags=["Payments"])
 admin_router = APIRouter(prefix="/admin", tags=["Admin"])
 notifications_router = APIRouter(prefix="/notifications", tags=["Notifications"])
+finance_router = APIRouter(prefix="/business/finance", tags=["Business Finance"])
+settlements_router = APIRouter(prefix="/settlements", tags=["Settlements"])
 
 security = HTTPBearer(auto_error=False)
 
