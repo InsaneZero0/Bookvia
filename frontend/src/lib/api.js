@@ -121,8 +121,15 @@ export const servicesAPI = {
 
 // Bookings API
 export const bookingsAPI = {
-  getAvailability: (businessId, date, serviceId) => 
-    api.get(`/bookings/availability/${businessId}`, { params: { date, service_id: serviceId } }),
+  getAvailability: (businessId, date, serviceId, workerId, includeUnavailable = false) => 
+    api.get(`/bookings/availability/${businessId}`, { 
+      params: { 
+        date, 
+        service_id: serviceId,
+        worker_id: workerId,
+        include_unavailable: includeUnavailable
+      } 
+    }),
   create: (data) => api.post('/bookings', data),
   getMy: (params) => api.get('/bookings/my', { params }),
   getBusiness: (params) => api.get('/bookings/business', { params }),
