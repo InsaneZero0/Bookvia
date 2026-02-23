@@ -532,6 +532,32 @@ async def create_notification(user_id: str, title: str, message: str, notif_type
     await db.notifications.insert_one(notification)
     return notification
 
+async def create_audit_log(
+    admin_id: str,
+    admin_email: str,
+    action: str,
+    target_type: str,
+    target_id: str,
+    details: dict = None,
+    request: Request = None
+):
+    """Create audit log for admin actions"""
+    audit_log = {
+        "id": generate_id(),
+        "admin_id": admin_id,
+        "admin_email": admin_email,
+        "action": action,
+        "target_type": target_type,
+        "target_id": target_id,
+        "details": details or {},
+        "ip_address": request.client.host if request else None,
+        "user_agent": request.headers.get("user-agent") if request else None,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    await db.audit_logs.insert_one(audit_log)
+    logger.info(f"[AUDIT] {admin_email} - {action} - {target_type}:{target_id}")
+    return audit_log
+
 # ========================== AUTH ROUTES ==========================
 
 @auth_router.post("/register", response_model=dict)
