@@ -474,6 +474,71 @@ class DepositCheckoutRequest(BaseModel):
 class CancelBookingRequest(BaseModel):
     reason: Optional[str] = None
 
+# ========================== LEDGER MODELS ==========================
+
+class LedgerEntryResponse(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str
+    transaction_id: str
+    booking_id: Optional[str] = None
+    business_id: str
+    direction: str  # DEBIT | CREDIT
+    account: str  # business_revenue, platform_fee, refund, penalty, payout
+    amount_cents: int  # Integer to avoid decimal errors
+    amount: float  # Decimal for display
+    currency: str = "MXN"
+    country: str = "MX"
+    entry_status: str = "posted"  # posted | reversed
+    description: Optional[str] = None
+    related_appointment_id: Optional[str] = None
+    created_by: str = "system"  # system | admin
+    created_at: str
+
+# ========================== SETTLEMENT MODELS ==========================
+
+class SettlementResponse(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str
+    business_id: str
+    business_name: Optional[str] = None
+    period_key: str  # "2026-02" or "MX-2026-02"
+    period_start: str
+    period_end: str
+    # Calculated from ledger
+    gross_paid: float  # sum of business_revenue CREDIT
+    total_fees: float  # sum of platform_fee DEBIT
+    total_refunds: float  # sum of refund DEBIT
+    total_penalties: float  # sum of penalty DEBIT (BUSINESS_CANCEL_FEE)
+    net_payout: float  # gross_paid - fees - refunds - penalties
+    currency: str = "MXN"
+    country: str = "MX"
+    status: str  # pending, paid, held, failed
+    held_reason: Optional[str] = None
+    idempotency_key: str  # job run identifier
+    payout_reference: Optional[str] = None
+    paid_at: Optional[str] = None
+    created_at: str
+    updated_at: Optional[str] = None
+
+class SettlementMarkPaidRequest(BaseModel):
+    payout_reference: str
+
+class BusinessFinanceSummary(BaseModel):
+    gross_revenue: float
+    total_fees: float
+    total_refunds: float
+    total_penalties: float
+    net_earnings: float
+    pending_payout: float
+    paid_payout: float
+    held_payout: float
+    next_settlement_date: Optional[str] = None
+    currency: str = "MXN"
+
+class PayoutHoldRequest(BaseModel):
+    hold: bool
+    reason: Optional[str] = None
+
 # Admin 2FA
 class Admin2FASetup(BaseModel):
     password: str
