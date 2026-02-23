@@ -60,8 +60,14 @@ export const authAPI = {
   getMe: () => api.get('/auth/me'),
   sendPhoneCode: (phone) => api.post('/auth/phone/send-code', { phone }),
   verifyPhone: (phone, code) => api.post('/auth/phone/verify', { phone, code }),
-  setup2FA: (password) => api.post('/auth/admin/setup-2fa', { password }),
-  verify2FA: (code) => api.post('/auth/admin/verify-2fa', { code }),
+  setup2FA: (password, tempToken = null) => {
+    const config = tempToken ? { headers: { Authorization: `Bearer ${tempToken}` } } : {};
+    return api.post('/auth/admin/setup-2fa', { password }, config);
+  },
+  verify2FA: (code, tempToken = null) => {
+    const config = tempToken ? { headers: { Authorization: `Bearer ${tempToken}` } } : {};
+    return api.post('/auth/admin/verify-2fa', { code }, config);
+  },
 };
 
 // Users API
