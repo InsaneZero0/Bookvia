@@ -93,9 +93,22 @@ export const businessesAPI = {
   getById: (id) => api.get(`/businesses/${id}`),
   updateMe: (data) => api.put('/businesses/me', data),
   getDashboard: () => api.get('/businesses/me/dashboard'),
-  getWorkers: (businessId) => api.get(`/businesses/${businessId}/workers`),
+  // Workers
+  getWorkers: (businessId, includeInactive = false) => 
+    api.get(`/businesses/${businessId}/workers`, { params: { include_inactive: includeInactive } }),
+  getMyWorkers: (includeInactive = false) => 
+    api.get('/businesses/workers', { params: { include_inactive: includeInactive } }),
+  getWorker: (workerId) => api.get(`/businesses/workers/${workerId}`),
   createWorker: (data) => api.post('/businesses/workers', data),
-  updateWorkerSchedule: (workerId, schedules) => api.put(`/businesses/workers/${workerId}/schedule`, schedules),
+  updateWorker: (workerId, data) => api.put(`/businesses/workers/${workerId}`, data),
+  deleteWorker: (workerId) => api.delete(`/businesses/workers/${workerId}`),
+  reactivateWorker: (workerId) => api.put(`/businesses/workers/${workerId}/reactivate`),
+  updateWorkerSchedule: (workerId, schedule) => 
+    api.put(`/businesses/workers/${workerId}/schedule`, { schedule }),
+  addWorkerException: (workerId, exception) => 
+    api.post(`/businesses/workers/${workerId}/exceptions`, { exception }),
+  removeWorkerException: (workerId, exceptionId) => 
+    api.delete(`/businesses/workers/${workerId}/exceptions/${exceptionId}`),
 };
 
 // Services API
