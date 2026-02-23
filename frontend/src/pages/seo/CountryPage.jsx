@@ -23,7 +23,7 @@ export default function CountryPage() {
         setLoading(true);
         
         // Fetch country info
-        const countriesRes = await api.get('/api/seo/countries');
+        const countriesRes = await seoAPI.getCountries();
         const countryInfo = countriesRes.data.find(
           c => c.code.toLowerCase() === country.toLowerCase()
         );
@@ -36,11 +36,11 @@ export default function CountryPage() {
         setCountryData(countryInfo);
         
         // Fetch cities for this country
-        const citiesRes = await api.get(`/api/seo/cities/${country.toUpperCase()}`);
+        const citiesRes = await seoAPI.getCities(country.toUpperCase());
         setCities(citiesRes.data || []);
         
         // Fetch categories
-        const categoriesRes = await api.get('/api/categories');
+        const categoriesRes = await categoriesAPI.getAll();
         setCategories(categoriesRes.data || []);
         
       } catch (err) {
