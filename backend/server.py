@@ -399,6 +399,20 @@ class AdminLogin(BaseModel):
     password: str
     totp_code: str
 
+# Audit Log Models
+class AuditLogResponse(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str
+    admin_id: str
+    admin_email: str
+    action: str
+    target_type: str  # business, user, review, payment
+    target_id: str
+    details: Optional[Dict[str, Any]] = None
+    ip_address: Optional[str] = None
+    user_agent: Optional[str] = None
+    created_at: str
+
 # Notification Models
 class NotificationResponse(BaseModel):
     model_config = ConfigDict(extra="ignore")
