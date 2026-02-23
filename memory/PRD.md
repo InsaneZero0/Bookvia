@@ -1,126 +1,136 @@
 # Bookvia - PRD (Product Requirements Document)
 
-## Project Overview
-**Bookvia** - Marketplace de Reservas Profesionales
-- Multi-país, multi-idioma (ES/EN), multi-moneda (MXN)
-- API-first, preparada para futura app móvil
+## Original Problem Statement
+Plataforma de marketplace de reservas profesionales API-first, escalable, preparada para futura app móvil.
 
-## Architecture
-- **Backend**: FastAPI + MongoDB
-- **Frontend**: React + Tailwind + Shadcn/UI
-- **Auth**: JWT (user, business, admin) + 2FA TOTP para admin
-- **Payments**: Stripe (test keys)
-- **Ledger**: Double-entry bookkeeping interno
+## Core Requirements
+- Arquitectura API-first con FastAPI + React + MongoDB
+- Sistema de roles: User, Business, Admin
+- Autenticación JWT con 2FA obligatorio para admin
+- Integración de pagos con Stripe
 
----
-
-## ✅ COMPLETADO
-
-### Fase 3: Panel Financiero + Liquidaciones (Feb 23, 2026)
-
-#### Sistema de Ledger (Libro Contable) ✅
-- `ledger_entries` collection con:
-  - `direction`: DEBIT | CREDIT
-  - `account`: business_revenue, platform_fee, refund, penalty, payout
-  - `amount_cents`: Integer para evitar errores de decimales
-  - `entry_status`: posted | reversed
-  - `created_by`: system | admin
-- Auto-generación al confirmar pago (CREDIT business_revenue, DEBIT platform_fee)
-- Auto-generación en refunds y penalties
-
-#### Settlements (Liquidaciones) ✅
-- `settlements` collection con:
-  - `period_key`: "MX-2026-02"
-  - `idempotency_key`: Previene duplicados
-  - `held_reason`: Cuando status = HELD
-  - Cálculo: net_payout = gross_paid - fees - refunds - penalties
-- Estados: PENDING, PAID, HELD, FAILED
-
-#### Panel Financiero Negocio ✅
-- `/business/finance` con:
-  - Resumen: gross_revenue, total_fees, net_earnings
-  - Payouts: pending, paid, held
-  - Transacciones con filtros
-  - Historial de liquidaciones
-
-#### Control Admin ✅
-- `PUT /api/admin/businesses/{id}/payout-hold` - Bloquear/liberar pagos
-- `POST /api/admin/settlements/generate` - Generar liquidaciones (idempotente)
-- `PUT /api/admin/settlements/{id}/pay` - Marcar como pagado
-- `GET /api/admin/export/transactions` - CSV
-- `GET /api/admin/export/settlements` - CSV
-
-### Fase 2: Core Financiero (Feb 23, 2026)
-- Stripe Checkout + webhooks
-- Hold 30 min con countdown
-- Comisiones 8%
-- Cancelaciones con políticas (>24h, <24h, no-show)
-- TransactionStatus: CREATED, PAID, REFUND_PARTIAL, REFUND_FULL, NO_SHOW_PAYOUT, BUSINESS_CANCEL_FEE
-
-### Fase 1: Seguridad (Feb 23, 2026)
-- Admin desde env vars
-- 2FA TOTP obligatorio
-- Audit logs completos
-- Registro negocios 4-step
-
-### MVP (Completado)
-- Homepage, búsqueda, categorías
-- Login/registro
-- Sistema de reservas
-- Reseñas
+## User Personas
+1. **Usuario Final**: Busca y reserva servicios profesionales
+2. **Negocio**: Ofrece servicios, gestiona trabajadores, horarios y finanzas
+3. **Admin**: Aprueba negocios, gestiona liquidaciones, supervisa plataforma
 
 ---
 
-## Backlog
+## Implementation Status
 
-### P2: Gestión Trabajadores
-- [ ] UI para horarios de trabajadores
-- [ ] Vacaciones/bloqueos
-- [ ] Asignación automática avanzada
+### Phase P0 - Security & Business Registration ✅ COMPLETE
+- Admin creation from env variables
+- Password hashing with bcrypt
+- 2FA (TOTP) obligatory for admin
+- Audit logs
+- Business registration with document upload
+- Admin panel for business approval
 
-### P3: SEO
-- [ ] URLs amigables
-- [ ] Sitemap dinámico
-- [ ] Meta-tags
+### Phase P1 - Stripe Integration ✅ COMPLETE
+- Stripe Checkout for deposits
+- Webhooks for payment confirmation
+- 30-minute HOLD status for bookings
+- 8% commission logic
+- Cancellation and no-show handling
 
-### P4: Nice to have
-- [ ] Cloud storage para fotos
-- [ ] Notificaciones push
-- [ ] App móvil
+### Phase P2 - Financial Panel & Settlements ✅ COMPLETE
+- Double-entry ledger system
+- Financial dashboard for businesses
+- Monthly settlement generation
+- Admin panel for payment holds
+- Settlement management (PENDING/PAID/HELD)
+
+### Phase P2.5 - Workers & Schedules ✅ COMPLETE (Feb 23, 2026)
+- **Worker CRUD**: Create, Read, Update, Soft Delete, Reactivate
+- **Schedule Management**: 
+  - Multiple blocks per day (morning/afternoon shifts)
+  - Overlap validation for schedule blocks
+- **Exceptions (Vacations/Blocks)**:
+  - Full day and date range exceptions
+  - Partial day blocks with specific hours
+  - Reason tracking for each exception
+- **Availability Engine**:
+  - Considers worker schedules, exceptions, existing bookings
+  - Returns detailed status and reason per slot
+  - Supports business timezone
+  - Filters workers by service (allowed_worker_ids)
+- **Auto-assignment**: Workers assigned by least load
+- **Frontend UI**: Team tab, Calendar tab, dialogs for schedule/exceptions
 
 ---
 
-## API Endpoints
+## Upcoming Tasks
 
-### Finance (Business)
-- `GET /api/business/finance/summary`
-- `GET /api/business/finance/transactions`
-- `GET /api/business/finance/ledger`
-- `GET /api/business/finance/settlements`
+### Phase P3 - SEO & Optimization (P1 Priority)
+- [ ] Implement friendly URLs
+- [ ] Generate dynamic sitemap.xml
+- [ ] Implement dynamic meta-tags
 
-### Admin Settlements
-- `POST /api/admin/settlements/generate?year=X&month=Y`
-- `GET /api/admin/settlements`
-- `PUT /api/admin/settlements/{id}/pay`
-- `PUT /api/admin/businesses/{id}/payout-hold`
-- `GET /api/admin/export/transactions?year=X&month=Y`
-- `GET /api/admin/export/settlements?year=X&month=Y`
+### Future Tasks (P2-P3 Priority)
+- [ ] Real SMS Integration (replace Twilio mock)
+- [ ] Automatic Payouts via Stripe Connect
+- [ ] Backend refactoring (split server.py into routers/models/services)
 
 ---
 
-## Constants
-```python
-PLATFORM_FEE_PERCENT = 0.08  # 8%
-HOLD_EXPIRATION_MINUTES = 30
-MIN_DEPOSIT_AMOUNT = 50.0  # MXN
+## Technical Architecture
+
+```
+/app/
+├── backend/
+│   └── server.py        # Monolith (~3800 lines)
+├── frontend/
+│   └── src/
+│       ├── components/
+│       ├── lib/
+│       │   ├── api.js   # API client
+│       │   ├── auth.js  # Auth context
+│       │   └── i18n.js  # Internationalization
+│       └── pages/
+│           ├── TeamSchedulePage.jsx    # NEW: Workers & Schedules
+│           ├── BusinessDashboardPage.jsx
+│           ├── BusinessFinancePage.jsx
+│           └── ...
+└── memory/
+    └── PRD.md
 ```
 
-## Test Credentials
-- Business: testspa@test.com / Test123!
-- Admin: zamorachapa50@gmail.com + TOTP
+## Key API Endpoints
 
-## Test Reports
-- `/app/test_reports/iteration_5.json` - Fase 3 (100% pass)
-- `/app/test_reports/iteration_4.json` - Fase 2
-- `/app/test_reports/iteration_3.json` - Registro negocios
-- `/app/test_reports/iteration_2.json` - Seguridad admin
+### Workers (requires business auth)
+- `POST /api/businesses/my/workers` - Create worker
+- `GET /api/businesses/my/workers` - List workers (include_inactive param)
+- `PUT /api/businesses/my/workers/{id}` - Update worker
+- `DELETE /api/businesses/my/workers/{id}` - Soft delete
+- `PUT /api/businesses/my/workers/{id}/reactivate` - Reactivate
+- `PUT /api/businesses/my/workers/{id}/schedule` - Update schedule
+- `POST /api/businesses/my/workers/{id}/exceptions` - Add exception
+- `DELETE /api/businesses/my/workers/{id}/exceptions/{exc_id}` - Remove exception
+
+### Availability
+- `GET /api/bookings/availability/{business_id}` - Get available slots
+  - Params: date, service_id, worker_id, include_unavailable
+
+### Finance
+- `GET /api/finance/summary` - Business financial summary
+- `POST /api/admin/settlements/generate` - Generate monthly settlements
+- `PUT /api/admin/settlements/{id}/hold` - Hold settlement payment
+
+## Database Collections
+- `users` - User accounts with roles
+- `businesses` - Business profiles with timezone
+- `workers` - Worker profiles with schedule and exceptions
+- `services` - Services with allowed_worker_ids
+- `bookings` - Appointments with HOLD/CONFIRMED status
+- `payment_transactions` - Stripe transactions
+- `ledger_entries` - Double-entry accounting
+- `settlements` - Monthly settlements
+- `audit_logs` - Admin action logs
+
+## Mocked Features
+- SMS verification (Twilio mock)
+- Settlement payouts (manual "mark as paid")
+
+## Test Credentials
+- **Business**: testspa@test.com / Test123!
+- **Admin**: zamorachapa50@gmail.com / RainbowLol3133!
