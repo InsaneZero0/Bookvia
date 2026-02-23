@@ -1534,18 +1534,16 @@ async def create_worker(worker: WorkerCreate, token_data: TokenData = Depends(re
     await db.workers.insert_one(worker_doc)
     return WorkerResponse(**worker_doc)
 
-@businesses_router.get("/workers", response_model=List[WorkerResponse])
+@businesses_router.get("/my/workers", response_model=List[WorkerResponse])
 async def get_business_workers(
-    business_id: Optional[str] = None,
     include_inactive: bool = False,
     token_data: TokenData = Depends(require_auth)
 ):
-    """Get all workers for a business"""
-    if not business_id:
-        user = await db.users.find_one({"id": token_data.user_id})
-        if not user or not user.get("business_id"):
-            raise HTTPException(status_code=400, detail="Business ID required")
-        business_id = user["business_id"]
+    """Get all workers for the authenticated business"""
+    user = await db.users.find_one({"id": token_data.user_id})
+    if not user or not user.get("business_id"):
+        raise HTTPException(status_code=400, detail="Business ID required")
+    business_id = user["business_id"]
     
     filters = {"business_id": business_id}
     if not include_inactive:
