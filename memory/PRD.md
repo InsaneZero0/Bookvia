@@ -44,18 +44,18 @@ Plataforma de marketplace de reservas profesionales API-first, escalable, prepar
 ### Phase P3 - Refactor & Stability ✅ COMPLETE (Feb 23, 2026)
 
 #### Backend Refactoring
-New modular structure created:
+New modular structure:
 ```
 backend/
 ├── main.py                 # New entry point (optional)
-├── server.py               # Legacy monolith (still used by supervisor)
+├── server.py               # Legacy monolith (still used)
 ├── core/
 │   ├── config.py          # Environment configuration
 │   ├── database.py        # MongoDB connection
 │   ├── security.py        # JWT, password hashing, 2FA
 │   └── dependencies.py    # Auth dependencies
 ├── models/
-│   └── enums.py           # All enums (UserRole, AppointmentStatus, etc.)
+│   └── enums.py           # All enums
 ├── schemas/
 │   ├── auth.py            # User auth schemas
 │   ├── business.py        # Business schemas
@@ -69,7 +69,7 @@ backend/
 ├── utils/
 │   └── helpers.py         # Utility functions
 └── docs/
-    └── ENV_VARIABLES.md   # Environment variables documentation
+    └── ENV_VARIABLES.md   # Environment documentation
 ```
 
 #### SMS Service (Twilio Ready)
@@ -77,19 +77,16 @@ backend/
 - ✅ Rate limiting (3 attempts/hour per phone)
 - ✅ Code expiration (5 minutes)
 - ✅ Error logging
-- ✅ Ready for Twilio credentials (TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER)
-- ✅ Production mode requires credentials or returns 503 error
+- ✅ Production requires credentials (503 if missing)
 
 #### Email Service (Resend Ready)
-- ✅ Mock mode stores emails in `sent_emails` collection
-- ✅ Admin can view sent emails at `/api/admin/emails`
-- ✅ Email templates for booking confirmation, worker assignment, cancellation
-- ✅ Ready for Resend credentials (RESEND_API_KEY, FROM_EMAIL)
+- ✅ Mock mode stores in `sent_emails` collection
+- ✅ Admin can view at `/api/admin/emails`
+- ✅ Templates: booking confirmation, worker assignment, cancellation
 
 #### Worker Notifications
-- ✅ Email notification when booking confirmed (mock)
+- ✅ Email notification on booking confirmation (mock)
 - ✅ Internal notification in dashboard
-- ✅ Template: `send_worker_assignment()`
 
 ---
 
@@ -107,36 +104,9 @@ backend/
 
 ---
 
-## Technical Architecture
-
-```
-/app/
-├── backend/
-│   ├── server.py        # Main app (monolith, ~4100 lines)
-│   ├── main.py          # Alternative entry point
-│   ├── core/            # Configuration & security
-│   ├── models/          # Enums
-│   ├── schemas/         # Pydantic schemas
-│   ├── services/        # SMS, Email, Notifications
-│   └── utils/           # Helpers
-├── frontend/
-│   └── src/
-│       ├── components/
-│       ├── lib/
-│       │   ├── api.js
-│       │   ├── auth.js
-│       │   └── i18n.js
-│       └── pages/
-│           ├── TeamSchedulePage.jsx
-│           ├── BusinessDashboardPage.jsx
-│           └── ...
-└── memory/
-    └── PRD.md
-```
-
 ## Environment Variables
 
-See `/app/backend/docs/ENV_VARIABLES.md` for complete documentation.
+See `/app/backend/docs/ENV_VARIABLES.md`
 
 ### Quick Reference:
 ```bash
@@ -151,30 +121,13 @@ RESEND_API_KEY, FROM_EMAIL
 
 # Payments
 STRIPE_API_KEY, STRIPE_WEBHOOK_SECRET
-
-# Admin
-ADMIN_EMAIL, ADMIN_INITIAL_PASSWORD
 ```
-
-## Database Collections
-- `users` - User accounts with roles
-- `businesses` - Business profiles
-- `workers` - Worker profiles with schedule
-- `services` - Services with allowed_worker_ids
-- `bookings` - Appointments
-- `payment_transactions` - Stripe transactions
-- `ledger_entries` - Double-entry accounting
-- `settlements` - Monthly settlements
-- `audit_logs` - Admin action logs
-- `phone_codes` - SMS verification codes (with expiration)
-- `sent_emails` - Email log (for admin visibility)
-- `notifications` - Internal notifications
-
-## Mocked Features
-- SMS verification (use mock in development, Twilio in production)
-- Email sending (use mock, stored in DB for admin view)
-- Settlement payouts (manual "mark as paid")
 
 ## Test Credentials
 - **Business**: testspa@test.com / Test123!
 - **Admin**: zamorachapa50@gmail.com / RainbowLol3133!
+
+## Mocked Features
+- SMS (mock in dev, Twilio in prod)
+- Email (mock, stored in DB)
+- Settlement payouts (manual)
