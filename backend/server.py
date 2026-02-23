@@ -224,6 +224,7 @@ class BusinessCreate(BaseModel):
     zip_code: str
     latitude: Optional[float] = None
     longitude: Optional[float] = None
+    timezone: str = "America/Mexico_City"  # IANA timezone (required)
     # Legal documents
     ine_url: Optional[str] = None
     rfc: str
@@ -233,7 +234,7 @@ class BusinessCreate(BaseModel):
     # Business settings
     requires_deposit: bool = False
     deposit_amount: float = 50.0
-    min_time_between_appointments: int = 0  # minutes
+    min_time_between_appointments: int = 0  # minutes (buffer between appointments)
     service_radius_km: Optional[float] = None  # for home service
     plan_type: str = "basic"  # basic, premium
 
