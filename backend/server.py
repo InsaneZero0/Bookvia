@@ -403,6 +403,40 @@ class PaymentResponse(BaseModel):
     payment_type: str  # deposit, subscription, refund
     created_at: str
 
+# Transaction Models (Bookvia-specific)
+class TransactionCreate(BaseModel):
+    booking_id: str
+    amount: float
+    currency: str = "MXN"
+
+class TransactionResponse(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str
+    booking_id: str
+    user_id: str
+    business_id: str
+    stripe_session_id: Optional[str] = None
+    stripe_payment_intent_id: Optional[str] = None
+    amount_total: float
+    fee_amount: float  # 8% platform fee
+    payout_amount: float  # Amount for business (amount - fee)
+    currency: str = "MXN"
+    status: str  # TransactionStatus enum
+    refund_amount: Optional[float] = None
+    refund_reason: Optional[str] = None
+    cancelled_by: Optional[str] = None  # "user" or "business"
+    created_at: str
+    updated_at: Optional[str] = None
+    paid_at: Optional[str] = None
+    
+# Deposit checkout request
+class DepositCheckoutRequest(BaseModel):
+    booking_id: str
+
+# Cancel booking request
+class CancelBookingRequest(BaseModel):
+    reason: Optional[str] = None
+
 # Admin 2FA
 class Admin2FASetup(BaseModel):
     password: str
