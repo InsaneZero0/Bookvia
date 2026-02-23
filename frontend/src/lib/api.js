@@ -140,6 +140,14 @@ export const paymentsAPI = {
   createCheckoutSession: (data) => api.post('/payments/checkout/session', data),
 };
 
+// Business Finance API
+export const financeAPI = {
+  getSummary: () => api.get('/business/finance/summary'),
+  getTransactions: (params) => api.get('/business/finance/transactions', { params }),
+  getLedger: (params) => api.get('/business/finance/ledger', { params }),
+  getSettlements: (params) => api.get('/business/finance/settlements', { params }),
+};
+
 // Notifications API
 export const notificationsAPI = {
   getAll: (unreadOnly = false) => api.get('/notifications', { params: { unread_only: unreadOnly } }),
