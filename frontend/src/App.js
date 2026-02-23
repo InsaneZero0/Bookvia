@@ -99,6 +99,83 @@ function App() {
   );
 }
 
+// SEO Router - Determines if slugOrCategory is a category or business slug
+import { useState, useEffect } from 'react';
+import { useParams } from 'react-router-dom';
+import api from '@/api/api';
+
+// Category slugs that we know are categories
+const KNOWN_CATEGORIES = [
+  'belleza-estetica',
+  'salud',
+  'fitness-bienestar',
+  'spa-masajes',
+  'servicios-legales',
+  'consultoria',
+  'automotriz',
+  'veterinaria'
+];
+
+function SEORouter() {
+  const { country, city, slugOrCategory } = useParams();
+  const [isCategory, setIsCategory] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    // Quick check: if it's a known category, render CategoryPage immediately
+    if (KNOWN_CATEGORIES.includes(slugOrCategory.toLowerCase())) {
+      setIsCategory(true);
+      setLoading(false);
+      return;
+    }
+
+    // Otherwise, check with the API
+    const checkType = async () => {
+      try {
+        // Try to get categories and see if slug matches
+        const catRes = await api.get('/api/categories');
+        const isKnownCategory = catRes.data.some(
+          c => c.slug.toLowerCase() === slugOrCategory.toLowerCase()
+        );
+        
+        setIsCategory(isKnownCategory);
+      } catch (err) {
+        // If error, assume it's a business
+        setIsCategory(false);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    checkType();
+  }, [slugOrCategory]);
+
+  if (loading) {
+    return (
+      <Layout>
+        <div className="min-h-screen pt-20 bg-background">
+          <div className="container-app py-16">
+            <div className="animate-pulse">
+              <div className="h-12 bg-muted rounded w-1/2 mb-8"></div>
+              <div className="grid grid-cols-3 gap-4">
+                {[...Array(6)].map((_, i) => (
+                  <div key={i} className="h-48 bg-muted rounded-lg"></div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </Layout>
+    );
+  }
+
+  if (isCategory) {
+    return <Layout><CategoryPage /></Layout>;
+  }
+
+  return <Layout><BusinessSEOPage /></Layout>;
+}
+
 // Placeholder pages
 function ForBusinessPage() {
   return (
