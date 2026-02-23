@@ -1678,26 +1678,6 @@ async def complete_booking(booking_id: str, token_data: TokenData = Depends(requ
     
     return {"message": "Booking completed"}
 
-@bookings_router.put("/{booking_id}/no-show")
-async def mark_no_show(booking_id: str, token_data: TokenData = Depends(require_business)):
-    user = await db.users.find_one({"id": token_data.user_id})
-    booking = await db.bookings.find_one({"id": booking_id, "business_id": user.get("business_id")})
-    if not booking:
-        raise HTTPException(status_code=404, detail="Booking not found")
-    
-    await db.bookings.update_one(
-        {"id": booking_id},
-        {"$set": {"status": AppointmentStatus.NO_SHOW}}
-    )
-    
-    # Update user stats
-    await db.users.update_one(
-        {"id": booking["user_id"]},
-        {"$inc": {"active_appointments_count": -1, "cancellation_count": 1}}
-    )
-    
-    return {"message": "Marked as no-show"}
-
 # ========================== REVIEW ROUTES ==========================
 
 @reviews_router.post("/", response_model=ReviewResponse)
