@@ -1008,6 +1008,10 @@ async def register_business(business: BusinessCreate):
     user_id = generate_id()
     business_id = generate_id()
     slug = generate_slug(business.name) + "-" + business_id[:8]
+    city_slug = generate_slug(business.city)
+    
+    # Normalize country code
+    country_code = business.country.upper()[:2] if business.country else "MX"
     
     # Calculate trial end (3 months free)
     trial_ends = (datetime.now(timezone.utc) + timedelta(days=90)).isoformat()
@@ -1024,8 +1028,10 @@ async def register_business(business: BusinessCreate):
         "category_id": business.category_id,
         "address": business.address,
         "city": business.city,
+        "city_slug": city_slug,
         "state": business.state,
         "country": business.country,
+        "country_code": country_code,
         "zip_code": business.zip_code,
         "latitude": business.latitude,
         "longitude": business.longitude,
