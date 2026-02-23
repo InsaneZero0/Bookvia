@@ -3926,6 +3926,19 @@ async def toggle_featured(business_id: str, request: Request, featured: bool = T
     
     return {"message": f"Business {'featured' if featured else 'unfeatured'}"}
 
+# Admin: View sent emails
+@admin_router.get("/emails")
+async def get_sent_emails(
+    limit: int = 50,
+    status: Optional[str] = None,
+    to: Optional[str] = None,
+    token_data: TokenData = Depends(require_admin)
+):
+    """Admin: Get sent emails from the system"""
+    from services.email import get_sent_emails as fetch_emails
+    emails = await fetch_emails(limit=limit, status=status, to=to)
+    return emails
+
 # Payment hold/release endpoints for admin
 @admin_router.put("/payments/{payment_id}/hold")
 async def hold_payment(payment_id: str, request: Request, reason: str = "", token_data: TokenData = Depends(require_admin)):
