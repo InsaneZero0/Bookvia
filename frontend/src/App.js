@@ -82,6 +82,12 @@ function App() {
               <Route path="/admin/login" element={<AdminLoginPage />} />
               <Route path="/admin" element={<Layout showFooter={false}><AdminDashboardPage /></Layout>} />
               
+              {/* SEO Pages - Dynamic country/city/category routes */}
+              {/* Order matters: more specific routes first */}
+              <Route path="/:country/:city/:slugOrCategory" element={<SEORouter />} />
+              <Route path="/:country/:city" element={<Layout><CityPage /></Layout>} />
+              <Route path="/:country" element={<Layout><CountryPage /></Layout>} />
+              
               {/* Catch all */}
               <Route path="*" element={<Layout><NotFoundPage /></Layout>} />
             </Routes>
