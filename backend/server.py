@@ -2054,17 +2054,76 @@ async def create_booking(booking: BookingCreate, token_data: TokenData = Depends
     if not service:
         raise HTTPException(status_code=404, detail="Service not found")
     
+    # Get allowed workers for this service
+    allowed_worker_ids = service.get("allowed_worker_ids", [])
+    
     # Determine worker
     worker_id = booking.worker_id
     if not worker_id:
         # Auto-assign to worker with least appointments
-        workers = await db.workers.find({"business_id": booking.business_id, "active": True}).to_list(100)
-        if not workers:
-            raise HTTPException(status_code=400, detail="No workers available")
+        worker_filter = {"business_id": booking.business_id, "active": True}
         
-        # Count appointments per worker for this date (include HOLD status)
-        worker_counts = {}
+        # If service has specific workers, filter by them
+        if allowed_worker_ids:
+            worker_filter["id"] = {"$in": allowed_worker_ids}
+        
+        workers = await db.workers.find(worker_filter).to_list(100)
+        if not workers:
+            raise HTTPException(status_code=400, detail="No workers available for this service")
+        
+        # Parse booking date and time
+        booking_date_str = booking.date
+        booking_time_str = booking.time
+        date_obj = datetime.strptime(booking_date_str, "%Y-%m-%d")
+        day_of_week = str(date_obj.weekday())
+        slot_start = datetime.strptime(booking_time_str, "%H:%M")
+        slot_end = slot_start + timedelta(minutes=service["duration_minutes"])
+        
+        # Filter workers by availability on this specific slot
+        eligible_workers = []
         for w in workers:
+            # Check schedule
+            schedule = w.get("schedule", {}).get(day_of_week)
+            if not schedule or not schedule.get("is_available", True):
+                continue
+            
+            # Check if slot falls within any block
+            blocks = schedule.get("blocks", [])
+            if not blocks:
+                # Legacy support
+                if schedule.get("start_time") and schedule.get("end_time"):
+                    blocks = [{"start_time": schedule["start_time"], "end_time": schedule["end_time"]}]
+            
+            slot_in_schedule = False
+            for block in blocks:
+                block_start = datetime.strptime(block["start_time"], "%H:%M")
+                block_end = datetime.strptime(block["end_time"], "%H:%M")
+                if block_start <= slot_start and slot_end <= block_end:
+                    slot_in_schedule = True
+                    break
+            
+            if not slot_in_schedule:
+                continue
+            
+            # Check exceptions
+            is_blocked = False
+            for exc in w.get("exceptions", []):
+                blocking, _ = is_exception_blocking(exc, booking_date_str, slot_start, slot_end)
+                if blocking:
+                    is_blocked = True
+                    break
+            
+            if is_blocked:
+                continue
+            
+            eligible_workers.append(w)
+        
+        if not eligible_workers:
+            raise HTTPException(status_code=400, detail="No workers available for this time slot")
+        
+        # Count appointments per eligible worker for this date (include HOLD status)
+        worker_counts = {}
+        for w in eligible_workers:
             count = await db.bookings.count_documents({
                 "worker_id": w["id"],
                 "date": booking.date,
@@ -2072,25 +2131,40 @@ async def create_booking(booking: BookingCreate, token_data: TokenData = Depends
             })
             worker_counts[w["id"]] = count
         
+        # Choose worker with least load
         worker_id = min(worker_counts, key=worker_counts.get)
+    else:
+        # Validate specific worker can perform this service
+        if allowed_worker_ids and worker_id not in allowed_worker_ids:
+            raise HTTPException(status_code=400, detail="Selected worker cannot perform this service")
     
     worker = await db.workers.find_one({"id": worker_id})
     if not worker:
         raise HTTPException(status_code=404, detail="Worker not found")
     
-    # Check if slot is already taken (including HOLD)
-    existing_booking = await db.bookings.find_one({
-        "worker_id": worker_id,
-        "date": booking.date,
-        "time": booking.time,
-        "status": {"$in": [AppointmentStatus.HOLD, AppointmentStatus.CONFIRMED]}
-    })
-    if existing_booking:
-        raise HTTPException(status_code=409, detail="Slot already taken")
+    if not worker.get("active", True):
+        raise HTTPException(status_code=400, detail="Worker is not active")
     
-    # Calculate end time
+    # Check if slot is already taken (including HOLD) with buffer consideration
+    buffer_minutes = business.get("min_time_between_appointments", 0)
     start_time_dt = datetime.strptime(booking.time, "%H:%M")
     end_time_dt = start_time_dt + timedelta(minutes=service["duration_minutes"])
+    
+    # Get all bookings for this worker on this date
+    existing_bookings = await db.bookings.find({
+        "worker_id": worker_id,
+        "date": booking.date,
+        "status": {"$in": [AppointmentStatus.HOLD, AppointmentStatus.CONFIRMED]}
+    }).to_list(100)
+    
+    for existing in existing_bookings:
+        ex_start = datetime.strptime(existing["time"], "%H:%M")
+        ex_end = datetime.strptime(existing["end_time"], "%H:%M")
+        ex_end_with_buffer = ex_end + timedelta(minutes=buffer_minutes)
+        
+        # Check overlap with buffer
+        if not (end_time_dt <= ex_start or start_time_dt >= ex_end_with_buffer):
+            raise HTTPException(status_code=409, detail="Slot conflicts with existing booking")
     
     # Calculate deposit amount (minimum 50 MXN)
     deposit_amount = max(
