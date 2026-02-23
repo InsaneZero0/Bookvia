@@ -1,0 +1,26 @@
+# Bookvia Robots.txt
+# This is a static fallback - dynamic version available at /api/seo/robots.txt
+
+User-agent: *
+Allow: /
+
+# SEO pages
+Allow: /mx/
+Allow: /us/
+Allow: /es/
+
+# Sitemap
+Sitemap: https://bookvia.com/api/seo/sitemap.xml
+
+# Disallow admin and API (for crawlers that don't read it from backend)
+Disallow: /admin
+Disallow: /api/
+Disallow: /dashboard
+Disallow: /business/dashboard
+Disallow: /business/finance
+Disallow: /business/team
+
+# Disallow auth pages
+Disallow: /login
+Disallow: /register
+Disallow: /business/register
