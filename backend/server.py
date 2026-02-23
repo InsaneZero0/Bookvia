@@ -287,6 +287,26 @@ class BusinessUpdate(BaseModel):
     logo_url: Optional[str] = None
 
 # Worker Models
+
+class ScheduleBlock(BaseModel):
+    """A time block within a day (e.g., morning shift, lunch break)"""
+    start_time: str  # "09:00"
+    end_time: str    # "14:00"
+
+class DaySchedule(BaseModel):
+    """Schedule for a single day with multiple blocks"""
+    is_available: bool = True
+    blocks: List[ScheduleBlock] = []  # Multiple blocks per day (e.g., 09:00-14:00, 16:00-20:00)
+
+class WorkerException(BaseModel):
+    """Exception (vacation/block) with date range support"""
+    start_date: str  # "2024-01-15"
+    end_date: str    # "2024-01-15" (same day) or "2024-01-20" (range)
+    start_time: Optional[str] = None  # "09:00" - if null, full day
+    end_time: Optional[str] = None    # "12:00" - if null, full day
+    reason: Optional[str] = None      # "Vacaciones", "Cita médica", etc.
+    exception_type: str = "block"     # "vacation" | "block"
+
 class WorkerCreate(BaseModel):
     name: str
     email: Optional[str] = None
@@ -294,6 +314,14 @@ class WorkerCreate(BaseModel):
     photo_url: Optional[str] = None
     bio: Optional[str] = None
     service_ids: List[str] = []
+
+class WorkerUpdate(BaseModel):
+    name: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    photo_url: Optional[str] = None
+    bio: Optional[str] = None
+    service_ids: Optional[List[str]] = None
 
 class WorkerResponse(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -305,16 +333,19 @@ class WorkerResponse(BaseModel):
     photo_url: Optional[str] = None
     bio: Optional[str] = None
     service_ids: List[str] = []
-    schedule: Dict[str, Any] = {}
-    blocked_slots: List[Dict[str, Any]] = []
-    vacation_dates: List[str] = []
+    schedule: Dict[str, Any] = {}  # {"0": {"is_available": true, "blocks": [{"start_time": "09:00", "end_time": "18:00"}]}}
+    exceptions: List[Dict[str, Any]] = []  # WorkerException as dict
     active: bool = True
+    created_at: Optional[str] = None
+    deactivated_at: Optional[str] = None
 
-class WorkerSchedule(BaseModel):
-    day_of_week: int  # 0-6, Monday=0
-    start_time: str  # "09:00"
-    end_time: str  # "18:00"
-    is_available: bool = True
+class WorkerScheduleUpdate(BaseModel):
+    """Update schedule for multiple days"""
+    schedule: Dict[str, DaySchedule]  # {"0": DaySchedule, "1": DaySchedule, ...}
+
+class WorkerExceptionAdd(BaseModel):
+    """Add an exception (vacation/block)"""
+    exception: WorkerException
 
 # Service Models
 class ServiceCreate(BaseModel):
