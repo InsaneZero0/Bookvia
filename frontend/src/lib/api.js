@@ -93,22 +93,23 @@ export const businessesAPI = {
   getById: (id) => api.get(`/businesses/${id}`),
   updateMe: (data) => api.put('/businesses/me', data),
   getDashboard: () => api.get('/businesses/me/dashboard'),
-  // Workers
+  // Workers (for specific business - public)
   getWorkers: (businessId, includeInactive = false) => 
     api.get(`/businesses/${businessId}/workers`, { params: { include_inactive: includeInactive } }),
+  // Workers (for authenticated business)
   getMyWorkers: (includeInactive = false) => 
-    api.get('/businesses/workers', { params: { include_inactive: includeInactive } }),
-  getWorker: (workerId) => api.get(`/businesses/workers/${workerId}`),
-  createWorker: (data) => api.post('/businesses/workers', data),
-  updateWorker: (workerId, data) => api.put(`/businesses/workers/${workerId}`, data),
-  deleteWorker: (workerId) => api.delete(`/businesses/workers/${workerId}`),
-  reactivateWorker: (workerId) => api.put(`/businesses/workers/${workerId}/reactivate`),
+    api.get('/businesses/my/workers', { params: { include_inactive: includeInactive } }),
+  getWorker: (workerId) => api.get(`/businesses/my/workers/${workerId}`),
+  createWorker: (data) => api.post('/businesses/my/workers', data),
+  updateWorker: (workerId, data) => api.put(`/businesses/my/workers/${workerId}`, data),
+  deleteWorker: (workerId) => api.delete(`/businesses/my/workers/${workerId}`),
+  reactivateWorker: (workerId) => api.put(`/businesses/my/workers/${workerId}/reactivate`),
   updateWorkerSchedule: (workerId, schedule) => 
-    api.put(`/businesses/workers/${workerId}/schedule`, { schedule }),
+    api.put(`/businesses/my/workers/${workerId}/schedule`, { schedule }),
   addWorkerException: (workerId, exception) => 
-    api.post(`/businesses/workers/${workerId}/exceptions`, { exception }),
+    api.post(`/businesses/my/workers/${workerId}/exceptions`, { exception }),
   removeWorkerException: (workerId, exceptionId) => 
-    api.delete(`/businesses/workers/${workerId}/exceptions/${exceptionId}`),
+    api.delete(`/businesses/my/workers/${workerId}/exceptions/${exceptionId}`),
 };
 
 // Services API
