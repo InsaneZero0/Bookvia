@@ -337,12 +337,23 @@ class BookingResponse(BaseModel):
     deposit_amount: Optional[float] = None
     deposit_paid: bool = False
     payment_id: Optional[str] = None
+    transaction_id: Optional[str] = None
+    stripe_session_id: Optional[str] = None
+    hold_expires_at: Optional[str] = None
+    total_amount: Optional[float] = None
     created_at: str
+    confirmed_at: Optional[str] = None
+    cancelled_at: Optional[str] = None
+    cancelled_by: Optional[str] = None
+    cancellation_reason: Optional[str] = None
     # Populated fields
     business_name: Optional[str] = None
     service_name: Optional[str] = None
     worker_name: Optional[str] = None
     user_name: Optional[str] = None
+    # Computed fields
+    can_cancel: bool = True
+    hours_until_appointment: Optional[float] = None
 
 # Review Models
 class ReviewCreate(BaseModel):
