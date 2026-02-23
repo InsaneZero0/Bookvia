@@ -710,6 +710,141 @@ async def create_audit_log(
     logger.info(f"[AUDIT] {admin_email} - {action} - {target_type}:{target_id}")
     return audit_log
 
+# ========================== LEDGER HELPERS ==========================
+
+def amount_to_cents(amount: float) -> int:
+    """Convert decimal amount to cents (integer)"""
+    return int(round(amount * 100))
+
+def cents_to_amount(cents: int) -> float:
+    """Convert cents to decimal amount"""
+    return round(cents / 100, 2)
+
+async def create_ledger_entry(
+    transaction_id: str,
+    business_id: str,
+    direction: str,
+    account: str,
+    amount: float,
+    currency: str = "MXN",
+    country: str = "MX",
+    description: str = None,
+    booking_id: str = None,
+    created_by: str = "system"
+) -> dict:
+    """Create a ledger entry for double-entry bookkeeping"""
+    entry = {
+        "id": generate_id(),
+        "transaction_id": transaction_id,
+        "booking_id": booking_id,
+        "business_id": business_id,
+        "direction": direction,
+        "account": account,
+        "amount_cents": amount_to_cents(amount),
+        "amount": round(amount, 2),
+        "currency": currency,
+        "country": country,
+        "entry_status": LedgerEntryStatus.POSTED,
+        "description": description,
+        "related_appointment_id": booking_id,
+        "created_by": created_by,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    await db.ledger_entries.insert_one(entry)
+    logger.info(f"[LEDGER] {direction} {amount} {currency} - {account} - business:{business_id}")
+    return entry
+
+async def create_transaction_ledger_entries(transaction: dict, status: str):
+    """Create all ledger entries for a transaction based on its status"""
+    tx_id = transaction["id"]
+    business_id = transaction["business_id"]
+    booking_id = transaction.get("booking_id")
+    amount = transaction["amount_total"]
+    fee = transaction["fee_amount"]
+    payout = transaction["payout_amount"]
+    
+    if status == TransactionStatus.PAID:
+        # Payment received: CREDIT business_revenue, DEBIT platform_fee
+        await create_ledger_entry(
+            tx_id, business_id, LedgerDirection.CREDIT, LedgerAccount.BUSINESS_REVENUE,
+            amount, description="Anticipo recibido", booking_id=booking_id
+        )
+        await create_ledger_entry(
+            tx_id, business_id, LedgerDirection.DEBIT, LedgerAccount.PLATFORM_FEE,
+            fee, description="Comisión Bookvia 8%", booking_id=booking_id
+        )
+    
+    elif status == TransactionStatus.REFUND_PARTIAL:
+        # Partial refund (>24h): DEBIT refund (92% of original)
+        refund_amount = transaction.get("refund_amount", payout)
+        await create_ledger_entry(
+            tx_id, business_id, LedgerDirection.DEBIT, LedgerAccount.REFUND,
+            refund_amount, description="Reembolso parcial cliente >24h", booking_id=booking_id
+        )
+    
+    elif status == TransactionStatus.REFUND_FULL:
+        # Full refund (business cancels): DEBIT full amount
+        await create_ledger_entry(
+            tx_id, business_id, LedgerDirection.DEBIT, LedgerAccount.REFUND,
+            amount, description="Reembolso completo (negocio canceló)", booking_id=booking_id
+        )
+    
+    elif status == TransactionStatus.BUSINESS_CANCEL_FEE:
+        # Business cancel penalty: DEBIT penalty
+        penalty = transaction.get("fee_amount", fee)
+        await create_ledger_entry(
+            tx_id, business_id, LedgerDirection.DEBIT, LedgerAccount.PENALTY,
+            penalty, description="Penalidad por cancelación del negocio 8%", booking_id=booking_id
+        )
+    
+    elif status == TransactionStatus.NO_SHOW_PAYOUT:
+        # No-show: business keeps payout (already have PAID entries, just status change)
+        pass  # Ledger entries already created when PAID
+
+async def calculate_business_ledger_summary(business_id: str, period_start: str = None, period_end: str = None) -> dict:
+    """Calculate financial summary from ledger entries"""
+    filters = {"business_id": business_id, "entry_status": LedgerEntryStatus.POSTED}
+    
+    if period_start and period_end:
+        filters["created_at"] = {"$gte": period_start, "$lte": period_end}
+    
+    entries = await db.ledger_entries.find(filters, {"_id": 0}).to_list(10000)
+    
+    # Calculate totals by account and direction
+    gross_revenue = 0  # business_revenue CREDIT
+    total_fees = 0     # platform_fee DEBIT
+    total_refunds = 0  # refund DEBIT
+    total_penalties = 0  # penalty DEBIT
+    total_payouts = 0   # payout CREDIT (when settled)
+    
+    for entry in entries:
+        amount = entry["amount"]
+        account = entry["account"]
+        direction = entry["direction"]
+        
+        if account == LedgerAccount.BUSINESS_REVENUE and direction == LedgerDirection.CREDIT:
+            gross_revenue += amount
+        elif account == LedgerAccount.PLATFORM_FEE and direction == LedgerDirection.DEBIT:
+            total_fees += amount
+        elif account == LedgerAccount.REFUND and direction == LedgerDirection.DEBIT:
+            total_refunds += amount
+        elif account == LedgerAccount.PENALTY and direction == LedgerDirection.DEBIT:
+            total_penalties += amount
+        elif account == LedgerAccount.PAYOUT and direction == LedgerDirection.CREDIT:
+            total_payouts += amount
+    
+    net_earnings = gross_revenue - total_fees - total_refunds - total_penalties
+    
+    return {
+        "gross_revenue": round(gross_revenue, 2),
+        "total_fees": round(total_fees, 2),
+        "total_refunds": round(total_refunds, 2),
+        "total_penalties": round(total_penalties, 2),
+        "net_earnings": round(net_earnings, 2),
+        "total_payouts": round(total_payouts, 2),
+        "pending_payout": round(net_earnings - total_payouts, 2)
+    }
+
 # ========================== AUTH ROUTES ==========================
 
 @auth_router.post("/register", response_model=dict)
