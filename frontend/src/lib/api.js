@@ -146,11 +146,15 @@ export const adminAPI = {
   getPendingBusinesses: () => api.get('/admin/businesses/pending'),
   approveBusiness: (id) => api.put(`/admin/businesses/${id}/approve`),
   rejectBusiness: (id, reason) => api.put(`/admin/businesses/${id}/reject`, null, { params: { reason } }),
-  suspendBusiness: (id) => api.put(`/admin/businesses/${id}/suspend`),
-  suspendUser: (id, days) => api.put(`/admin/users/${id}/suspend`, null, { params: { days } }),
-  deleteReview: (id) => api.delete(`/admin/reviews/${id}`),
+  suspendBusiness: (id, reason) => api.put(`/admin/businesses/${id}/suspend`, null, { params: { reason } }),
+  suspendUser: (id, days, reason) => api.put(`/admin/users/${id}/suspend`, null, { params: { days, reason } }),
+  deleteReview: (id, reason) => api.delete(`/admin/reviews/${id}`, { params: { reason } }),
   getAuditLogs: (params) => api.get('/admin/audit-logs', { params }),
   toggleFeatured: (id, featured) => api.put(`/admin/businesses/${id}/feature`, null, { params: { featured } }),
+  // Payment management
+  holdPayment: (id, reason) => api.put(`/admin/payments/${id}/hold`, null, { params: { reason } }),
+  releasePayment: (id) => api.put(`/admin/payments/${id}/release`),
+  getHeldPayments: (params) => api.get('/admin/payments/held', { params }),
 };
 
 // Utility API
