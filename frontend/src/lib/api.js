@@ -205,8 +205,22 @@ export const adminAPI = {
 
 // Utility API
 export const utilityAPI = {
-  getCities: () => api.get('/cities'),
+  getCities: (countryCode = 'MX') => api.get('/cities', { params: { country_code: countryCode } }),
   seed: () => api.post('/seed'),
+  seedCountries: () => api.post('/seed/countries'),
+};
+
+// SEO API
+export const seoAPI = {
+  getCountries: () => api.get('/seo/countries'),
+  getCities: (countryCode) => api.get(`/seo/cities/${countryCode}`),
+  getCategories: () => api.get('/seo/categories'),
+  getMeta: (pageType, slug, country = 'mx', city = null) => 
+    api.get(`/seo/meta/${pageType}/${slug}`, { params: { country, city } }),
+  getBusinesses: (country, city, category = null, page = 1) => 
+    api.get(`/seo/businesses/${country}/${city}`, { params: { category, page } }),
+  getBusiness: (country, city, slug) => 
+    api.get(`/seo/business/${country}/${city}/${slug}`),
 };
 
 export default api;
