@@ -86,7 +86,7 @@ export default function CategoryPage() {
       <SEOHead
         title={`${categoryName} en ${cityName} | Bookvia`}
         description={`Encuentra los mejores servicios de ${categoryName.toLowerCase()} en ${cityName}. Reserva online fácil y rápido.`}
-        canonical={`/${country.toLowerCase()}/${city.toLowerCase()}/${category.toLowerCase()}`}
+        canonical={`/${country.toLowerCase()}/${city.toLowerCase()}/${categorySlug.toLowerCase()}`}
         keywords={`${categoryName.toLowerCase()}, ${cityName}, reservas, citas`}
       />
 
@@ -224,7 +224,7 @@ export default function CategoryPage() {
                   {[...Array(totalPages)].map((_, i) => (
                     <Link
                       key={i}
-                      to={`/${country.toLowerCase()}/${city.toLowerCase()}/${category.toLowerCase()}?page=${i + 1}`}
+                      to={`/${country.toLowerCase()}/${city.toLowerCase()}/${categorySlug.toLowerCase()}?page=${i + 1}`}
                       className={`w-10 h-10 flex items-center justify-center rounded-full transition-colors ${
                         page === i + 1
                           ? 'bg-coral text-white'
@@ -268,7 +268,7 @@ export default function CategoryPage() {
           <div className="flex flex-wrap gap-3">
             {/* Show other categories (excluding current) */}
             {['belleza-estetica', 'salud', 'spa-masajes', 'fitness-bienestar']
-              .filter(slug => slug !== category.toLowerCase())
+              .filter(slug => slug !== categorySlug.toLowerCase())
               .slice(0, 4)
               .map((catSlug) => (
                 <Link
