@@ -1649,7 +1649,7 @@ async def update_worker_schedule(
     updated = await db.workers.find_one({"id": worker_id}, {"_id": 0})
     return WorkerResponse(**updated)
 
-@businesses_router.post("/workers/{worker_id}/exceptions")
+@businesses_router.post("/my/workers/{worker_id}/exceptions")
 async def add_worker_exception(
     worker_id: str,
     exception_data: WorkerExceptionAdd,
