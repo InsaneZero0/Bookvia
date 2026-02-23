@@ -113,6 +113,28 @@ PLATFORM_FEE_PERCENT = 0.08  # 8%
 HOLD_EXPIRATION_MINUTES = 30
 MIN_DEPOSIT_AMOUNT = 50.0  # MXN
 
+# Ledger Enums
+class LedgerDirection(str, Enum):
+    DEBIT = "debit"
+    CREDIT = "credit"
+
+class LedgerAccount(str, Enum):
+    BUSINESS_REVENUE = "business_revenue"
+    PLATFORM_FEE = "platform_fee"
+    REFUND = "refund"
+    PENALTY = "penalty"
+    PAYOUT = "payout"
+
+class LedgerEntryStatus(str, Enum):
+    POSTED = "posted"
+    REVERSED = "reversed"
+
+class SettlementStatus(str, Enum):
+    PENDING = "pending"
+    PAID = "paid"
+    HELD = "held"
+    FAILED = "failed"
+
 class AuditAction(str, Enum):
     BUSINESS_APPROVE = "business_approve"
     BUSINESS_REJECT = "business_reject"
@@ -124,6 +146,10 @@ class AuditAction(str, Enum):
     PAYMENT_RELEASE = "payment_release"
     ADMIN_LOGIN = "admin_login"
     ADMIN_2FA_SETUP = "admin_2fa_setup"
+    PAYOUT_HOLD = "payout_hold"
+    PAYOUT_RELEASE = "payout_release"
+    SETTLEMENT_GENERATE = "settlement_generate"
+    SETTLEMENT_MARK_PAID = "settlement_mark_paid"
 
 # ========================== MODELS ==========================
 
