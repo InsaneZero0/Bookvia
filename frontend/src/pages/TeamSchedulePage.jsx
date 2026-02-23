@@ -81,15 +81,18 @@ export default function TeamSchedulePage() {
       navigate('/business/login');
       return;
     }
-    loadData();
-  }, [isAuthenticated, isBusiness]);
+    if (business?.id) {
+      loadData();
+    }
+  }, [isAuthenticated, isBusiness, business?.id]);
 
   const loadData = async () => {
+    if (!business?.id) return;
     try {
       setLoading(true);
       const [workersRes, servicesRes] = await Promise.all([
         businessesAPI.getMyWorkers(true),
-        servicesAPI.getByBusiness(business?.id || ''),
+        servicesAPI.getByBusiness(business.id),
       ]);
       setWorkers(workersRes.data);
       setServices(servicesRes.data);
