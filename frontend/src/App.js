@@ -102,7 +102,7 @@ function App() {
 // SEO Router - Determines if slugOrCategory is a category or business slug
 import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import api from '@/api/api';
+import { categoriesAPI } from '@/lib/api';
 
 // Category slugs that we know are categories
 const KNOWN_CATEGORIES = [
@@ -133,7 +133,7 @@ function SEORouter() {
     const checkType = async () => {
       try {
         // Try to get categories and see if slug matches
-        const catRes = await api.get('/api/categories');
+        const catRes = await categoriesAPI.getAll();
         const isKnownCategory = catRes.data.some(
           c => c.slug.toLowerCase() === slugOrCategory.toLowerCase()
         );
