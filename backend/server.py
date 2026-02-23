@@ -98,6 +98,18 @@ class PaymentStatus(str, Enum):
     REFUNDED = "refunded"
     FAILED = "failed"
 
+class AuditAction(str, Enum):
+    BUSINESS_APPROVE = "business_approve"
+    BUSINESS_REJECT = "business_reject"
+    BUSINESS_SUSPEND = "business_suspend"
+    USER_SUSPEND = "user_suspend"
+    REVIEW_DELETE = "review_delete"
+    BUSINESS_FEATURE = "business_feature"
+    PAYMENT_HOLD = "payment_hold"
+    PAYMENT_RELEASE = "payment_release"
+    ADMIN_LOGIN = "admin_login"
+    ADMIN_2FA_SETUP = "admin_2fa_setup"
+
 # ========================== MODELS ==========================
 
 class TokenData(BaseModel):
