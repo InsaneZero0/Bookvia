@@ -75,6 +75,45 @@ security = HTTPBearer(auto_error=False)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+# ========================== HEALTH CHECK ==========================
+
+@api_router.get("/health", tags=["System"])
+async def health_check():
+    """Health check endpoint with configuration status"""
+    # Check database connection
+    try:
+        await db.command("ping")
+        db_status = "connected"
+    except Exception as e:
+        db_status = f"error: {str(e)}"
+    
+    # Check service configurations
+    twilio_configured = all([
+        os.environ.get("TWILIO_ACCOUNT_SID"),
+        os.environ.get("TWILIO_AUTH_TOKEN"),
+        os.environ.get("TWILIO_PHONE_NUMBER")
+    ])
+    
+    resend_configured = bool(os.environ.get("RESEND_API_KEY"))
+    
+    stripe_key = os.environ.get("STRIPE_API_KEY", "")
+    stripe_status = "not configured"
+    if stripe_key:
+        stripe_status = "live" if stripe_key.startswith("sk_live_") else "test"
+    
+    return {
+        "status": "healthy" if db_status == "connected" else "degraded",
+        "version": "1.0.0",
+        "environment": ENV,
+        "database": db_status,
+        "config": {
+            "sms": "twilio" if twilio_configured else "mock",
+            "email": "resend" if resend_configured else "mock",
+            "stripe": stripe_status,
+            "base_url": os.environ.get("BASE_URL", "auto-detect")
+        }
+    }
+
 # ========================== ENUMS ==========================
 
 class UserRole(str, Enum):
