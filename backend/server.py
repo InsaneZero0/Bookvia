@@ -2016,7 +2016,7 @@ async def toggle_featured(business_id: str, featured: bool = True, token_data: T
 
 @api_router.post("/seed")
 async def seed_data():
-    """Seed initial categories"""
+    """Seed initial categories and admin user from environment variables"""
     categories = [
         {"id": generate_id(), "name_es": "Belleza y Estética", "name_en": "Beauty & Aesthetics", "slug": "belleza-estetica", "icon": "Sparkles", "image_url": "https://images.pexels.com/photos/853427/pexels-photo-853427.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940"},
         {"id": generate_id(), "name_es": "Salud", "name_en": "Health", "slug": "salud", "icon": "Heart", "image_url": "https://images.pexels.com/photos/4270095/pexels-photo-4270095.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940"},
@@ -2035,23 +2035,52 @@ async def seed_data():
     
     await db.categories.insert_many(categories)
     
-    # Create admin user
+    # Create admin user from environment variables - NEVER hardcode credentials
+    admin_email = ADMIN_EMAIL
+    admin_password = ADMIN_INITIAL_PASSWORD
+    
+    if not admin_email or not admin_password:
+        logger.warning("ADMIN_EMAIL or ADMIN_INITIAL_PASSWORD not set in environment variables")
+        return {
+            "message": "Categories seeded. Admin not created - set ADMIN_EMAIL and ADMIN_INITIAL_PASSWORD in environment",
+            "admin_created": False
+        }
+    
+    # Check if admin already exists
+    existing_admin = await db.users.find_one({"email": admin_email})
+    if existing_admin:
+        return {
+            "message": "Categories seeded. Admin already exists",
+            "admin_created": False,
+            "admin_email": admin_email
+        }
+    
     admin_doc = {
         "id": generate_id(),
-        "email": "admin@bookvia.com",
-        "password_hash": hash_password("admin123"),
+        "email": admin_email,
+        "password_hash": hash_password(admin_password),
         "full_name": "Admin Bookvia",
         "phone": "+521234567890",
         "phone_verified": True,
         "role": UserRole.ADMIN,
-        "totp_enabled": False,
+        "totp_enabled": False,  # Must be enabled on first login
+        "totp_secret": None,
+        "backup_codes": [],
+        "must_change_password": False,  # Set to True if using temp password
         "preferred_language": "es",
         "created_at": datetime.now(timezone.utc).isoformat()
     }
     
     await db.users.insert_one(admin_doc)
     
-    return {"message": "Seed data created", "admin_email": "admin@bookvia.com", "admin_password": "admin123"}
+    logger.info(f"Admin user created with email: {admin_email}")
+    
+    return {
+        "message": "Seed data created successfully",
+        "admin_created": True,
+        "admin_email": admin_email,
+        "note": "2FA setup required on first admin login"
+    }
 
 # ========================== CITIES ==========================
 
