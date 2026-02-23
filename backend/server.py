@@ -1821,6 +1821,643 @@ async def get_business_reviews(business_id: str, page: int = 1, limit: int = 20)
 
 # ========================== PAYMENT ROUTES ==========================
 
+# Helper to calculate fees
+def calculate_fees(amount: float) -> dict:
+    """Calculate platform fee and payout amount"""
+    fee_amount = round(amount * PLATFORM_FEE_PERCENT, 2)
+    payout_amount = round(amount - fee_amount, 2)
+    return {"fee_amount": fee_amount, "payout_amount": payout_amount}
+
+# Create deposit checkout session
+@payments_router.post("/deposit/checkout")
+async def create_deposit_checkout(
+    request: Request, 
+    checkout_req: DepositCheckoutRequest, 
+    token_data: TokenData = Depends(require_auth)
+):
+    """Create Stripe Checkout session for booking deposit"""
+    from emergentintegrations.payments.stripe.checkout import StripeCheckout, CheckoutSessionRequest
+    
+    # Get booking
+    booking = await db.bookings.find_one({"id": checkout_req.booking_id})
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    
+    # Verify ownership
+    if booking["user_id"] != token_data.user_id:
+        raise HTTPException(status_code=403, detail="Not your booking")
+    
+    # Check status
+    if booking["status"] != AppointmentStatus.HOLD:
+        raise HTTPException(status_code=400, detail=f"Booking status is {booking['status']}, cannot pay")
+    
+    # Check expiration
+    hold_expires = datetime.fromisoformat(booking["hold_expires_at"].replace('Z', '+00:00'))
+    if hold_expires < datetime.now(timezone.utc):
+        # Mark as expired
+        await db.bookings.update_one(
+            {"id": checkout_req.booking_id},
+            {"$set": {"status": AppointmentStatus.EXPIRED}}
+        )
+        await db.users.update_one(
+            {"id": booking["user_id"]},
+            {"$inc": {"active_appointments_count": -1}}
+        )
+        raise HTTPException(status_code=400, detail="Hold expired. Please create a new booking.")
+    
+    # Check for existing transaction (idempotency)
+    existing_tx = await db.transactions.find_one({
+        "booking_id": checkout_req.booking_id,
+        "status": {"$in": [TransactionStatus.CREATED, TransactionStatus.PAID]}
+    })
+    if existing_tx and existing_tx.get("stripe_session_id"):
+        # Return existing session if still valid
+        return {"url": f"https://checkout.stripe.com/pay/{existing_tx['stripe_session_id']}", 
+                "session_id": existing_tx["stripe_session_id"],
+                "existing": True}
+    
+    # Get business
+    business = await db.businesses.find_one({"id": booking["business_id"]})
+    service = await db.services.find_one({"id": booking["service_id"]})
+    
+    deposit_amount = max(booking.get("deposit_amount", MIN_DEPOSIT_AMOUNT), MIN_DEPOSIT_AMOUNT)
+    fees = calculate_fees(deposit_amount)
+    
+    # Create transaction record
+    transaction_id = generate_id()
+    transaction_doc = {
+        "id": transaction_id,
+        "booking_id": checkout_req.booking_id,
+        "user_id": token_data.user_id,
+        "business_id": booking["business_id"],
+        "stripe_session_id": None,
+        "stripe_payment_intent_id": None,
+        "amount_total": deposit_amount,
+        "fee_amount": fees["fee_amount"],
+        "payout_amount": fees["payout_amount"],
+        "currency": "MXN",
+        "status": TransactionStatus.CREATED,
+        "refund_amount": None,
+        "refund_reason": None,
+        "cancelled_by": None,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": None,
+        "paid_at": None
+    }
+    
+    await db.transactions.insert_one(transaction_doc)
+    
+    # Create Stripe Checkout Session
+    host_url = str(request.base_url).rstrip('/')
+    webhook_url = f"{host_url}/api/webhook/stripe"
+    
+    stripe_checkout = StripeCheckout(api_key=STRIPE_API_KEY, webhook_url=webhook_url)
+    
+    origin = request.headers.get('origin', host_url)
+    success_url = f"{origin}/payment/success?session_id={{CHECKOUT_SESSION_ID}}&booking_id={checkout_req.booking_id}"
+    cancel_url = f"{origin}/payment/cancel?booking_id={checkout_req.booking_id}"
+    
+    checkout_request = CheckoutSessionRequest(
+        amount=float(deposit_amount),
+        currency="mxn",
+        success_url=success_url,
+        cancel_url=cancel_url,
+        metadata={
+            "transaction_id": transaction_id,
+            "booking_id": checkout_req.booking_id,
+            "user_id": token_data.user_id,
+            "business_id": booking["business_id"],
+            "type": "deposit"
+        }
+    )
+    
+    session = await stripe_checkout.create_checkout_session(checkout_request)
+    
+    # Update transaction with session ID
+    await db.transactions.update_one(
+        {"id": transaction_id},
+        {"$set": {"stripe_session_id": session.session_id}}
+    )
+    
+    # Update booking with transaction reference
+    await db.bookings.update_one(
+        {"id": checkout_req.booking_id},
+        {"$set": {"transaction_id": transaction_id, "stripe_session_id": session.session_id}}
+    )
+    
+    logger.info(f"Created checkout session {session.session_id} for booking {checkout_req.booking_id}")
+    
+    return {
+        "url": session.url, 
+        "session_id": session.session_id,
+        "transaction_id": transaction_id,
+        "amount": deposit_amount,
+        "fee": fees["fee_amount"]
+    }
+
+@payments_router.get("/checkout/status/{session_id}")
+async def get_checkout_status(session_id: str, request: Request):
+    """Check checkout session status"""
+    from emergentintegrations.payments.stripe.checkout import StripeCheckout
+    
+    host_url = str(request.base_url).rstrip('/')
+    webhook_url = f"{host_url}/api/webhook/stripe"
+    
+    stripe_checkout = StripeCheckout(api_key=STRIPE_API_KEY, webhook_url=webhook_url)
+    status = await stripe_checkout.get_checkout_status(session_id)
+    
+    # Get transaction
+    transaction = await db.transactions.find_one({"stripe_session_id": session_id})
+    
+    return {
+        "status": status.status,
+        "payment_status": status.payment_status,
+        "amount_total": status.amount_total,
+        "currency": status.currency,
+        "transaction_id": transaction["id"] if transaction else None,
+        "booking_id": transaction["booking_id"] if transaction else None
+    }
+
+@payments_router.get("/transaction/{transaction_id}", response_model=TransactionResponse)
+async def get_transaction(transaction_id: str, token_data: TokenData = Depends(require_auth)):
+    """Get transaction details"""
+    transaction = await db.transactions.find_one({"id": transaction_id}, {"_id": 0})
+    if not transaction:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    
+    # Verify ownership
+    if transaction["user_id"] != token_data.user_id and token_data.role != UserRole.ADMIN:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    return TransactionResponse(**transaction)
+
+# Stripe Webhook (Source of Truth)
+@api_router.post("/webhook/stripe")
+async def stripe_webhook(request: Request):
+    """Handle Stripe webhook events - SOURCE OF TRUTH for payments"""
+    from emergentintegrations.payments.stripe.checkout import StripeCheckout
+    
+    host_url = str(request.base_url).rstrip('/')
+    webhook_url = f"{host_url}/api/webhook/stripe"
+    
+    stripe_checkout = StripeCheckout(api_key=STRIPE_API_KEY, webhook_url=webhook_url)
+    
+    body = await request.body()
+    signature = request.headers.get("Stripe-Signature", "")
+    
+    try:
+        webhook_response = await stripe_checkout.handle_webhook(body, signature)
+        session_id = webhook_response.session_id
+        
+        logger.info(f"Webhook received: session={session_id}, status={webhook_response.payment_status}")
+        
+        # Idempotency check
+        transaction = await db.transactions.find_one({"stripe_session_id": session_id})
+        if not transaction:
+            logger.warning(f"No transaction found for session {session_id}")
+            return {"status": "ignored", "reason": "no_transaction"}
+        
+        # Already processed?
+        if transaction["status"] == TransactionStatus.PAID:
+            logger.info(f"Transaction {transaction['id']} already paid, ignoring duplicate webhook")
+            return {"status": "already_processed"}
+        
+        if webhook_response.payment_status == "paid":
+            now = datetime.now(timezone.utc).isoformat()
+            
+            # Update transaction
+            await db.transactions.update_one(
+                {"id": transaction["id"]},
+                {"$set": {
+                    "status": TransactionStatus.PAID,
+                    "stripe_payment_intent_id": webhook_response.payment_intent if hasattr(webhook_response, 'payment_intent') else None,
+                    "paid_at": now,
+                    "updated_at": now
+                }}
+            )
+            
+            # Update booking to CONFIRMED
+            await db.bookings.update_one(
+                {"id": transaction["booking_id"]},
+                {"$set": {
+                    "status": AppointmentStatus.CONFIRMED,
+                    "deposit_paid": True,
+                    "confirmed_at": now
+                }}
+            )
+            
+            # Get booking details for notification
+            booking = await db.bookings.find_one({"id": transaction["booking_id"]})
+            business = await db.businesses.find_one({"id": transaction["business_id"]})
+            user = await db.users.find_one({"id": transaction["user_id"]})
+            service = await db.services.find_one({"id": booking["service_id"]}) if booking else None
+            
+            # Notify user
+            if user:
+                await create_notification(
+                    user["id"],
+                    "Pago Confirmado",
+                    f"Tu anticipo de ${transaction['amount_total']} MXN ha sido confirmado para {service['name'] if service else 'tu cita'}",
+                    "system",
+                    {"booking_id": transaction["booking_id"], "transaction_id": transaction["id"]}
+                )
+            
+            # Notify business
+            if business:
+                await create_notification(
+                    business["user_id"],
+                    "Reserva Confirmada",
+                    f"Nueva reserva confirmada de {user['full_name'] if user else 'cliente'} - Anticipo recibido",
+                    "booking",
+                    {"booking_id": transaction["booking_id"]}
+                )
+            
+            # Update business balance (pending payout)
+            await db.businesses.update_one(
+                {"id": transaction["business_id"]},
+                {"$inc": {"pending_balance": transaction["payout_amount"]}}
+            )
+            
+            logger.info(f"Payment confirmed for booking {transaction['booking_id']}")
+        
+        return {"status": "success"}
+        
+    except Exception as e:
+        logger.error(f"Webhook error: {e}")
+        return {"status": "error", "message": str(e)}
+
+# Cancel booking with refund logic
+@bookings_router.put("/{booking_id}/cancel/user")
+async def cancel_booking_by_user(
+    booking_id: str,
+    cancel_req: CancelBookingRequest,
+    token_data: TokenData = Depends(require_auth)
+):
+    """Cancel booking by user - applies cancellation policy"""
+    booking = await db.bookings.find_one({"id": booking_id})
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    
+    if booking["user_id"] != token_data.user_id:
+        raise HTTPException(status_code=403, detail="Not your booking")
+    
+    if booking["status"] not in [AppointmentStatus.HOLD, AppointmentStatus.CONFIRMED]:
+        raise HTTPException(status_code=400, detail=f"Cannot cancel booking with status {booking['status']}")
+    
+    now = datetime.now(timezone.utc)
+    
+    # Calculate hours until appointment
+    appointment_dt = datetime.strptime(f"{booking['date']} {booking['time']}", "%Y-%m-%d %H:%M")
+    appointment_dt = appointment_dt.replace(tzinfo=timezone.utc)
+    hours_until = (appointment_dt - now).total_seconds() / 3600
+    
+    # Get transaction if exists
+    transaction = await db.transactions.find_one({
+        "booking_id": booking_id,
+        "status": TransactionStatus.PAID
+    })
+    
+    refund_result = None
+    
+    if transaction:
+        # Apply cancellation policy
+        if hours_until > 24:
+            # >24h: Refund amount - fee (8%)
+            refund_amount = transaction["payout_amount"]  # amount - fee
+            refund_status = TransactionStatus.REFUND_PARTIAL
+            refund_reason = "client_cancel_gt_24h"
+            
+            # TODO: Process actual Stripe refund
+            # For now, just update transaction status
+            
+            logger.info(f"Partial refund: ${refund_amount} for booking {booking_id}")
+        else:
+            # <24h: No refund (business keeps the deposit minus fee)
+            refund_amount = 0
+            refund_status = TransactionStatus.REFUND_PARTIAL  # 0 refund, business gets payout
+            refund_reason = "client_cancel_lt_24h"
+            
+            logger.info(f"No refund (<24h): booking {booking_id}")
+        
+        # Update transaction
+        await db.transactions.update_one(
+            {"id": transaction["id"]},
+            {"$set": {
+                "status": refund_status,
+                "refund_amount": refund_amount,
+                "refund_reason": refund_reason,
+                "cancelled_by": "user",
+                "updated_at": now.isoformat()
+            }}
+        )
+        
+        refund_result = {
+            "refund_amount": refund_amount,
+            "policy_applied": ">24h partial refund" if hours_until > 24 else "<24h no refund"
+        }
+    
+    # Update booking
+    await db.bookings.update_one(
+        {"id": booking_id},
+        {"$set": {
+            "status": AppointmentStatus.CANCELLED,
+            "cancelled_at": now.isoformat(),
+            "cancelled_by": "user",
+            "cancellation_reason": cancel_req.reason
+        }}
+    )
+    
+    # Update user stats
+    await db.users.update_one(
+        {"id": token_data.user_id},
+        {"$inc": {"active_appointments_count": -1, "cancellation_count": 1}}
+    )
+    
+    # Check suspension threshold (4 cancellations)
+    user = await db.users.find_one({"id": token_data.user_id})
+    if user.get("cancellation_count", 0) >= 4:
+        suspended_until = (now + timedelta(days=15)).isoformat()
+        await db.users.update_one(
+            {"id": token_data.user_id},
+            {"$set": {"suspended_until": suspended_until}}
+        )
+        logger.warning(f"User {token_data.user_id} suspended for excessive cancellations")
+    
+    # Notify business
+    business = await db.businesses.find_one({"id": booking["business_id"]})
+    if business:
+        await create_notification(
+            business["user_id"],
+            "Reserva Cancelada",
+            f"El cliente canceló su cita del {booking['date']} a las {booking['time']}",
+            "booking",
+            {"booking_id": booking_id}
+        )
+    
+    return {
+        "message": "Booking cancelled",
+        "status": AppointmentStatus.CANCELLED,
+        "refund": refund_result
+    }
+
+@bookings_router.put("/{booking_id}/cancel/business")
+async def cancel_booking_by_business(
+    booking_id: str,
+    cancel_req: CancelBookingRequest,
+    token_data: TokenData = Depends(require_business)
+):
+    """Cancel booking by business - full refund to client, fee charged to business"""
+    booking = await db.bookings.find_one({"id": booking_id})
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    
+    # Verify business ownership
+    user = await db.users.find_one({"id": token_data.user_id})
+    if not user or user.get("business_id") != booking["business_id"]:
+        raise HTTPException(status_code=403, detail="Not your business booking")
+    
+    if booking["status"] not in [AppointmentStatus.HOLD, AppointmentStatus.CONFIRMED]:
+        raise HTTPException(status_code=400, detail=f"Cannot cancel booking with status {booking['status']}")
+    
+    now = datetime.now(timezone.utc)
+    
+    # Get transaction if exists
+    transaction = await db.transactions.find_one({
+        "booking_id": booking_id,
+        "status": TransactionStatus.PAID
+    })
+    
+    refund_result = None
+    
+    if transaction:
+        # Business cancels: Full refund to client, fee charged to business
+        refund_amount = transaction["amount_total"]  # 100% refund
+        fee_penalty = transaction["fee_amount"]  # 8% fee charged to business
+        
+        # TODO: Process actual Stripe refund
+        
+        # Update transaction
+        await db.transactions.update_one(
+            {"id": transaction["id"]},
+            {"$set": {
+                "status": TransactionStatus.REFUND_FULL,
+                "refund_amount": refund_amount,
+                "refund_reason": "business_cancelled",
+                "cancelled_by": "business",
+                "updated_at": now.isoformat()
+            }}
+        )
+        
+        # Create fee penalty transaction for business
+        penalty_tx = {
+            "id": generate_id(),
+            "booking_id": booking_id,
+            "user_id": booking["user_id"],
+            "business_id": booking["business_id"],
+            "stripe_session_id": None,
+            "stripe_payment_intent_id": None,
+            "amount_total": fee_penalty,
+            "fee_amount": fee_penalty,
+            "payout_amount": -fee_penalty,  # Negative = charge to business
+            "currency": "MXN",
+            "status": TransactionStatus.BUSINESS_CANCEL_FEE,
+            "refund_amount": None,
+            "refund_reason": "business_cancellation_penalty",
+            "cancelled_by": "business",
+            "created_at": now.isoformat(),
+            "updated_at": now.isoformat(),
+            "paid_at": None
+        }
+        await db.transactions.insert_one(penalty_tx)
+        
+        # Update business balance (deduct pending and add penalty)
+        await db.businesses.update_one(
+            {"id": booking["business_id"]},
+            {"$inc": {
+                "pending_balance": -transaction["payout_amount"],
+                "penalty_balance": fee_penalty
+            }}
+        )
+        
+        refund_result = {
+            "refund_amount": refund_amount,
+            "fee_penalty": fee_penalty,
+            "policy_applied": "business_cancel_full_refund_fee_penalty"
+        }
+        
+        logger.info(f"Business cancelled booking {booking_id}: full refund ${refund_amount}, penalty ${fee_penalty}")
+    
+    # Update booking
+    await db.bookings.update_one(
+        {"id": booking_id},
+        {"$set": {
+            "status": AppointmentStatus.CANCELLED,
+            "cancelled_at": now.isoformat(),
+            "cancelled_by": "business",
+            "cancellation_reason": cancel_req.reason
+        }}
+    )
+    
+    # Update user stats (don't penalize user for business cancellation)
+    await db.users.update_one(
+        {"id": booking["user_id"]},
+        {"$inc": {"active_appointments_count": -1}}
+    )
+    
+    # Notify user
+    await create_notification(
+        booking["user_id"],
+        "Reserva Cancelada por el Negocio",
+        f"Tu cita del {booking['date']} a las {booking['time']} fue cancelada. Se procesará un reembolso completo.",
+        "system",
+        {"booking_id": booking_id}
+    )
+    
+    return {
+        "message": "Booking cancelled by business",
+        "status": AppointmentStatus.CANCELLED,
+        "refund": refund_result
+    }
+
+@bookings_router.put("/{booking_id}/no-show")
+async def mark_no_show(booking_id: str, token_data: TokenData = Depends(require_business)):
+    """Mark booking as no-show - business keeps deposit minus fee"""
+    booking = await db.bookings.find_one({"id": booking_id})
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    
+    # Verify business ownership
+    user = await db.users.find_one({"id": token_data.user_id})
+    if not user or user.get("business_id") != booking["business_id"]:
+        raise HTTPException(status_code=403, detail="Not your business booking")
+    
+    if booking["status"] != AppointmentStatus.CONFIRMED:
+        raise HTTPException(status_code=400, detail="Can only mark confirmed bookings as no-show")
+    
+    now = datetime.now(timezone.utc)
+    
+    # Get transaction
+    transaction = await db.transactions.find_one({
+        "booking_id": booking_id,
+        "status": TransactionStatus.PAID
+    })
+    
+    payout_result = None
+    
+    if transaction:
+        # No-show: Business receives payout (deposit - fee)
+        await db.transactions.update_one(
+            {"id": transaction["id"]},
+            {"$set": {
+                "status": TransactionStatus.NO_SHOW_PAYOUT,
+                "updated_at": now.isoformat()
+            }}
+        )
+        
+        payout_result = {
+            "payout_amount": transaction["payout_amount"],
+            "fee_retained": transaction["fee_amount"]
+        }
+        
+        logger.info(f"No-show for booking {booking_id}: business payout ${transaction['payout_amount']}")
+    
+    # Update booking
+    await db.bookings.update_one(
+        {"id": booking_id},
+        {"$set": {"status": AppointmentStatus.NO_SHOW}}
+    )
+    
+    # Update user stats (no-show counts as cancellation)
+    await db.users.update_one(
+        {"id": booking["user_id"]},
+        {"$inc": {"active_appointments_count": -1, "cancellation_count": 1, "no_show_count": 1}}
+    )
+    
+    # Check suspension threshold
+    booking_user = await db.users.find_one({"id": booking["user_id"]})
+    if booking_user.get("cancellation_count", 0) >= 4:
+        suspended_until = (now + timedelta(days=15)).isoformat()
+        await db.users.update_one(
+            {"id": booking["user_id"]},
+            {"$set": {"suspended_until": suspended_until}}
+        )
+    
+    return {
+        "message": "Marked as no-show",
+        "payout": payout_result
+    }
+
+# Background task: Expire holds
+async def expire_holds_task():
+    """Background task to expire holds that weren't paid"""
+    now = datetime.now(timezone.utc)
+    
+    expired_bookings = await db.bookings.find({
+        "status": AppointmentStatus.HOLD,
+        "hold_expires_at": {"$lt": now.isoformat()}
+    }).to_list(100)
+    
+    for booking in expired_bookings:
+        await db.bookings.update_one(
+            {"id": booking["id"]},
+            {"$set": {"status": AppointmentStatus.EXPIRED}}
+        )
+        
+        await db.users.update_one(
+            {"id": booking["user_id"]},
+            {"$inc": {"active_appointments_count": -1}}
+        )
+        
+        # Update transaction if exists
+        await db.transactions.update_one(
+            {"booking_id": booking["id"], "status": TransactionStatus.CREATED},
+            {"$set": {"status": TransactionStatus.EXPIRED, "updated_at": now.isoformat()}}
+        )
+        
+        logger.info(f"Expired hold for booking {booking['id']}")
+    
+    return len(expired_bookings)
+
+# Manual endpoint to trigger expiration (for testing/cron)
+@payments_router.post("/expire-holds")
+async def trigger_expire_holds(token_data: TokenData = Depends(require_admin)):
+    """Admin endpoint to manually trigger hold expiration"""
+    count = await expire_holds_task()
+    return {"expired_count": count}
+
+# Get user transactions
+@payments_router.get("/my-transactions", response_model=List[TransactionResponse])
+async def get_my_transactions(
+    status: Optional[str] = None,
+    token_data: TokenData = Depends(require_auth)
+):
+    """Get user's payment transactions"""
+    filters = {"user_id": token_data.user_id}
+    if status:
+        filters["status"] = status
+    
+    transactions = await db.transactions.find(filters, {"_id": 0}).sort("created_at", -1).to_list(100)
+    return [TransactionResponse(**t) for t in transactions]
+
+# Get business transactions
+@payments_router.get("/business-transactions", response_model=List[TransactionResponse])
+async def get_business_transactions(
+    status: Optional[str] = None,
+    token_data: TokenData = Depends(require_business)
+):
+    """Get business payment transactions"""
+    user = await db.users.find_one({"id": token_data.user_id})
+    if not user or not user.get("business_id"):
+        raise HTTPException(status_code=404, detail="Business not found")
+    
+    filters = {"business_id": user["business_id"]}
+    if status:
+        filters["status"] = status
+    
+    transactions = await db.transactions.find(filters, {"_id": 0}).sort("created_at", -1).to_list(100)
+    return [TransactionResponse(**t) for t in transactions]
+
+# Legacy checkout endpoint (for subscriptions)
 @payments_router.post("/checkout/session")
 async def create_checkout_session(request: Request, payment: PaymentCreate, token_data: TokenData = Depends(require_auth)):
     from emergentintegrations.payments.stripe.checkout import StripeCheckout, CheckoutSessionRequest
@@ -1830,7 +2467,6 @@ async def create_checkout_session(request: Request, payment: PaymentCreate, toke
     
     stripe_checkout = StripeCheckout(api_key=STRIPE_API_KEY, webhook_url=webhook_url)
     
-    # Get origin from frontend
     origin = request.headers.get('origin', host_url)
     success_url = f"{origin}/payment/success?session_id={{CHECKOUT_SESSION_ID}}"
     cancel_url = f"{origin}/payment/cancel"
@@ -1849,82 +2485,7 @@ async def create_checkout_session(request: Request, payment: PaymentCreate, toke
     
     session = await stripe_checkout.create_checkout_session(checkout_request)
     
-    # Create payment transaction record
-    payment_doc = {
-        "id": generate_id(),
-        "user_id": token_data.user_id,
-        "business_id": None,
-        "booking_id": payment.booking_id,
-        "amount": float(payment.amount),
-        "currency": payment.currency,
-        "status": PaymentStatus.PENDING,
-        "stripe_session_id": session.session_id,
-        "payment_type": "deposit" if payment.booking_id else "subscription",
-        "created_at": datetime.now(timezone.utc).isoformat()
-    }
-    
-    await db.payment_transactions.insert_one(payment_doc)
-    
     return {"url": session.url, "session_id": session.session_id}
-
-@payments_router.get("/checkout/status/{session_id}")
-async def get_checkout_status(session_id: str, request: Request):
-    from emergentintegrations.payments.stripe.checkout import StripeCheckout
-    
-    host_url = str(request.base_url).rstrip('/')
-    webhook_url = f"{host_url}/api/webhook/stripe"
-    
-    stripe_checkout = StripeCheckout(api_key=STRIPE_API_KEY, webhook_url=webhook_url)
-    status = await stripe_checkout.get_checkout_status(session_id)
-    
-    # Update payment transaction
-    if status.payment_status == "paid":
-        payment = await db.payment_transactions.find_one({"stripe_session_id": session_id})
-        if payment and payment["status"] != PaymentStatus.COMPLETED:
-            await db.payment_transactions.update_one(
-                {"stripe_session_id": session_id},
-                {"$set": {"status": PaymentStatus.COMPLETED}}
-            )
-            
-            # If booking deposit, mark as paid
-            if payment.get("booking_id"):
-                await db.bookings.update_one(
-                    {"id": payment["booking_id"]},
-                    {"$set": {"deposit_paid": True, "payment_id": payment["id"]}}
-                )
-    
-    return {
-        "status": status.status,
-        "payment_status": status.payment_status,
-        "amount_total": status.amount_total,
-        "currency": status.currency
-    }
-
-@api_router.post("/webhook/stripe")
-async def stripe_webhook(request: Request):
-    from emergentintegrations.payments.stripe.checkout import StripeCheckout
-    
-    host_url = str(request.base_url).rstrip('/')
-    webhook_url = f"{host_url}/api/webhook/stripe"
-    
-    stripe_checkout = StripeCheckout(api_key=STRIPE_API_KEY, webhook_url=webhook_url)
-    
-    body = await request.body()
-    signature = request.headers.get("Stripe-Signature", "")
-    
-    try:
-        webhook_response = await stripe_checkout.handle_webhook(body, signature)
-        
-        if webhook_response.payment_status == "paid":
-            await db.payment_transactions.update_one(
-                {"stripe_session_id": webhook_response.session_id},
-                {"$set": {"status": PaymentStatus.COMPLETED}}
-            )
-        
-        return {"status": "success"}
-    except Exception as e:
-        logger.error(f"Webhook error: {e}")
-        return {"status": "error", "message": str(e)}
 
 # ========================== NOTIFICATION ROUTES ==========================
 
