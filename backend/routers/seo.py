@@ -281,3 +281,122 @@ async def get_active_countries():
             "active": True
         }]
     return countries
+
+
+@seo_router.get("/api/seo/categories")
+async def get_seo_categories():
+    """Get all categories for SEO pages"""
+    categories = await db.categories.find(
+        {"active": {"$ne": False}},
+        {"_id": 0}
+    ).to_list(100)
+    
+    # Add business counts
+    for cat in categories:
+        count = await db.businesses.count_documents({
+            "category_id": cat.get("id"),
+            "status": "approved"
+        })
+        cat["business_count"] = count
+    
+    return categories
+
+
+@seo_router.get("/api/seo/businesses/{country}/{city}")
+async def get_businesses_by_location(
+    country: str,
+    city: str,
+    category: Optional[str] = None,
+    page: int = 1,
+    limit: int = 20
+):
+    """Get businesses for a location (for SEO pages)"""
+    filters = {
+        "country_code": country.upper(),
+        "status": "approved"
+    }
+    
+    # Match city by slug or name
+    city_doc = await db.cities.find_one({
+        "country_code": country.upper(),
+        "$or": [
+            {"slug": city.lower()},
+            {"name": {"$regex": f"^{city}$", "$options": "i"}}
+        ]
+    }, {"_id": 0})
+    
+    if city_doc:
+        filters["city"] = {"$regex": f"^{city_doc['name']}$", "$options": "i"}
+    else:
+        filters["city"] = {"$regex": city, "$options": "i"}
+    
+    if category:
+        # Find category by slug
+        cat_doc = await db.categories.find_one({"slug": category}, {"_id": 0})
+        if cat_doc:
+            filters["category_id"] = cat_doc.get("id")
+    
+    skip = (page - 1) * limit
+    
+    businesses = await db.businesses.find(
+        filters,
+        {"_id": 0, "password_hash": 0, "clabe": 0, "rfc": 0, "ine_url": 0}
+    ).sort("rating", -1).skip(skip).limit(limit).to_list(limit)
+    
+    # Add category names
+    for b in businesses:
+        if b.get("category_id"):
+            cat = await db.categories.find_one({"id": b["category_id"]}, {"_id": 0})
+            if cat:
+                b["category_name"] = cat.get("name_es", "")
+    
+    total = await db.businesses.count_documents(filters)
+    
+    return {
+        "businesses": businesses,
+        "total": total,
+        "page": page,
+        "limit": limit,
+        "pages": (total + limit - 1) // limit
+    }
+
+
+@seo_router.get("/api/seo/business/{country}/{city}/{slug}")
+async def get_business_by_slug_seo(country: str, city: str, slug: str):
+    """Get business details for SEO page"""
+    business = await db.businesses.find_one(
+        {"slug": slug, "country_code": country.upper()},
+        {"_id": 0, "password_hash": 0, "clabe": 0, "rfc": 0, "ine_url": 0, "proof_of_address_url": 0}
+    )
+    
+    if not business:
+        # Fallback: search by slug only
+        business = await db.businesses.find_one(
+            {"slug": slug},
+            {"_id": 0, "password_hash": 0, "clabe": 0, "rfc": 0, "ine_url": 0, "proof_of_address_url": 0}
+        )
+    
+    if not business:
+        return {"error": "Business not found"}
+    
+    # Add category name
+    if business.get("category_id"):
+        cat = await db.categories.find_one({"id": business["category_id"]}, {"_id": 0})
+        if cat:
+            business["category_name"] = cat.get("name_es", "")
+    
+    # Add services
+    services = await db.services.find(
+        {"business_id": business["id"], "active": True},
+        {"_id": 0}
+    ).to_list(100)
+    business["services"] = services
+    
+    # Add reviews summary
+    reviews = await db.reviews.find(
+        {"business_id": business["id"]},
+        {"_id": 0, "rating": 1, "comment": 1, "created_at": 1}
+    ).sort("created_at", -1).limit(5).to_list(5)
+    business["recent_reviews"] = reviews
+    
+    return business
