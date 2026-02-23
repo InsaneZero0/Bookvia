@@ -23,7 +23,7 @@ export default function CityPage() {
         setLoading(true);
         
         // Fetch city info
-        const citiesRes = await api.get(`/api/seo/cities/${country.toUpperCase()}`);
+        const citiesRes = await seoAPI.getCities(country.toUpperCase());
         const cityInfo = citiesRes.data.find(
           c => c.slug.toLowerCase() === city.toLowerCase()
         );
@@ -31,11 +31,11 @@ export default function CityPage() {
         setCityData(cityInfo || { name: city, slug: city });
         
         // Fetch categories
-        const categoriesRes = await api.get('/api/seo/categories');
+        const categoriesRes = await seoAPI.getCategories();
         setCategories(categoriesRes.data || []);
         
         // Fetch businesses for this city
-        const businessesRes = await api.get(`/api/seo/businesses/${country}/${city}`);
+        const businessesRes = await seoAPI.getBusinesses(country, city);
         setBusinesses(businessesRes.data?.businesses || []);
         
       } catch (err) {
