@@ -43,6 +43,13 @@ TWILIO_PHONE_NUMBER = os.environ.get('TWILIO_PHONE_NUMBER', '')
 # Stripe Config
 STRIPE_API_KEY = os.environ.get('STRIPE_API_KEY', 'sk_test_emergent')
 
+# Admin Config (from environment - NEVER hardcode)
+ADMIN_EMAIL = os.environ.get('ADMIN_EMAIL')
+ADMIN_INITIAL_PASSWORD = os.environ.get('ADMIN_INITIAL_PASSWORD')
+
+# Environment
+ENV = os.environ.get('ENV', 'development')
+
 # Create the main app
 app = FastAPI(title="Bookvia API", version="1.0.0")
 
