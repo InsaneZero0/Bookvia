@@ -162,22 +162,23 @@ GET /api/health
 
 ## Environment Variables
 
-See `/app/backend/docs/ENV_VARIABLES.md`
+See `/app/docs/STAGING_CHECKLIST.md` for complete deployment guide.
 
-### Quick Reference:
-```bash
-# Required
-MONGO_URL, DB_NAME, JWT_SECRET
+### Quick Reference - Required
+| Variable | Description |
+|----------|-------------|
+| `MONGO_URL` | MongoDB connection string |
+| `DB_NAME` | Database name |
+| `JWT_SECRET` | JWT signing secret (required in production) |
+| `ENV` | `development`, `staging`, or `production` |
+| `BASE_URL` | Public URL (for sitemap, emails) |
 
-# SMS (Production)
-TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER
-
-# Email (Production)
-RESEND_API_KEY, FROM_EMAIL
-
-# Payments
-STRIPE_API_KEY, STRIPE_WEBHOOK_SECRET
-```
+### Quick Reference - Auto-Mocked if Missing
+| Variable | Service | If Missing |
+|----------|---------|------------|
+| `TWILIO_*` | SMS | Codes stored in DB |
+| `RESEND_API_KEY` | Email | Emails stored in DB |
+| `STRIPE_API_KEY` | Payments | Bookings without deposit |
 
 ## Test Credentials
 - **Business**: testspa@test.com / Test123!
