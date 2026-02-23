@@ -89,15 +89,4 @@ function ForBusinessPage() {
   );
 }
 
-function BusinessRegisterPage() {
-  return (
-    <div className="min-h-screen pt-20 bg-background">
-      <div className="container-app py-16">
-        <h1 className="text-3xl font-heading font-bold text-center mb-8">Registra tu Negocio</h1>
-        <p className="text-center text-muted-foreground">Página de registro de negocio - En construcción</p>
-      </div>
-    </div>
-  );
-}
-
 export default App;
