@@ -2717,6 +2717,40 @@ async def stripe_webhook(request: Request):
                     {"booking_id": transaction["booking_id"]}
                 )
             
+            # Notify worker (email + internal notification)
+            if booking and booking.get("worker_id"):
+                worker = await db.workers.find_one({"id": booking["worker_id"]})
+                if worker:
+                    # Internal notification
+                    # Find worker's user account if they have one
+                    worker_user = await db.users.find_one({"email": worker.get("email")}) if worker.get("email") else None
+                    if worker_user:
+                        await create_notification(
+                            worker_user["id"],
+                            "Nueva cita asignada",
+                            f"Se te ha asignado una cita: {service['name'] if service else 'servicio'} el {booking['date']} a las {booking['time']}",
+                            "worker_assignment",
+                            {"booking_id": booking["id"]}
+                        )
+                    
+                    # Email notification to worker (mock/real via email service)
+                    if worker.get("email"):
+                        from services.email import send_worker_assignment
+                        try:
+                            await send_worker_assignment(
+                                worker_email=worker["email"],
+                                worker_name=worker["name"],
+                                business_name=business["name"] if business else "Bookvia",
+                                service_name=service["name"] if service else "Servicio",
+                                client_name=user["full_name"] if user else "Cliente",
+                                date=booking["date"],
+                                time=booking["time"],
+                                notes=booking.get("notes")
+                            )
+                            logger.info(f"Worker notification sent to {worker['email']} for booking {booking['id']}")
+                        except Exception as e:
+                            logger.error(f"Error sending worker notification: {e}")
+            
             # Update business balance (pending payout)
             await db.businesses.update_one(
                 {"id": transaction["business_id"]},
