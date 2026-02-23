@@ -18,6 +18,8 @@ import UserBookingsPage from '@/pages/UserBookingsPage';
 import BusinessDashboardPage from '@/pages/BusinessDashboardPage';
 import AdminDashboardPage from '@/pages/AdminDashboardPage';
 import AdminLoginPage from '@/pages/AdminLoginPage';
+import PaymentSuccessPage from '@/pages/PaymentSuccessPage';
+import PaymentCancelPage from '@/pages/PaymentCancelPage';
 import NotFoundPage from '@/pages/NotFoundPage';
 
 // Layout wrapper
