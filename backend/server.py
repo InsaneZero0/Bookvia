@@ -1391,10 +1391,6 @@ async def get_business_by_slug(slug: str):
 
 @businesses_router.get("/{business_id}", response_model=BusinessResponse)
 async def get_business(business_id: str):
-    # Skip reserved paths that should be handled by other routes
-    if business_id in ["workers", "me", "featured", "slug"]:
-        raise HTTPException(status_code=404, detail="Not found")
-    
     business = await db.businesses.find_one(
         {"id": business_id},
         {"_id": 0, "password_hash": 0, "clabe": 0, "rfc": 0, "ine_url": 0, "proof_of_address_url": 0}
