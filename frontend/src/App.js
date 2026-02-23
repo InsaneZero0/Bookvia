@@ -24,6 +24,12 @@ import PaymentSuccessPage from '@/pages/PaymentSuccessPage';
 import PaymentCancelPage from '@/pages/PaymentCancelPage';
 import NotFoundPage from '@/pages/NotFoundPage';
 
+// SEO Pages
+import CountryPage from '@/pages/seo/CountryPage';
+import CityPage from '@/pages/seo/CityPage';
+import CategoryPage from '@/pages/seo/CategoryPage';
+import BusinessSEOPage from '@/pages/seo/BusinessSEOPage';
+
 // Layout wrapper
 function Layout({ children, showFooter = true }) {
   return (
