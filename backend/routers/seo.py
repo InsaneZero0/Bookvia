@@ -1,19 +1,32 @@
 """
 SEO Router - Sitemap, robots.txt, and dynamic meta tags.
 
-Public routes (no /api prefix):
+Public routes (served from root, no /api prefix):
 - GET /sitemap.xml
 - GET /robots.txt
+
+API routes (prefixed with /api):
 - GET /api/seo/meta/{page_type}/{slug}
+- GET /api/seo/cities/{country_code}
+- GET /api/seo/countries
 """
 from fastapi import APIRouter, Request
 from fastapi.responses import Response, PlainTextResponse
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, List
 import xml.etree.ElementTree as ET
+import os
 
-from core.database import db
-from core.config import ENV, IS_PRODUCTION
+from motor.motor_asyncio import AsyncIOMotorClient
+
+# Use server.py's db connection since we're still transitioning
+mongo_url = os.environ.get('MONGO_URL', 'mongodb://localhost:27017')
+db_name = os.environ.get('DB_NAME', 'test_database')
+client = AsyncIOMotorClient(mongo_url)
+db = client[db_name]
+
+ENV = os.environ.get('ENV', 'development')
+IS_PRODUCTION = ENV == 'production'
 
 seo_router = APIRouter(tags=["SEO"])
 
