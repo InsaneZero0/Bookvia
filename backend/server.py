@@ -703,20 +703,21 @@ def calculate_bayesian_rating(rating_sum: float, review_count: int, global_avg: 
     return (min_reviews * global_avg + rating_sum) / (min_reviews + review_count)
 
 async def send_sms(phone: str, message: str):
-    """Send SMS - mock or real"""
-    if SMS_PROVIDER == 'mock':
-        logger.info(f"[MOCK SMS] To: {phone} | Message: {message}")
-        return True
-    elif SMS_PROVIDER == 'twilio':
-        try:
-            from twilio.rest import Client
-            client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
-            client.messages.create(body=message, from_=TWILIO_PHONE_NUMBER, to=phone)
-            return True
-        except Exception as e:
-            logger.error(f"SMS Error: {e}")
-            return False
-    return False
+    """Send SMS - uses new SMS service with rate limiting and proper error handling"""
+    from services.sms import send_sms as sms_send, SMSServiceError, SMSRateLimitError, SMSNotConfiguredError
+    
+    try:
+        success, msg_id = await sms_send(phone, message)
+        return success
+    except SMSRateLimitError as e:
+        logger.warning(f"SMS rate limit exceeded for {phone}: {e}")
+        raise HTTPException(status_code=429, detail=str(e))
+    except SMSNotConfiguredError as e:
+        logger.error(f"SMS not configured: {e}")
+        raise HTTPException(status_code=503, detail=str(e))
+    except SMSServiceError as e:
+        logger.error(f"SMS error: {e}")
+        return False
 
 async def create_notification(user_id: str, title: str, message: str, notif_type: str, data: dict = None):
     """Create internal notification"""
