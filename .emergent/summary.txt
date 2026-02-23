@@ -1,101 +1,88 @@
 <analysis>**original_problem_statement:**
-El usuario quiere construir una plataforma de marketplace de reservas profesionales llamada Bookvia. La plataforma debe ser API-first, escalable, y preparada para una futura aplicación móvil.
+El usuario quiere construir una plataforma de marketplace de reservas profesionales llamada Bookvia. La plataforma debe ser API-first, escalable y preparada para una futura aplicación móvil.
 
-Requisitos MVP completados:
-- Arquitectura: Backend API-first, base de datos estructurada, JWT, roles de usuario, SEO básico.
-- Funcionalidades: Registro de usuario (mock de verificación SMS), flujo de login, visualización de categorías.
+Tras completar las fases de seguridad, finanzas y gestión de trabajadores, el usuario ha solicitado la implementación de la **Fase P4: SEO base y Preparación para Producción**, con un enfoque inicial en México y una arquitectura multi-país.
 
-Requisitos de producción en curso:
-1.  **Seguridad (P0 - Completado):** Crear admin desde KUBERNETES_SERVICE_PORT_HTTPS=443
-PYTHON_SHA256=8d3ed8ec5c88c1c95f5e558612a725450d2452813ddad5e58fdb1a53b1209b78
-KUBERNETES_SERVICE_PORT=443
-PYTHONUNBUFFERED=1
-PIP_NO_INPUT=1
-STRIPE_API_KEY=sk_test_emergent
-HOSTNAME=agent-env-77123593-6ae1-4d03-a6e8-1b0548bd07c4
-PYTHON_VERSION=3.11.14
-base_url=https://demobackend.emergentagent.com
-run_id=booking-staff
-UV_COMPILE_BYTECODE=1
-PLUGIN_VENV_PATH=/opt/plugins-venv
-PWD=/app
-code_server_password=7dd151b1
-HOME=/root
-LANG=C.UTF-8
-KUBERNETES_PORT_443_TCP=tcp://34.118.224.1:443
-VIRTUAL_ENV=/root/.venv
-GPG_KEY=A035C8C19219BA821ECEA86B64E628F8D684696D
-PLAYWRIGHT_BROWSERS_PATH=/pw-browsers
-integration_proxy_url=https://integrations.emergentagent.com
-preview_endpoint=https://booking-staff.preview.emergentagent.com
-ENABLE_RELOAD=true
-SHLVL=0
-KUBERNETES_PORT_443_TCP_PROTO=tcp
-KUBERNETES_PORT_443_TCP_ADDR=34.118.224.1
-KUBERNETES_SERVICE_HOST=34.118.224.1
-KUBERNETES_PORT=tcp://34.118.224.1:443
-KUBERNETES_PORT_443_TCP_PORT=443
-PATH=/root/.venv/bin:/opt/plugins-venv/bin:/opt/bin:/usr/local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-monitor_polling_interval=1
-NEXT_TELEMETRY_DISABLED=1
-NODE_VERSION=20
-DEBIAN_FRONTEND=noninteractive
-_=/usr/bin/env, hashear contraseñas, 2FA (TOTP) obligatorio para admin, logs de auditoría.
-2.  **Registro y Revisión de Negocios (P0 - Completado):** Formulario de registro de negocio con subida de documentos y panel de admin para aprobación.
-3.  **Integración de Stripe (P1 - Completado):** Flujo de pago de anticipos con Stripe Checkout, webhooks, lógica de comisiones (8%), cancelaciones y no-shows. Bloqueo de 30 minutos.
-4.  **Liquidaciones y Finanzas (P1 - Completado):** Job mensual de liquidaciones, panel de admin para retener pagos y panel financiero para negocios basado en un sistema de ledger (libro contable).
-5.  **Gestión de Trabajadores y Horarios (P2 - En curso):** CRUD de trabajadores, gestión de horarios, vacaciones, bloqueos y asignación automática de citas.
-6.  **SEO (P3 - Futuro):** URLs amigables, sitemaps y meta-tags dinámicos.
+**Requisitos de la Fase P4 (actual):**
+1.  **Arquitectura Multi-país (Base):**
+    *   Añadir un campo  (ej: 'MX', 'US') a los modelos ,  y .  será el valor por defecto.
+    *   Crear un modelo de  con , , , .
+    *   Estructurar las URLs para incluir el país:  y .
+
+2.  **SEO Base Obligatorio:**
+    *   Implementar slugs amigables y normalizados (minúsculas, sin acentos) para ciudades, categorías y negocios.
+    *   Generar meta-tags dinámicos (, , ) para las páginas clave.
+    *   Servir un  y  dinámicos desde la raíz del dominio.
+    *   Asegurar el uso de URLs canónicas.
+    *   Implementar  básico para imágenes.
+
+3.  **Preparación para Staging:**
+    *   Añadir validaciones que se activen con .
+    *   Desactivar mocks automáticamente en producción.
+    *   Implementar logging estructurado y manejo de errores claro.
+    *   Añadir un rate limiting básico global.
 
 **User's preferred language**: Español
 
 **what currently exists?**
-Se ha completado la implementación de las fases de Seguridad (P0) y Core Financiero (P1 y P2 en la práctica). La aplicación cuenta con una base sólida que incluye:
-- **Backend (FastAPI):** En un único archivo , con autenticación JWT, 2FA obligatorio para administradores, logs de auditoría, registro de negocios, y un sistema financiero completo con Stripe (Checkout/Webhooks) y un ledger de doble entrada para la contabilidad.
-- **Frontend (React):** Páginas para registro de usuarios y negocios, login, un panel de Mis Citas con lógica de pago, páginas de éxito/cancelación de Stripe, y un panel financiero para que los negocios consulten sus ingresos y liquidaciones.
-- **Estado:** La aplicación es funcional y las fases implementadas han sido probadas satisfactoriamente por el agente de testing.
+La aplicación es un stack FastAPI/React funcional. Se han completado las fases de registro de usuarios/negocios, autenticación JWT con 2FA para admin, un core financiero con Stripe y un sistema de libro contable (ledger), y la gestión completa de trabajadores y horarios.
+
+Recientemente, el backend se sometió a una refactorización importante, pasando de un archivo monolítico  a una estructura modular con directorios para , , , , etc. Se han implementado servicios mock para SMS (Twilio) y Email (Resend), preparados para ser activados con variables de entorno en producción.
 
 **Last working item**:
-El agente recibió la aprobación y los requisitos detallados del usuario para comenzar la implementación de la Fase P2: **Gestión de Trabajadores y Horarios**. El agente reconoció los requisitos y estaba a punto de comenzar el desarrollo en el backend.
+El agente comenzó la implementación de la Fase P4 (SEO y Multi-país), enfocándose primero en el backend.
 
-- Last item agent was working: Preparación para implementar la gestión de trabajadores, horarios y disponibilidad (Fase P2).
-- Status: NOT STARTED
-- Agent Testing Done: N
+- Last item agent was working: Creación de la infraestructura base para la Fase P4. Específicamente, el agente:
+    1. Creó una utilidad de  con normalización de acentos en .
+    2. Escribió tests para la utilidad de slug en .
+    3. Creó el modelo base para  en .
+    4. Creó el archivo para el router de SEO en .
+- Status: IN PROGRESS
+- Agent Testing Done: Y (solo para la utilidad )
 - Which testing method agent to use? both
 - User Testing Done: N
 
 **All Pending/In progress Issue list**:
-No hay issues pendientes. Un test fallido reportado anteriormente fue un falso positivo debido a la ausencia de un endpoint , que no es un bug funcional.
+-   **Issue 1: Credenciales de admin inválidas (P0)**
+    -   **Descripción:** El usuario informa que no puede iniciar sesión como administrador, recibiendo un error de credenciales inválidas, a pesar de que la contraseña y el correo parecen ser correctos.
+    -   **Attempted fixes:** El agente confirmó que el login de backend funciona correctamente mediante . Se regeneró el código QR para el 2FA y se proporcionaron códigos de acceso temporales. El problema persiste, sugiriendo un error en el lado del frontend o en el flujo de 2FA del usuario.
+    -   **Next debug checklist:**
+        1.  Revisar la lógica del formulario de login de administrador en el frontend ().
+        2.  Verificar en la consola del navegador si hay errores de red o de JavaScript durante el intento de login.
+        3.  Confirmar que el payload (email, password, 2fa_code) que envía el frontend es correcto.
+        4.  Preguntar al usuario por los pasos exactos y el mensaje de error preciso que observa.
+    -   **Why fix this issue and what will be achieved with the fix?** El administrador no puede acceder a las funciones de gestión de la plataforma, lo cual es crítico.
+    -   **Status:** IN PROGRESS
+    -   **Is recurring issue?** N
+    -   **Should Test frontend/backend/both after fix?** both
+    -   **Blocked on other issue:** No.
 
 **In progress Task List**:
-No hay tareas en progreso. La fase anterior se completó y esta nueva fase está por comenzar.
+-   **Task 1: Completar Fase P4 - SEO y Preparación para Producción (P0)**
+    -   **Where to resume:** Continuar con la implementación del backend. El siguiente paso es integrar el  en los modelos y esquemas de Pydantic (, , ). Luego, desarrollar la lógica en  para generar dinámicamente el  y . Finalmente, implementar los cambios de enrutamiento y la carga de meta-tags en el frontend.
+    -   **What will be achieved with this?** La aplicación estará lista para un despliegue en un entorno de staging, con una base de SEO sólida y una arquitectura preparada para la expansión internacional.
+    -   **Status:** IN PROGRESS
+    -   **Should Test frontend/backend/both after fix?** both
+    -   **Blocked on something:** No.
 
 **Upcoming and Future Tasks**
-**Upcoming Tasks: Phase P2 - Gestión de Trabajadores y Horarios (P0)**
-- **Task 1 (Backend - Models):** Extender los modelos para soportar la gestión de trabajadores y horarios.
-  - : Añadir  (ej. America/Mexico_City).
-  - : Crear modelo con ,  (para soft delete),  (semanal),  (vacaciones/bloqueos).
-  - : Añadir  para asociar servicios a trabajadores específicos.
-- **Task 2 (Backend - CRUD Workers):** Implementar endpoints para , , ,  (soft delete) de trabajadores.
-- **Task 3 (Backend - Availability Engine):** Crear un endpoint de disponibilidad () que calcule los slots disponibles considerando: horarios de los trabajadores, breaks, buffers, excepciones, citas confirmadas, citas en  (30 min), y el  del negocio. La respuesta debe detallar la razón de los slots no disponibles.
-- **Task 4 (Backend - Booking Logic):** Actualizar el endpoint de creación de citas para soportar la asignación a cualquiera disponible, con una lógica que elija al trabajador con menos carga.
-- **Task 5 (Frontend - UI):** Crear la sección Equipo y Horarios en el panel de negocio, con un UI para gestionar trabajadores y un calendario para visualizar la agenda.
+**Upcoming Tasks:**
+-   **Staging-Ready (P1):** Implementar las tareas de preparación para producción: validaciones basadas en , desactivación automática de mocks, logging estructurado y rate limiting global.
+-   **Páginas SEO (P1):** Crear las páginas frontend correspondientes a las nuevas rutas SEO: , , etc.
 
 **Future Tasks:**
-- **Phase P3 - SEO & Optimization (P1):**
-  - Implementar URLs amigables.
-  - Generar  dinámico.
-  - Implementar meta-tags dinámicos.
-- **Integración Real de SMS (P2):** Reemplazar el mock actual de verificación por SMS con una integración real (ej. Twilio).
-- **Pagos Automáticos (P3):** Implementar pagos reales a negocios usando Stripe Connect, en lugar del actual marcar como pagado manual.
+-   **Stripe Connect (P2):** Reemplazar el sistema de liquidaciones manuales por pagos automáticos a negocios.
+-   **Push Notifications (P3):** Añadir notificaciones push.
+-   **Aplicación Móvil (P3):** Desarrollo de una app nativa.
 
 **Completed work in this session**
-- **Fase 1 (Seguridad & Registro):** Se implementó la creación de administrador desde variables de entorno, 2FA (TOTP) obligatorio, logs de auditoría detallados, y el formulario de registro de negocios con subida de documentos.
-- **Fase 2 (Core Financiero con Stripe):** Se implementó el flujo de pago de anticipos con Stripe Checkout, un webhook para confirmación de pagos, bloqueo de citas por 30 min (), y la lógica de comisiones (8%) y cancelaciones.
-- **Fase 3 (Panel Financiero y Liquidaciones):** Se construyó un sistema de contabilidad de doble entrada (), un panel financiero para negocios, y un sistema de generación y gestión de liquidaciones mensuales para administradores, incluyendo la capacidad de retener pagos.
+-   **Fase P2 - Gestión de Trabajadores y Horarios:** Se implementó el CRUD completo para trabajadores, gestión de horarios complejos (con breaks y buffers), manejo de excepciones (vacaciones), y un motor de disponibilidad que calcula slots en tiempo real. Se desarrolló la UI correspondiente en el panel de negocio.
+-   **Refactorización del Backend:** Se migró el código del monolito  a una arquitectura modular estándar de FastAPI (, , , etc.), mejorando la mantenibilidad.
+-   **Servicios Mock (SMS y Email):** Se implementaron servicios simulados para Twilio (SMS) y Resend (Email), incluyendo rate limiting y expiración de códigos. El sistema está preparado para usar credenciales reales a través de variables de entorno.
+-   **Notificaciones a Trabajadores:** Se añadió una notificación (mock de email y en la BD) que se envía a un trabajador cuando se le asigna una nueva cita confirmada.
 
 **Earlier issues found/mentioned but not fixed**
-- None.
+- El problema de credenciales inválidas del administrador es el único pendiente y ya está listado en .
 
 **Known issue recurrence from previous fork**
 - **Issue:** Errores de Mixed Content (HTTP/HTTPS) en el entorno de vista previa.
@@ -111,75 +98,82 @@ No hay tareas en progreso. La fase anterior se completó y esta nueva fase está
 - **Authentication:** JWT, TOTP (con )
 - **Payments:** Stripe Checkout & Webhooks
 - **Accounting:** Double-entry ledger system
+- **SEO:** Slugification, sitemap generation (en progreso)
 
 **key DB schema**
 - : { , , , ,  }
+- : { , ,  } (se añadirá )
 - : { , , ,  }
-- : {  ('HOLD', 'CONFIRMED', 'EXPIRED'), , ,  }
 - : { , , , ,  }
-- : { , , , ,  }
-- : { , ,  ('PENDING', 'PAID', 'HELD'),  }
-- : { , , ,  }
--  (próximo a crear): { , , , ,  }
+- : { ,  } (se añadirá )
+- : { ,  } (se añadirá )
+-  (nuevo): { , , ,  }
 
 **changes in tech stack**
 - No hay cambios en la pila tecnológica principal.
 
 **All files of reference**
-- : Archivo monolítico que contiene toda la lógica de backend. Ha crecido considerablemente y es el archivo principal a modificar.
-- : Contiene las funciones de cliente para todos los endpoints de la API.
-- : Nueva página del panel financiero.
-- : Documento de requisitos del producto, actualizado con el progreso.
+- **Refactorización:** , , , .
+- **Fase P4 (SEO):** , , , .
+- **Fase P2 (Equipo):** ,  (actualizado).
+- **Documentación:** .
+- **Legacy:**  sigue siendo un archivo central.
 
 **Areas that need refactoring**:
-- **Backend Monolítico:** El archivo  supera las 3000 líneas. Es crítico refactorizarlo en una estructura de directorios estándar de FastAPI (, , , ) para mantener la escalabilidad y mantenibilidad del proyecto. Aunque el usuario no lo ha solicitado, es una deuda técnica importante.
+- El  todavía contiene la mayor parte de la lógica de los routers (negocios, finanzas, admin, etc.) y la configuración de la app de FastAPI. El plan aprobado por el usuario es mover esta lógica gradualmente a la nueva estructura modular en .
 
 **key api endpoints**
-- : Crea una sesión de pago en Stripe.
-- : Recibe eventos de Stripe para confirmar pagos.
-- : Devuelve el resumen financiero para un negocio.
-- : Inicia el job de liquidación mensual.
-- : Retiene el pago de una liquidación.
+-  (en planificación)
+-  (en planificación)
+- 
+- 
 
 **Critical Info for New Agent**
-- La próxima fase, **Gestión de Trabajadores y Horarios**, tiene requisitos muy específicos del usuario que deben seguirse al pie de la letra. Presta especial atención a los detalles sobre **timezones**, validaciones de horarios, excepciones por rango de fechas y la lógica del motor de disponibilidad.
-- Toda la lógica financiera ahora se basa en el sistema de **ledger**. Cualquier nueva acción que implique dinero debe generar las correspondientes entradas de débito/crédito.
-- El backend en  es un monolito. Prioriza la implementación de las nuevas características como lo solicita el usuario, pero ten en mente que una refactorización será necesaria pronto.
+- **Prioridad Inmediata:** Antes de continuar con la Fase P4, se recomienda abordar el **problema de login del administrador**. Es un bloqueador para que el usuario pueda probar la aplicación.
+- **Estado de la Refactorización:** El refactor del backend es parcial. La nueva estructura de archivos existe, pero el servicio  sigue ejecutando la aplicación desde . Toda la nueva lógica debe crearse en los módulos correspondientes, pero la lógica antigua aún reside en  y debe ser migrada progresivamente.
+- **Configuración de Servicios:** Los servicios de SMS y Email están en modo mock. La lógica para activarlos en producción a través de variables de entorno ya está implementada en  y documentada en .
 
 **documents and test reports created in this job**
 - 
--  (último reporte, 100% de éxito)
+-  (100% éxito, 35 tests)
+- 
 
 **Last 10 User Messages and any pending HUMAN messages**
-El último mensaje del usuario () aprueba el plan para la Fase P2 (Gestión de trabajadores) y proporciona una lista de ajustes críticos y obligatorios:
-1.  **Timezone Obligatorio:** Añadir  a los negocios.
-2.  **Validación de Horarios:** Los bloques de horarios de los trabajadores no deben solaparse.
-3.  **Excepciones por Rango:** Soportar bloqueos por rango de fecha/hora, no solo por día completo.
-4.  **Soft Delete Real:** Al eliminar un trabajador, marcar como inactivo pero conservar su historial.
-5.  **Endpoint de Disponibilidad Detallado:** La respuesta de la API debe incluir la razón por la cual un slot no está disponible.
-6.  **Asociación Servicio-Trabajador:** Permitir que los servicios se asocien a trabajadores específicos.
+1.  **Usuario (M449):** Pregunta por el código QR para el 2FA de su cuenta.
+2.  **Agente (M450-462):** Intenta ayudar al usuario a configurar su 2FA, regenerando el secreto, proporcionando la clave manual, un URI para generar el QR, y finalmente una URL directa a una imagen QR generada.
+3.  **Usuario (M463):** Informa que las credenciales son inválidas.
+4.  **Agente (M464-470):** Investiga el problema. Confirma con  que el login de backend funciona. Concluye que el problema debe estar en el frontend y pide al usuario más detalles sobre la página y el error exacto.
+5.  **Usuario (M471):** Ignora el problema de login y da instrucciones detalladas para la siguiente fase: **P4 - SEO y Preparación para Producción**.
+6.  **Agente (M472):** Presenta un plan detallado para la Fase P4.
+7.  **Usuario (M474):** Confirma el plan y añade ajustes específicos sobre las rutas de sitemap/robots.txt, páginas SEO esenciales y normalización de slugs.
+8.  **Agente (M475-488):** Comienza la implementación del backend para la Fase P4, creando utilidades de slug, modelos y routers base.
 
-El agente ha confirmado que entiende estos requisitos y está listo para comenzar la implementación.
+El problema de login del usuario sigue sin resolverse.
 
 **Project Health Check:**
-- **Broken:** Nada.
+- **Broken:**
+    - El flujo de login del administrador está fallando para el usuario.
 - **Mocked:**
-  - Verificación por SMS.
-  - El pago de liquidaciones a negocios es un proceso manual (marcar como pagado), no una transferencia real a través de Stripe Connect.
+    - Verificación por SMS (Twilio).
+    - Envío de emails (Resend).
+    - Liquidaciones y pagos a negocios (no se usa Stripe Connect todavía).
 
 **3rd Party Integrations**
-- **Stripe:** Activamente usado para pagos (Checkout y Webhooks) en modo de prueba.
-- **TOTP (pyotp):** Implementado y funcional para el 2FA del administrador.
-- **Twilio:** Planificado para el futuro, actualmente simulado.
+- **Stripe:** Pagos con Checkout y Webhooks (en modo de prueba).
+- **pyotp:** Autenticación de dos factores (2FA) para administradores.
+- **Twilio:** Planificado, actualmente mockeado.
+- **Resend:** Planificado, actualmente mockeado.
 
 **Testing status**
-- **Testing agent used after significant changes:** YES. Se ha utilizado después de cada fase principal, con un 100% de éxito en la última ejecución.
-- **Test files created:** None.
+- **Testing agent used after significant changes:** YES. Se ejecutó después de la refactorización del backend, con un 100% de éxito en 35 tests que cubren la nueva lógica de SMS y los flujos existentes.
+- **Test files created:** .
 - **Known regressions:** None.
 
 **Credentials to test flow:**
-- **Admin:** Definido en las variables de entorno  y . El primer login requiere configurar 2FA.
-- **User/Business:** Se pueden crear a través de los formularios de registro.
+- **Admin:**
+    - Email: 
+    - Password: 
+    - El 2FA está habilitado. Se requerirá un código de una app de autenticación.
 
 **What agent forgot to execute**
-- El agente ha seguido todas las instrucciones del usuario y no ha omitido ninguna tarea solicitada.</analysis>
+- El agente no resolvió el problema de credenciales inválidas del administrador. Fue interrumpido por la solicitud del usuario de iniciar una nueva fase (P4). Este problema debe ser priorizado.</analysis>
