@@ -1590,7 +1590,7 @@ async def update_worker(
     updated = await db.workers.find_one({"id": worker_id}, {"_id": 0})
     return WorkerResponse(**updated)
 
-@businesses_router.delete("/workers/{worker_id}")
+@businesses_router.delete("/my/workers/{worker_id}")
 async def delete_worker(worker_id: str, token_data: TokenData = Depends(require_business)):
     """Soft delete a worker (marks as inactive, preserves history)"""
     user = await db.users.find_one({"id": token_data.user_id})
