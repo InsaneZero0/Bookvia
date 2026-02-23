@@ -115,7 +115,7 @@ export default function BusinessSEOPage() {
       <SEOHead
         title={`${business.name} - ${cityName} | Bookvia`}
         description={business.description?.slice(0, 160) || `Reserva una cita en ${business.name}, ${cityName}. Agenda online fácil y rápido.`}
-        canonical={`/${country.toLowerCase()}/${city.toLowerCase()}/${slug}`}
+        canonical={`/${country.toLowerCase()}/${city.toLowerCase()}/${businessSlug}`}
         ogImage={business.photos?.[0] || business.logo_url}
         keywords={`${business.name}, ${cityName}, reservas, citas`}
       />
