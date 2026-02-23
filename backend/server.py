@@ -1046,6 +1046,7 @@ async def register_business(business: BusinessCreate):
         "deposit_amount": max(business.deposit_amount, 50.0),
         "min_time_between_appointments": business.min_time_between_appointments,
         "service_radius_km": business.service_radius_km,
+        "timezone": business.timezone,
         "photos": [],
         "logo_url": None,
         "slug": slug,
@@ -1054,6 +1055,7 @@ async def register_business(business: BusinessCreate):
         "stripe_subscription_id": None,
         "trial_ends_at": trial_ends,
         "is_featured": False,
+        "payout_hold": False,
         "created_at": datetime.now(timezone.utc).isoformat()
     }
     
