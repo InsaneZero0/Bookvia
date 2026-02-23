@@ -33,7 +33,7 @@ export default function BusinessSEOPage() {
         setLoading(true);
         
         // Fetch business details using SEO endpoint
-        const res = await api.get(`/api/seo/business/${country}/${city}/${slug}`);
+        const res = await seoAPI.getBusiness(country, city, slug);
         
         if (res.data.error) {
           setError('Negocio no encontrado');
