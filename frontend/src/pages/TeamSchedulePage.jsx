@@ -78,7 +78,7 @@ export default function TeamSchedulePage() {
 
   useEffect(() => {
     if (!isAuthenticated || !isBusiness) {
-      navigate('/business/login');
+      navigate('/login');
       return;
     }
     if (business?.id) {
