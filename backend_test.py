@@ -17,7 +17,7 @@ from datetime import datetime
 from typing import Dict, Any, Optional
 
 class BookviaAPITester:
-    def __init__(self, base_url: str = "https://bookvia-preview.preview.emergentagent.com"):
+    def __init__(self, base_url: str = "https://booking-staff.preview.emergentagent.com"):
         self.base_url = base_url.rstrip('/')
         self.api_base = f"{self.base_url}/api"
         self.token = None
