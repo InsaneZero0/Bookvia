@@ -26,23 +26,21 @@ export default function CategoryPage() {
         setLoading(true);
         
         // Fetch city info
-        const citiesRes = await api.get(`/api/seo/cities/${country.toUpperCase()}`);
+        const citiesRes = await seoAPI.getCities(country.toUpperCase());
         const cityInfo = citiesRes.data.find(
           c => c.slug.toLowerCase() === city.toLowerCase()
         );
         setCityData(cityInfo || { name: city, slug: city });
         
         // Fetch categories to get category info
-        const categoriesRes = await api.get('/api/seo/categories');
+        const categoriesRes = await seoAPI.getCategories();
         const catInfo = categoriesRes.data.find(
           c => c.slug.toLowerCase() === category.toLowerCase()
         );
         setCategoryData(catInfo || { name_es: category, slug: category });
         
         // Fetch businesses for this city and category
-        const businessesRes = await api.get(
-          `/api/seo/businesses/${country}/${city}?category=${category}&page=${page}`
-        );
+        const businessesRes = await seoAPI.getBusinesses(country, city, category, page);
         setBusinesses(businessesRes.data?.businesses || []);
         setTotalPages(businessesRes.data?.pages || 1);
         
