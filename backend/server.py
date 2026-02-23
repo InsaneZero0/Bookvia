@@ -1514,7 +1514,9 @@ async def get_my_bookings(
     
     bookings = await db.bookings.find(filters, {"_id": 0}).sort("date", 1).to_list(100)
     
-    # Populate names
+    now = datetime.now(timezone.utc)
+    
+    # Populate names and calculate fields
     for b in bookings:
         business = await db.businesses.find_one({"id": b["business_id"]})
         service = await db.services.find_one({"id": b["service_id"]})
@@ -1523,6 +1525,18 @@ async def get_my_bookings(
         b["business_name"] = business["name"] if business else None
         b["service_name"] = service["name"] if service else None
         b["worker_name"] = worker["name"] if worker else None
+        
+        # Calculate hours until appointment
+        try:
+            appointment_dt = datetime.strptime(f"{b['date']} {b['time']}", "%Y-%m-%d %H:%M")
+            appointment_dt = appointment_dt.replace(tzinfo=timezone.utc)
+            hours_diff = (appointment_dt - now).total_seconds() / 3600
+            b["hours_until_appointment"] = round(hours_diff, 2)
+            # Can cancel only if > 24h (for policy) or if still in HOLD
+            b["can_cancel"] = hours_diff > 0 and (b["status"] in [AppointmentStatus.HOLD, AppointmentStatus.CONFIRMED])
+        except:
+            b["hours_until_appointment"] = None
+            b["can_cancel"] = False
     
     return [BookingResponse(**b) for b in bookings]
 
@@ -1545,6 +1559,8 @@ async def get_business_bookings(
     
     bookings = await db.bookings.find(filters, {"_id": 0}).sort("date", 1).to_list(1000)
     
+    now = datetime.now(timezone.utc)
+    
     # Populate names
     for b in bookings:
         booking_user = await db.users.find_one({"id": b["user_id"]})
@@ -1554,6 +1570,17 @@ async def get_business_bookings(
         b["user_name"] = booking_user["full_name"] if booking_user else None
         b["service_name"] = service["name"] if service else None
         b["worker_name"] = worker["name"] if worker else None
+        
+        # Calculate hours until appointment
+        try:
+            appointment_dt = datetime.strptime(f"{b['date']} {b['time']}", "%Y-%m-%d %H:%M")
+            appointment_dt = appointment_dt.replace(tzinfo=timezone.utc)
+            hours_diff = (appointment_dt - now).total_seconds() / 3600
+            b["hours_until_appointment"] = round(hours_diff, 2)
+            b["can_cancel"] = hours_diff > 0
+        except:
+            b["hours_until_appointment"] = None
+            b["can_cancel"] = False
     
     return [BookingResponse(**b) for b in bookings]
 
