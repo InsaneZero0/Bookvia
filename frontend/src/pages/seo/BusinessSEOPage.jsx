@@ -20,20 +20,25 @@ import { seoAPI } from '@/lib/api';
  * This page differs from BusinessProfilePage in that it uses the SEO URL structure
  */
 export default function BusinessSEOPage() {
-  const { country, city, slug } = useParams();
+  const { country, city, slug, slugOrCategory } = useParams();
   const navigate = useNavigate();
+  
+  // Handle both direct route and SEORouter
+  const businessSlug = slug || slugOrCategory;
   
   const [business, setBusiness] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   useEffect(() => {
+    if (!businessSlug) return;
+    
     const fetchBusiness = async () => {
       try {
         setLoading(true);
         
         // Fetch business details using SEO endpoint
-        const res = await seoAPI.getBusiness(country, city, slug);
+        const res = await seoAPI.getBusiness(country, city, businessSlug);
         
         if (res.data.error) {
           setError('Negocio no encontrado');
