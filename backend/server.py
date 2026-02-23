@@ -1746,13 +1746,17 @@ async def get_business_services(business_id: str):
     return [ServiceResponse(**s) for s in services]
 
 @services_router.put("/{service_id}", response_model=ServiceResponse)
-async def update_service(service_id: str, update: ServiceCreate, token_data: TokenData = Depends(require_business)):
+async def update_service(service_id: str, update: ServiceUpdate, token_data: TokenData = Depends(require_business)):
     user = await db.users.find_one({"id": token_data.user_id})
     service = await db.services.find_one({"id": service_id, "business_id": user.get("business_id")})
     if not service:
         raise HTTPException(status_code=404, detail="Service not found")
     
-    await db.services.update_one({"id": service_id}, {"$set": update.model_dump()})
+    update_data = {k: v for k, v in update.model_dump().items() if v is not None}
+    if not update_data:
+        raise HTTPException(status_code=400, detail="No data to update")
+    
+    await db.services.update_one({"id": service_id}, {"$set": update_data})
     updated = await db.services.find_one({"id": service_id}, {"_id": 0})
     return ServiceResponse(**updated)
 
