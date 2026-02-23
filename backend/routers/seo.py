@@ -19,26 +19,40 @@ import os
 
 from motor.motor_asyncio import AsyncIOMotorClient
 
-# Use server.py's db connection since we're still transitioning
+# Import config for BASE_URL
+try:
+    from core.config import BASE_URL as CONFIG_BASE_URL, ENV, IS_PRODUCTION
+except ImportError:
+    CONFIG_BASE_URL = os.environ.get('BASE_URL', 'http://localhost:8001')
+    ENV = os.environ.get('ENV', 'development')
+    IS_PRODUCTION = ENV == 'production'
+
+# Database connection
 mongo_url = os.environ.get('MONGO_URL', 'mongodb://localhost:27017')
 db_name = os.environ.get('DB_NAME', 'test_database')
 client = AsyncIOMotorClient(mongo_url)
 db = client[db_name]
 
-ENV = os.environ.get('ENV', 'development')
-IS_PRODUCTION = ENV == 'production'
-
 seo_router = APIRouter(tags=["SEO"])
-
-# Base URL for sitemap
-BASE_URL = "https://bookvia.com"  # Will be overridden by request host in production
 
 
 def get_base_url(request: Request) -> str:
-    """Get base URL from request"""
+    """
+    Get base URL for sitemap and robots.txt.
+    Priority: BASE_URL env var > request host > config default
+    """
+    # Check for explicit BASE_URL first
+    env_base_url = os.environ.get('BASE_URL')
+    if env_base_url:
+        return env_base_url.rstrip('/')
+    
+    # In production, use the request host with HTTPS
     if IS_PRODUCTION:
-        return f"https://{request.headers.get('host', 'bookvia.com')}"
-    return str(request.base_url).rstrip('/')
+        host = request.headers.get('host', 'bookvia.com')
+        return f"https://{host}"
+    
+    # Fallback to config or request
+    return CONFIG_BASE_URL.rstrip('/')
 
 
 async def generate_sitemap_xml(base_url: str) -> str:
