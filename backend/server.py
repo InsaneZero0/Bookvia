@@ -1561,7 +1561,7 @@ async def get_workers_by_business(business_id: str, include_inactive: bool = Fal
     workers = await db.workers.find(filters, {"_id": 0}).to_list(100)
     return [WorkerResponse(**w) for w in workers]
 
-@businesses_router.get("/workers/{worker_id}", response_model=WorkerResponse)
+@businesses_router.get("/my/workers/{worker_id}", response_model=WorkerResponse)
 async def get_worker(worker_id: str, token_data: TokenData = Depends(require_business)):
     """Get a specific worker"""
     user = await db.users.find_one({"id": token_data.user_id})
