@@ -1430,12 +1430,12 @@ async def get_business_dashboard(token_data: TokenData = Depends(require_busines
     today_appointments = await db.bookings.count_documents({
         "business_id": business["id"],
         "date": today,
-        "status": {"$in": [AppointmentStatus.PENDING, AppointmentStatus.CONFIRMED]}
+        "status": {"$in": [AppointmentStatus.HOLD, AppointmentStatus.CONFIRMED]}
     })
     
     pending_appointments = await db.bookings.count_documents({
         "business_id": business["id"],
-        "status": AppointmentStatus.PENDING
+        "status": AppointmentStatus.HOLD
     })
     
     # This month revenue
