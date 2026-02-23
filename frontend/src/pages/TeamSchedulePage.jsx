@@ -77,6 +77,9 @@ export default function TeamSchedulePage() {
   const [dayAvailability, setDayAvailability] = useState(null);
 
   useEffect(() => {
+    // Wait for auth to initialize
+    if (authLoading) return;
+    
     if (!isAuthenticated || !isBusiness) {
       navigate('/login');
       return;
@@ -84,7 +87,7 @@ export default function TeamSchedulePage() {
     if (business?.id) {
       loadData();
     }
-  }, [isAuthenticated, isBusiness, business?.id]);
+  }, [authLoading, isAuthenticated, isBusiness, business?.id]);
 
   const loadData = async () => {
     if (!business?.id) return;
