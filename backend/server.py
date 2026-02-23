@@ -1888,42 +1888,70 @@ async def get_pending_businesses(token_data: TokenData = Depends(require_admin))
     return [BusinessResponse(**b) for b in businesses]
 
 @admin_router.put("/businesses/{business_id}/approve")
-async def approve_business(business_id: str, token_data: TokenData = Depends(require_admin)):
+async def approve_business(business_id: str, request: Request, token_data: TokenData = Depends(require_admin)):
+    business = await db.businesses.find_one({"id": business_id})
+    if not business:
+        raise HTTPException(status_code=404, detail="Business not found")
+    
     result = await db.businesses.update_one(
         {"id": business_id},
         {"$set": {"status": BusinessStatus.APPROVED}}
     )
-    if result.modified_count == 0:
-        raise HTTPException(status_code=404, detail="Business not found")
     
-    # Log action
-    await db.audit_logs.insert_one({
-        "id": generate_id(),
-        "admin_id": token_data.user_id,
-        "action": "approve_business",
-        "target_id": business_id,
-        "created_at": datetime.now(timezone.utc).isoformat()
-    })
+    # Create audit log
+    await create_audit_log(
+        admin_id=token_data.user_id,
+        admin_email=token_data.email,
+        action=AuditAction.BUSINESS_APPROVE,
+        target_type="business",
+        target_id=business_id,
+        details={"business_name": business.get("name")},
+        request=request
+    )
+    
+    # Notify business owner
+    if business.get("user_id"):
+        await create_notification(
+            business["user_id"],
+            "Negocio Aprobado",
+            f"¡Tu negocio {business['name']} ha sido aprobado! Ya puedes recibir reservas.",
+            "system",
+            {"business_id": business_id}
+        )
     
     return {"message": "Business approved"}
 
 @admin_router.put("/businesses/{business_id}/reject")
-async def reject_business(business_id: str, reason: str = "", token_data: TokenData = Depends(require_admin)):
+async def reject_business(business_id: str, request: Request, reason: str = "", token_data: TokenData = Depends(require_admin)):
+    business = await db.businesses.find_one({"id": business_id})
+    if not business:
+        raise HTTPException(status_code=404, detail="Business not found")
+    
     result = await db.businesses.update_one(
         {"id": business_id},
         {"$set": {"status": BusinessStatus.REJECTED, "rejection_reason": reason}}
     )
-    if result.modified_count == 0:
-        raise HTTPException(status_code=404, detail="Business not found")
     
-    await db.audit_logs.insert_one({
-        "id": generate_id(),
-        "admin_id": token_data.user_id,
-        "action": "reject_business",
-        "target_id": business_id,
-        "reason": reason,
-        "created_at": datetime.now(timezone.utc).isoformat()
-    })
+    # Create audit log
+    await create_audit_log(
+        admin_id=token_data.user_id,
+        admin_email=token_data.email,
+        action=AuditAction.BUSINESS_REJECT,
+        target_type="business",
+        target_id=business_id,
+        details={"business_name": business.get("name"), "reason": reason},
+        request=request
+    )
+    
+    # Notify business owner
+    if business.get("user_id"):
+        await create_notification(
+            business["user_id"],
+            "Negocio Rechazado",
+            f"Tu solicitud de negocio ha sido rechazada. Razón: {reason or 'No especificada'}",
+            "system",
+            {"business_id": business_id}
+        )
     
     return {"message": "Business rejected"}
 
