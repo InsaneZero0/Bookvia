@@ -975,10 +975,16 @@ async def search_businesses(
     city: Optional[str] = None,
     min_rating: Optional[float] = None,
     is_home_service: Optional[bool] = None,
+    include_pending: bool = False,
     page: int = 1,
     limit: int = 20
 ):
-    filters = {"status": BusinessStatus.APPROVED}
+    # By default only show approved businesses
+    # If include_pending=True, also show PENDING (for profile viewing, but no bookings)
+    if include_pending:
+        filters = {"status": {"$in": [BusinessStatus.APPROVED, BusinessStatus.PENDING]}}
+    else:
+        filters = {"status": BusinessStatus.APPROVED}
     
     if query:
         filters["$or"] = [
@@ -1000,12 +1006,14 @@ async def search_businesses(
         {"_id": 0, "password_hash": 0, "clabe": 0, "rfc": 0, "ine_url": 0, "proof_of_address_url": 0}
     ).sort("rating", -1).skip(skip).limit(limit).to_list(limit)
     
-    # Add category names
+    # Add category names and booking availability
     for b in businesses:
         if b.get("category_id"):
             cat = await db.categories.find_one({"id": b["category_id"]})
             if cat:
                 b["category_name"] = cat.get("name_es", "")
+        # Mark if business can accept bookings
+        b["can_accept_bookings"] = b.get("status") == BusinessStatus.APPROVED
     
     return [BusinessResponse(**b) for b in businesses]
 
