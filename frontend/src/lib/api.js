@@ -174,6 +174,7 @@ export const notificationsAPI = {
   getAll: (unreadOnly = false) => api.get('/notifications', { params: { unread_only: unreadOnly } }),
   markRead: (id) => api.put(`/notifications/${id}/read`),
   markAllRead: () => api.put('/notifications/read-all'),
+  getUnreadCount: () => api.get('/notifications/unread-count'),
 };
 
 // Admin API
@@ -187,6 +188,7 @@ export const adminAPI = {
   deleteReview: (id, reason) => api.delete(`/admin/reviews/${id}`, { params: { reason } }),
   getAuditLogs: (params) => api.get('/admin/audit-logs', { params }),
   toggleFeatured: (id, featured) => api.put(`/admin/businesses/${id}/feature`, null, { params: { featured } }),
+  getSentEmails: (params) => api.get('/admin/emails', { params }),
   // Payment management
   holdPayment: (id, reason) => api.put(`/admin/payments/${id}/hold`, null, { params: { reason } }),
   releasePayment: (id) => api.put(`/admin/payments/${id}/release`),
