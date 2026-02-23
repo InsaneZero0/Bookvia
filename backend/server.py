@@ -282,6 +282,7 @@ class BusinessUpdate(BaseModel):
     zip_code: Optional[str] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
+    timezone: Optional[str] = None
     requires_deposit: Optional[bool] = None
     deposit_amount: Optional[float] = None
     min_time_between_appointments: Optional[int] = None
