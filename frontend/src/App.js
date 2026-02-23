@@ -61,6 +61,10 @@ function App() {
               <Route path="/for-business" element={<Layout><ForBusinessPage /></Layout>} />
               <Route path="/business/register" element={<BusinessRegisterPage />} />
               
+              {/* Payment Pages */}
+              <Route path="/payment/success" element={<Layout><PaymentSuccessPage /></Layout>} />
+              <Route path="/payment/cancel" element={<Layout><PaymentCancelPage /></Layout>} />
+              
               {/* Admin Pages */}
               <Route path="/admin/login" element={<AdminLoginPage />} />
               <Route path="/admin" element={<Layout showFooter={false}><AdminDashboardPage /></Layout>} />
