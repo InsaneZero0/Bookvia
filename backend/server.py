@@ -1622,7 +1622,7 @@ async def reactivate_worker(worker_id: str, token_data: TokenData = Depends(requ
     )
     return {"message": "Worker reactivated", "worker_id": worker_id}
 
-@businesses_router.put("/workers/{worker_id}/schedule")
+@businesses_router.put("/my/workers/{worker_id}/schedule")
 async def update_worker_schedule(
     worker_id: str,
     schedule_update: WorkerScheduleUpdate,
