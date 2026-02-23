@@ -4209,9 +4209,19 @@ api_router.include_router(admin_router)
 api_router.include_router(notifications_router)
 api_router.include_router(finance_router)
 
+# Import and include SEO router (handles /sitemap.xml, /robots.txt, /api/seo/*)
+from routers.seo import seo_router
+app.include_router(seo_router)  # SEO routes at root level (no /api prefix for sitemap/robots)
+
 app.include_router(api_router)
 
-# Add middleware to handle HTTPS redirects behind proxy
+# ========================== MIDDLEWARE ==========================
+
+# Rate limiting middleware
+from middleware.rate_limit import RateLimitMiddleware
+app.add_middleware(RateLimitMiddleware)
+
+# HTTPS redirect middleware for proxy
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import RedirectResponse
 
