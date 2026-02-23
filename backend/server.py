@@ -950,38 +950,34 @@ async def login_user(credentials: UserLogin):
 
 @auth_router.post("/phone/send-code")
 async def send_phone_code(request: PhoneVerifyRequest):
-    code = str(random.randint(100000, 999999))
+    """Send phone verification code with rate limiting"""
+    from services.sms import send_verification_code, SMSRateLimitError, SMSNotConfiguredError, SMSServiceError
+    from core.config import IS_DEVELOPMENT
     
-    # Store code with expiration
-    await db.phone_codes.update_one(
-        {"phone": request.phone},
-        {"$set": {"code": code, "expires_at": (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat()}},
-        upsert=True
-    )
-    
-    # Send SMS
-    message = f"Tu codigo de verificacion Bookvia es: {code}"
-    await send_sms(request.phone, message)
-    
-    # In dev mode, return code (remove in production)
-    is_dev = os.environ.get('ENV', 'development') == 'development'
-    response = {"message": "Code sent successfully"}
-    if is_dev:
-        response["dev_code"] = code
-    return response
+    try:
+        code, msg_id = await send_verification_code(request.phone)
+        
+        response = {"message": "Code sent successfully"}
+        if IS_DEVELOPMENT:
+            response["dev_code"] = code
+        return response
+        
+    except SMSRateLimitError as e:
+        raise HTTPException(status_code=429, detail=str(e))
+    except SMSNotConfiguredError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except SMSServiceError as e:
+        logger.error(f"SMS error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to send verification code")
 
 @auth_router.post("/phone/verify")
 async def verify_phone_code(request: PhoneVerifyConfirm, token_data: TokenData = Depends(require_auth)):
-    stored = await db.phone_codes.find_one({"phone": request.phone})
-    if not stored:
-        raise HTTPException(status_code=400, detail="No code found for this phone")
+    """Verify phone code with proper expiration"""
+    from services.sms import verify_code
     
-    if stored["code"] != request.code:
-        raise HTTPException(status_code=400, detail="Invalid code")
-    
-    expires_at = datetime.fromisoformat(stored["expires_at"])
-    if expires_at < datetime.now(timezone.utc):
-        raise HTTPException(status_code=400, detail="Code expired")
+    is_valid = await verify_code(request.phone, request.code)
+    if not is_valid:
+        raise HTTPException(status_code=400, detail="Invalid or expired code")
     
     # Mark phone as verified
     await db.users.update_one(
@@ -989,7 +985,6 @@ async def verify_phone_code(request: PhoneVerifyConfirm, token_data: TokenData =
         {"$set": {"phone_verified": True, "phone": request.phone}}
     )
     
-    await db.phone_codes.delete_one({"phone": request.phone})
     return {"message": "Phone verified successfully"}
 
 @auth_router.get("/me", response_model=UserResponse)
