@@ -225,6 +225,7 @@ class BusinessResponse(BaseModel):
     is_featured: bool = False
     plan_type: str = "basic"
     trial_ends_at: Optional[str] = None
+    can_accept_bookings: bool = True  # False if PENDING_REVIEW
 
 class BusinessUpdate(BaseModel):
     name: Optional[str] = None
