@@ -161,7 +161,43 @@ User-agent: *
 Allow: /
 
 # Sitemap
-Sitemap: {base_url}/sitemap.xml
+Sitemap: {base_url}/api/seo/sitemap.xml
+
+# Disallow admin and API
+Disallow: /admin
+Disallow: /api/
+Disallow: /dashboard
+Disallow: /business/dashboard
+Disallow: /business/finance
+Disallow: /business/team
+
+# Disallow auth pages
+Disallow: /login
+Disallow: /register
+Disallow: /business/register
+
+# Allow SEO pages
+Allow: /mx/
+Allow: /us/
+Allow: /es/
+"""
+    return PlainTextResponse(
+        content=content,
+        headers={"Cache-Control": "public, max-age=86400"}  # Cache 24 hours
+    )
+
+
+@seo_router.get("/api/seo/robots.txt", response_class=PlainTextResponse)
+async def get_robots_api(request: Request):
+    """Generate robots.txt (API route for ingress compatibility)"""
+    base_url = get_base_url(request)
+    
+    content = f"""# Bookvia Robots.txt
+User-agent: *
+Allow: /
+
+# Sitemap
+Sitemap: {base_url}/api/seo/sitemap.xml
 
 # Disallow admin and API
 Disallow: /admin
