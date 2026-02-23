@@ -1498,7 +1498,7 @@ def validate_schedule_blocks(schedule: Dict[str, DaySchedule]) -> None:
                     detail=f"Invalid block on day {day}: start_time must be before end_time"
                 )
 
-@businesses_router.post("/workers", response_model=WorkerResponse)
+@businesses_router.post("/my/workers", response_model=WorkerResponse)
 async def create_worker(worker: WorkerCreate, token_data: TokenData = Depends(require_business)):
     """Create a new worker for the business"""
     user = await db.users.find_one({"id": token_data.user_id})
