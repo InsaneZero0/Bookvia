@@ -56,7 +56,7 @@ export default function BusinessSEOPage() {
     };
     
     fetchBusiness();
-  }, [country, city, slug]);
+  }, [country, city, businessSlug]);
 
   // Redirect to booking flow
   const handleBookNow = () => {
