@@ -1772,22 +1772,261 @@ async def delete_service(service_id: str, token_data: TokenData = Depends(requir
 
 # ========================== BOOKING ROUTES ==========================
 
-@bookings_router.get("/availability/{business_id}")
-async def get_availability(business_id: str, date: str, service_id: Optional[str] = None):
-    """Get available time slots for a business on a specific date"""
+# ========================== AVAILABILITY ENGINE ==========================
+
+class SlotStatus(str, Enum):
+    AVAILABLE = "available"
+    BOOKED = "booked"
+    HOLD = "hold"
+    EXCEPTION = "exception"
+    OUTSIDE_SCHEDULE = "outside_schedule"
+    BUFFER = "buffer"
+
+class AvailabilitySlot(BaseModel):
+    time: str
+    end_time: str
+    status: str
+    reason: Optional[str] = None
+    worker_id: Optional[str] = None
+    worker_name: Optional[str] = None
+
+class AvailabilityResponse(BaseModel):
+    date: str
+    business_timezone: str
+    slots: List[AvailabilitySlot]
+    available_count: int
+    total_workers: int
+
+def is_exception_blocking(exception: dict, date_str: str, slot_start: datetime, slot_end: datetime) -> tuple:
+    """Check if an exception blocks a slot. Returns (is_blocking, reason)"""
+    exc_start_date = datetime.strptime(exception["start_date"], "%Y-%m-%d").date()
+    exc_end_date = datetime.strptime(exception["end_date"], "%Y-%m-%d").date()
+    slot_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+    
+    # Check if date is within exception range
+    if not (exc_start_date <= slot_date <= exc_end_date):
+        return False, None
+    
+    # If no times specified, it's a full day block
+    if not exception.get("start_time") or not exception.get("end_time"):
+        reason = exception.get("reason") or exception.get("exception_type", "Bloqueo")
+        return True, f"{reason} (día completo)"
+    
+    # Check time overlap
+    exc_start_time = datetime.strptime(exception["start_time"], "%H:%M")
+    exc_end_time = datetime.strptime(exception["end_time"], "%H:%M")
+    
+    # Convert slot times to same format for comparison
+    slot_start_time = datetime.strptime(slot_start.strftime("%H:%M"), "%H:%M")
+    slot_end_time = datetime.strptime(slot_end.strftime("%H:%M"), "%H:%M")
+    
+    # Check overlap
+    if not (slot_end_time <= exc_start_time or slot_start_time >= exc_end_time):
+        reason = exception.get("reason") or exception.get("exception_type", "Bloqueo")
+        return True, f"{reason} ({exception['start_time']}-{exception['end_time']})"
+    
+    return False, None
+
+@bookings_router.get("/availability/{business_id}", response_model=AvailabilityResponse)
+async def get_availability(
+    business_id: str,
+    date: str,
+    service_id: Optional[str] = None,
+    worker_id: Optional[str] = None,
+    include_unavailable: bool = False
+):
+    """
+    Get available time slots for a business on a specific date.
+    
+    Args:
+        business_id: The business ID
+        date: Date in YYYY-MM-DD format
+        service_id: Optional service ID to filter workers who can perform it
+        worker_id: Optional worker ID to get availability for specific worker
+        include_unavailable: If True, returns all slots with reasons for unavailability
+    
+    Returns:
+        AvailabilityResponse with slots showing availability status and reasons
+    """
     business = await db.businesses.find_one({"id": business_id})
     if not business:
         raise HTTPException(status_code=404, detail="Business not found")
     
-    # Get service duration
+    business_tz_name = business.get("timezone", "America/Mexico_City")
+    try:
+        business_tz = pytz.timezone(business_tz_name)
+    except pytz.UnknownTimeZoneError:
+        business_tz = pytz.timezone("America/Mexico_City")
+    
+    # Get buffer time between appointments
+    buffer_minutes = business.get("min_time_between_appointments", 0)
+    
+    # Get service info
+    service = None
     duration = 60
+    allowed_workers = None
+    
     if service_id:
         service = await db.services.find_one({"id": service_id})
         if service:
             duration = service.get("duration_minutes", 60)
+            if service.get("allowed_worker_ids"):
+                allowed_workers = service["allowed_worker_ids"]
     
-    # Get all workers
-    workers = await db.workers.find({"business_id": business_id, "active": True}, {"_id": 0}).to_list(100)
+    # Build worker filter
+    worker_filter = {"business_id": business_id, "active": True}
+    if worker_id:
+        worker_filter["id"] = worker_id
+    
+    workers = await db.workers.find(worker_filter, {"_id": 0}).to_list(100)
+    
+    # Filter workers by service if allowed_worker_ids is set
+    if allowed_workers:
+        workers = [w for w in workers if w["id"] in allowed_workers]
+    
+    if not workers:
+        return AvailabilityResponse(
+            date=date,
+            business_timezone=business_tz_name,
+            slots=[],
+            available_count=0,
+            total_workers=0
+        )
+    
+    # Get existing bookings for the date (HOLD and CONFIRMED)
+    existing_bookings = await db.bookings.find({
+        "business_id": business_id,
+        "date": date,
+        "status": {"$in": [AppointmentStatus.HOLD, AppointmentStatus.CONFIRMED]}
+    }, {"_id": 0}).to_list(1000)
+    
+    # Parse date
+    date_obj = datetime.strptime(date, "%Y-%m-%d")
+    day_of_week = str(date_obj.weekday())
+    
+    # Get current time in business timezone for filtering past slots
+    now_utc = datetime.now(timezone.utc)
+    now_local = now_utc.astimezone(business_tz)
+    is_today = date_obj.date() == now_local.date()
+    
+    slots_dict = {}  # time -> best slot info
+    
+    for worker in workers:
+        schedule = worker.get("schedule", {}).get(day_of_week)
+        
+        # Check if worker is available this day
+        if not schedule or not schedule.get("is_available", True):
+            continue
+        
+        # Get all time blocks for this day
+        blocks = schedule.get("blocks", [])
+        if not blocks:
+            # Legacy support: convert old format
+            if schedule.get("start_time") and schedule.get("end_time"):
+                blocks = [{"start_time": schedule["start_time"], "end_time": schedule["end_time"]}]
+            else:
+                continue
+        
+        for block in blocks:
+            block_start = datetime.strptime(block["start_time"], "%H:%M")
+            block_end = datetime.strptime(block["end_time"], "%H:%M")
+            
+            current_time = block_start
+            while current_time + timedelta(minutes=duration) <= block_end:
+                time_str = current_time.strftime("%H:%M")
+                slot_end = current_time + timedelta(minutes=duration)
+                end_time_str = slot_end.strftime("%H:%M")
+                
+                # Skip past slots if today
+                if is_today:
+                    slot_datetime = now_local.replace(
+                        hour=current_time.hour,
+                        minute=current_time.minute,
+                        second=0,
+                        microsecond=0
+                    )
+                    if slot_datetime <= now_local:
+                        current_time += timedelta(minutes=30)
+                        continue
+                
+                status = SlotStatus.AVAILABLE
+                reason = None
+                
+                # Check exceptions (vacations/blocks)
+                for exc in worker.get("exceptions", []):
+                    is_blocking, exc_reason = is_exception_blocking(exc, date, current_time, slot_end)
+                    if is_blocking:
+                        status = SlotStatus.EXCEPTION
+                        reason = exc_reason
+                        break
+                
+                # Check existing bookings
+                if status == SlotStatus.AVAILABLE:
+                    for booking in existing_bookings:
+                        if booking["worker_id"] == worker["id"]:
+                            booking_start = datetime.strptime(booking["time"], "%H:%M")
+                            booking_end = datetime.strptime(booking["end_time"], "%H:%M")
+                            
+                            # Add buffer to booking end
+                            booking_end_with_buffer = booking_end + timedelta(minutes=buffer_minutes)
+                            
+                            # Check overlap (including buffer)
+                            if not (slot_end <= booking_start or current_time >= booking_end_with_buffer):
+                                if booking["status"] == AppointmentStatus.HOLD:
+                                    status = SlotStatus.HOLD
+                                    reason = "Reserva en proceso de pago"
+                                else:
+                                    status = SlotStatus.BOOKED
+                                    reason = "Ocupado"
+                                break
+                            
+                            # Check buffer before booking
+                            if buffer_minutes > 0:
+                                buffer_start = booking_start - timedelta(minutes=buffer_minutes)
+                                if buffer_start < slot_end <= booking_start and current_time < booking_start:
+                                    status = SlotStatus.BUFFER
+                                    reason = f"Buffer de {buffer_minutes} min antes de cita"
+                                    break
+                
+                # Store best slot for this time (prefer available)
+                if time_str not in slots_dict:
+                    slots_dict[time_str] = {
+                        "time": time_str,
+                        "end_time": end_time_str,
+                        "status": status,
+                        "reason": reason,
+                        "worker_id": worker["id"] if status == SlotStatus.AVAILABLE else None,
+                        "worker_name": worker["name"] if status == SlotStatus.AVAILABLE else None
+                    }
+                elif status == SlotStatus.AVAILABLE and slots_dict[time_str]["status"] != SlotStatus.AVAILABLE:
+                    # This worker is available for this slot
+                    slots_dict[time_str] = {
+                        "time": time_str,
+                        "end_time": end_time_str,
+                        "status": status,
+                        "reason": None,
+                        "worker_id": worker["id"],
+                        "worker_name": worker["name"]
+                    }
+                
+                current_time += timedelta(minutes=30)  # 30 min intervals
+    
+    # Convert to list and sort
+    all_slots = sorted(slots_dict.values(), key=lambda s: s["time"])
+    
+    # Filter if not including unavailable
+    if not include_unavailable:
+        all_slots = [s for s in all_slots if s["status"] == SlotStatus.AVAILABLE]
+    
+    available_count = len([s for s in all_slots if s["status"] == SlotStatus.AVAILABLE])
+    
+    return AvailabilityResponse(
+        date=date,
+        business_timezone=business_tz_name,
+        slots=[AvailabilitySlot(**s) for s in all_slots],
+        available_count=available_count,
+        total_workers=len(workers)
+    )
     
     # Get existing bookings for the date
     existing_bookings = await db.bookings.find({
