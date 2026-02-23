@@ -170,6 +170,14 @@ export const adminAPI = {
   holdPayment: (id, reason) => api.put(`/admin/payments/${id}/hold`, null, { params: { reason } }),
   releasePayment: (id) => api.put(`/admin/payments/${id}/release`),
   getHeldPayments: (params) => api.get('/admin/payments/held', { params }),
+  // Settlements
+  getSettlements: (params) => api.get('/admin/settlements', { params }),
+  generateSettlements: (year, month) => api.post(`/admin/settlements/generate?year=${year}&month=${month}`),
+  markSettlementPaid: (id, payout_reference) => api.put(`/admin/settlements/${id}/pay`, { payout_reference }),
+  togglePayoutHold: (businessId, hold, reason) => api.put(`/admin/businesses/${businessId}/payout-hold`, { hold, reason }),
+  // Export
+  exportTransactions: (year, month) => api.get(`/admin/export/transactions?year=${year}&month=${month}`, { responseType: 'blob' }),
+  exportSettlements: (year, month) => api.get(`/admin/export/settlements?year=${year}&month=${month}`, { responseType: 'blob' }),
 };
 
 // Utility API
