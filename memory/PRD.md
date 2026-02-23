@@ -85,7 +85,10 @@ backend/
 - **Sitemap.xml**: Dynamic generation at `/api/seo/sitemap.xml`
   - 94 URLs: countries, cities, categories, businesses
   - Auto-updates with new content
-- **Robots.txt**: Available at `/api/seo/robots.txt` and `/robots.txt`
+  - Uses `BASE_URL` env var for correct domain
+- **Robots.txt**: 
+  - Static at `/robots.txt` (frontend)
+  - Dynamic at `/api/seo/robots.txt` (backend)
 - **Meta Tags**: Dynamic generation via `/api/seo/meta/{type}/{slug}`
 - **Canonical URLs**: Implemented in SEOHead component
 
@@ -103,9 +106,41 @@ backend/
 - Headers: `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`
 
 #### Staging-Ready Features
+- Health endpoint: `GET /api/health` with config status
 - Logging configured (development: colored, production: JSON structured)
 - Rate limiting active
-- Mocks auto-disabled when credentials provided
+- **Auto-mock detection**: SMS/Email automatically mocked if credentials missing
+- Base URL configurable via `BASE_URL` env var
+
+---
+
+### Phase P4.5 - Staging Preparation ✅ COMPLETE (Feb 23, 2026)
+
+#### Environment Configuration
+- `BASE_URL` env var for sitemap/email URLs
+- Auto-detection of service providers (Twilio, Resend, Stripe)
+- Fail-fast validation for required vars (MONGO_URL, DB_NAME, JWT_SECRET in prod)
+
+#### Documentation Created
+- `/app/backend/.env.production.template` - Production env template
+- `/app/frontend/.env.production.template` - Frontend env template  
+- `/app/docs/STAGING_CHECKLIST.md` - Complete deployment guide
+
+#### Health Check Endpoint
+```
+GET /api/health
+{
+  "status": "healthy",
+  "environment": "development",
+  "database": "connected",
+  "config": {
+    "sms": "mock",
+    "email": "mock", 
+    "stripe": "test",
+    "base_url": "https://..."
+  }
+}
+```
 
 ---
 
