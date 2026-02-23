@@ -1461,11 +1461,59 @@ async def get_business_dashboard(token_data: TokenData = Depends(require_busines
 
 # ========================== WORKER ROUTES ==========================
 
+def validate_schedule_blocks(schedule: Dict[str, DaySchedule]) -> None:
+    """Validate that schedule blocks don't overlap within each day"""
+    for day, day_schedule in schedule.items():
+        if not day_schedule.is_available or not day_schedule.blocks:
+            continue
+        
+        # Sort blocks by start time
+        blocks = sorted(day_schedule.blocks, key=lambda b: b.start_time)
+        
+        for i in range(len(blocks) - 1):
+            current_end = datetime.strptime(blocks[i].end_time, "%H:%M")
+            next_start = datetime.strptime(blocks[i + 1].start_time, "%H:%M")
+            
+            if current_end > next_start:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Schedule blocks overlap on day {day}: {blocks[i].end_time} > {blocks[i+1].start_time}"
+                )
+            
+            # Validate start < end for each block
+            current_start = datetime.strptime(blocks[i].start_time, "%H:%M")
+            if current_start >= current_end:
+                raise HTTPException(
+                    status_code=400, 
+                    detail=f"Invalid block on day {day}: start_time must be before end_time"
+                )
+        
+        # Validate last block
+        if blocks:
+            last_start = datetime.strptime(blocks[-1].start_time, "%H:%M")
+            last_end = datetime.strptime(blocks[-1].end_time, "%H:%M")
+            if last_start >= last_end:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid block on day {day}: start_time must be before end_time"
+                )
+
 @businesses_router.post("/workers", response_model=WorkerResponse)
 async def create_worker(worker: WorkerCreate, token_data: TokenData = Depends(require_business)):
+    """Create a new worker for the business"""
     user = await db.users.find_one({"id": token_data.user_id})
     if not user or not user.get("business_id"):
         raise HTTPException(status_code=404, detail="Business not found")
+    
+    # Default schedule: Mon-Fri 9:00-18:00
+    default_schedule = {}
+    for day in range(5):  # Mon-Fri
+        default_schedule[str(day)] = {
+            "is_available": True,
+            "blocks": [{"start_time": "09:00", "end_time": "18:00"}]
+        }
+    for day in range(5, 7):  # Sat-Sun
+        default_schedule[str(day)] = {"is_available": False, "blocks": []}
     
     worker_doc = {
         "id": generate_id(),
@@ -1476,53 +1524,202 @@ async def create_worker(worker: WorkerCreate, token_data: TokenData = Depends(re
         "photo_url": worker.photo_url,
         "bio": worker.bio,
         "service_ids": worker.service_ids,
-        "schedule": {},  # Will be set separately
-        "blocked_slots": [],
-        "vacation_dates": [],
+        "schedule": default_schedule,
+        "exceptions": [],  # New: list of WorkerException
         "active": True,
-        "created_at": datetime.now(timezone.utc).isoformat()
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "deactivated_at": None
     }
     
     await db.workers.insert_one(worker_doc)
     return WorkerResponse(**worker_doc)
 
 @businesses_router.get("/workers", response_model=List[WorkerResponse])
-async def get_business_workers(business_id: Optional[str] = None, token_data: TokenData = Depends(require_auth)):
+async def get_business_workers(
+    business_id: Optional[str] = None,
+    include_inactive: bool = False,
+    token_data: TokenData = Depends(require_auth)
+):
+    """Get all workers for a business"""
     if not business_id:
         user = await db.users.find_one({"id": token_data.user_id})
         if not user or not user.get("business_id"):
             raise HTTPException(status_code=400, detail="Business ID required")
         business_id = user["business_id"]
     
-    workers = await db.workers.find({"business_id": business_id, "active": True}, {"_id": 0}).to_list(100)
+    filters = {"business_id": business_id}
+    if not include_inactive:
+        filters["active"] = True
+    
+    workers = await db.workers.find(filters, {"_id": 0}).to_list(100)
     return [WorkerResponse(**w) for w in workers]
 
 @businesses_router.get("/{business_id}/workers", response_model=List[WorkerResponse])
-async def get_workers_by_business(business_id: str):
-    workers = await db.workers.find({"business_id": business_id, "active": True}, {"_id": 0}).to_list(100)
+async def get_workers_by_business(business_id: str, include_inactive: bool = False):
+    """Get workers for a specific business (public endpoint)"""
+    filters = {"business_id": business_id}
+    if not include_inactive:
+        filters["active"] = True
+    workers = await db.workers.find(filters, {"_id": 0}).to_list(100)
     return [WorkerResponse(**w) for w in workers]
 
-@businesses_router.put("/workers/{worker_id}/schedule")
-async def update_worker_schedule(
+@businesses_router.get("/workers/{worker_id}", response_model=WorkerResponse)
+async def get_worker(worker_id: str, token_data: TokenData = Depends(require_business)):
+    """Get a specific worker"""
+    user = await db.users.find_one({"id": token_data.user_id})
+    worker = await db.workers.find_one({"id": worker_id, "business_id": user.get("business_id")}, {"_id": 0})
+    if not worker:
+        raise HTTPException(status_code=404, detail="Worker not found")
+    return WorkerResponse(**worker)
+
+@businesses_router.put("/workers/{worker_id}", response_model=WorkerResponse)
+async def update_worker(
     worker_id: str,
-    schedules: List[WorkerSchedule],
+    update: WorkerUpdate,
     token_data: TokenData = Depends(require_business)
 ):
+    """Update worker basic info"""
     user = await db.users.find_one({"id": token_data.user_id})
     worker = await db.workers.find_one({"id": worker_id, "business_id": user.get("business_id")})
     if not worker:
         raise HTTPException(status_code=404, detail="Worker not found")
     
+    update_data = {k: v for k, v in update.model_dump().items() if v is not None}
+    if not update_data:
+        raise HTTPException(status_code=400, detail="No data to update")
+    
+    await db.workers.update_one({"id": worker_id}, {"$set": update_data})
+    updated = await db.workers.find_one({"id": worker_id}, {"_id": 0})
+    return WorkerResponse(**updated)
+
+@businesses_router.delete("/workers/{worker_id}")
+async def delete_worker(worker_id: str, token_data: TokenData = Depends(require_business)):
+    """Soft delete a worker (marks as inactive, preserves history)"""
+    user = await db.users.find_one({"id": token_data.user_id})
+    worker = await db.workers.find_one({"id": worker_id, "business_id": user.get("business_id")})
+    if not worker:
+        raise HTTPException(status_code=404, detail="Worker not found")
+    
+    # Soft delete: mark as inactive but preserve all data
+    await db.workers.update_one(
+        {"id": worker_id},
+        {"$set": {
+            "active": False,
+            "deactivated_at": datetime.now(timezone.utc).isoformat()
+        }}
+    )
+    return {"message": "Worker deactivated", "worker_id": worker_id}
+
+@businesses_router.put("/workers/{worker_id}/reactivate")
+async def reactivate_worker(worker_id: str, token_data: TokenData = Depends(require_business)):
+    """Reactivate a previously deactivated worker"""
+    user = await db.users.find_one({"id": token_data.user_id})
+    worker = await db.workers.find_one({"id": worker_id, "business_id": user.get("business_id")})
+    if not worker:
+        raise HTTPException(status_code=404, detail="Worker not found")
+    
+    await db.workers.update_one(
+        {"id": worker_id},
+        {"$set": {"active": True}, "$unset": {"deactivated_at": ""}}
+    )
+    return {"message": "Worker reactivated", "worker_id": worker_id}
+
+@businesses_router.put("/workers/{worker_id}/schedule")
+async def update_worker_schedule(
+    worker_id: str,
+    schedule_update: WorkerScheduleUpdate,
+    token_data: TokenData = Depends(require_business)
+):
+    """Update worker schedule with validation for overlapping blocks"""
+    user = await db.users.find_one({"id": token_data.user_id})
+    worker = await db.workers.find_one({"id": worker_id, "business_id": user.get("business_id")})
+    if not worker:
+        raise HTTPException(status_code=404, detail="Worker not found")
+    
+    # Validate no overlapping blocks
+    validate_schedule_blocks(schedule_update.schedule)
+    
+    # Convert to dict for storage
     schedule_dict = {}
-    for s in schedules:
-        schedule_dict[str(s.day_of_week)] = {
-            "start_time": s.start_time,
-            "end_time": s.end_time,
-            "is_available": s.is_available
+    for day, day_schedule in schedule_update.schedule.items():
+        schedule_dict[day] = {
+            "is_available": day_schedule.is_available,
+            "blocks": [{"start_time": b.start_time, "end_time": b.end_time} for b in day_schedule.blocks]
         }
     
     await db.workers.update_one({"id": worker_id}, {"$set": {"schedule": schedule_dict}})
-    return {"message": "Schedule updated"}
+    updated = await db.workers.find_one({"id": worker_id}, {"_id": 0})
+    return WorkerResponse(**updated)
+
+@businesses_router.post("/workers/{worker_id}/exceptions")
+async def add_worker_exception(
+    worker_id: str,
+    exception_data: WorkerExceptionAdd,
+    token_data: TokenData = Depends(require_business)
+):
+    """Add an exception (vacation/block) to a worker's schedule"""
+    user = await db.users.find_one({"id": token_data.user_id})
+    worker = await db.workers.find_one({"id": worker_id, "business_id": user.get("business_id")})
+    if not worker:
+        raise HTTPException(status_code=404, detail="Worker not found")
+    
+    exception = exception_data.exception
+    
+    # Validate dates
+    try:
+        start = datetime.strptime(exception.start_date, "%Y-%m-%d")
+        end = datetime.strptime(exception.end_date, "%Y-%m-%d")
+        if end < start:
+            raise HTTPException(status_code=400, detail="end_date cannot be before start_date")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+    
+    # Validate times if provided
+    if exception.start_time and exception.end_time:
+        try:
+            st = datetime.strptime(exception.start_time, "%H:%M")
+            et = datetime.strptime(exception.end_time, "%H:%M")
+            if et <= st:
+                raise HTTPException(status_code=400, detail="end_time must be after start_time")
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid time format. Use HH:MM")
+    
+    exception_dict = {
+        "id": generate_id(),
+        "start_date": exception.start_date,
+        "end_date": exception.end_date,
+        "start_time": exception.start_time,
+        "end_time": exception.end_time,
+        "reason": exception.reason,
+        "exception_type": exception.exception_type,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    
+    await db.workers.update_one(
+        {"id": worker_id},
+        {"$push": {"exceptions": exception_dict}}
+    )
+    
+    return {"message": "Exception added", "exception_id": exception_dict["id"]}
+
+@businesses_router.delete("/workers/{worker_id}/exceptions/{exception_id}")
+async def remove_worker_exception(
+    worker_id: str,
+    exception_id: str,
+    token_data: TokenData = Depends(require_business)
+):
+    """Remove an exception from a worker's schedule"""
+    user = await db.users.find_one({"id": token_data.user_id})
+    worker = await db.workers.find_one({"id": worker_id, "business_id": user.get("business_id")})
+    if not worker:
+        raise HTTPException(status_code=404, detail="Worker not found")
+    
+    await db.workers.update_one(
+        {"id": worker_id},
+        {"$pull": {"exceptions": {"id": exception_id}}}
+    )
+    
+    return {"message": "Exception removed"}
 
 # ========================== SERVICE ROUTES ==========================
 
