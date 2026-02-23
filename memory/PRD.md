@@ -1,176 +1,110 @@
 # Bookvia - PRD (Product Requirements Document)
 
 ## Project Overview
-**Bookvia** - Marketplace de Reservas Profesionales (tipo OpenTable multi-industria)
-- Plataforma para reservar citas con profesionistas y negocios
+**Bookvia** - Marketplace de Reservas Profesionales
 - Multi-país, multi-idioma (ES/EN), multi-moneda (MXN)
 - API-first, preparada para futura app móvil
 
 ## Architecture
-- **Backend**: FastAPI (Python) + MongoDB
-- **Frontend**: React + Tailwind CSS + Shadcn/UI
-- **Auth**: JWT (roles: user, business, admin)
-- **2FA**: TOTP obligatorio para admin (pyotp + QR code)
-- **Payments**: Stripe (test keys, production-ready)
-- **SMS**: Mock (configurable para Twilio)
-
-## User Personas
-1. **Usuario Final**: Busca y reserva servicios profesionales
-2. **Negocio/Profesional**: Ofrece servicios y gestiona citas
-3. **Admin**: Gestiona plataforma, aprueba negocios, auditoría
-
-## Core Requirements (Static)
-- Sistema de citas con límite 5 activas por usuario
-- 4 cancelaciones = suspensión 15 días
-- Reagendar permitido >24h antes
-- **Anticipos con comisión 8%** (implementado)
-- Verificación telefónica obligatoria
-- Aprobación manual de negocios
-- Planes: $49.99 MXN/mes (3 meses trial gratis)
-- **NO implementar**: Sistema de referidos
+- **Backend**: FastAPI + MongoDB
+- **Frontend**: React + Tailwind + Shadcn/UI
+- **Auth**: JWT (user, business, admin) + 2FA TOTP para admin
+- **Payments**: Stripe (test keys)
+- **Ledger**: Double-entry bookkeeping interno
 
 ---
 
-## What's Been Implemented ✅
+## ✅ COMPLETADO
 
-### Fase 2: Core Financiero (P1) - COMPLETADA (Feb 23, 2026)
+### Fase 3: Panel Financiero + Liquidaciones (Feb 23, 2026)
 
-#### Flujo de Anticipo + Hold 30 min ✅
-- Booking se crea con estado `HOLD` y `hold_expires_at` a 30 minutos
-- Si no se paga: slot se libera automáticamente (task `expire_holds_task`)
-- UI muestra countdown en formato MM:SS con barra de progreso
-- Botón "Pagar ahora" visible solo en estado HOLD
+#### Sistema de Ledger (Libro Contable) ✅
+- `ledger_entries` collection con:
+  - `direction`: DEBIT | CREDIT
+  - `account`: business_revenue, platform_fee, refund, penalty, payout
+  - `amount_cents`: Integer para evitar errores de decimales
+  - `entry_status`: posted | reversed
+  - `created_by`: system | admin
+- Auto-generación al confirmar pago (CREDIT business_revenue, DEBIT platform_fee)
+- Auto-generación en refunds y penalties
 
-#### Stripe Checkout + Webhooks ✅
-- `POST /api/payments/deposit/checkout` - Crea Stripe Checkout Session
-- Webhook `/api/webhook/stripe` - Confirma pagos (SOURCE OF TRUTH)
-- Idempotencia: no procesa pagos duplicados
-- Metadata incluye: transaction_id, booking_id, user_id, business_id
+#### Settlements (Liquidaciones) ✅
+- `settlements` collection con:
+  - `period_key`: "MX-2026-02"
+  - `idempotency_key`: Previene duplicados
+  - `held_reason`: Cuando status = HELD
+  - Cálculo: net_payout = gross_paid - fees - refunds - penalties
+- Estados: PENDING, PAID, HELD, FAILED
 
-#### Comisiones 8% y Reglas de Cancelación ✅
-- **Comisión fija**: 8% sobre el anticipo (`PLATFORM_FEE_PERCENT = 0.08`)
-- **Cliente cancela >24h**: Reembolso parcial (anticipo - 8%), status `REFUND_PARTIAL`
-- **Cliente cancela <24h**: Sin reembolso, negocio recibe payout
-- **Cliente no-show**: Negocio recibe anticipo - 8%, status `NO_SHOW_PAYOUT`
-- **Negocio cancela**: Reembolso 100% al cliente + 8% penalidad al negocio, status `REFUND_FULL` + `BUSINESS_CANCEL_FEE`
+#### Panel Financiero Negocio ✅
+- `/business/finance` con:
+  - Resumen: gross_revenue, total_fees, net_earnings
+  - Payouts: pending, paid, held
+  - Transacciones con filtros
+  - Historial de liquidaciones
 
-#### Modelo DB de Transacciones ✅
-Colección `transactions` con:
-```javascript
-{
-  id, booking_id, user_id, business_id,
-  stripe_session_id, stripe_payment_intent_id,
-  amount_total, fee_amount (8%), payout_amount,
-  currency, status (TransactionStatus enum),
-  refund_amount, refund_reason, cancelled_by,
-  created_at, updated_at, paid_at
-}
-```
+#### Control Admin ✅
+- `PUT /api/admin/businesses/{id}/payout-hold` - Bloquear/liberar pagos
+- `POST /api/admin/settlements/generate` - Generar liquidaciones (idempotente)
+- `PUT /api/admin/settlements/{id}/pay` - Marcar como pagado
+- `GET /api/admin/export/transactions` - CSV
+- `GET /api/admin/export/settlements` - CSV
 
-Estados de Transaction (TransactionStatus enum):
-- `CREATED` - Checkout creado / hold activo
-- `PAID` - Confirmado por webhook
-- `REFUND_PARTIAL` - Cliente cancela >24h
-- `REFUND_FULL` - Negocio cancela
-- `NO_SHOW_PAYOUT` - Cliente no asiste
-- `BUSINESS_CANCEL_FEE` - Penalidad al negocio
-- `EXPIRED` - Hold expirado sin pago
+### Fase 2: Core Financiero (Feb 23, 2026)
+- Stripe Checkout + webhooks
+- Hold 30 min con countdown
+- Comisiones 8%
+- Cancelaciones con políticas (>24h, <24h, no-show)
+- TransactionStatus: CREATED, PAID, REFUND_PARTIAL, REFUND_FULL, NO_SHOW_PAYOUT, BUSINESS_CANCEL_FEE
 
-#### Endpoints y UI ✅
-Backend:
-- `POST /api/payments/deposit/checkout` - Crear checkout
-- `GET /api/payments/checkout/status/{session_id}` - Estado de checkout
-- `GET /api/payments/my-transactions` - Transacciones del usuario
-- `GET /api/payments/business-transactions` - Transacciones del negocio
-- `PUT /api/bookings/{id}/cancel/user` - Cancelación usuario
-- `PUT /api/bookings/{id}/cancel/business` - Cancelación negocio
-- `PUT /api/bookings/{id}/no-show` - Marcar no-show
-- `POST /api/payments/expire-holds` - Expirar holds (admin)
+### Fase 1: Seguridad (Feb 23, 2026)
+- Admin desde env vars
+- 2FA TOTP obligatorio
+- Audit logs completos
+- Registro negocios 4-step
 
-Frontend:
-- `/dashboard/bookings` - Mis citas con estados visuales
-- `/payment/success` - Página de pago exitoso
-- `/payment/cancel` - Página de pago cancelado
-- Countdown timer para HOLD
-- Badges de colores: HOLD (amber), CONFIRMED (green), CANCELLED (slate), EXPIRED (gray)
+### MVP (Completado)
+- Homepage, búsqueda, categorías
+- Login/registro
+- Sistema de reservas
+- Reseñas
 
 ---
 
-### Fase 1: Seguridad y Fundamentos (P0) - COMPLETADA (Feb 23, 2026)
-- Admin desde variables de entorno (no hardcoded)
-- 2FA TOTP obligatorio para admin con QR code
-- Logs de auditoría completos (IP, user-agent, detalles)
-- Registro de negocios 4-step con documentos
-- Panel admin para aprobar/rechazar negocios
-- Endpoints de retención de pagos
+## Backlog
 
-### Fase MVP (Completada anteriormente)
-- Homepage con búsqueda, categorías, featured businesses
-- Login/registro de usuario y negocio
-- Autenticación JWT con roles
-- i18n ES/EN, tema claro/oscuro
-- Búsqueda y perfil de negocios
-- Sistema de reservas con disponibilidad
-- Reseñas con rating bayesiano
+### P2: Gestión Trabajadores
+- [ ] UI para horarios de trabajadores
+- [ ] Vacaciones/bloqueos
+- [ ] Asignación automática avanzada
 
----
-
-## Prioritized Backlog
-
-### P2 (Fase 3: Gestión y Operaciones)
-- [ ] Job mensual para liquidaciones automáticas a negocios
-- [ ] Panel financiero para negocios (ingresos, liquidaciones)
-- [ ] Gestión de trabajadores y horarios UI
-- [ ] Asignación automática de citas (ya implementada básica)
-- [ ] Vacaciones/bloqueos de trabajadores
-
-### P3 (Fase 4: SEO)
-- [ ] URLs amigables por ciudad
+### P3: SEO
+- [ ] URLs amigables
 - [ ] Sitemap dinámico
-- [ ] Meta-tags dinámicos
-- [ ] Páginas de categoría
+- [ ] Meta-tags
 
-### P4 (Nice to have)
-- [ ] Fotos de negocio upload a cloud storage
-- [ ] Respuesta a reseñas por negocio
-- [ ] Notificaciones push/email
+### P4: Nice to have
+- [ ] Cloud storage para fotos
+- [ ] Notificaciones push
 - [ ] App móvil
 
 ---
 
-## Test Credentials
+## API Endpoints
 
-### Admin
-- Email: zamorachapa50@gmail.com
-- Password: (en ADMIN_INITIAL_PASSWORD .env)
-- 2FA: Requiere configuración en primer login
+### Finance (Business)
+- `GET /api/business/finance/summary`
+- `GET /api/business/finance/transactions`
+- `GET /api/business/finance/ledger`
+- `GET /api/business/finance/settlements`
 
-### Test User
-- Email: test@test.com
-- Password: Test123!
-
-### Test Business
-- ID: 1bfd49d3-472f-49d6-bc18-78de5c56645b
-- Service ID: svc-test-001
-- Worker ID: wrk-test-001
-
----
-
-## Key API Endpoints
-
-### Payments (NEW)
-- `POST /api/payments/deposit/checkout` - Crear checkout Stripe
-- `GET /api/payments/checkout/status/{session_id}` - Estado
-- `GET /api/payments/my-transactions` - Mis transacciones
-- `GET /api/payments/business-transactions` - Transacciones negocio
-- `POST /api/webhook/stripe` - Webhook de Stripe
-
-### Bookings
-- `POST /api/bookings/` - Crear booking (estado HOLD)
-- `GET /api/bookings/my` - Mis bookings con can_cancel, hours_until_appointment
-- `PUT /api/bookings/{id}/cancel/user` - Cancelar usuario
-- `PUT /api/bookings/{id}/cancel/business` - Cancelar negocio
-- `PUT /api/bookings/{id}/no-show` - Marcar no-show
+### Admin Settlements
+- `POST /api/admin/settlements/generate?year=X&month=Y`
+- `GET /api/admin/settlements`
+- `PUT /api/admin/settlements/{id}/pay`
+- `PUT /api/admin/businesses/{id}/payout-hold`
+- `GET /api/admin/export/transactions?year=X&month=Y`
+- `GET /api/admin/export/settlements?year=X&month=Y`
 
 ---
 
@@ -181,15 +115,12 @@ HOLD_EXPIRATION_MINUTES = 30
 MIN_DEPOSIT_AMOUNT = 50.0  # MXN
 ```
 
-## Mocked Features
-1. **SMS Verification**: `SMS_PROVIDER=mock` devuelve código en respuesta
-2. **File Upload**: Devuelve `uploaded:filename` en lugar de URL de cloud storage
-3. **Stripe Refunds**: Lógica de reembolsos registrada pero refund real a Stripe pendiente
-
----
+## Test Credentials
+- Business: testspa@test.com / Test123!
+- Admin: zamorachapa50@gmail.com + TOTP
 
 ## Test Reports
-- `/app/test_reports/iteration_1.json` - MVP inicial
-- `/app/test_reports/iteration_2.json` - Seguridad admin/2FA
+- `/app/test_reports/iteration_5.json` - Fase 3 (100% pass)
+- `/app/test_reports/iteration_4.json` - Fase 2
 - `/app/test_reports/iteration_3.json` - Registro negocios
-- `/app/test_reports/iteration_4.json` - **Fase 2 Financiero** ✅
+- `/app/test_reports/iteration_2.json` - Seguridad admin
