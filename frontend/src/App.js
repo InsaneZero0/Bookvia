@@ -52,6 +52,7 @@ function App() {
               
               {/* User Pages */}
               <Route path="/dashboard" element={<Layout><UserDashboardPage /></Layout>} />
+              <Route path="/dashboard/bookings" element={<Layout><UserBookingsPage /></Layout>} />
               <Route path="/bookings" element={<Layout><UserBookingsPage /></Layout>} />
               <Route path="/favorites" element={<Layout><SearchPage /></Layout>} />
               <Route path="/notifications" element={<Layout><UserDashboardPage /></Layout>} />
