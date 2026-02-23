@@ -46,7 +46,6 @@ function App() {
               <Route path="/" element={<Layout><HomePage /></Layout>} />
               <Route path="/search" element={<Layout><SearchPage /></Layout>} />
               <Route path="/categories" element={<Layout><SearchPage /></Layout>} />
-              <Route path="/business/:slug" element={<Layout><BusinessProfilePage /></Layout>} />
               
               {/* Auth Pages */}
               <Route path="/login" element={<LoginPage />} />
@@ -59,12 +58,15 @@ function App() {
               <Route path="/favorites" element={<Layout><SearchPage /></Layout>} />
               <Route path="/notifications" element={<Layout><UserDashboardPage /></Layout>} />
               
-              {/* Business Pages */}
+              {/* Business Pages - MUST be before /business/:slug */}
               <Route path="/business/dashboard" element={<Layout showFooter={false}><BusinessDashboardPage /></Layout>} />
               <Route path="/business/finance" element={<Layout showFooter={false}><BusinessFinancePage /></Layout>} />
               <Route path="/business/team" element={<Layout showFooter={false}><TeamSchedulePage /></Layout>} />
-              <Route path="/for-business" element={<Layout><ForBusinessPage /></Layout>} />
+              <Route path="/business/login" element={<LoginPage />} />
               <Route path="/business/register" element={<BusinessRegisterPage />} />
+              <Route path="/for-business" element={<Layout><ForBusinessPage /></Layout>} />
+              {/* Business Profile Page - dynamic slug MUST be last */}
+              <Route path="/business/:slug" element={<Layout><BusinessProfilePage /></Layout>} />
               
               {/* Payment Pages */}
               <Route path="/payment/success" element={<Layout><PaymentSuccessPage /></Layout>} />
