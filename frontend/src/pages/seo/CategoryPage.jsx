@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, Link, useSearchParams } from 'react-router-dom';
 import { MapPin, Building2, ChevronRight, Star, Filter, Clock } from 'lucide-react';
 import { SEOHead } from '@/components/SEOHead';
-import api from '@/api/api';
+import { seoAPI, categoriesAPI } from '@/lib/api';
 
 /**
  * CategoryPage - Listing page for businesses in a category

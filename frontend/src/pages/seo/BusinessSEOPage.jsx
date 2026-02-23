@@ -12,7 +12,7 @@ import {
   Share2
 } from 'lucide-react';
 import { SEOHead } from '@/components/SEOHead';
-import api from '@/api/api';
+import { seoAPI } from '@/lib/api';
 
 /**
  * BusinessSEOPage - Business detail page with SEO URLs
