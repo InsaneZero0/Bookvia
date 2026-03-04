@@ -46,17 +46,22 @@ export default function HomePage() {
 
   const loadData = async () => {
     try {
-      // Seed data first (idempotent)
+      // Seed data first (idempotent) - ignore errors
       await utilityAPI.seed().catch(() => {});
       
       const [catRes, bizRes] = await Promise.all([
         categoriesAPI.getAll(),
         businessesAPI.getFeatured(8),
       ]);
-      setCategories(catRes.data);
-      setFeaturedBusinesses(bizRes.data);
+      
+      // Ensure we always have arrays
+      setCategories(Array.isArray(catRes.data) ? catRes.data : []);
+      setFeaturedBusinesses(Array.isArray(bizRes.data) ? bizRes.data : []);
     } catch (error) {
       console.error('Error loading data:', error);
+      // Set empty arrays on error
+      setCategories([]);
+      setFeaturedBusinesses([]);
     } finally {
       setLoading(false);
     }

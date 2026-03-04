@@ -1316,7 +1316,7 @@ async def get_favorites(token_data: TokenData = Depends(require_auth)):
 
 # ========================== CATEGORY ROUTES ==========================
 
-@categories_router.get("/", response_model=List[CategoryResponse])
+@categories_router.get("", response_model=List[CategoryResponse])
 async def get_categories():
     categories = await db.categories.find({}, {"_id": 0}).to_list(100)
     
@@ -1349,7 +1349,7 @@ async def create_category(category: CategoryCreate, token_data: TokenData = Depe
 
 # ========================== BUSINESS ROUTES ==========================
 
-@businesses_router.get("/", response_model=List[BusinessResponse])
+@businesses_router.get("", response_model=List[BusinessResponse])
 async def search_businesses(
     query: Optional[str] = None,
     category_id: Optional[str] = None,
@@ -3218,7 +3218,7 @@ async def create_checkout_session(request: Request, payment: PaymentCreate, toke
 
 # ========================== NOTIFICATION ROUTES ==========================
 
-@notifications_router.get("/", response_model=List[NotificationResponse])
+@notifications_router.get("", response_model=List[NotificationResponse])
 async def get_notifications(
     unread_only: bool = False,
     token_data: TokenData = Depends(require_auth)
