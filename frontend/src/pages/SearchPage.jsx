@@ -49,9 +49,10 @@ export default function SearchPage() {
   const loadCategories = async () => {
     try {
       const res = await categoriesAPI.getAll();
-      setCategories(res.data);
+      setCategories(Array.isArray(res.data) ? res.data : []);
     } catch (error) {
       console.error('Error loading categories:', error);
+      setCategories([]);
     }
   };
 
@@ -59,9 +60,11 @@ export default function SearchPage() {
     if (isAuthenticated) {
       try {
         const res = await usersAPI.getFavorites();
-        setFavorites(res.data.map(b => b.id));
+        const data = Array.isArray(res.data) ? res.data : [];
+        setFavorites(data.map(b => b.id));
       } catch (error) {
         console.error('Error loading favorites:', error);
+        setFavorites([]);
       }
     }
   };
@@ -79,9 +82,10 @@ export default function SearchPage() {
         limit: 20,
       };
       const res = await businessesAPI.search(params);
-      setBusinesses(res.data);
+      setBusinesses(Array.isArray(res.data) ? res.data : []);
     } catch (error) {
       console.error('Error loading businesses:', error);
+      setBusinesses([]);
     } finally {
       setLoading(false);
     }
