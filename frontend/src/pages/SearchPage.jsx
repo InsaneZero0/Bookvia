@@ -24,6 +24,7 @@ export default function SearchPage() {
   
   const [businesses, setBusinesses] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [cities, setCities] = useState([]);
   const [loading, setLoading] = useState(true);
   const [favorites, setFavorites] = useState([]);
   
@@ -33,25 +34,42 @@ export default function SearchPage() {
   const [categoryId, setCategoryId] = useState(searchParams.get('category') || '');
   const [minRating, setMinRating] = useState([parseFloat(searchParams.get('rating')) || 0]);
   const [homeService, setHomeService] = useState(searchParams.get('home_service') === 'true');
+  const [requiresDeposit, setRequiresDeposit] = useState(searchParams.get('deposit') || 'all');
+  const [sortBy, setSortBy] = useState(searchParams.get('sort') || 'relevance');
+  const [priceRange, setPriceRange] = useState([0, 5000]);
+  const [onlyFeatured, setOnlyFeatured] = useState(searchParams.get('featured') === 'true');
   const [page, setPage] = useState(1);
   
   const [filtersOpen, setFiltersOpen] = useState(false);
 
   useEffect(() => {
     loadCategories();
+    loadCities();
     loadFavorites();
   }, []);
 
   useEffect(() => {
     loadBusinesses();
-  }, [categoryId, city, minRating, homeService, page]);
+  }, [categoryId, city, minRating, homeService, requiresDeposit, sortBy, onlyFeatured, page]);
 
   const loadCategories = async () => {
     try {
       const res = await categoriesAPI.getAll();
-      setCategories(res.data);
+      setCategories(Array.isArray(res.data) ? res.data : []);
     } catch (error) {
       console.error('Error loading categories:', error);
+      setCategories([]);
+    }
+  };
+
+  const loadCities = async () => {
+    try {
+      const res = await fetch(`${process.env.REACT_APP_BACKEND_URL}/api/cities?country_code=MX`);
+      const data = await res.json();
+      setCities(Array.isArray(data) ? data : []);
+    } catch (error) {
+      console.error('Error loading cities:', error);
+      setCities([]);
     }
   };
 
@@ -59,9 +77,11 @@ export default function SearchPage() {
     if (isAuthenticated) {
       try {
         const res = await usersAPI.getFavorites();
-        setFavorites(res.data.map(b => b.id));
+        const data = Array.isArray(res.data) ? res.data : [];
+        setFavorites(data.map(b => b.id));
       } catch (error) {
         console.error('Error loading favorites:', error);
+        setFavorites([]);
       }
     }
   };
@@ -79,23 +99,30 @@ export default function SearchPage() {
         limit: 20,
       };
       const res = await businessesAPI.search(params);
-      setBusinesses(res.data);
+      setBusinesses(Array.isArray(res.data) ? res.data : []);
     } catch (error) {
       console.error('Error loading businesses:', error);
+      setBusinesses([]);
     } finally {
       setLoading(false);
     }
   };
 
   const handleSearch = (e) => {
-    e.preventDefault();
+    e?.preventDefault();
     const params = new URLSearchParams();
     if (query) params.set('q', query);
     if (city) params.set('city', city);
     if (categoryId && categoryId !== 'all') params.set('category', categoryId);
     if (minRating[0] > 0) params.set('rating', minRating[0].toString());
     if (homeService) params.set('home_service', 'true');
+    if (requiresDeposit !== 'all') params.set('deposit', requiresDeposit);
+    if (sortBy !== 'relevance') params.set('sort', sortBy);
+    if (onlyFeatured) params.set('featured', 'true');
+    if (priceRange[0] > 0) params.set('price_min', priceRange[0].toString());
+    if (priceRange[1] < 5000) params.set('price_max', priceRange[1].toString());
     setSearchParams(params);
+    setFiltersOpen(false);
     loadBusinesses();
   };
 
@@ -126,16 +153,21 @@ export default function SearchPage() {
     setCategoryId('');
     setMinRating([0]);
     setHomeService(false);
+    setRequiresDeposit('all');
+    setSortBy('relevance');
+    setPriceRange([0, 5000]);
+    setOnlyFeatured(false);
     setSearchParams({});
   };
 
-  const hasActiveFilters = query || city || categoryId || minRating[0] > 0 || homeService;
+  const hasActiveFilters = query || city || categoryId || minRating[0] > 0 || homeService || 
+    requiresDeposit !== 'all' || sortBy !== 'relevance' || onlyFeatured || priceRange[0] > 0 || priceRange[1] < 5000;
 
   const FilterContent = () => (
     <div className="space-y-6">
       {/* Category */}
       <div className="space-y-2">
-        <Label>{language === 'es' ? 'Categoría' : 'Category'}</Label>
+        <Label className="text-sm font-medium">{language === 'es' ? 'Categoría' : 'Category'}</Label>
         <Select value={categoryId} onValueChange={setCategoryId}>
           <SelectTrigger data-testid="filter-category">
             <SelectValue placeholder={language === 'es' ? 'Todas las categorías' : 'All categories'} />
@@ -153,9 +185,61 @@ export default function SearchPage() {
         </Select>
       </div>
 
+      {/* City */}
+      <div className="space-y-2">
+        <Label className="text-sm font-medium">{language === 'es' ? 'Ciudad' : 'City'}</Label>
+        <Select value={city || 'all'} onValueChange={(v) => setCity(v === 'all' ? '' : v)}>
+          <SelectTrigger data-testid="filter-city">
+            <SelectValue placeholder={language === 'es' ? 'Todas las ciudades' : 'All cities'} />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">
+              {language === 'es' ? 'Todas las ciudades' : 'All cities'}
+            </SelectItem>
+            {cities.map(c => (
+              <SelectItem key={c.slug} value={c.name}>
+                {c.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* Sort By */}
+      <div className="space-y-2">
+        <Label className="text-sm font-medium">{language === 'es' ? 'Ordenar por' : 'Sort by'}</Label>
+        <Select value={sortBy} onValueChange={setSortBy}>
+          <SelectTrigger data-testid="filter-sort">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="relevance">
+              {language === 'es' ? 'Relevancia' : 'Relevance'}
+            </SelectItem>
+            <SelectItem value="rating">
+              {language === 'es' ? 'Mejor calificados' : 'Top rated'}
+            </SelectItem>
+            <SelectItem value="reviews">
+              {language === 'es' ? 'Más reseñas' : 'Most reviews'}
+            </SelectItem>
+            <SelectItem value="newest">
+              {language === 'es' ? 'Más recientes' : 'Newest'}
+            </SelectItem>
+            <SelectItem value="price_low">
+              {language === 'es' ? 'Precio: menor a mayor' : 'Price: low to high'}
+            </SelectItem>
+            <SelectItem value="price_high">
+              {language === 'es' ? 'Precio: mayor a menor' : 'Price: high to low'}
+            </SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
       {/* Rating */}
       <div className="space-y-2">
-        <Label>{language === 'es' ? 'Calificación mínima' : 'Minimum rating'}: {minRating[0]}</Label>
+        <Label className="text-sm font-medium">
+          {language === 'es' ? 'Calificación mínima' : 'Minimum rating'}: {minRating[0]} ⭐
+        </Label>
         <Slider
           value={minRating}
           onValueChange={setMinRating}
@@ -167,21 +251,72 @@ export default function SearchPage() {
         />
       </div>
 
-      {/* Home Service */}
-      <div className="flex items-center gap-2">
-        <Checkbox
-          id="home-service"
-          checked={homeService}
-          onCheckedChange={setHomeService}
-          data-testid="filter-home-service"
-        />
-        <Label htmlFor="home-service" className="cursor-pointer">
-          {language === 'es' ? 'Servicio a domicilio' : 'Home service'}
+      {/* Price Range */}
+      <div className="space-y-2">
+        <Label className="text-sm font-medium">
+          {language === 'es' ? 'Rango de precio' : 'Price range'}: ${priceRange[0]} - ${priceRange[1]} MXN
         </Label>
+        <Slider
+          value={priceRange}
+          onValueChange={setPriceRange}
+          min={0}
+          max={5000}
+          step={100}
+          className="py-4"
+          data-testid="filter-price"
+        />
+      </div>
+
+      {/* Deposit Requirement */}
+      <div className="space-y-2">
+        <Label className="text-sm font-medium">{language === 'es' ? 'Anticipo' : 'Deposit'}</Label>
+        <Select value={requiresDeposit} onValueChange={setRequiresDeposit}>
+          <SelectTrigger data-testid="filter-deposit">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">
+              {language === 'es' ? 'Todos' : 'All'}
+            </SelectItem>
+            <SelectItem value="no">
+              {language === 'es' ? 'Sin anticipo' : 'No deposit required'}
+            </SelectItem>
+            <SelectItem value="yes">
+              {language === 'es' ? 'Con anticipo' : 'Deposit required'}
+            </SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* Checkboxes */}
+      <div className="space-y-3 pt-2">
+        <div className="flex items-center gap-2">
+          <Checkbox
+            id="home-service"
+            checked={homeService}
+            onCheckedChange={setHomeService}
+            data-testid="filter-home-service"
+          />
+          <Label htmlFor="home-service" className="cursor-pointer text-sm">
+            {language === 'es' ? 'Servicio a domicilio' : 'Home service'}
+          </Label>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Checkbox
+            id="featured"
+            checked={onlyFeatured}
+            onCheckedChange={setOnlyFeatured}
+            data-testid="filter-featured"
+          />
+          <Label htmlFor="featured" className="cursor-pointer text-sm">
+            {language === 'es' ? 'Solo destacados' : 'Featured only'}
+          </Label>
+        </div>
       </div>
 
       {/* Clear & Apply */}
-      <div className="flex gap-2 pt-4">
+      <div className="flex gap-2 pt-4 border-t">
         {hasActiveFilters && (
           <Button variant="outline" onClick={clearFilters} className="flex-1">
             <X className="h-4 w-4 mr-2" />
