@@ -64,12 +64,21 @@ export default function SearchPage() {
 
   const loadCities = async () => {
     try {
-      const res = await fetch(`${process.env.REACT_APP_BACKEND_URL}/api/cities?country_code=MX`);
+      const baseUrl = process.env.REACT_APP_BACKEND_URL || '';
+      const res = await fetch(`${baseUrl}/api/cities?country_code=MX`);
+      if (!res.ok) throw new Error('Failed to fetch cities');
       const data = await res.json();
       setCities(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error('Error loading cities:', error);
-      setCities([]);
+      // Use default cities if API fails
+      setCities([
+        { name: 'Ciudad de México', slug: 'cdmx' },
+        { name: 'Guadalajara', slug: 'guadalajara' },
+        { name: 'Monterrey', slug: 'monterrey' },
+        { name: 'Puebla', slug: 'puebla' },
+        { name: 'Cancún', slug: 'cancun' },
+      ]);
     }
   };
 
