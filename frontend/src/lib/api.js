@@ -1,12 +1,18 @@
 import axios from 'axios';
 
-// Use window.location.origin for same-origin requests (HTTPS)
+// Backend URL configuration
+// In production (Vercel), use REACT_APP_BACKEND_URL to point to Railway backend
+// In development or Emergent preview, use same origin
 const getBackendUrl = () => {
-  // In production, use same origin (which will be HTTPS)
+  // Always prefer REACT_APP_BACKEND_URL if set
+  if (process.env.REACT_APP_BACKEND_URL) {
+    return process.env.REACT_APP_BACKEND_URL;
+  }
+  // Fallback to same origin (works in Emergent preview)
   if (typeof window !== 'undefined') {
     return window.location.origin;
   }
-  return process.env.REACT_APP_BACKEND_URL || '';
+  return '';
 };
 
 const BACKEND_URL = getBackendUrl();
