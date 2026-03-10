@@ -4153,6 +4153,79 @@ async def seed_data():
         "note": "2FA setup required on first admin login"
     }
 
+# ========================== CONTACT ==========================
+
+class ContactMessage(BaseModel):
+    name: str
+    email: str
+    subject: Optional[str] = None
+    category: Optional[str] = None
+    message: str
+
+@api_router.post("/contact")
+async def submit_contact_form(contact: ContactMessage):
+    """Submit a contact form message"""
+    contact_doc = {
+        "id": generate_id(),
+        "name": contact.name,
+        "email": contact.email,
+        "subject": contact.subject or "Sin asunto",
+        "category": contact.category or "general",
+        "message": contact.message,
+        "status": "pending",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "responded_at": None,
+        "response": None
+    }
+    
+    await db.contact_messages.insert_one(contact_doc)
+    
+    # Log for admin notification (in production, send email)
+    logger.info(f"New contact message from {contact.email}: {contact.subject}")
+    
+    return {"success": True, "message": "Contact message received"}
+
+@api_router.get("/admin/contact-messages")
+async def get_contact_messages(
+    status: Optional[str] = None,
+    token_data: TokenData = Depends(require_admin)
+):
+    """Get all contact messages (admin only)"""
+    filters = {}
+    if status:
+        filters["status"] = status
+    
+    messages = await db.contact_messages.find(
+        filters, {"_id": 0}
+    ).sort("created_at", -1).to_list(100)
+    
+    return messages
+
+@api_router.put("/admin/contact-messages/{message_id}")
+async def update_contact_message(
+    message_id: str,
+    response: str = None,
+    status: str = "responded",
+    token_data: TokenData = Depends(require_admin)
+):
+    """Update a contact message (admin only)"""
+    update_data = {
+        "status": status,
+        "responded_at": datetime.now(timezone.utc).isoformat()
+    }
+    if response:
+        update_data["response"] = response
+    
+    result = await db.contact_messages.update_one(
+        {"id": message_id},
+        {"$set": update_data}
+    )
+    
+    if result.modified_count == 0:
+        raise HTTPException(status_code=404, detail="Message not found")
+    
+    return {"success": True}
+
 # ========================== CITIES & COUNTRIES ==========================
 
 @api_router.get("/cities")
