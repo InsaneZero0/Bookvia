@@ -22,6 +22,10 @@ import AdminDashboardPage from '@/pages/AdminDashboardPage';
 import AdminLoginPage from '@/pages/AdminLoginPage';
 import PaymentSuccessPage from '@/pages/PaymentSuccessPage';
 import PaymentCancelPage from '@/pages/PaymentCancelPage';
+import HelpPage from '@/pages/HelpPage';
+import TermsPage from '@/pages/TermsPage';
+import PrivacyPage from '@/pages/PrivacyPage';
+import AboutPage from '@/pages/AboutPage';
 import NotFoundPage from '@/pages/NotFoundPage';
 
 // SEO Pages
@@ -77,6 +81,18 @@ function App() {
               {/* Payment Pages */}
               <Route path="/payment/success" element={<Layout><PaymentSuccessPage /></Layout>} />
               <Route path="/payment/cancel" element={<Layout><PaymentCancelPage /></Layout>} />
+              
+              {/* Help Page */}
+              <Route path="/ayuda" element={<Layout><HelpPage /></Layout>} />
+              <Route path="/help" element={<Layout><HelpPage /></Layout>} />
+              
+              {/* Legal Pages */}
+              <Route path="/terminos" element={<Layout><TermsPage /></Layout>} />
+              <Route path="/terms" element={<Layout><TermsPage /></Layout>} />
+              <Route path="/privacidad" element={<Layout><PrivacyPage /></Layout>} />
+              <Route path="/privacy" element={<Layout><PrivacyPage /></Layout>} />
+              <Route path="/nosotros" element={<Layout><AboutPage /></Layout>} />
+              <Route path="/about" element={<Layout><AboutPage /></Layout>} />
               
               {/* Admin Pages */}
               <Route path="/admin/login" element={<AdminLoginPage />} />
