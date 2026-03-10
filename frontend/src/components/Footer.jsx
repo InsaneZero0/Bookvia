@@ -74,22 +74,22 @@ export function Footer() {
             </h4>
             <ul className="space-y-3">
               <li>
-                <Link to="/terms" className="text-slate-400 hover:text-white text-sm transition-colors">
+                <Link to="/terminos" className="text-slate-400 hover:text-white text-sm transition-colors">
                   {t('footer.terms')}
                 </Link>
               </li>
               <li>
-                <Link to="/privacy" className="text-slate-400 hover:text-white text-sm transition-colors">
+                <Link to="/privacidad" className="text-slate-400 hover:text-white text-sm transition-colors">
                   {t('footer.privacy')}
                 </Link>
               </li>
               <li>
-                <Link to="/faq" className="text-slate-400 hover:text-white text-sm transition-colors">
-                  FAQ
+                <Link to="/nosotros" className="text-slate-400 hover:text-white text-sm transition-colors">
+                  {language === 'es' ? 'Sobre Nosotros' : 'About Us'}
                 </Link>
               </li>
               <li>
-                <Link to="/help" className="text-slate-400 hover:text-white text-sm transition-colors">
+                <Link to="/ayuda" className="text-slate-400 hover:text-white text-sm transition-colors">
                   {t('footer.help')}
                 </Link>
               </li>
