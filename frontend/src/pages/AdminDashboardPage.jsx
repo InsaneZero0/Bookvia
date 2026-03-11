@@ -32,9 +32,9 @@ export default function AdminDashboardPage() {
       return;
     }
 
-    // Check 2FA
+    // Check 2FA - redirect to admin login which handles 2FA setup flow
     if (!user?.totp_enabled) {
-      navigate('/admin/setup-2fa');
+      navigate('/admin/login');
       return;
     }
 

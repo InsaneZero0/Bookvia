@@ -22,7 +22,7 @@ from datetime import datetime, timezone
 # Get BASE_URL from environment
 BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
 if not BASE_URL:
-    BASE_URL = "https://marketplace-test-5.preview.emergentagent.com"
+    BASE_URL = "https://bookvia-prod-deploy.preview.emergentagent.com"
 
 # Test credentials (provided)
 BUSINESS_EMAIL = "testspa@test.com"
