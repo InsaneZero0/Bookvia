@@ -86,6 +86,12 @@ export function AuthProvider({ children }) {
 
   const adminLogin = async (email, password, totpCode) => {
     const response = await authAPI.adminLogin({ email, password, totp_code: totpCode });
+    
+    // If 2FA setup is required, return the special response without setting auth state
+    if (response.data.requires_2fa_setup) {
+      return response.data;
+    }
+    
     const { token, user: userData } = response.data;
     
     localStorage.setItem('bookvia-token', token);

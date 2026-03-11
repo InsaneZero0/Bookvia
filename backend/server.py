@@ -231,6 +231,7 @@ class UserResponse(BaseModel):
     suspended_until: Optional[str] = None
     favorites: List[str] = []
     preferred_language: str = "es"
+    totp_enabled: bool = False
     created_at: str
 
 class UserUpdate(BaseModel):

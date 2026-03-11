@@ -36,17 +36,15 @@ export default function AdminLoginPage() {
     setLoading(true);
 
     try {
-      const response = await authAPI.adminLogin({ email, password, totp_code: totpCode || '000000' });
+      // Single API call via auth context
+      const result = await adminLogin(email, password, totpCode || '000000');
       
       // Check if 2FA setup is required
-      if (response.data.requires_2fa_setup) {
-        setTempToken(response.data.temp_token);
-        // Now setup 2FA with the temp token
-        await initiate2FASetup(response.data.temp_token);
+      if (result.requires_2fa_setup) {
+        setTempToken(result.temp_token);
+        await initiate2FASetup(result.temp_token);
         setShowSetup2FA(true);
       } else {
-        // Normal login with 2FA
-        await adminLogin(email, password, totpCode);
         toast.success(language === 'es' ? '¡Bienvenido Admin!' : 'Welcome Admin!');
         navigate('/admin');
       }
