@@ -24,7 +24,8 @@ Plataforma de marketplace de reservas profesionales llamada "Bookvia". Los usuar
 - Panel de administración con aprobación de negocios
 
 ## Bugs Resueltos
-- **[2026-03-11] Conflicto de rutas Admin vs SEO (P0):** Las rutas admin (/admin, /admin/login, /admin/setup-2fa) eran interceptadas por rutas dinámicas SEO (/:country/:city). Corregido reordenando rutas en App.js y añadiendo catch-all /admin/*.
+- **[2026-03-11] Conflicto de rutas Admin vs SEO (P0):** Las rutas admin (/admin, /admin/login, /admin/setup-2fa) eran interceptadas por rutas dinámicas SEO. Corregido reordenando rutas en App.js y añadiendo catch-all /admin/*.
+- **[2026-03-11] Admin login no redirige al panel (P0):** Después de login exitoso, el usuario veía "Bienvenido Admin" pero no era redirigido. Causa: 1) Double API call causando rate limiting, 2) UserResponse no incluía totp_enabled (causando redirect loop), 3) Interceptor axios redirigía a /login en 401 de endpoints auth.
 
 ## Backlog Priorizado
 ### P1

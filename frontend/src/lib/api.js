@@ -48,9 +48,17 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      localStorage.removeItem('bookvia-token');
-      localStorage.removeItem('bookvia-user');
-      window.location.href = '/login';
+      // Don't redirect for login/auth endpoints - they handle their own 401 errors
+      const requestUrl = error.config?.url || '';
+      const isAuthEndpoint = requestUrl.includes('/auth/login') || 
+                            requestUrl.includes('/auth/admin/login') ||
+                            requestUrl.includes('/auth/business/login');
+      
+      if (!isAuthEndpoint) {
+        localStorage.removeItem('bookvia-token');
+        localStorage.removeItem('bookvia-user');
+        window.location.href = '/login';
+      }
     }
     return Promise.reject(error);
   }
