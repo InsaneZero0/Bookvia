@@ -22,10 +22,29 @@ Plataforma de marketplace de reservas profesionales llamada "Bookvia". Los usuar
 - Páginas legales: Sobre Nosotros, Términos, Privacidad
 - Filtros avanzados de búsqueda
 - Panel de administración con aprobación de negocios
+- **Página de perfil de negocio profesional** (estilo Fresha/Airbnb/OpenTable)
+
+## Página de Perfil de Negocio (Rediseño completo - 2026-03-11)
+### Secciones implementadas:
+1. Galería de fotos estilo Airbnb (grid 4x2 en desktop, imagen única en mobile)
+2. Header con nombre, categoría, badges, rating, dirección, botones Guardar/Compartir
+3. Navegación sticky por secciones (Servicios, Equipo, Reseñas, Ubicación)
+4. Servicios disponibles con precio, duración y botón de reserva
+5. Equipo/profesionales con foto, nombre y especialidad
+6. Acerca del negocio con estadísticas (citas completadas, rating, profesionales)
+7. Horarios de apertura (derivados de horarios de trabajadores)
+8. Ubicación con mapa OpenStreetMap y botón "Cómo llegar"
+9. Reseñas con resumen de calificación y distribución por estrellas
+10. FAQ con accordion
+11. Negocios similares de la misma categoría
+12. Panel de reserva lateral sticky (desktop)
+13. Barra de reserva fija en mobile
+14. Diálogo de reserva de 3 pasos (fecha → hora → confirmar)
 
 ## Bugs Resueltos
-- **[2026-03-11] Conflicto de rutas Admin vs SEO (P0):** Las rutas admin (/admin, /admin/login, /admin/setup-2fa) eran interceptadas por rutas dinámicas SEO. Corregido reordenando rutas en App.js y añadiendo catch-all /admin/*.
-- **[2026-03-11] Admin login no redirige al panel (P0):** Después de login exitoso, el usuario veía "Bienvenido Admin" pero no era redirigido. Causa: 1) Double API call causando rate limiting, 2) UserResponse no incluía totp_enabled (causando redirect loop), 3) Interceptor axios redirigía a /login en 401 de endpoints auth.
+- **[2026-03-11] Conflicto de rutas Admin vs SEO (P0):** Corregido reordenando rutas en App.js
+- **[2026-03-11] Admin login no redirige al panel (P0):** Corregidos 3 bugs (double API call, totp_enabled faltante, interceptor axios)
+- **[2026-03-11] Rediseño perfil negocio:** Completado satisfactoriamente
 
 ## Backlog Priorizado
 ### P1
