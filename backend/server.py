@@ -1,5 +1,6 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, BackgroundTasks, status
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, BackgroundTasks, status, File, UploadFile
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.responses import Response
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -4316,6 +4317,127 @@ async def seed_countries():
     }
 
 
+# ========================== PHOTO UPLOAD ENDPOINTS ==========================
+
+from services.storage import init_storage, put_object, get_object, generate_upload_path, ALLOWED_IMAGE_TYPES, MAX_FILE_SIZE
+
+@businesses_router.post("/me/photos")
+async def upload_business_photo(file: UploadFile = File(...), token_data: TokenData = Depends(require_business)):
+    """Upload a photo for the authenticated business."""
+    user = await db.users.find_one({"id": token_data.user_id})
+    if not user or not user.get("business_id"):
+        raise HTTPException(status_code=404, detail="Business not found")
+
+    if file.content_type not in ALLOWED_IMAGE_TYPES:
+        raise HTTPException(status_code=400, detail="Only JPEG, PNG, WebP and GIF images are allowed")
+
+    data = await file.read()
+    if len(data) > MAX_FILE_SIZE:
+        raise HTTPException(status_code=400, detail="File too large. Maximum 5MB")
+
+    business_id = user["business_id"]
+    path = generate_upload_path(business_id, file.filename)
+
+    try:
+        result = put_object(path, data, file.content_type)
+    except Exception as e:
+        logger.error(f"Storage upload failed: {e}")
+        raise HTTPException(status_code=500, detail="Failed to upload photo")
+
+    storage_path = result["path"]
+
+    # Store file reference
+    file_record = {
+        "id": generate_id(),
+        "business_id": business_id,
+        "storage_path": storage_path,
+        "original_filename": file.filename,
+        "content_type": file.content_type,
+        "size": result.get("size", len(data)),
+        "is_deleted": False,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    await db.business_photos.insert_one(file_record)
+
+    # Add to business photos array
+    base_url = os.environ.get("BASE_URL", "")
+    photo_url = f"{base_url}/api/files/{storage_path}"
+    await db.businesses.update_one(
+        {"id": business_id},
+        {"$push": {"photos": photo_url}}
+    )
+
+    return {
+        "id": file_record["id"],
+        "url": photo_url,
+        "storage_path": storage_path,
+        "original_filename": file.filename
+    }
+
+
+@businesses_router.delete("/me/photos/{photo_id}")
+async def delete_business_photo(photo_id: str, token_data: TokenData = Depends(require_business)):
+    """Soft-delete a business photo."""
+    user = await db.users.find_one({"id": token_data.user_id})
+    if not user or not user.get("business_id"):
+        raise HTTPException(status_code=404, detail="Business not found")
+
+    photo = await db.business_photos.find_one({"id": photo_id, "business_id": user["business_id"], "is_deleted": False})
+    if not photo:
+        raise HTTPException(status_code=404, detail="Photo not found")
+
+    await db.business_photos.update_one({"id": photo_id}, {"$set": {"is_deleted": True}})
+
+    # Remove from business photos array
+    base_url = os.environ.get("BASE_URL", "")
+    photo_url = f"{base_url}/api/files/{photo['storage_path']}"
+    await db.businesses.update_one(
+        {"id": user["business_id"]},
+        {"$pull": {"photos": photo_url}}
+    )
+
+    return {"message": "Photo deleted"}
+
+
+@businesses_router.get("/me/photos")
+async def get_business_photos(token_data: TokenData = Depends(require_business)):
+    """Get all photos for the authenticated business."""
+    user = await db.users.find_one({"id": token_data.user_id})
+    if not user or not user.get("business_id"):
+        raise HTTPException(status_code=404, detail="Business not found")
+
+    photos = await db.business_photos.find(
+        {"business_id": user["business_id"], "is_deleted": False},
+        {"_id": 0}
+    ).to_list(100)
+
+    base_url = os.environ.get("BASE_URL", "")
+    for p in photos:
+        p["url"] = f"{base_url}/api/files/{p['storage_path']}"
+
+    return photos
+
+
+@api_router.get("/files/{path:path}")
+async def serve_file(path: str):
+    """Serve uploaded files from object storage."""
+    record = await db.business_photos.find_one({"storage_path": path, "is_deleted": False})
+    if not record:
+        raise HTTPException(status_code=404, detail="File not found")
+
+    try:
+        data, content_type = get_object(path)
+    except Exception as e:
+        logger.error(f"Failed to retrieve file: {e}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve file")
+
+    return Response(
+        content=data,
+        media_type=record.get("content_type", content_type),
+        headers={"Cache-Control": "public, max-age=86400"}
+    )
+
+
 # ========================== INCLUDE ROUTERS ==========================
 
 api_router.include_router(auth_router)
@@ -4371,3 +4493,11 @@ app.add_middleware(
 @app.on_event("shutdown")
 async def shutdown_db_client():
     client.close()
+
+@app.on_event("startup")
+async def startup_event():
+    try:
+        init_storage()
+        logger.info("Object storage initialized")
+    except Exception as e:
+        logger.warning(f"Object storage init failed (uploads will retry): {e}")

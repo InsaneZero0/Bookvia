@@ -124,6 +124,16 @@ export const businessesAPI = {
     api.post(`/businesses/my/workers/${workerId}/exceptions`, { exception }),
   removeWorkerException: (workerId, exceptionId) => 
     api.delete(`/businesses/my/workers/${workerId}/exceptions/${exceptionId}`),
+  // Photos
+  uploadPhoto: (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api.post('/businesses/me/photos', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
+  deletePhoto: (photoId) => api.delete(`/businesses/me/photos/${photoId}`),
+  getMyPhotos: () => api.get('/businesses/me/photos'),
 };
 
 // Services API
