@@ -1,13 +1,14 @@
 # Bookvia - PRD (Product Requirements Document)
 
 ## Problema Original
-Plataforma de marketplace de reservas profesionales llamada "Bookvia". Los usuarios pueden buscar y reservar servicios profesionales. Los negocios pueden registrarse y gestionar sus servicios. Incluye panel de administración con 2FA.
+Plataforma de marketplace de reservas profesionales "Bookvia". Usuarios buscan y reservan servicios. Negocios gestionan sus servicios y citas. Panel de admin con 2FA.
 
 ## Stack Tecnológico
 - **Backend:** FastAPI, MongoDB, pyotp (2FA)
-- **Frontend:** React, Shadcn/UI, React Router
+- **Frontend:** React, Shadcn/UI, React Router, react-leaflet
 - **Pagos:** Stripe (modo prueba)
 - **Storage:** Emergent Object Storage API
+- **Mapas:** Leaflet + OpenStreetMap (sin API key)
 - **Despliegue:** Vercel (frontend), Railway (backend)
 - **Email/SMS:** Resend y Twilio (MOCKED)
 
@@ -23,40 +24,11 @@ Plataforma de marketplace de reservas profesionales llamada "Bookvia". Los usuar
 - Filtros avanzados de búsqueda
 - Panel de administración con aprobación de negocios
 - Página de perfil de negocio profesional (estilo Fresha/Airbnb)
-- **Subida de fotos para negocios** (Emergent Object Storage)
-- **Dashboard de negocio mejorado** (Agenda, Servicios, Equipo, Fotos)
-- **Dashboard de usuario mejorado** (Citas, Favoritos, Perfil editable)
-
-## Implementaciones Recientes (2026-03-12)
-
-### Subida de Fotos para Negocios
-- Backend: POST/GET/DELETE /api/businesses/me/photos
-- Backend: GET /api/files/{path} para servir archivos
-- Storage: Integración con Emergent Object Storage API
-- Frontend: Tab de Fotos en el dashboard con upload múltiple y eliminación
-- Validación: Solo JPEG/PNG/WebP/GIF, máximo 5MB
-
-### Dashboard del Negocio Mejorado
-- Header con avatar, nombre, status, rating
-- 4 tarjetas de estadísticas (Citas hoy, Pendientes, Ingresos, Total)
-- 4 tabs: Agenda (calendario + citas), Servicios, Equipo, Fotos
-- Gestión de citas por día (confirmar, completar, cancelar)
-- Vista de servicios con precios
-- Vista de equipo con estados activo/inactivo
-- Galería de fotos con upload y eliminación
-
-### Dashboard del Usuario Mejorado
-- Header con avatar, nombre, estado de verificación
-- 4 quick actions (Citas, Favoritos, Buscar, Notificaciones)
-- Sección de próximas citas (top 3)
-- Sección de favoritos (top 4)
-- Panel lateral con información personal editable
-- Estadísticas (citas activas, cancelaciones, favoritos)
-
-## Bugs Resueltos
-- [2026-03-11] Conflicto de rutas Admin vs SEO (P0)
-- [2026-03-11] Admin login no redirige al panel (P0)
-- [2026-03-11] Rediseño perfil negocio
+- Subida de fotos para negocios (Emergent Object Storage)
+- Dashboard de negocio mejorado (Agenda, Servicios, Equipo, Fotos)
+- Dashboard de usuario mejorado (Citas, Favoritos, Perfil editable)
+- **Home page profesional** (Hero, Stats, Cómo funciona, Ciudades, Testimonios, Trust badges)
+- **Búsqueda con mapa** (Toggle Lista/Mapa, Leaflet/OpenStreetMap, markers interactivos)
 
 ## Backlog Priorizado
 ### P1
@@ -66,15 +38,15 @@ Plataforma de marketplace de reservas profesionales llamada "Bookvia". Los usuar
 ### P2
 - Recordatorios de citas (email 24h antes)
 - Login con Google
-- Mejorar página de inicio (Hero, "Cómo funciona", testimonios)
-- Mejorar búsqueda (mapa lateral, toggle lista/mapa)
+- Notificaciones in-app
 
 ### P3
 - Convertir a PWA
 - Stripe Connect para pagos automáticos
-- Notificaciones push/in-app
+- Notificaciones push
 - App móvil nativa
 - Modo oscuro pulido
+- Animaciones y transiciones avanzadas
 
 ## Refactorización Pendiente
 - Migrar lógica de backend/server.py a archivos separados en backend/routers/
