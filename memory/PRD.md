@@ -8,7 +8,7 @@ Plataforma de marketplace de reservas profesionales "Bookvia". Usuarios buscan y
 - **Frontend:** React, Shadcn/UI, React Router, react-leaflet
 - **Pagos:** Stripe (modo prueba)
 - **Storage:** Emergent Object Storage API
-- **Mapas:** Leaflet + OpenStreetMap (sin API key)
+- **Mapas:** Leaflet + OpenStreetMap
 - **Despliegue:** Vercel (frontend), Railway (backend)
 - **Email/SMS:** Resend y Twilio (MOCKED)
 
@@ -27,8 +27,14 @@ Plataforma de marketplace de reservas profesionales "Bookvia". Usuarios buscan y
 - Subida de fotos para negocios (Emergent Object Storage)
 - Dashboard de negocio mejorado (Agenda, Servicios, Equipo, Fotos)
 - Dashboard de usuario mejorado (Citas, Favoritos, Perfil editable)
-- **Home page profesional** (Hero, Stats, Cómo funciona, Ciudades, Testimonios, Trust badges)
-- **Búsqueda con mapa** (Toggle Lista/Mapa, Leaflet/OpenStreetMap, markers interactivos)
+- Home page profesional (Hero, Stats, Cómo funciona, Ciudades, Testimonios)
+- Búsqueda con mapa (Toggle Lista/Mapa, Leaflet/OpenStreetMap)
+- **Política de reservas mejorada** (2 opciones con/sin anticipo, cancelación configurable, tooltips de ayuda)
+
+## Bugs Resueltos
+- [2026-03-11] Conflicto de rutas Admin vs SEO (P0)
+- [2026-03-11] Admin login no redirige al panel (P0)
+- [2026-03-15] cancellation_days no se guardaba en MongoDB al registrar negocio
 
 ## Backlog Priorizado
 ### P1
@@ -41,12 +47,7 @@ Plataforma de marketplace de reservas profesionales "Bookvia". Usuarios buscan y
 - Notificaciones in-app
 
 ### P3
-- Convertir a PWA
-- Stripe Connect para pagos automáticos
-- Notificaciones push
-- App móvil nativa
-- Modo oscuro pulido
-- Animaciones y transiciones avanzadas
+- PWA, Stripe Connect, Notificaciones push, App móvil, Modo oscuro
 
 ## Refactorización Pendiente
 - Migrar lógica de backend/server.py a archivos separados en backend/routers/
