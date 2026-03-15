@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Progress } from '@/components/ui/progress';
@@ -868,6 +869,46 @@ export default function BusinessRegisterPage() {
                               {language === 'es'
                                 ? `El cliente puede cancelar hasta ${formData.cancellation_days} día(s) antes y recibir el reembolso`
                                 : `Customer can cancel up to ${formData.cancellation_days} day(s) before for a refund`}
+                            </p>
+                          </div>
+
+                          {/* Bloque informativo: Comisiones */}
+                          <div className="rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 p-4 space-y-2.5" data-testid="commission-info-block">
+                            <h4 className="text-sm font-semibold flex items-center gap-1.5">
+                              <CreditCard className="h-4 w-4 text-[#F05D5E]" />
+                              {language === 'es' ? 'Comisiones de Bookvia' : 'Bookvia Fees'}
+                            </h4>
+                            <p className="text-xs text-muted-foreground leading-relaxed">
+                              {language === 'es'
+                                ? 'Bookvia cobra una comisión por procesar los pagos y gestionar las reservas realizadas en la plataforma.'
+                                : 'Bookvia charges a fee for processing payments and managing bookings on the platform.'}
+                            </p>
+                            <p className="text-xs text-muted-foreground leading-relaxed">
+                              {language === 'es'
+                                ? 'Los anticipos pagados por tus clientes se depositarán en la cuenta bancaria que registraste (CLABE).'
+                                : 'Customer deposits will be transferred to the bank account you registered (CLABE).'}
+                            </p>
+                            <div className="pt-1">
+                              <p className="text-xs font-medium mb-1.5">{language === 'es' ? 'Opciones de depósito:' : 'Deposit schedule:'}</p>
+                              <ul className="space-y-1">
+                                {[
+                                  { label: language === 'es' ? 'Depósito cada 3 días' : 'Every 3 days', fee: '10%' },
+                                  { label: language === 'es' ? 'Depósito quincenal' : 'Biweekly', fee: '8%' },
+                                  { label: language === 'es' ? 'Depósito mensual' : 'Monthly', fee: '4%' },
+                                ].map(opt => (
+                                  <li key={opt.fee} className="flex items-center justify-between text-xs">
+                                    <span className="text-muted-foreground">{opt.label}</span>
+                                    <Badge variant="outline" className="text-[10px] h-5 font-semibold">
+                                      {language === 'es' ? 'comisión del' : 'fee'} {opt.fee}
+                                    </Badge>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                            <p className="text-[11px] text-muted-foreground/70 pt-1 border-t border-slate-200 dark:border-slate-700">
+                              {language === 'es'
+                                ? 'Podrás consultar todos los movimientos y anticipos recibidos en tu panel de estado de cuenta dentro de Bookvia.'
+                                : 'You can view all transactions and deposits received in your Bookvia account dashboard.'}
                             </p>
                           </div>
                         </div>
