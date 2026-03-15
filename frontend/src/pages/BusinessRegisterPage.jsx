@@ -12,9 +12,11 @@ import { useAuth } from '@/lib/auth';
 import { useI18n } from '@/lib/i18n';
 import { categoriesAPI } from '@/lib/api';
 import { toast } from 'sonner';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { 
   ArrowLeft, ArrowRight, Mail, Lock, Phone, Building2, MapPin, 
-  FileText, CreditCard, Upload, CheckCircle2, AlertTriangle, Eye, EyeOff
+  FileText, CreditCard, Upload, CheckCircle2, AlertTriangle, Eye, EyeOff,
+  HelpCircle, CalendarX, Banknote
 } from 'lucide-react';
 
 const STEPS = [
@@ -67,6 +69,7 @@ export default function BusinessRegisterPage() {
     clabe: '',
     requires_deposit: false,
     deposit_amount: 50,
+    cancellation_days: 1,
     // Settings
     accepts_terms: false,
   });
@@ -293,6 +296,7 @@ export default function BusinessRegisterPage() {
         clabe: formData.clabe,
         requires_deposit: formData.requires_deposit,
         deposit_amount: formData.requires_deposit ? Number(formData.deposit_amount) : 50,
+        cancellation_days: Number(formData.cancellation_days) || 1,
       };
       
       await businessRegister(registerData);
@@ -761,39 +765,181 @@ export default function BusinessRegisterPage() {
                     </p>
                   </div>
 
-                  <div className="flex items-center space-x-2 pt-4">
-                    <Checkbox
-                      id="requires_deposit"
-                      name="requires_deposit"
-                      checked={formData.requires_deposit}
-                      onCheckedChange={(checked) => setFormData(prev => ({ ...prev, requires_deposit: checked }))}
-                    />
-                    <Label htmlFor="requires_deposit" className="text-sm">
-                      {language === 'es' 
-                        ? 'Requiero anticipo para las reservas'
-                        : 'I require a deposit for bookings'}
-                    </Label>
-                  </div>
+                  {/* ── Política de reservas y cancelación ─────── */}
+                  <div className="pt-4 space-y-4">
+                    <h3 className="font-heading font-semibold text-sm flex items-center gap-2">
+                      <CalendarX className="h-4 w-4 text-[#F05D5E]" />
+                      {language === 'es' ? 'Política de reservas' : 'Booking policy'}
+                    </h3>
 
-                  {formData.requires_deposit && (
-                    <div className="space-y-2 pl-6">
-                      <Label htmlFor="deposit_amount">
-                        {language === 'es' ? 'Monto del anticipo (MXN)' : 'Deposit amount (MXN)'}
-                      </Label>
-                      <Input
-                        id="deposit_amount"
-                        name="deposit_amount"
-                        type="number"
-                        min="50"
-                        value={formData.deposit_amount}
-                        onChange={handleChange}
-                        className="h-12 w-32"
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        {language === 'es' ? 'Mínimo $50 MXN' : 'Minimum $50 MXN'}
-                      </p>
+                    {/* Opción 1: Con anticipo */}
+                    <div
+                      className={`rounded-xl border-2 p-4 cursor-pointer transition-all ${formData.requires_deposit ? 'border-[#F05D5E] bg-[#F05D5E]/5' : 'border-border hover:border-muted-foreground/30'}`}
+                      onClick={() => setFormData(prev => ({ ...prev, requires_deposit: true }))}
+                      data-testid="option-with-deposit"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${formData.requires_deposit ? 'border-[#F05D5E]' : 'border-muted-foreground/40'}`}>
+                          {formData.requires_deposit && <div className="w-2.5 h-2.5 rounded-full bg-[#F05D5E]" />}
+                        </div>
+                        <div className="flex-1">
+                          <p className="font-medium text-sm">
+                            {language === 'es' ? 'Requiero anticipo para las reservas' : 'I require a deposit for bookings'}
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            {language === 'es' ? 'El cliente paga un anticipo al reservar' : 'Customer pays a deposit when booking'}
+                          </p>
+                        </div>
+                      </div>
+
+                      {formData.requires_deposit && (
+                        <div className="mt-4 space-y-4 pl-8" onClick={(e) => e.stopPropagation()}>
+                          {/* Monto del anticipo */}
+                          <div className="space-y-1.5">
+                            <div className="flex items-center gap-1.5">
+                              <Label htmlFor="deposit_amount" className="text-sm">
+                                <Banknote className="inline h-3.5 w-3.5 mr-1 text-muted-foreground" />
+                                {language === 'es' ? 'Monto del anticipo (MXN)' : 'Deposit amount (MXN)'}
+                              </Label>
+                              <Popover>
+                                <PopoverTrigger asChild>
+                                  <button type="button" className="text-muted-foreground hover:text-[#F05D5E] transition-colors" data-testid="help-deposit-amount">
+                                    <HelpCircle className="h-4 w-4" />
+                                  </button>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-72 text-sm" side="top">
+                                  <p className="font-medium mb-1">{language === 'es' ? 'Monto del anticipo' : 'Deposit amount'}</p>
+                                  <p className="text-muted-foreground text-xs leading-relaxed">
+                                    {language === 'es'
+                                      ? 'Es la cantidad que el cliente debe pagar al momento de reservar para confirmar su cita. El resto se paga directamente en el establecimiento. El monto mínimo es de $50 MXN.'
+                                      : 'The amount the customer must pay when booking to confirm their appointment. The rest is paid at the venue. Minimum is $50 MXN.'}
+                                  </p>
+                                </PopoverContent>
+                              </Popover>
+                            </div>
+                            <Input
+                              id="deposit_amount"
+                              name="deposit_amount"
+                              type="number"
+                              min="50"
+                              value={formData.deposit_amount}
+                              onChange={handleChange}
+                              className="h-10 w-36"
+                              data-testid="deposit-amount-input"
+                            />
+                            <p className="text-xs text-muted-foreground">{language === 'es' ? 'Mínimo $50 MXN' : 'Minimum $50 MXN'}</p>
+                          </div>
+
+                          {/* Margen de cancelación con anticipo */}
+                          <div className="space-y-1.5">
+                            <div className="flex items-center gap-1.5">
+                              <Label htmlFor="cancellation_days_deposit" className="text-sm">
+                                <CalendarX className="inline h-3.5 w-3.5 mr-1 text-muted-foreground" />
+                                {language === 'es' ? 'Margen de cancelación (días)' : 'Cancellation margin (days)'}
+                              </Label>
+                              <Popover>
+                                <PopoverTrigger asChild>
+                                  <button type="button" className="text-muted-foreground hover:text-[#F05D5E] transition-colors" data-testid="help-cancellation-deposit">
+                                    <HelpCircle className="h-4 w-4" />
+                                  </button>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-80 text-sm" side="top">
+                                  <p className="font-medium mb-1">{language === 'es' ? 'Margen de cancelación y devolución' : 'Cancellation and refund margin'}</p>
+                                  <p className="text-muted-foreground text-xs leading-relaxed">
+                                    {language === 'es'
+                                      ? 'Define cuántos días antes de la cita un cliente puede cancelar su reserva y recibir la devolución del anticipo.\n\nEjemplo: Si defines 1 día de margen, el cliente deberá cancelar al menos 24 horas antes de la cita para que se le devuelva el anticipo.\n\nSi cancela después de ese tiempo, la cancelación se marca como tardía y el anticipo no se reembolsa.'
+                                      : 'Defines how many days before the appointment a customer can cancel and receive a deposit refund.\n\nExample: If you set 1 day margin, the customer must cancel at least 24 hours before for a refund.\n\nLate cancellations will not receive a refund.'}
+                                  </p>
+                                </PopoverContent>
+                              </Popover>
+                            </div>
+                            <Input
+                              id="cancellation_days_deposit"
+                              name="cancellation_days"
+                              type="number"
+                              min="0"
+                              max="30"
+                              value={formData.cancellation_days}
+                              onChange={handleChange}
+                              className="h-10 w-36"
+                              data-testid="cancellation-days-deposit-input"
+                            />
+                            <p className="text-xs text-muted-foreground">
+                              {language === 'es'
+                                ? `El cliente puede cancelar hasta ${formData.cancellation_days} día(s) antes y recibir el reembolso`
+                                : `Customer can cancel up to ${formData.cancellation_days} day(s) before for a refund`}
+                            </p>
+                          </div>
+                        </div>
+                      )}
                     </div>
-                  )}
+
+                    {/* Opción 2: Sin anticipo */}
+                    <div
+                      className={`rounded-xl border-2 p-4 cursor-pointer transition-all ${!formData.requires_deposit ? 'border-[#F05D5E] bg-[#F05D5E]/5' : 'border-border hover:border-muted-foreground/30'}`}
+                      onClick={() => setFormData(prev => ({ ...prev, requires_deposit: false }))}
+                      data-testid="option-without-deposit"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${!formData.requires_deposit ? 'border-[#F05D5E]' : 'border-muted-foreground/40'}`}>
+                          {!formData.requires_deposit && <div className="w-2.5 h-2.5 rounded-full bg-[#F05D5E]" />}
+                        </div>
+                        <div className="flex-1">
+                          <p className="font-medium text-sm">
+                            {language === 'es' ? 'No requiero anticipo' : 'No deposit required'}
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            {language === 'es' ? 'El cliente reserva sin costo previo' : 'Customer books with no upfront cost'}
+                          </p>
+                        </div>
+                      </div>
+
+                      {!formData.requires_deposit && (
+                        <div className="mt-4 pl-8" onClick={(e) => e.stopPropagation()}>
+                          {/* Margen de cancelación sin anticipo */}
+                          <div className="space-y-1.5">
+                            <div className="flex items-center gap-1.5">
+                              <Label htmlFor="cancellation_days_no_deposit" className="text-sm">
+                                <CalendarX className="inline h-3.5 w-3.5 mr-1 text-muted-foreground" />
+                                {language === 'es' ? 'Margen de cancelación (días)' : 'Cancellation margin (days)'}
+                              </Label>
+                              <Popover>
+                                <PopoverTrigger asChild>
+                                  <button type="button" className="text-muted-foreground hover:text-[#F05D5E] transition-colors" data-testid="help-cancellation-no-deposit">
+                                    <HelpCircle className="h-4 w-4" />
+                                  </button>
+                                </PopoverTrigger>
+                                <PopoverContent className="w-80 text-sm" side="top">
+                                  <p className="font-medium mb-1">{language === 'es' ? 'Margen de cancelación' : 'Cancellation margin'}</p>
+                                  <p className="text-muted-foreground text-xs leading-relaxed">
+                                    {language === 'es'
+                                      ? 'Define cuántos días antes de la cita un cliente puede cancelar su reserva.\n\nEjemplo: Si defines 1 día de margen, el cliente deberá cancelar al menos 24 horas antes de la cita.\n\nSi cancela después de ese tiempo, la cancelación puede marcarse como tardía o como no-show.'
+                                      : 'Defines how many days before the appointment a customer can cancel.\n\nExample: If you set 1 day margin, the customer must cancel at least 24 hours before.\n\nLate cancellations may be marked as no-show.'}
+                                  </p>
+                                </PopoverContent>
+                              </Popover>
+                            </div>
+                            <Input
+                              id="cancellation_days_no_deposit"
+                              name="cancellation_days"
+                              type="number"
+                              min="0"
+                              max="30"
+                              value={formData.cancellation_days}
+                              onChange={handleChange}
+                              className="h-10 w-36"
+                              data-testid="cancellation-days-no-deposit-input"
+                            />
+                            <p className="text-xs text-muted-foreground">
+                              {language === 'es'
+                                ? `El cliente puede cancelar hasta ${formData.cancellation_days} día(s) antes sin penalización`
+                                : `Customer can cancel up to ${formData.cancellation_days} day(s) before without penalty`}
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
 
                   <div className="flex items-start space-x-2 pt-4 border-t">
                     <Checkbox
