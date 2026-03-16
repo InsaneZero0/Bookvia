@@ -309,11 +309,6 @@ export default function BusinessRegisterPage() {
     }
   };
 
-  const handleSkipSubscription = () => {
-    toast.success(language === 'es' ? '¡Registro completo! Podrás suscribirte desde tu panel.' : 'Registration complete! You can subscribe from your dashboard.', { duration: 5000 });
-    navigate('/business/dashboard');
-  };
-
   const handleSubmit = async (e) => {
     e.preventDefault();
     handleSubscribe();
@@ -1022,21 +1017,21 @@ export default function BusinessRegisterPage() {
                       <CreditCard className="h-8 w-8 text-[#F05D5E]" />
                     </div>
                     <h2 className="text-xl font-heading font-bold">
-                      {language === 'es' ? 'Suscripción Bookvia' : 'Bookvia Subscription'}
+                      {language === 'es' ? 'Registro de tarjeta obligatorio' : 'Card registration required'}
                     </h2>
-                    <p className="text-sm text-muted-foreground max-w-md mx-auto">
-                      {language === 'es'
-                        ? 'Para utilizar Bookvia, se requiere una suscripción mensual.'
-                        : 'To use Bookvia, a monthly subscription is required.'}
-                    </p>
                   </div>
 
-                  {/* Benefits */}
+                  {/* Main info card */}
                   <div className="rounded-xl border-2 border-[#F05D5E]/30 bg-[#F05D5E]/5 p-6 space-y-4">
+                    <p className="text-sm leading-relaxed text-foreground">
+                      {language === 'es'
+                        ? 'Para completar el registro de tu negocio en Bookvia, es obligatorio registrar una tarjeta válida.'
+                        : 'To complete your business registration on Bookvia, you must register a valid card.'}
+                    </p>
                     <div className="flex items-center gap-3">
                       <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0" />
                       <div>
-                        <p className="font-semibold">{language === 'es' ? 'Primer mes GRATIS' : 'First month FREE'}</p>
+                        <p className="font-semibold">{language === 'es' ? 'Tu suscripción incluye 1 mes GRATIS' : 'Your subscription includes 1 FREE month'}</p>
                         <p className="text-xs text-muted-foreground">{language === 'es' ? 'Sin cobro durante los primeros 30 días' : 'No charge for the first 30 days'}</p>
                       </div>
                     </div>
@@ -1044,17 +1039,27 @@ export default function BusinessRegisterPage() {
                       <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0" />
                       <div>
                         <p className="font-semibold">{language === 'es' ? 'Después $39 MXN al mes' : 'Then $39 MXN per month'}</p>
-                        <p className="text-xs text-muted-foreground">{language === 'es' ? 'El primer cobro se realizará automáticamente después de 30 días' : 'First charge after 30 days automatically'}</p>
+                        <p className="text-xs text-muted-foreground">{language === 'es' ? 'Se cobrará automáticamente después de 30 días' : 'Automatically charged after 30 days'}</p>
                       </div>
                     </div>
                   </div>
 
-                  {/* Trust text */}
-                  <div className="text-center bg-muted/30 rounded-xl p-4 border">
-                    <p className="text-sm text-muted-foreground leading-relaxed">
+                  {/* Admin approval notice */}
+                  <div className="text-center bg-amber-50 dark:bg-amber-900/20 rounded-xl p-4 border border-amber-200 dark:border-amber-800">
+                    <AlertTriangle className="h-5 w-5 text-amber-600 mx-auto mb-2" />
+                    <p className="text-sm text-amber-800 dark:text-amber-200 leading-relaxed">
                       {language === 'es'
-                        ? 'Tu suscripción comienza con un mes gratis. Puedes cancelar en cualquier momento desde tu panel.'
-                        : 'Your subscription starts with a free month. You can cancel anytime from your dashboard.'}
+                        ? 'Una vez registrada tu tarjeta, tu negocio quedará pendiente de aprobación por parte del administrador antes de aparecer públicamente en la plataforma.'
+                        : 'Once your card is registered, your business will be pending admin approval before appearing publicly on the platform.'}
+                    </p>
+                  </div>
+
+                  {/* Cancellation policy */}
+                  <div className="text-center bg-muted/30 rounded-xl p-4 border">
+                    <p className="text-xs text-muted-foreground leading-relaxed">
+                      {language === 'es'
+                        ? 'Puedes cancelar tu suscripción en cualquier momento desde tu panel de negocio. Si tu suscripción se cancela o tu pago no está al corriente, tu negocio dejará de aparecer en los resultados de búsqueda hasta regularizarse.'
+                        : 'You can cancel your subscription at any time from your business dashboard. If your subscription is canceled or your payment is not up to date, your business will stop appearing in search results until regularized.'}
                     </p>
                   </div>
 
@@ -1072,14 +1077,6 @@ export default function BusinessRegisterPage() {
                         ? (language === 'es' ? 'Redirigiendo a Stripe...' : 'Redirecting to Stripe...')
                         : (language === 'es' ? 'Registrar tarjeta y activar suscripción' : 'Register card & activate subscription')}
                     </Button>
-                    <button
-                      type="button"
-                      className="w-full text-sm text-muted-foreground hover:text-foreground transition-colors py-2"
-                      onClick={handleSkipSubscription}
-                      data-testid="skip-subscription-button"
-                    >
-                      {language === 'es' ? 'Hacerlo después desde mi panel' : 'Do it later from my dashboard'}
-                    </button>
                   </div>
 
                   <p className="text-[11px] text-center text-muted-foreground/60">

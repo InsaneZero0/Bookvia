@@ -141,6 +141,7 @@ export const businessesAPI = {
   // Subscription
   createSubscription: (originUrl) => api.post('/businesses/me/subscribe', { origin_url: originUrl }),
   getSubscriptionStatus: (sessionId) => api.get(`/businesses/me/subscription/status${sessionId ? `?session_id=${sessionId}` : ''}`),
+  cancelSubscription: () => api.post('/businesses/me/subscription/cancel'),
 };
 
 // Services API

@@ -156,6 +156,12 @@ PLATFORM_FEE_PERCENT = 0.08  # 8%
 HOLD_EXPIRATION_MINUTES = 30
 MIN_DEPOSIT_AMOUNT = 50.0  # MXN
 
+# Visibility filter: businesses visible to public must be approved + subscription active/trialing
+VISIBLE_BUSINESS_FILTER = {
+    "status": BusinessStatus.APPROVED,
+    "subscription_status": {"$in": ["active", "trialing"]}
+}
+
 # Ledger Enums
 class LedgerDirection(str, Enum):
     DEBIT = "debit"
@@ -319,7 +325,10 @@ class BusinessResponse(BaseModel):
     is_featured: bool = False
     plan_type: str = "basic"
     trial_ends_at: Optional[str] = None
-    can_accept_bookings: bool = True  # False if PENDING_REVIEW
+    can_accept_bookings: bool = True
+    subscription_status: str = "none"  # none, trialing, active, past_due, canceled, unpaid
+    stripe_customer_id: Optional[str] = None
+    stripe_subscription_id: Optional[str] = None
 
 class BusinessUpdate(BaseModel):
     name: Optional[str] = None
@@ -1105,7 +1114,9 @@ async def register_business(business: BusinessCreate):
         "slug": slug,
         "plan_type": business.plan_type,
         "stripe_account_id": None,
+        "stripe_customer_id": None,
         "stripe_subscription_id": None,
+        "subscription_status": "none",
         "trial_ends_at": trial_ends,
         "is_featured": False,
         "payout_hold": False,
@@ -1318,7 +1329,7 @@ async def get_favorites(token_data: TokenData = Depends(require_auth)):
         return []
     
     businesses = await db.businesses.find(
-        {"id": {"$in": user["favorites"]}, "status": BusinessStatus.APPROVED},
+        {"id": {"$in": user["favorites"]}, **VISIBLE_BUSINESS_FILTER},
         {"_id": 0, "password_hash": 0}
     ).to_list(100)
     
@@ -1332,7 +1343,7 @@ async def get_categories():
     
     # Add business count for each category
     for cat in categories:
-        count = await db.businesses.count_documents({"category_id": cat["id"], "status": BusinessStatus.APPROVED})
+        count = await db.businesses.count_documents({"category_id": cat["id"], **VISIBLE_BUSINESS_FILTER})
         cat["business_count"] = count
     
     return [CategoryResponse(**c) for c in categories]
@@ -1343,7 +1354,7 @@ async def get_category_by_slug(slug: str):
     if not category:
         raise HTTPException(status_code=404, detail="Category not found")
     
-    count = await db.businesses.count_documents({"category_id": category["id"], "status": BusinessStatus.APPROVED})
+    count = await db.businesses.count_documents({"category_id": category["id"], **VISIBLE_BUSINESS_FILTER})
     category["business_count"] = count
     
     return CategoryResponse(**category)
@@ -1370,12 +1381,15 @@ async def search_businesses(
     page: int = 1,
     limit: int = 20
 ):
-    # By default only show approved businesses
+    # By default only show approved businesses with active subscription
     # If include_pending=True, also show PENDING (for profile viewing, but no bookings)
     if include_pending:
         filters = {"status": {"$in": [BusinessStatus.APPROVED, BusinessStatus.PENDING]}}
     else:
-        filters = {"status": BusinessStatus.APPROVED}
+        filters = {
+            "status": BusinessStatus.APPROVED,
+            "subscription_status": {"$in": ["active", "trialing"]}
+        }
     
     if query:
         filters["$or"] = [
@@ -1403,15 +1417,18 @@ async def search_businesses(
             cat = await db.categories.find_one({"id": b["category_id"]})
             if cat:
                 b["category_name"] = cat.get("name_es", "")
-        # Mark if business can accept bookings
-        b["can_accept_bookings"] = b.get("status") == BusinessStatus.APPROVED
+        # Mark if business can accept bookings (must be approved + subscription active/trialing)
+        b["can_accept_bookings"] = (
+            b.get("status") == BusinessStatus.APPROVED 
+            and b.get("subscription_status") in ("active", "trialing")
+        )
     
     return [BusinessResponse(**b) for b in businesses]
 
 @businesses_router.get("/featured", response_model=List[BusinessResponse])
 async def get_featured_businesses(limit: int = 8):
     businesses = await db.businesses.find(
-        {"status": BusinessStatus.APPROVED, "is_featured": True},
+        {"status": BusinessStatus.APPROVED, "is_featured": True, "subscription_status": {"$in": ["active", "trialing"]}},
         {"_id": 0, "password_hash": 0, "clabe": 0, "rfc": 0}
     ).sort("rating", -1).limit(limit).to_list(limit)
     
@@ -1419,7 +1436,7 @@ async def get_featured_businesses(limit: int = 8):
     if len(businesses) < limit:
         existing_ids = [b["id"] for b in businesses]
         more = await db.businesses.find(
-            {"status": BusinessStatus.APPROVED, "id": {"$nin": existing_ids}},
+            {"status": BusinessStatus.APPROVED, "id": {"$nin": existing_ids}, "subscription_status": {"$in": ["active", "trialing"]}},
             {"_id": 0, "password_hash": 0, "clabe": 0, "rfc": 0}
         ).sort("rating", -1).limit(limit - len(businesses)).to_list(limit - len(businesses))
         businesses.extend(more)
@@ -1509,6 +1526,13 @@ async def get_business_dashboard(token_data: TokenData = Depends(require_busines
             "month_revenue": month_revenue,
             "total_reviews": business.get("review_count", 0),
             "rating": business.get("rating", 0)
+        },
+        "subscription": {
+            "status": business.get("subscription_status", "none"),
+            "subscription_id": business.get("stripe_subscription_id"),
+            "customer_id": business.get("stripe_customer_id"),
+            "started_at": business.get("subscription_started_at"),
+            "cancel_requested": business.get("subscription_cancel_requested", False)
         }
     }
 
@@ -2112,6 +2136,9 @@ async def create_booking(booking: BookingCreate, token_data: TokenData = Depends
     
     if business["status"] != BusinessStatus.APPROVED:
         raise HTTPException(status_code=400, detail="Business is not accepting bookings")
+    
+    if business.get("subscription_status") not in ("active", "trialing"):
+        raise HTTPException(status_code=400, detail="Business subscription is not active")
     
     # Get service
     service = await db.services.find_one({"id": booking.service_id})
@@ -4265,7 +4292,7 @@ async def get_cities(country_code: str = "MX"):
     
     # Fallback: get from businesses
     cities = await db.businesses.distinct("city", {
-        "status": BusinessStatus.APPROVED,
+        **VISIBLE_BUSINESS_FILTER,
         "country_code": country_code.upper()
     })
     return [{"name": city, "slug": generate_slug(city), "country_code": country_code.upper()} for city in cities if city]
@@ -4480,6 +4507,7 @@ async def get_subscription_status(session_id: str = None, token_data: TokenData 
                 )
                 return {
                     "status": "active",
+                    "subscription_status": "trialing",
                     "subscription_id": subscription_id,
                     "trial": True,
                     "message": "Subscription activated with 30-day free trial"
@@ -4487,16 +4515,68 @@ async def get_subscription_status(session_id: str = None, token_data: TokenData 
         except Exception as e:
             logger.error(f"Stripe session check error: {e}")
     
-    # Return current subscription status
+    # Return current subscription status with details from Stripe
     sub_id = business.get("stripe_subscription_id") if business else None
-    if sub_id:
-        return {
-            "status": business.get("subscription_status", "active"),
-            "subscription_id": sub_id,
-            "trial": business.get("subscription_status") == "trialing"
-        }
+    sub_status = business.get("subscription_status", "none") if business else "none"
     
-    return {"status": "none", "subscription_id": None, "trial": False}
+    result = {
+        "status": sub_status if sub_id else "none",
+        "subscription_status": sub_status,
+        "subscription_id": sub_id,
+        "trial": sub_status == "trialing",
+        "current_period_end": None,
+        "cancel_at_period_end": False
+    }
+    
+    # Fetch live details from Stripe if subscription exists
+    if sub_id:
+        try:
+            sub = stripe_lib.Subscription.retrieve(sub_id)
+            result["current_period_end"] = datetime.fromtimestamp(sub.current_period_end, tz=timezone.utc).isoformat() if sub.current_period_end else None
+            result["cancel_at_period_end"] = sub.cancel_at_period_end
+            # Sync status from Stripe
+            stripe_status = sub.status  # trialing, active, past_due, canceled, unpaid
+            if stripe_status != sub_status:
+                await db.businesses.update_one(
+                    {"id": user["business_id"]},
+                    {"$set": {"subscription_status": stripe_status}}
+                )
+                result["status"] = stripe_status
+                result["subscription_status"] = stripe_status
+                result["trial"] = stripe_status == "trialing"
+        except Exception as e:
+            logger.error(f"Stripe subscription fetch error: {e}")
+    
+    return result
+
+
+@businesses_router.post("/me/subscription/cancel")
+async def cancel_subscription(token_data: TokenData = Depends(require_business)):
+    """Cancel the business subscription at the end of the current period."""
+    user = await db.users.find_one({"id": token_data.user_id})
+    if not user or not user.get("business_id"):
+        raise HTTPException(status_code=404, detail="Business not found")
+    
+    business = await db.businesses.find_one({"id": user["business_id"]})
+    if not business or not business.get("stripe_subscription_id"):
+        raise HTTPException(status_code=400, detail="No active subscription")
+    
+    try:
+        # Cancel at end of period (not immediately)
+        stripe_lib.Subscription.modify(
+            business["stripe_subscription_id"],
+            cancel_at_period_end=True
+        )
+        
+        await db.businesses.update_one(
+            {"id": business["id"]},
+            {"$set": {"subscription_cancel_requested": True}}
+        )
+        
+        return {"message": "Subscription will be canceled at the end of the current billing period"}
+    except Exception as e:
+        logger.error(f"Stripe cancel error: {e}")
+        raise HTTPException(status_code=500, detail="Error canceling subscription")
 
 
 # ========================== BUSINESS CLOSURES ENDPOINTS ==========================

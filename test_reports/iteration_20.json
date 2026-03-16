@@ -1,0 +1,76 @@
+{
+  "summary": "Completed testing for iteration 20: Subscription feature updates. All backend tests (12/12) passed. Frontend verified: Step 5 mandatory card registration (skip button removed), Subscription success page with admin approval notice, Business dashboard subscription tab working correctly.",
+
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+
+  "passed_tests": [
+    "Backend: POST /api/auth/business/register - Creates business with subscription_status='none' and status='pending'",
+    "Backend: POST /api/businesses/me/subscribe - Creates Stripe Checkout session with valid URL",
+    "Backend: POST /api/businesses/me/subscribe - Returns 401 without auth",
+    "Backend: GET /api/businesses/me/subscription/status - Returns 'none' for new business with current_period_end and cancel_at_period_end fields",
+    "Backend: GET /api/businesses/me/subscription/status - Returns 401 without auth",
+    "Backend: POST /api/businesses/me/subscription/cancel - Returns 400 when no subscription exists",
+    "Backend: POST /api/businesses/me/subscription/cancel - Returns 401 without auth",
+    "Backend: GET /api/businesses/me/dashboard - Includes 'subscription' object in response",
+    "Backend: GET /api/businesses - Only shows approved businesses with active/trialing subscription",
+    "Backend: GET /api/businesses/featured - Only shows approved businesses with active/trialing subscription",
+    "Backend: New business NOT visible in search (pending + no subscription)",
+    "Backend: GET /api/health - Server healthy",
+    "Frontend: /business/register - Step 5 has NO 'skip-subscription-button' (verified via code grep)",
+    "Frontend: /business/register - Step 5 has NO 'Hacerlo después' text (verified via code grep)",
+    "Frontend: /business/subscription/success - Shows 'Tu tarjeta fue registrada correctamente'",
+    "Frontend: /business/subscription/success - Shows 'Pendiente de aprobacion' message",
+    "Frontend: /business/subscription/success - Shows subscription details ($39 MXN, 30-day trial)",
+    "Frontend: /business/subscription/success - Has 'Ir a mi panel' button",
+    "Frontend: /business/dashboard - Shows 'Tu negocio está en revisión' alert when status=pending",
+    "Frontend: /business/dashboard - Has 'Suscripcion' tab with data-testid='tab-subscription'",
+    "Frontend: Business Dashboard subscription tab - Shows 'Estado' with 'Sin suscripcion' badge",
+    "Frontend: Business Dashboard subscription tab - Shows 'Precio: $39 MXN / mes'",
+    "Frontend: Business Dashboard subscription tab - Shows 'Activar suscripcion' button for businesses without subscription"
+  ],
+
+  "test_report_links": [
+    "/app/backend/tests/test_subscription_v2.py",
+    "/app/test_reports/pytest/pytest_subscription_v2.xml"
+  ],
+
+  "action_items": [],
+
+  "critical_code_review_comments": [],
+
+  "updated_files": [
+    "/app/backend/tests/test_subscription_v2.py"
+  ],
+
+  "success_rate": {
+    "backend": "100% (12/12 API tests passed)",
+    "frontend": "100% (11/11 UI checks passed)"
+  },
+
+  "mocked_api_note": {
+    "Email (Resend)": "MOCKED in development",
+    "Stripe": "Using sk_test_emergent (test mode) with Emergent proxy - Real Stripe Checkout URLs generated"
+  },
+
+  "test_credentials": {
+    "business_email": "dashtest123@bookvia.com",
+    "business_password": "Test1234!"
+  },
+
+  "seed_data_creation": "Created test business 'DashboardTest Business' via API for frontend testing",
+
+  "retest_needed": false,
+
+  "should_main_agent_self_test": false,
+
+  "context_for_next_testing_agent": "Iteration 20 verified all subscription feature updates: (1) Skip button completely removed from Step 5 - code grep confirmed no 'skip-subscription-button' or 'Hacerlo después' exists, (2) SubscriptionSuccessPage shows correct messages including 'Pendiente de aprobacion', (3) Business dashboard subscription tab works with data-testid='tab-subscription', shows status badge, price, and activate button, (4) VISIBLE_BUSINESS_FILTER correctly filters businesses by status=approved AND subscription_status in (active, trialing), (5) Cancel endpoint returns 400 when no subscription. Key data-testids: tab-subscription, subscription-status-badge, activate-subscription-button, cancel-subscription-button, subscribe-button. Note: Step 3 (Documentos) requires INE upload which blocked full registration flow testing in browser - but backend API allows registration without it."
+}
