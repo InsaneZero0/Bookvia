@@ -4342,6 +4342,8 @@ async def seed_countries():
 
 import stripe as stripe_lib
 stripe_lib.api_key = STRIPE_API_KEY
+if "sk_test_emergent" in STRIPE_API_KEY:
+    stripe_lib.api_base = "https://integrations.emergentagent.com/stripe"
 
 SUBSCRIPTION_PRICE_MXN = 39.00
 SUBSCRIPTION_TRIAL_DAYS = 30

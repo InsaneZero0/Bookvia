@@ -11,7 +11,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Progress } from '@/components/ui/progress';
 import { useAuth } from '@/lib/auth';
 import { useI18n } from '@/lib/i18n';
-import { categoriesAPI } from '@/lib/api';
+import { categoriesAPI, businessesAPI } from '@/lib/api';
 import { toast } from 'sonner';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { 
