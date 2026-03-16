@@ -4338,6 +4338,165 @@ async def seed_countries():
     }
 
 
+# ========================== SUBSCRIPTION ENDPOINTS ==========================
+
+import stripe as stripe_lib
+stripe_lib.api_key = STRIPE_API_KEY
+
+SUBSCRIPTION_PRICE_MXN = 39.00
+SUBSCRIPTION_TRIAL_DAYS = 30
+
+async def get_or_create_stripe_price():
+    """Get or create the Bookvia monthly subscription price in Stripe."""
+    # Check if we already have a price stored
+    config = await db.stripe_config.find_one({"type": "subscription_price"})
+    if config and config.get("price_id"):
+        return config["price_id"]
+    
+    try:
+        # Create product
+        product = stripe_lib.Product.create(
+            name="Bookvia Suscripción Mensual",
+            description="Suscripción mensual a la plataforma Bookvia"
+        )
+        # Create price (39 MXN monthly)
+        price = stripe_lib.Price.create(
+            product=product.id,
+            unit_amount=int(SUBSCRIPTION_PRICE_MXN * 100),
+            currency="mxn",
+            recurring={"interval": "month"}
+        )
+        await db.stripe_config.update_one(
+            {"type": "subscription_price"},
+            {"$set": {"price_id": price.id, "product_id": product.id}},
+            upsert=True
+        )
+        return price.id
+    except Exception as e:
+        logger.error(f"Failed to create Stripe price: {e}")
+        return None
+
+
+@businesses_router.post("/me/subscribe")
+async def create_subscription_checkout(request: Request, token_data: TokenData = Depends(require_business)):
+    """Create a Stripe Checkout Session for the monthly subscription."""
+    user = await db.users.find_one({"id": token_data.user_id})
+    if not user or not user.get("business_id"):
+        raise HTTPException(status_code=404, detail="Business not found")
+    
+    business = await db.businesses.find_one({"id": user["business_id"]})
+    if not business:
+        raise HTTPException(status_code=404, detail="Business not found")
+    
+    # Check if already subscribed
+    if business.get("stripe_subscription_id"):
+        raise HTTPException(status_code=400, detail="Already subscribed")
+    
+    price_id = await get_or_create_stripe_price()
+    if not price_id:
+        raise HTTPException(status_code=500, detail="Payment configuration error")
+    
+    body = await request.json()
+    origin_url = body.get("origin_url", os.environ.get("BASE_URL", ""))
+    success_url = f"{origin_url}/business/subscription/success?session_id={{CHECKOUT_SESSION_ID}}"
+    cancel_url = f"{origin_url}/business/dashboard"
+    
+    try:
+        # Create or get Stripe Customer
+        customer_id = business.get("stripe_customer_id")
+        if not customer_id:
+            customer = stripe_lib.Customer.create(
+                email=business.get("email"),
+                name=business.get("name"),
+                metadata={"business_id": business["id"]}
+            )
+            customer_id = customer.id
+            await db.businesses.update_one(
+                {"id": business["id"]},
+                {"$set": {"stripe_customer_id": customer_id}}
+            )
+        
+        # Create Checkout Session for subscription
+        session = stripe_lib.checkout.Session.create(
+            customer=customer_id,
+            payment_method_types=["card"],
+            mode="subscription",
+            line_items=[{"price": price_id, "quantity": 1}],
+            subscription_data={"trial_period_days": SUBSCRIPTION_TRIAL_DAYS},
+            success_url=success_url,
+            cancel_url=cancel_url,
+            metadata={"business_id": business["id"]}
+        )
+        
+        # Record the transaction
+        await db.payment_transactions.insert_one({
+            "id": generate_id(),
+            "business_id": business["id"],
+            "session_id": session.id,
+            "type": "subscription",
+            "amount": SUBSCRIPTION_PRICE_MXN,
+            "currency": "mxn",
+            "payment_status": "pending",
+            "created_at": datetime.now(timezone.utc).isoformat()
+        })
+        
+        return {"url": session.url, "session_id": session.id}
+    except Exception as e:
+        logger.error(f"Stripe subscription error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@businesses_router.get("/me/subscription/status")
+async def get_subscription_status(session_id: str = None, token_data: TokenData = Depends(require_business)):
+    """Check subscription status."""
+    user = await db.users.find_one({"id": token_data.user_id})
+    if not user or not user.get("business_id"):
+        raise HTTPException(status_code=404, detail="Business not found")
+    
+    business = await db.businesses.find_one({"id": user["business_id"]})
+    
+    # If session_id provided, verify the checkout session
+    if session_id:
+        try:
+            session = stripe_lib.checkout.Session.retrieve(session_id)
+            if session.payment_status in ("paid", "no_payment_required") or session.status == "complete":
+                subscription_id = session.subscription
+                # Update business with subscription info
+                await db.businesses.update_one(
+                    {"id": user["business_id"]},
+                    {"$set": {
+                        "stripe_subscription_id": subscription_id,
+                        "stripe_customer_id": session.customer,
+                        "subscription_status": "trialing",
+                        "subscription_started_at": datetime.now(timezone.utc).isoformat()
+                    }}
+                )
+                # Update transaction
+                await db.payment_transactions.update_one(
+                    {"session_id": session_id},
+                    {"$set": {"payment_status": "completed", "subscription_id": subscription_id}}
+                )
+                return {
+                    "status": "active",
+                    "subscription_id": subscription_id,
+                    "trial": True,
+                    "message": "Subscription activated with 30-day free trial"
+                }
+        except Exception as e:
+            logger.error(f"Stripe session check error: {e}")
+    
+    # Return current subscription status
+    sub_id = business.get("stripe_subscription_id") if business else None
+    if sub_id:
+        return {
+            "status": business.get("subscription_status", "active"),
+            "subscription_id": sub_id,
+            "trial": business.get("subscription_status") == "trialing"
+        }
+    
+    return {"status": "none", "subscription_id": None, "trial": False}
+
+
 # ========================== BUSINESS CLOSURES ENDPOINTS ==========================
 
 class ClosureDateCreate(BaseModel):

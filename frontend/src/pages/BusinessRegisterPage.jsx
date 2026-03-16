@@ -25,6 +25,7 @@ const STEPS = [
   { id: 'location', title: { es: 'Ubicación', en: 'Location' } },
   { id: 'documents', title: { es: 'Documentos', en: 'Documents' } },
   { id: 'account', title: { es: 'Cuenta y pago', en: 'Account & payment' } },
+  { id: 'subscription', title: { es: 'Suscripción', en: 'Subscription' } },
 ];
 
 export default function BusinessRegisterPage() {
@@ -244,52 +245,37 @@ export default function BusinessRegisterPage() {
   };
 
   const handleNext = () => {
-    if (validateStep()) {
-      setCurrentStep(prev => Math.min(prev + 1, STEPS.length - 1));
+    if (!validateStep()) return;
+    
+    if (currentStep === 3) {
+      // Step 4 (Account) → register the business, then go to Step 5
+      handleRegister();
+    } else if (currentStep < STEPS.length - 1) {
+      setCurrentStep(prev => prev + 1);
     }
   };
 
   const handleBack = () => {
+    if (currentStep === 4) return;
     setCurrentStep(prev => Math.max(prev - 1, 0));
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    
-    if (!validateStep()) return;
-    
+  const handleRegister = async () => {
     setLoading(true);
-    
     try {
-      // Upload files
       let ineUrl = '';
       let proofUrl = '';
+      if (ineFile) ineUrl = await uploadFile(ineFile);
+      if (proofFile) proofUrl = await uploadFile(proofFile);
       
-      if (ineFile) {
-        ineUrl = await uploadFile(ineFile);
-      }
-      if (proofFile) {
-        proofUrl = await uploadFile(proofFile);
-      }
-      
-      // Prepare registration data
       const registerData = {
-        name: formData.name,
-        email: formData.email,
-        password: formData.password,
-        phone: formData.phone,
-        description: formData.description,
-        category_id: formData.category_id,
-        address: formData.address,
-        city: formData.city,
-        state: formData.state,
-        country: formData.country,
-        zip_code: formData.zip_code,
-        rfc: formData.rfc.toUpperCase(),
-        legal_name: formData.legal_name,
-        ine_url: ineUrl,
-        proof_of_address_url: proofUrl,
-        clabe: formData.clabe,
+        name: formData.name, email: formData.email, password: formData.password,
+        phone: formData.phone, description: formData.description,
+        category_id: formData.category_id, address: formData.address,
+        city: formData.city, state: formData.state, country: formData.country,
+        zip_code: formData.zip_code, rfc: formData.rfc.toUpperCase(),
+        legal_name: formData.legal_name, ine_url: ineUrl,
+        proof_of_address_url: proofUrl, clabe: formData.clabe,
         requires_deposit: formData.requires_deposit,
         deposit_amount: formData.requires_deposit ? Number(formData.deposit_amount) : 50,
         cancellation_days: Number(formData.cancellation_days) || 1,
@@ -297,22 +283,40 @@ export default function BusinessRegisterPage() {
       };
       
       await businessRegister(registerData);
-      
-      toast.success(
-        language === 'es' 
-          ? '¡Solicitud enviada! Tu negocio está en revisión.' 
-          : 'Application submitted! Your business is under review.',
-        { duration: 5000 }
-      );
-      
-      navigate('/business/dashboard');
+      toast.success(language === 'es' ? '¡Registro exitoso! Ahora activa tu suscripción.' : 'Registration successful! Now activate your subscription.', { duration: 4000 });
+      setCurrentStep(4);
     } catch (error) {
-      const message = error.response?.data?.detail || 
-        (language === 'es' ? 'Error al registrar negocio' : 'Error registering business');
+      const message = error.response?.data?.detail || (language === 'es' ? 'Error al registrar negocio' : 'Error registering business');
       toast.error(message);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleSubscribe = async () => {
+    setLoading(true);
+    try {
+      const originUrl = window.location.origin;
+      const res = await businessesAPI.createSubscription(originUrl);
+      if (res.data?.url) {
+        window.location.href = res.data.url;
+      } else {
+        throw new Error('No checkout URL');
+      }
+    } catch (error) {
+      toast.error(language === 'es' ? 'Error al iniciar suscripción. Podrás hacerlo después desde tu panel.' : 'Error starting subscription. You can do it later from your dashboard.');
+      setLoading(false);
+    }
+  };
+
+  const handleSkipSubscription = () => {
+    toast.success(language === 'es' ? '¡Registro completo! Podrás suscribirte desde tu panel.' : 'Registration complete! You can subscribe from your dashboard.', { duration: 5000 });
+    navigate('/business/dashboard');
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    handleSubscribe();
   };
 
   const progress = ((currentStep + 1) / STEPS.length) * 100;
@@ -1010,7 +1014,84 @@ export default function BusinessRegisterPage() {
                 </div>
               )}
 
-              {/* Navigation buttons */}
+              {/* Step 5: Subscription */}
+              {currentStep === 4 && (
+                <div className="space-y-6" data-testid="step-subscription">
+                  <div className="text-center space-y-3 py-4">
+                    <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-[#F05D5E]/10">
+                      <CreditCard className="h-8 w-8 text-[#F05D5E]" />
+                    </div>
+                    <h2 className="text-xl font-heading font-bold">
+                      {language === 'es' ? 'Suscripción Bookvia' : 'Bookvia Subscription'}
+                    </h2>
+                    <p className="text-sm text-muted-foreground max-w-md mx-auto">
+                      {language === 'es'
+                        ? 'Para utilizar Bookvia, se requiere una suscripción mensual.'
+                        : 'To use Bookvia, a monthly subscription is required.'}
+                    </p>
+                  </div>
+
+                  {/* Benefits */}
+                  <div className="rounded-xl border-2 border-[#F05D5E]/30 bg-[#F05D5E]/5 p-6 space-y-4">
+                    <div className="flex items-center gap-3">
+                      <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0" />
+                      <div>
+                        <p className="font-semibold">{language === 'es' ? 'Primer mes GRATIS' : 'First month FREE'}</p>
+                        <p className="text-xs text-muted-foreground">{language === 'es' ? 'Sin cobro durante los primeros 30 días' : 'No charge for the first 30 days'}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0" />
+                      <div>
+                        <p className="font-semibold">{language === 'es' ? 'Después $39 MXN al mes' : 'Then $39 MXN per month'}</p>
+                        <p className="text-xs text-muted-foreground">{language === 'es' ? 'El primer cobro se realizará automáticamente después de 30 días' : 'First charge after 30 days automatically'}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Trust text */}
+                  <div className="text-center bg-muted/30 rounded-xl p-4 border">
+                    <p className="text-sm text-muted-foreground leading-relaxed">
+                      {language === 'es'
+                        ? 'Tu suscripción comienza con un mes gratis. Puedes cancelar en cualquier momento desde tu panel.'
+                        : 'Your subscription starts with a free month. You can cancel anytime from your dashboard.'}
+                    </p>
+                  </div>
+
+                  {/* Stripe CTA */}
+                  <div className="space-y-3">
+                    <Button
+                      type="button"
+                      className="w-full btn-coral h-14 text-base gap-2"
+                      onClick={handleSubscribe}
+                      disabled={loading}
+                      data-testid="subscribe-button"
+                    >
+                      <CreditCard className="h-5 w-5" />
+                      {loading
+                        ? (language === 'es' ? 'Redirigiendo a Stripe...' : 'Redirecting to Stripe...')
+                        : (language === 'es' ? 'Registrar tarjeta y activar suscripción' : 'Register card & activate subscription')}
+                    </Button>
+                    <button
+                      type="button"
+                      className="w-full text-sm text-muted-foreground hover:text-foreground transition-colors py-2"
+                      onClick={handleSkipSubscription}
+                      data-testid="skip-subscription-button"
+                    >
+                      {language === 'es' ? 'Hacerlo después desde mi panel' : 'Do it later from my dashboard'}
+                    </button>
+                  </div>
+
+                  <p className="text-[11px] text-center text-muted-foreground/60">
+                    {language === 'es'
+                      ? 'Serás redirigido a Stripe, nuestro procesador de pagos seguro, para registrar tu tarjeta.'
+                      : 'You will be redirected to Stripe, our secure payment processor, to register your card.'}
+                  </p>
+                </div>
+              )}
+
+              {/* Navigation buttons - hidden on subscription step (has its own) */}
+              {currentStep < 4 && (
               <div className="flex justify-between mt-8 pt-4 border-t">
                 {currentStep > 0 ? (
                   <Button type="button" variant="outline" onClick={handleBack} className="h-12">
@@ -1021,24 +1102,16 @@ export default function BusinessRegisterPage() {
                   <div />
                 )}
                 
-                {currentStep < STEPS.length - 1 ? (
-                  <Button type="button" onClick={handleNext} className="h-12 btn-coral">
-                    {language === 'es' ? 'Siguiente' : 'Next'}
-                    <ArrowRight className="ml-2 h-4 w-4" />
-                  </Button>
-                ) : (
-                  <Button 
-                    type="submit" 
-                    className="h-12 btn-coral"
-                    disabled={loading}
-                    data-testid="submit-business"
-                  >
-                    {loading 
-                      ? (language === 'es' ? 'Enviando...' : 'Submitting...') 
-                      : (language === 'es' ? 'Registrar negocio' : 'Register business')}
-                  </Button>
-                )}
+                <Button type="button" onClick={handleNext} className="h-12 btn-coral" disabled={loading}>
+                  {loading 
+                    ? (language === 'es' ? 'Procesando...' : 'Processing...')
+                    : currentStep === 3
+                    ? (language === 'es' ? 'Registrar negocio' : 'Register business')
+                    : (language === 'es' ? 'Siguiente' : 'Next')}
+                  {!loading && <ArrowRight className="ml-2 h-4 w-4" />}
+                </Button>
               </div>
+              )}
             </form>
 
             <p className="text-xs text-muted-foreground text-center mt-6">
