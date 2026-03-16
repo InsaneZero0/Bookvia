@@ -277,6 +277,7 @@ class BusinessCreate(BaseModel):
     requires_deposit: bool = False
     deposit_amount: float = 50.0
     cancellation_days: int = 1
+    payout_schedule: Optional[str] = "monthly"  # triday, biweekly, monthly
     min_time_between_appointments: int = 0  # minutes (buffer between appointments)
     service_radius_km: Optional[float] = None  # for home service
     plan_type: str = "basic"  # basic, premium
@@ -309,6 +310,7 @@ class BusinessResponse(BaseModel):
     requires_deposit: bool = False
     deposit_amount: float = 50.0
     cancellation_days: int = 1
+    payout_schedule: Optional[str] = "monthly"
     min_time_between_appointments: int = 0
     photos: List[str] = []
     logo_url: Optional[str] = None
@@ -332,6 +334,7 @@ class BusinessUpdate(BaseModel):
     requires_deposit: Optional[bool] = None
     deposit_amount: Optional[float] = None
     cancellation_days: Optional[int] = None
+    payout_schedule: Optional[str] = None
     min_time_between_appointments: Optional[int] = None
     service_radius_km: Optional[float] = None
     photos: Optional[List[str]] = None
@@ -1093,6 +1096,7 @@ async def register_business(business: BusinessCreate):
         "requires_deposit": business.requires_deposit,
         "deposit_amount": max(business.deposit_amount, 50.0),
         "cancellation_days": business.cancellation_days,
+        "payout_schedule": business.payout_schedule if business.requires_deposit else None,
         "min_time_between_appointments": business.min_time_between_appointments,
         "service_radius_km": business.service_radius_km,
         "timezone": business.timezone,
