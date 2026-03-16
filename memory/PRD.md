@@ -30,11 +30,15 @@ Plataforma de marketplace de reservas profesionales "Bookvia". Usuarios buscan y
 - Home page profesional (Hero, Stats, Cómo funciona, Ciudades, Testimonios)
 - Búsqueda con mapa (Toggle Lista/Mapa, Leaflet/OpenStreetMap)
 - **Política de reservas mejorada** (2 opciones con/sin anticipo, cancelación configurable, tooltips de ayuda)
+- **Suscripción mensual obligatoria** (Paso 5 en registro de negocios, $39 MXN/mes con 30 días gratis, Stripe Checkout)
+- **Calendario de días de cierre** (panel del negocio para marcar días no laborables)
 
 ## Bugs Resueltos
 - [2026-03-11] Conflicto de rutas Admin vs SEO (P0)
 - [2026-03-11] Admin login no redirige al panel (P0)
 - [2026-03-15] cancellation_days no se guardaba en MongoDB al registrar negocio
+- [2026-03-16] Stripe API no se conectaba: faltaba configurar api_base para proxy de Emergent
+- [2026-03-16] businessesAPI no estaba importado en BusinessRegisterPage.jsx (Step 5 crasheaba)
 
 ## Backlog Priorizado
 ### P1
