@@ -1,0 +1,54 @@
+{
+  "summary": "Completed testing for iteration 16: Payout Schedule Selector feature. Backend accepts payout_schedule field (triday/biweekly/monthly) without 422 errors. Frontend Step 4 shows 3 radio-card payout options with fees (10%, 8%, 4%). Old terms checkbox removed. All tests passed.",
+
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+
+  "passed_tests": [
+    "Backend: POST /api/auth/business/register accepts payout_schedule='biweekly' - returns 200 with correct value",
+    "Backend: POST /api/auth/business/register accepts payout_schedule='triday' - returns 200 with correct value",
+    "Backend: POST /api/auth/business/register accepts payout_schedule=null when requires_deposit=false",
+    "Frontend: /business/register Step 4 loads correctly with radio-card selector",
+    "Frontend: Commission block (data-testid='commission-info-block') hidden by default when 'No requiero anticipo' is selected",
+    "Frontend: OLD 'Acepto los Términos de Servicio... 8%' checkbox is REMOVED",
+    "Frontend: Commission block visible when 'Requiero anticipo' is selected",
+    "Frontend: All 3 payout options visible (payout-triday, payout-biweekly, payout-monthly) with correct fees (10%, 8%, 4%)",
+    "Frontend: Default payout_schedule is 'monthly' (4%) - has coral border highlight",
+    "Frontend: Help icon (data-testid='help-payout-schedule') exists for payout schedule popover",
+    "Frontend: Clicking payout options changes selection with coral border highlight",
+    "Frontend: Home page (/) loads correctly with hero section and search",
+    "Frontend: Search page (/search) loads correctly with filters and business listings"
+  ],
+
+  "test_report_links": [],
+
+  "action_items": [],
+
+  "critical_code_review_comments": [],
+
+  "updated_files": [],
+
+  "success_rate": {
+    "backend": "100% (3/3 API tests passed)",
+    "frontend": "100% (10/10 UI tests passed)"
+  },
+
+  "mocked_api_note": {
+    "SMS (Twilio)": "MOCKED in development",
+    "Email (Resend)": "MOCKED in development"
+  },
+
+  "retest_needed": false,
+
+  "should_main_agent_self_test": false,
+
+  "context_for_next_testing_agent": "Iteration 16 tested the payout schedule radio-card selector. Key data-testids: commission-info-block (visible only when option-with-deposit is selected), payout-triday (10%), payout-biweekly (8%), payout-monthly (4% - default), help-payout-schedule. The old terms checkbox 'Acepto los Términos de Servicio...(8%)' has been successfully removed. payout_schedule field is stored in DB only when requires_deposit=true, otherwise null. App URL: https://reserve-stripe-test.preview.emergentagent.com"
+}

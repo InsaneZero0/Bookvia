@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 load_dotenv('/app/backend/.env')
 
 # Get BASE_URL from env
-BASE_URL = os.environ.get('BASE_URL', 'https://bookvia-prod-deploy.preview.emergentagent.com')
+BASE_URL = os.environ.get('BASE_URL', 'https://reserve-stripe-test.preview.emergentagent.com')
 
 
 class TestAdminLoginAPI:

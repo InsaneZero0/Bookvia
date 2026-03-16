@@ -11,7 +11,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Progress } from '@/components/ui/progress';
 import { useAuth } from '@/lib/auth';
 import { useI18n } from '@/lib/i18n';
-import { categoriesAPI } from '@/lib/api';
+import { categoriesAPI, businessesAPI } from '@/lib/api';
 import { toast } from 'sonner';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { 
@@ -25,6 +25,7 @@ const STEPS = [
   { id: 'location', title: { es: 'Ubicación', en: 'Location' } },
   { id: 'documents', title: { es: 'Documentos', en: 'Documents' } },
   { id: 'account', title: { es: 'Cuenta y pago', en: 'Account & payment' } },
+  { id: 'subscription', title: { es: 'Suscripción', en: 'Subscription' } },
 ];
 
 export default function BusinessRegisterPage() {
@@ -71,6 +72,7 @@ export default function BusinessRegisterPage() {
     requires_deposit: false,
     deposit_amount: 50,
     cancellation_days: 1,
+    payout_schedule: 'monthly',
     // Settings
     accepts_terms: false,
   });
@@ -235,12 +237,6 @@ export default function BusinessRegisterPage() {
             : 'CLABE must have 18 digits');
           return false;
         }
-        if (!formData.accepts_terms) {
-          toast.error(language === 'es' 
-            ? 'Debes aceptar los términos y condiciones' 
-            : 'You must accept the terms and conditions');
-          return false;
-        }
         return true;
         
       default:
@@ -249,74 +245,73 @@ export default function BusinessRegisterPage() {
   };
 
   const handleNext = () => {
-    if (validateStep()) {
-      setCurrentStep(prev => Math.min(prev + 1, STEPS.length - 1));
+    if (!validateStep()) return;
+    
+    if (currentStep === 3) {
+      // Step 4 (Account) → register the business, then go to Step 5
+      handleRegister();
+    } else if (currentStep < STEPS.length - 1) {
+      setCurrentStep(prev => prev + 1);
     }
   };
 
   const handleBack = () => {
+    if (currentStep === 4) return;
     setCurrentStep(prev => Math.max(prev - 1, 0));
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    
-    if (!validateStep()) return;
-    
+  const handleRegister = async () => {
     setLoading(true);
-    
     try {
-      // Upload files
       let ineUrl = '';
       let proofUrl = '';
+      if (ineFile) ineUrl = await uploadFile(ineFile);
+      if (proofFile) proofUrl = await uploadFile(proofFile);
       
-      if (ineFile) {
-        ineUrl = await uploadFile(ineFile);
-      }
-      if (proofFile) {
-        proofUrl = await uploadFile(proofFile);
-      }
-      
-      // Prepare registration data
       const registerData = {
-        name: formData.name,
-        email: formData.email,
-        password: formData.password,
-        phone: formData.phone,
-        description: formData.description,
-        category_id: formData.category_id,
-        address: formData.address,
-        city: formData.city,
-        state: formData.state,
-        country: formData.country,
-        zip_code: formData.zip_code,
-        rfc: formData.rfc.toUpperCase(),
-        legal_name: formData.legal_name,
-        ine_url: ineUrl,
-        proof_of_address_url: proofUrl,
-        clabe: formData.clabe,
+        name: formData.name, email: formData.email, password: formData.password,
+        phone: formData.phone, description: formData.description,
+        category_id: formData.category_id, address: formData.address,
+        city: formData.city, state: formData.state, country: formData.country,
+        zip_code: formData.zip_code, rfc: formData.rfc.toUpperCase(),
+        legal_name: formData.legal_name, ine_url: ineUrl,
+        proof_of_address_url: proofUrl, clabe: formData.clabe,
         requires_deposit: formData.requires_deposit,
         deposit_amount: formData.requires_deposit ? Number(formData.deposit_amount) : 50,
         cancellation_days: Number(formData.cancellation_days) || 1,
+        payout_schedule: formData.requires_deposit ? formData.payout_schedule : null,
       };
       
       await businessRegister(registerData);
-      
-      toast.success(
-        language === 'es' 
-          ? '¡Solicitud enviada! Tu negocio está en revisión.' 
-          : 'Application submitted! Your business is under review.',
-        { duration: 5000 }
-      );
-      
-      navigate('/business/dashboard');
+      toast.success(language === 'es' ? '¡Registro exitoso! Ahora activa tu suscripción.' : 'Registration successful! Now activate your subscription.', { duration: 4000 });
+      setCurrentStep(4);
     } catch (error) {
-      const message = error.response?.data?.detail || 
-        (language === 'es' ? 'Error al registrar negocio' : 'Error registering business');
+      const message = error.response?.data?.detail || (language === 'es' ? 'Error al registrar negocio' : 'Error registering business');
       toast.error(message);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleSubscribe = async () => {
+    setLoading(true);
+    try {
+      const originUrl = window.location.origin;
+      const res = await businessesAPI.createSubscription(originUrl);
+      if (res.data?.url) {
+        window.location.href = res.data.url;
+      } else {
+        throw new Error('No checkout URL');
+      }
+    } catch (error) {
+      toast.error(language === 'es' ? 'Error al iniciar suscripción. Podrás hacerlo después desde tu panel.' : 'Error starting subscription. You can do it later from your dashboard.');
+      setLoading(false);
+    }
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    handleSubscribe();
   };
 
   const progress = ((currentStep + 1) / STEPS.length) * 100;
@@ -872,40 +867,70 @@ export default function BusinessRegisterPage() {
                             </p>
                           </div>
 
-                          {/* Bloque informativo: Comisiones */}
-                          <div className="rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 p-4 space-y-2.5" data-testid="commission-info-block">
+                          {/* Selector de frecuencia de depósito */}
+                          <div className="rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 p-4 space-y-3" data-testid="commission-info-block">
                             <h4 className="text-sm font-semibold flex items-center gap-1.5">
                               <CreditCard className="h-4 w-4 text-[#F05D5E]" />
                               {language === 'es' ? 'Comisiones de Bookvia' : 'Bookvia Fees'}
                             </h4>
                             <p className="text-xs text-muted-foreground leading-relaxed">
                               {language === 'es'
-                                ? 'Bookvia cobra una comisión por procesar los pagos y gestionar las reservas realizadas en la plataforma.'
-                                : 'Bookvia charges a fee for processing payments and managing bookings on the platform.'}
+                                ? 'Bookvia cobra una comisión por procesar los pagos y gestionar las reservas. Los anticipos se depositarán en la cuenta bancaria que registraste (CLABE).'
+                                : 'Bookvia charges a fee for processing payments and managing bookings. Deposits will be transferred to the bank account you registered (CLABE).'}
                             </p>
-                            <p className="text-xs text-muted-foreground leading-relaxed">
-                              {language === 'es'
-                                ? 'Los anticipos pagados por tus clientes se depositarán en la cuenta bancaria que registraste (CLABE).'
-                                : 'Customer deposits will be transferred to the bank account you registered (CLABE).'}
-                            </p>
-                            <div className="pt-1">
-                              <p className="text-xs font-medium mb-1.5">{language === 'es' ? 'Opciones de depósito:' : 'Deposit schedule:'}</p>
-                              <ul className="space-y-1">
+
+                            <div className="space-y-1.5">
+                              <div className="flex items-center gap-1.5">
+                                <Label className="text-sm font-medium">
+                                  {language === 'es' ? '¿Cada cuánto quieres recibir tu dinero?' : 'How often do you want to receive your money?'}
+                                </Label>
+                                <Popover>
+                                  <PopoverTrigger asChild>
+                                    <button type="button" className="text-muted-foreground hover:text-[#F05D5E] transition-colors" data-testid="help-payout-schedule">
+                                      <HelpCircle className="h-4 w-4" />
+                                    </button>
+                                  </PopoverTrigger>
+                                  <PopoverContent className="w-72 text-sm" side="top">
+                                    <p className="font-medium mb-1">{language === 'es' ? 'Frecuencia de depósito' : 'Payout frequency'}</p>
+                                    <p className="text-muted-foreground text-xs leading-relaxed">
+                                      {language === 'es'
+                                        ? 'Elige cada cuánto quieres recibir los anticipos acumulados en tu cuenta bancaria. Entre más frecuente, mayor es la comisión de Bookvia por los costos operativos de las transferencias.'
+                                        : 'Choose how often you want to receive accumulated deposits. More frequent payouts have higher fees due to transfer costs.'}
+                                    </p>
+                                  </PopoverContent>
+                                </Popover>
+                              </div>
+
+                              <div className="space-y-2">
                                 {[
-                                  { label: language === 'es' ? 'Depósito cada 3 días' : 'Every 3 days', fee: '10%' },
-                                  { label: language === 'es' ? 'Depósito quincenal' : 'Biweekly', fee: '8%' },
-                                  { label: language === 'es' ? 'Depósito mensual' : 'Monthly', fee: '4%' },
+                                  { value: 'triday', label: language === 'es' ? 'Cada 3 días' : 'Every 3 days', fee: '10%', desc: language === 'es' ? 'Recibe tu dinero rápido' : 'Get your money fast' },
+                                  { value: 'biweekly', label: language === 'es' ? 'Quincenal' : 'Biweekly', fee: '8%', desc: language === 'es' ? 'Balance entre rapidez y costo' : 'Balance of speed and cost' },
+                                  { value: 'monthly', label: language === 'es' ? 'Mensual' : 'Monthly', fee: '4%', desc: language === 'es' ? 'La comisión más baja' : 'Lowest fee' },
                                 ].map(opt => (
-                                  <li key={opt.fee} className="flex items-center justify-between text-xs">
-                                    <span className="text-muted-foreground">{opt.label}</span>
-                                    <Badge variant="outline" className="text-[10px] h-5 font-semibold">
-                                      {language === 'es' ? 'comisión del' : 'fee'} {opt.fee}
+                                  <div
+                                    key={opt.value}
+                                    className={`flex items-center justify-between p-3 rounded-lg border-2 cursor-pointer transition-all ${formData.payout_schedule === opt.value ? 'border-[#F05D5E] bg-[#F05D5E]/5' : 'border-border hover:border-muted-foreground/30'}`}
+                                    onClick={() => setFormData(prev => ({ ...prev, payout_schedule: opt.value }))}
+                                    data-testid={`payout-${opt.value}`}
+                                  >
+                                    <div className="flex items-center gap-2.5">
+                                      <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${formData.payout_schedule === opt.value ? 'border-[#F05D5E]' : 'border-muted-foreground/40'}`}>
+                                        {formData.payout_schedule === opt.value && <div className="w-2 h-2 rounded-full bg-[#F05D5E]" />}
+                                      </div>
+                                      <div>
+                                        <p className="text-sm font-medium">{opt.label}</p>
+                                        <p className="text-[11px] text-muted-foreground">{opt.desc}</p>
+                                      </div>
+                                    </div>
+                                    <Badge variant={formData.payout_schedule === opt.value ? 'default' : 'outline'} className={`text-xs ${formData.payout_schedule === opt.value ? 'bg-[#F05D5E]' : ''}`}>
+                                      {opt.fee}
                                     </Badge>
-                                  </li>
+                                  </div>
                                 ))}
-                              </ul>
+                              </div>
                             </div>
-                            <p className="text-[11px] text-muted-foreground/70 pt-1 border-t border-slate-200 dark:border-slate-700">
+
+                            <p className="text-[11px] text-muted-foreground/70 pt-2 border-t border-slate-200 dark:border-slate-700">
                               {language === 'es'
                                 ? 'Podrás consultar todos los movimientos y anticipos recibidos en tu panel de estado de cuenta dentro de Bookvia.'
                                 : 'You can view all transactions and deposits received in your Bookvia account dashboard.'}
@@ -981,25 +1006,89 @@ export default function BusinessRegisterPage() {
                       )}
                     </div>
                   </div>
-
-                  <div className="flex items-start space-x-2 pt-4 border-t">
-                    <Checkbox
-                      id="accepts_terms"
-                      name="accepts_terms"
-                      checked={formData.accepts_terms}
-                      onCheckedChange={(checked) => setFormData(prev => ({ ...prev, accepts_terms: checked }))}
-                      data-testid="terms-checkbox"
-                    />
-                    <Label htmlFor="accepts_terms" className="text-sm leading-tight">
-                      {language === 'es' 
-                        ? 'Acepto los Términos de Servicio, Política de Privacidad y las comisiones de la plataforma (8% por transacción)'
-                        : 'I accept the Terms of Service, Privacy Policy and platform fees (8% per transaction)'}
-                    </Label>
-                  </div>
                 </div>
               )}
 
-              {/* Navigation buttons */}
+              {/* Step 5: Subscription */}
+              {currentStep === 4 && (
+                <div className="space-y-6" data-testid="step-subscription">
+                  <div className="text-center space-y-3 py-4">
+                    <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-[#F05D5E]/10">
+                      <CreditCard className="h-8 w-8 text-[#F05D5E]" />
+                    </div>
+                    <h2 className="text-xl font-heading font-bold">
+                      {language === 'es' ? 'Registro de tarjeta obligatorio' : 'Card registration required'}
+                    </h2>
+                  </div>
+
+                  {/* Main info card */}
+                  <div className="rounded-xl border-2 border-[#F05D5E]/30 bg-[#F05D5E]/5 p-6 space-y-4">
+                    <p className="text-sm leading-relaxed text-foreground">
+                      {language === 'es'
+                        ? 'Para completar el registro de tu negocio en Bookvia, es obligatorio registrar una tarjeta válida.'
+                        : 'To complete your business registration on Bookvia, you must register a valid card.'}
+                    </p>
+                    <div className="flex items-center gap-3">
+                      <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0" />
+                      <div>
+                        <p className="font-semibold">{language === 'es' ? 'Tu suscripción incluye 1 mes GRATIS' : 'Your subscription includes 1 FREE month'}</p>
+                        <p className="text-xs text-muted-foreground">{language === 'es' ? 'Sin cobro durante los primeros 30 días' : 'No charge for the first 30 days'}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0" />
+                      <div>
+                        <p className="font-semibold">{language === 'es' ? 'Después $39 MXN al mes' : 'Then $39 MXN per month'}</p>
+                        <p className="text-xs text-muted-foreground">{language === 'es' ? 'Se cobrará automáticamente después de 30 días' : 'Automatically charged after 30 days'}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Admin approval notice */}
+                  <div className="text-center bg-amber-50 dark:bg-amber-900/20 rounded-xl p-4 border border-amber-200 dark:border-amber-800">
+                    <AlertTriangle className="h-5 w-5 text-amber-600 mx-auto mb-2" />
+                    <p className="text-sm text-amber-800 dark:text-amber-200 leading-relaxed">
+                      {language === 'es'
+                        ? 'Una vez registrada tu tarjeta, tu negocio quedará pendiente de aprobación por parte del administrador antes de aparecer públicamente en la plataforma.'
+                        : 'Once your card is registered, your business will be pending admin approval before appearing publicly on the platform.'}
+                    </p>
+                  </div>
+
+                  {/* Cancellation policy */}
+                  <div className="text-center bg-muted/30 rounded-xl p-4 border">
+                    <p className="text-xs text-muted-foreground leading-relaxed">
+                      {language === 'es'
+                        ? 'Puedes cancelar tu suscripción en cualquier momento desde tu panel de negocio. Si tu suscripción se cancela o tu pago no está al corriente, tu negocio dejará de aparecer en los resultados de búsqueda hasta regularizarse.'
+                        : 'You can cancel your subscription at any time from your business dashboard. If your subscription is canceled or your payment is not up to date, your business will stop appearing in search results until regularized.'}
+                    </p>
+                  </div>
+
+                  {/* Stripe CTA */}
+                  <div className="space-y-3">
+                    <Button
+                      type="button"
+                      className="w-full btn-coral h-14 text-base gap-2"
+                      onClick={handleSubscribe}
+                      disabled={loading}
+                      data-testid="subscribe-button"
+                    >
+                      <CreditCard className="h-5 w-5" />
+                      {loading
+                        ? (language === 'es' ? 'Redirigiendo a Stripe...' : 'Redirecting to Stripe...')
+                        : (language === 'es' ? 'Registrar tarjeta y activar suscripción' : 'Register card & activate subscription')}
+                    </Button>
+                  </div>
+
+                  <p className="text-[11px] text-center text-muted-foreground/60">
+                    {language === 'es'
+                      ? 'Serás redirigido a Stripe, nuestro procesador de pagos seguro, para registrar tu tarjeta.'
+                      : 'You will be redirected to Stripe, our secure payment processor, to register your card.'}
+                  </p>
+                </div>
+              )}
+
+              {/* Navigation buttons - hidden on subscription step (has its own) */}
+              {currentStep < 4 && (
               <div className="flex justify-between mt-8 pt-4 border-t">
                 {currentStep > 0 ? (
                   <Button type="button" variant="outline" onClick={handleBack} className="h-12">
@@ -1010,24 +1099,16 @@ export default function BusinessRegisterPage() {
                   <div />
                 )}
                 
-                {currentStep < STEPS.length - 1 ? (
-                  <Button type="button" onClick={handleNext} className="h-12 btn-coral">
-                    {language === 'es' ? 'Siguiente' : 'Next'}
-                    <ArrowRight className="ml-2 h-4 w-4" />
-                  </Button>
-                ) : (
-                  <Button 
-                    type="submit" 
-                    className="h-12 btn-coral"
-                    disabled={loading}
-                    data-testid="submit-business"
-                  >
-                    {loading 
-                      ? (language === 'es' ? 'Enviando...' : 'Submitting...') 
-                      : (language === 'es' ? 'Registrar negocio' : 'Register business')}
-                  </Button>
-                )}
+                <Button type="button" onClick={handleNext} className="h-12 btn-coral" disabled={loading}>
+                  {loading 
+                    ? (language === 'es' ? 'Procesando...' : 'Processing...')
+                    : currentStep === 3
+                    ? (language === 'es' ? 'Registrar negocio' : 'Register business')
+                    : (language === 'es' ? 'Siguiente' : 'Next')}
+                  {!loading && <ArrowRight className="ml-2 h-4 w-4" />}
+                </Button>
               </div>
+              )}
             </form>
 
             <p className="text-xs text-muted-foreground text-center mt-6">
@@ -1050,11 +1131,11 @@ export default function BusinessRegisterPage() {
             <ul className="space-y-2 text-sm text-muted-foreground">
               <li className="flex items-center gap-2">
                 <CheckCircle2 className="h-4 w-4 text-green-600" />
-                {language === 'es' ? '3 meses gratis de prueba' : '3 months free trial'}
+                {language === 'es' ? '1 mes gratis de suscripción' : '1 month free subscription'}
               </li>
               <li className="flex items-center gap-2">
                 <CheckCircle2 className="h-4 w-4 text-green-600" />
-                {language === 'es' ? 'Solo 8% de comisión por transacción' : 'Only 8% commission per transaction'}
+                {language === 'es' ? 'Pequeñas comisiones' : 'Low fees'}
               </li>
               <li className="flex items-center gap-2">
                 <CheckCircle2 className="h-4 w-4 text-green-600" />

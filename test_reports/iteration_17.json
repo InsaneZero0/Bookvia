@@ -1,0 +1,75 @@
+{
+  "summary": "Iteration 17 tested the Business Closures feature. All backend endpoints (GET/POST/DELETE /api/businesses/me/closures) correctly return 401 without auth. Frontend dashboard shows 5 tabs including 'Cierres' (data-testid='tab-closures'). Closures calendar (data-testid='closures-calendar') displays correctly. Full CRUD flow verified via API.",
+
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+
+  "passed_tests": [
+    "Backend: GET /api/businesses/me/closures returns 401 without auth (not 500)",
+    "Backend: POST /api/businesses/me/closures returns 401 without auth",
+    "Backend: DELETE /api/businesses/me/closures/2026-01-01 returns 401 without auth",
+    "Backend: GET /api/health returns 200 (healthy)",
+    "Backend: GET /api/categories returns 200",
+    "Backend: GET /api/businesses returns 200",
+    "Backend: GET /api/businesses/slug/test-business-5ecc65fc returns 200/404",
+    "Backend: GET /api/bookings/availability/{business_id} returns 200",
+    "Backend: POST /api/businesses/me/closures with auth creates closure successfully",
+    "Backend: GET /api/businesses/me/closures with auth returns closures list",
+    "Backend: DELETE /api/businesses/me/closures/{date} with auth removes closure",
+    "Frontend: Home page (/) loads correctly",
+    "Frontend: Search page (/search) loads correctly with business listings",
+    "Frontend: Business profile page (/business/{slug}) loads correctly",
+    "Frontend: /business/dashboard redirects to /business/login without auth",
+    "Frontend: Business login stores token, business data, and user role correctly",
+    "Frontend: Business dashboard has 5 tabs (Agenda, Servicios, Equipo, Cierres, Fotos)",
+    "Frontend: tab-closures (data-testid='tab-closures') exists and is clickable",
+    "Frontend: closures-calendar (data-testid='closures-calendar') exists in Cierres tab",
+    "Frontend: Closures tab shows 'Marcar días cerrados' section with calendar",
+    "Frontend: Closures tab shows 'Días cerrados programados' list section"
+  ],
+
+  "test_report_links": [
+    "/app/backend/tests/test_closures.py",
+    "/app/test_reports/pytest/pytest_closures.xml"
+  ],
+
+  "action_items": [],
+
+  "critical_code_review_comments": [],
+
+  "updated_files": [
+    "/app/backend/tests/test_closures.py"
+  ],
+
+  "success_rate": {
+    "backend": "100% (8/8 pytest tests passed)",
+    "frontend": "100% (UI tests passed - login, dashboard tabs, closures tab)"
+  },
+
+  "test_credentials": {
+    "business_email": "test_closures_biz@bookvia.com",
+    "business_password": "TestPass123!",
+    "business_id": "5503ec1f-c247-412a-a61f-53d85d7c8efb"
+  },
+
+  "seed_data_creation": "Created TEST_Closures Business for testing via /api/auth/business/register",
+
+  "mocked_api_note": {
+    "SMS (Twilio)": "MOCKED in development",
+    "Email (Resend)": "MOCKED in development"
+  },
+
+  "retest_needed": false,
+
+  "should_main_agent_self_test": false,
+
+  "context_for_next_testing_agent": "Iteration 17 tested the business closures feature. Key data-testids: tab-closures (on business dashboard), closures-calendar (inside Cierres tab). The closures endpoints are at /api/businesses/me/closures (GET/POST/DELETE). Test business: test_closures_biz@bookvia.com / TestPass123!. The availability endpoint (/api/bookings/availability/{business_id}) returns empty slots when a date is closed. App URL: https://reserve-stripe-test.preview.emergentagent.com"
+}

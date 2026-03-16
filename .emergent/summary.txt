@@ -1,179 +1,174 @@
 <analysis>**original_problem_statement:**
-El usuario quiere construir una plataforma de marketplace de reservas profesionales llamada Bookvia. La plataforma debe ser API-first, escalable y preparada para una futura aplicación móvil.
+El usuario quiere construir una plataforma de marketplace de reservas profesionales llamada Bookvia. El desarrollo ha progresado a través de varias fases, desde el despliegue inicial hasta la adición de funcionalidades complejas.
 
-Tras completar las fases de seguridad, finanzas y gestión de trabajadores, el usuario ha solicitado la implementación de la **Fase P4: SEO base y Preparación para Producción**, con un enfoque inicial en México y una arquitectura multi-país.
-
-**Requisitos de la Fase P4 (actual):**
-1.  **Arquitectura Multi-país (Base):**
-    *   Añadir un campo  (ej: 'MX', 'US') a los modelos ,  y .  será el valor por defecto.
-    *   Crear un modelo de  con , , , .
-    *   Estructurar las URLs para incluir el país:  y .
-
-2.  **SEO Base Obligatorio:**
-    *   Implementar slugs amigables y normalizados (minúsculas, sin acentos) para ciudades, categorías y negocios.
-    *   Generar meta-tags dinámicos (, , ) para las páginas clave.
-    *   Servir un  y  dinámicos desde la raíz del dominio.
-    *   Asegurar el uso de URLs canónicas.
-    *   Implementar  básico para imágenes.
-
-3.  **Preparación para Staging:**
-    *   Añadir validaciones que se activen con .
-    *   Desactivar mocks automáticamente en producción.
-    *   Implementar logging estructurado y manejo de errores claro.
-    *   Añadir un rate limiting básico global.
+Las solicitudes más recientes se han centrado en transformar la aplicación en una plataforma de nivel profesional, incluyendo:
+*   Una renovación completa de la página de perfil del negocio para que funcione como una página de reservas de servicio completo.
+*   Mejoras en los paneles de control del usuario y del negocio, añadiendo estadísticas y una función de carga de galerías de fotos.
+*   Una página de inicio y de búsqueda rediseñadas, con un mapa interactivo.
+*   Mejoras en el formulario de registro de negocios para incluir políticas de cancelación y horarios de pago seleccionables.
+*   Una función para que los negocios marquen sus días de cierre en un calendario.
+*   La adición de un paso de suscripción mensual obligatoria a través de Stripe en el flujo de registro de negocios, con un período de prueba gratuito de 30 días.
 
 **User's preferred language**: Español
 
 **what currently exists?**
-La aplicación es un stack FastAPI/React funcional. Se han completado las fases de registro de usuarios/negocios, autenticación JWT con 2FA para admin, un core financiero con Stripe y un sistema de libro contable (ledger), y la gestión completa de trabajadores y horarios.
+La aplicación es un stack completo con un backend de FastAPI y un frontend de React. El despliegue está configurado para Vercel (frontend) y Railway (backend).
 
-Recientemente, el backend se sometió a una refactorización importante, pasando de un archivo monolítico  a una estructura modular con directorios para , , , , etc. Se han implementado servicios mock para SMS (Twilio) y Email (Resend), preparados para ser activados con variables de entorno en producción.
+Funcionalidades clave implementadas:
+*   Autenticación JWT (con 2FA para administradores).
+*   Integración con Stripe para anticipos de reserva y ahora para suscripciones mensuales recurrentes.
+*   Un sistema de almacenamiento de objetos (tipo S3) para la carga y gestión de galerías de fotos de los negocios.
+*   Funcionalidades de SEO (mapa del sitio, rutas dinámicas).
+*   Páginas de ayuda, legales, y perfiles de negocio, búsqueda e inicio completamente rediseñadas.
+*   Paneles de control de usuario y negocio mejorados.
+*   Un calendario en el panel del negocio para gestionar los días de cierre, que se integra con la lógica de disponibilidad.
+*   Un flujo de registro de negocios de 5 pasos que culmina en la creación de una suscripción de Stripe.
 
 **Last working item**:
-El agente comenzó la implementación de la Fase P4 (SEO y Multi-país), enfocándose primero en el backend.
+El agente estaba implementando el paso final en el flujo de registro de negocios: una suscripción mensual obligatoria con un período de prueba de 30 días.
 
-- Last item agent was working: Creación de la infraestructura base para la Fase P4. Específicamente, el agente:
-    1. Creó una utilidad de  con normalización de acentos en .
-    2. Escribió tests para la utilidad de slug en .
-    3. Creó el modelo base para  en .
-    4. Creó el archivo para el router de SEO en .
+- Last item agent was working: El agente acaba de finalizar la implementación del nuevo paso 5, Suscripción, en el formulario de registro. Esto incluye:
+    1.  **Backend**: Creación de endpoints (, ) para gestionar la creación de clientes y suscripciones en Stripe utilizando Stripe Checkout.
+    2.  **Frontend**: Adición del paso 5 al formulario de registro, que muestra la información de la suscripción y un botón para redirigir al usuario a la página de pago de Stripe. También se creó una página de éxito () para la redirección post-pago.
 - Status: IN PROGRESS
-- Agent Testing Done: Y (solo para la utilidad )
+- Agent Testing Done: N
 - Which testing method agent to use? both
 - User Testing Done: N
 
 **All Pending/In progress Issue list**:
--   **Issue 1: Credenciales de admin inválidas (P0)**
-    -   **Descripción:** El usuario informa que no puede iniciar sesión como administrador, recibiendo un error de credenciales inválidas, a pesar de que la contraseña y el correo parecen ser correctos.
-    -   **Attempted fixes:** El agente confirmó que el login de backend funciona correctamente mediante . Se regeneró el código QR para el 2FA y se proporcionaron códigos de acceso temporales. El problema persiste, sugiriendo un error en el lado del frontend o en el flujo de 2FA del usuario.
+-   **Issue 1: Probar el flujo de suscripción de Stripe (P0)**
+    -   **Descripción:** El flujo de suscripción recién implementado es una funcionalidad crítica de monetización y necesita ser probado de extremo a extremo. El agente acaba de terminar el código y no ha realizado ninguna prueba.
+    -   **Attempted fixes:** N/A.
     -   **Next debug checklist:**
-        1.  Revisar la lógica del formulario de login de administrador en el frontend ().
-        2.  Verificar en la consola del navegador si hay errores de red o de JavaScript durante el intento de login.
-        3.  Confirmar que el payload (email, password, 2fa_code) que envía el frontend es correcto.
-        4.  Preguntar al usuario por los pasos exactos y el mensaje de error preciso que observa.
-    -   **Why fix this issue and what will be achieved with the fix?** El administrador no puede acceder a las funciones de gestión de la plataforma, lo cual es crítico.
-    -   **Status:** IN PROGRESS
+        1.  Llamar al  con un plan de prueba detallado.
+        2.  Verificar que el botón del paso 5 redirige correctamente a una sesión de Stripe Checkout.
+        3.  Simular un pago exitoso en el entorno de prueba de Stripe.
+        4.  Confirmar que el usuario es redirigido a la página .
+        5.  Verificar que el webhook del backend procesa el evento  y guarda los  y  en el documento del negocio en MongoDB.
+    -   **Why fix this issue and what will be achieved with the fix?** Es crucial para la monetización de la plataforma. Sin esto, los nuevos negocios no podrán completar su registro y activar su suscripción.
+    -   **Status:** TESTING PENDING
     -   **Is recurring issue?** N
-    -   **Should Test frontend/backend/both after fix?** both
-    -   **Blocked on other issue:** No.
+    -   **Should Test frontend/backend/both after fix?** Both
+    -   **Blocked on other issue:** No
 
 **In progress Task List**:
--   **Task 1: Completar Fase P4 - SEO y Preparación para Producción (P0)**
-    -   **Where to resume:** Continuar con la implementación del backend. El siguiente paso es integrar el  en los modelos y esquemas de Pydantic (, , ). Luego, desarrollar la lógica en  para generar dinámicamente el  y . Finalmente, implementar los cambios de enrutamiento y la carga de meta-tags en el frontend.
-    -   **What will be achieved with this?** La aplicación estará lista para un despliegue en un entorno de staging, con una base de SEO sólida y una arquitectura preparada para la expansión internacional.
+-   **Task 1: Completar y verificar la implementación de la suscripción de Stripe**
+    -   **Where to resume:** El código para el backend y el frontend está escrito. El siguiente paso inmediato es ejecutar pruebas exhaustivas utilizando el  para validar todo el flujo de registro y suscripción.
+    -   **What will be achieved with this?** Un sistema funcional y verificado para que los nuevos negocios se suscriban a Bookvia, completando una de las principales solicitudes del usuario.
     -   **Status:** IN PROGRESS
-    -   **Should Test frontend/backend/both after fix?** both
-    -   **Blocked on something:** No.
+    -   **Should Test frontend/backend/both after fix?** Both
+    -   **Blocked on something:** No
 
 **Upcoming and Future Tasks**
 **Upcoming Tasks:**
--   **Staging-Ready (P1):** Implementar las tareas de preparación para producción: validaciones basadas en , desactivación automática de mocks, logging estructurado y rate limiting global.
--   **Páginas SEO (P1):** Crear las páginas frontend correspondientes a las nuevas rutas SEO: , , etc.
+-   **P1: 🔑 Recuperar contraseña:** Implementar el flujo de olvidé mi contraseña.
+-   **P1: 📧 Activar emails reales:** Configurar las credenciales de Resend para enviar correos transaccionales (actualmente en espera de que el usuario proporcione un dominio).
+-   **P2: 🔔 Recordatorios de citas:** Crear un sistema que envíe recordatorios por email 24 horas antes de una cita.
+-   **P2: 🔐 Login con Google:** Implementar la autenticación social con Google.
 
 **Future Tasks:**
--   **Stripe Connect (P2):** Reemplazar el sistema de liquidaciones manuales por pagos automáticos a negocios.
--   **Push Notifications (P3):** Añadir notificaciones push.
--   **Aplicación Móvil (P3):** Desarrollo de una app nativa.
+-   **P3: 📱 Convertir a PWA:** Añadir la funcionalidad de Progressive Web App.
+-   **Stripe Connect:** Integración para automatizar los pagos a los negocios.
+-   **Notificaciones Push:** Implementar notificaciones push.
+-   **Aplicación Nativa:** Desarrollo de una aplicación móvil nativa.
 
 **Completed work in this session**
--   **Fase P2 - Gestión de Trabajadores y Horarios:** Se implementó el CRUD completo para trabajadores, gestión de horarios complejos (con breaks y buffers), manejo de excepciones (vacaciones), y un motor de disponibilidad que calcula slots en tiempo real. Se desarrolló la UI correspondiente en el panel de negocio.
--   **Refactorización del Backend:** Se migró el código del monolito  a una arquitectura modular estándar de FastAPI (, , , etc.), mejorando la mantenibilidad.
--   **Servicios Mock (SMS y Email):** Se implementaron servicios simulados para Twilio (SMS) y Resend (Email), incluyendo rate limiting y expiración de códigos. El sistema está preparado para usar credenciales reales a través de variables de entorno.
--   **Notificaciones a Trabajadores:** Se añadió una notificación (mock de email y en la BD) que se envía a un trabajador cuando se le asigna una nueva cita confirmada.
-
-**Earlier issues found/mentioned but not fixed**
-- El problema de credenciales inválidas del administrador es el único pendiente y ya está listado en .
-
-**Known issue recurrence from previous fork**
-- **Issue:** Errores de Mixed Content (HTTP/HTTPS) en el entorno de vista previa.
-- **Fix:**  en . Sigue siendo la solución y no ha vuelto a ser un problema.
+- **Corrección de Bugs Críticos:**
+  - Solucionado un conflicto de enrutamiento que bloqueaba el acceso al panel de administración.
+  - Corregido un bucle de redirección y un error de Too many requests en el login del administrador.
+- **Renovación de Páginas Clave:**
+  - **Página de Perfil del Negocio:** Completamente rediseñada para ser una página de reservas profesional.
+  - **Página de Inicio:** Rediseñada con un nuevo héroe, testimonios y secciones de cómo funciona.
+  - **Página de Búsqueda:** Mejorada con una vista de mapa interactivo (Leaflet) y un conmutador de vista Lista/Mapa.
+- **Mejora de Paneles de Control:**
+  - **Panel del Negocio:** Rediseñado con estadísticas, gestión de servicios y una nueva función para subir una galería de fotos.
+  - **Panel del Usuario:** Rediseñado con una interfaz más limpia para reservas y favoritos.
+- **Nuevas Funcionalidades:**
+  - **Carga de Fotos:** Implementado el almacenamiento de objetos para permitir a los negocios subir su galería de imágenes.
+  - **Calendario de Cierres:** Añadida una pestaña en el panel del negocio para marcar días no laborables, bloqueando la disponibilidad en esas fechas.
+- **Mejoras en el Formulario de Registro:**
+  - Añadidos campos dinámicos para políticas de cancelación y tooltips informativos.
+  - Reemplazada la información estática de comisiones por un selector de frecuencia de pago () que se guarda en la base de datos.
+  - Modificado el texto de los beneficios en la página de inicio.
 
 **Code Architecture**
 
 
 **Key Technical Concepts**
-- **Backend:** FastAPI
-- **Frontend:** React
-- **Database:** MongoDB
-- **Authentication:** JWT, TOTP (con )
-- **Payments:** Stripe Checkout & Webhooks
-- **Accounting:** Double-entry ledger system
-- **SEO:** Slugification, sitemap generation (en progreso)
+- **Frontend:** React, Shadcn/UI, React Router, **Leaflet.js** para mapas interactivos.
+- **Backend:** FastAPI, MongoDB.
+- **Integraciones:**
+    - **Stripe:** Usado para pagos de anticipos y ahora para **suscripciones recurrentes** a través de **Stripe Checkout**.
+    - **Emergent Object Storage:** Servicio compatible con S3 para la carga de galerías de fotos.
 
 **key DB schema**
-- : { , , , ,  }
-- : { , ,  } (se añadirá )
-- : { , , ,  }
-- : { , , , ,  }
-- : { ,  } (se añadirá )
-- : { ,  } (se añadirá )
--  (nuevo): { , , ,  }
+- **businesses:** Se añadieron los campos , , , .
+- **business_closures** (nueva colección): .
 
 **changes in tech stack**
-- No hay cambios en la pila tecnológica principal.
+- **Frontend:** Se añadió  y  para la funcionalidad de mapas.
+- **Backend:** Se integró la biblioteca  para el almacenamiento de objetos (S3).
 
 **All files of reference**
-- **Refactorización:** , , , .
-- **Fase P4 (SEO):** , , , .
-- **Fase P2 (Equipo):** ,  (actualizado).
-- **Documentación:** .
-- **Legacy:**  sigue siendo un archivo central.
+- **Tarea Actual (Suscripción):**
+    - 
+    - 
+    - 
+    - 
+- **Otras Modificaciones Relevantes:**
+    -  (nuevo)
+    -  (nuevo)
+    - 
+    - 
+    - 
 
 **Areas that need refactoring**:
-- El  todavía contiene la mayor parte de la lógica de los routers (negocios, finanzas, admin, etc.) y la configuración de la app de FastAPI. El plan aprobado por el usuario es mover esta lógica gradualmente a la nueva estructura modular en .
+-  y  todavía contienen lógica de negocio que podría modularizarse en archivos de enrutadores dedicados para mejorar la mantenibilidad a largo plazo (por ejemplo, rutas de autenticación, gestión de negocios).
 
 **key api endpoints**
--  (en planificación)
--  (en planificación)
-- 
-- 
+- **Nuevos en esta sesión:**
+    - : Añadir un día de cierre.
+    - : Eliminar un día de cierre.
+    - : Subir una foto.
+    - : Servir un archivo desde el almacenamiento de objetos.
+    - : Crea una sesión de Stripe Checkout para la suscripción.
+    - : Escucha y procesa eventos de Stripe.
+    - : Verifica el estado de la suscripción tras el pago.
 
 **Critical Info for New Agent**
-- **Prioridad Inmediata:** Antes de continuar con la Fase P4, se recomienda abordar el **problema de login del administrador**. Es un bloqueador para que el usuario pueda probar la aplicación.
-- **Estado de la Refactorización:** El refactor del backend es parcial. La nueva estructura de archivos existe, pero el servicio  sigue ejecutando la aplicación desde . Toda la nueva lógica debe crearse en los módulos correspondientes, pero la lógica antigua aún reside en  y debe ser migrada progresivamente.
-- **Configuración de Servicios:** Los servicios de SMS y Email están en modo mock. La lógica para activarlos en producción a través de variables de entorno ya está implementada en  y documentada en .
+- **Prioridad Inmediata:** La tarea más importante es probar de forma exhaustiva el flujo de suscripción de Stripe recién implementado. Es una función de monetización principal y debe ser robusta.
+- **Método de Implementación de Stripe:** Se ha utilizado Stripe Checkout, que redirige al usuario a una página alojada por Stripe para introducir los datos de la tarjeta. El agente debe estar familiarizado con este flujo (redirección -> webhook -> página de éxito) para poder depurarlo eficazmente.
+- **Dependencias Externas:** La aplicación ahora depende de un servicio de almacenamiento de objetos y de Stripe. Asegúrate de que las credenciales en  son correctas antes de probar.
 
 **documents and test reports created in this job**
-- 
--  (100% éxito, 35 tests)
-- 
+- : Archivo de prueba para la funcionalidad de días de cierre.
+- Múltiples informes de prueba JSON fueron generados por  después de cada implementación de funcionalidad, pero no se guardan con nombres persistentes.
 
 **Last 10 User Messages and any pending HUMAN messages**
-1.  **Usuario (M449):** Pregunta por el código QR para el 2FA de su cuenta.
-2.  **Agente (M450-462):** Intenta ayudar al usuario a configurar su 2FA, regenerando el secreto, proporcionando la clave manual, un URI para generar el QR, y finalmente una URL directa a una imagen QR generada.
-3.  **Usuario (M463):** Informa que las credenciales son inválidas.
-4.  **Agente (M464-470):** Investiga el problema. Confirma con  que el login de backend funciona. Concluye que el problema debe estar en el frontend y pide al usuario más detalles sobre la página y el error exacto.
-5.  **Usuario (M471):** Ignora el problema de login y da instrucciones detalladas para la siguiente fase: **P4 - SEO y Preparación para Producción**.
-6.  **Agente (M472):** Presenta un plan detallado para la Fase P4.
-7.  **Usuario (M474):** Confirma el plan y añade ajustes específicos sobre las rutas de sitemap/robots.txt, páginas SEO esenciales y normalización de slugs.
-8.  **Agente (M475-488):** Comienza la implementación del backend para la Fase P4, creando utilidades de slug, modelos y routers base.
-
-El problema de login del usuario sigue sin resolverse.
+1.  Usuario: Pide un calendario para que los negocios marquen los días cerrados. (COMPLETADO)
+2.  Usuario: Pide cambiar dos puntos en una lista de beneficios en la página de inicio. (COMPLETADO)
+3.  Usuario: Pide agregar un paso 5 obligatorio al registro de negocios para una suscripción mensual de 39 MXN con 30 días de prueba, usando Stripe. (EN PROGRESO)
+- No hay más mensajes del usuario pendientes. El agente estaba en medio de la implementación de la última solicitud.
 
 **Project Health Check:**
-- **Broken:**
-    - El flujo de login del administrador está fallando para el usuario.
-- **Mocked:**
-    - Verificación por SMS (Twilio).
-    - Envío de emails (Resend).
-    - Liquidaciones y pagos a negocios (no se usa Stripe Connect todavía).
+- **Broken:** Ninguna funcionalidad existente está rota. Sin embargo, la nueva función de suscripción está implementada pero no probada.
+- **Mocked:** Los servicios de correo electrónico (Resend) siguen simulados. Su activación depende de que el usuario configure un dominio.
 
 **3rd Party Integrations**
-- **Stripe:** Pagos con Checkout y Webhooks (en modo de prueba).
-- **pyotp:** Autenticación de dos factores (2FA) para administradores.
-- **Twilio:** Planificado, actualmente mockeado.
-- **Resend:** Planificado, actualmente mockeado.
+- **Stripe:** Para pagos de anticipos y suscripciones recurrentes.
+- **Emergent Object Storage:** Para la galería de fotos de los negocios.
+- **pyotp:** Para 2FA de administrador.
+- **Leaflet / OpenStreetMap:** Para el mapa en la página de búsqueda.
+- **Vercel / Railway:** Plataformas de despliegue.
 
 **Testing status**
-- **Testing agent used after significant changes:** YES. Se ejecutó después de la refactorización del backend, con un 100% de éxito en 35 tests que cubren la nueva lógica de SMS y los flujos existentes.
-- **Test files created:** .
-- **Known regressions:** None.
+- **Testing agent used after significant changes:** YES, consistentemente después de cada característica mayor.
+- **Troubleshoot agent used after agent stuck in loop:** NO
+- **Test files created:** []
+- **Known regressions:** Ninguna.
 
 **Credentials to test flow:**
-- **Admin:**
-    - Email: 
-    - Password: 
-    - El 2FA está habilitado. Se requerirá un código de una app de autenticación.
+- Las credenciales de prueba de Stripe deben estar configuradas en  para poder probar el nuevo flujo de suscripción.
 
 **What agent forgot to execute**
-- El agente no resolvió el problema de credenciales inválidas del administrador. Fue interrumpido por la solicitud del usuario de iniciar una nueva fase (P4). Este problema debe ser priorizado.</analysis>
+- El agente no olvidó nada, pero fue interrumpido justo después de completar la codificación del flujo de suscripción de Stripe y antes de poder ejecutar las pruebas de validación. La siguiente acción lógica es iniciar esas pruebas.</analysis>

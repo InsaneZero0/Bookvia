@@ -156,6 +156,12 @@ PLATFORM_FEE_PERCENT = 0.08  # 8%
 HOLD_EXPIRATION_MINUTES = 30
 MIN_DEPOSIT_AMOUNT = 50.0  # MXN
 
+# Visibility filter: businesses visible to public must be approved + subscription active/trialing
+VISIBLE_BUSINESS_FILTER = {
+    "status": BusinessStatus.APPROVED,
+    "subscription_status": {"$in": ["active", "trialing"]}
+}
+
 # Ledger Enums
 class LedgerDirection(str, Enum):
     DEBIT = "debit"
@@ -277,6 +283,7 @@ class BusinessCreate(BaseModel):
     requires_deposit: bool = False
     deposit_amount: float = 50.0
     cancellation_days: int = 1
+    payout_schedule: Optional[str] = "monthly"  # triday, biweekly, monthly
     min_time_between_appointments: int = 0  # minutes (buffer between appointments)
     service_radius_km: Optional[float] = None  # for home service
     plan_type: str = "basic"  # basic, premium
@@ -309,6 +316,7 @@ class BusinessResponse(BaseModel):
     requires_deposit: bool = False
     deposit_amount: float = 50.0
     cancellation_days: int = 1
+    payout_schedule: Optional[str] = "monthly"
     min_time_between_appointments: int = 0
     photos: List[str] = []
     logo_url: Optional[str] = None
@@ -317,7 +325,10 @@ class BusinessResponse(BaseModel):
     is_featured: bool = False
     plan_type: str = "basic"
     trial_ends_at: Optional[str] = None
-    can_accept_bookings: bool = True  # False if PENDING_REVIEW
+    can_accept_bookings: bool = True
+    subscription_status: str = "none"  # none, trialing, active, past_due, canceled, unpaid
+    stripe_customer_id: Optional[str] = None
+    stripe_subscription_id: Optional[str] = None
 
 class BusinessUpdate(BaseModel):
     name: Optional[str] = None
@@ -332,6 +343,7 @@ class BusinessUpdate(BaseModel):
     requires_deposit: Optional[bool] = None
     deposit_amount: Optional[float] = None
     cancellation_days: Optional[int] = None
+    payout_schedule: Optional[str] = None
     min_time_between_appointments: Optional[int] = None
     service_radius_km: Optional[float] = None
     photos: Optional[List[str]] = None
@@ -1093,6 +1105,7 @@ async def register_business(business: BusinessCreate):
         "requires_deposit": business.requires_deposit,
         "deposit_amount": max(business.deposit_amount, 50.0),
         "cancellation_days": business.cancellation_days,
+        "payout_schedule": business.payout_schedule if business.requires_deposit else None,
         "min_time_between_appointments": business.min_time_between_appointments,
         "service_radius_km": business.service_radius_km,
         "timezone": business.timezone,
@@ -1101,7 +1114,9 @@ async def register_business(business: BusinessCreate):
         "slug": slug,
         "plan_type": business.plan_type,
         "stripe_account_id": None,
+        "stripe_customer_id": None,
         "stripe_subscription_id": None,
+        "subscription_status": "none",
         "trial_ends_at": trial_ends,
         "is_featured": False,
         "payout_hold": False,
@@ -1314,7 +1329,7 @@ async def get_favorites(token_data: TokenData = Depends(require_auth)):
         return []
     
     businesses = await db.businesses.find(
-        {"id": {"$in": user["favorites"]}, "status": BusinessStatus.APPROVED},
+        {"id": {"$in": user["favorites"]}, **VISIBLE_BUSINESS_FILTER},
         {"_id": 0, "password_hash": 0}
     ).to_list(100)
     
@@ -1328,7 +1343,7 @@ async def get_categories():
     
     # Add business count for each category
     for cat in categories:
-        count = await db.businesses.count_documents({"category_id": cat["id"], "status": BusinessStatus.APPROVED})
+        count = await db.businesses.count_documents({"category_id": cat["id"], **VISIBLE_BUSINESS_FILTER})
         cat["business_count"] = count
     
     return [CategoryResponse(**c) for c in categories]
@@ -1339,7 +1354,7 @@ async def get_category_by_slug(slug: str):
     if not category:
         raise HTTPException(status_code=404, detail="Category not found")
     
-    count = await db.businesses.count_documents({"category_id": category["id"], "status": BusinessStatus.APPROVED})
+    count = await db.businesses.count_documents({"category_id": category["id"], **VISIBLE_BUSINESS_FILTER})
     category["business_count"] = count
     
     return CategoryResponse(**category)
@@ -1366,12 +1381,15 @@ async def search_businesses(
     page: int = 1,
     limit: int = 20
 ):
-    # By default only show approved businesses
+    # By default only show approved businesses with active subscription
     # If include_pending=True, also show PENDING (for profile viewing, but no bookings)
     if include_pending:
         filters = {"status": {"$in": [BusinessStatus.APPROVED, BusinessStatus.PENDING]}}
     else:
-        filters = {"status": BusinessStatus.APPROVED}
+        filters = {
+            "status": BusinessStatus.APPROVED,
+            "subscription_status": {"$in": ["active", "trialing"]}
+        }
     
     if query:
         filters["$or"] = [
@@ -1399,15 +1417,18 @@ async def search_businesses(
             cat = await db.categories.find_one({"id": b["category_id"]})
             if cat:
                 b["category_name"] = cat.get("name_es", "")
-        # Mark if business can accept bookings
-        b["can_accept_bookings"] = b.get("status") == BusinessStatus.APPROVED
+        # Mark if business can accept bookings (must be approved + subscription active/trialing)
+        b["can_accept_bookings"] = (
+            b.get("status") == BusinessStatus.APPROVED 
+            and b.get("subscription_status") in ("active", "trialing")
+        )
     
     return [BusinessResponse(**b) for b in businesses]
 
 @businesses_router.get("/featured", response_model=List[BusinessResponse])
 async def get_featured_businesses(limit: int = 8):
     businesses = await db.businesses.find(
-        {"status": BusinessStatus.APPROVED, "is_featured": True},
+        {"status": BusinessStatus.APPROVED, "is_featured": True, "subscription_status": {"$in": ["active", "trialing"]}},
         {"_id": 0, "password_hash": 0, "clabe": 0, "rfc": 0}
     ).sort("rating", -1).limit(limit).to_list(limit)
     
@@ -1415,7 +1436,7 @@ async def get_featured_businesses(limit: int = 8):
     if len(businesses) < limit:
         existing_ids = [b["id"] for b in businesses]
         more = await db.businesses.find(
-            {"status": BusinessStatus.APPROVED, "id": {"$nin": existing_ids}},
+            {"status": BusinessStatus.APPROVED, "id": {"$nin": existing_ids}, "subscription_status": {"$in": ["active", "trialing"]}},
             {"_id": 0, "password_hash": 0, "clabe": 0, "rfc": 0}
         ).sort("rating", -1).limit(limit - len(businesses)).to_list(limit - len(businesses))
         businesses.extend(more)
@@ -1505,6 +1526,13 @@ async def get_business_dashboard(token_data: TokenData = Depends(require_busines
             "month_revenue": month_revenue,
             "total_reviews": business.get("review_count", 0),
             "rating": business.get("rating", 0)
+        },
+        "subscription": {
+            "status": business.get("subscription_status", "none"),
+            "subscription_id": business.get("stripe_subscription_id"),
+            "customer_id": business.get("stripe_customer_id"),
+            "started_at": business.get("subscription_started_at"),
+            "cancel_requested": business.get("subscription_cancel_requested", False)
         }
     }
 
@@ -1908,6 +1936,19 @@ async def get_availability(
     # Get buffer time between appointments
     buffer_minutes = business.get("min_time_between_appointments", 0)
     
+    # Check if business is closed on this date
+    closure = await db.business_closures.find_one({
+        "business_id": business_id, "date": date, "is_deleted": False
+    })
+    if closure:
+        return AvailabilityResponse(
+            date=date,
+            business_timezone=business_tz_name,
+            slots=[],
+            available_count=0,
+            total_workers=0
+        )
+    
     # Get service info
     service = None
     duration = 60
@@ -2095,6 +2136,9 @@ async def create_booking(booking: BookingCreate, token_data: TokenData = Depends
     
     if business["status"] != BusinessStatus.APPROVED:
         raise HTTPException(status_code=400, detail="Business is not accepting bookings")
+    
+    if business.get("subscription_status") not in ("active", "trialing"):
+        raise HTTPException(status_code=400, detail="Business subscription is not active")
     
     # Get service
     service = await db.services.find_one({"id": booking.service_id})
@@ -4248,7 +4292,7 @@ async def get_cities(country_code: str = "MX"):
     
     # Fallback: get from businesses
     cities = await db.businesses.distinct("city", {
-        "status": BusinessStatus.APPROVED,
+        **VISIBLE_BUSINESS_FILTER,
         "country_code": country_code.upper()
     })
     return [{"name": city, "slug": generate_slug(city), "country_code": country_code.upper()} for city in cities if city]
@@ -4319,6 +4363,279 @@ async def seed_countries():
         "countries_created": len(countries),
         "cities_created": len(cities)
     }
+
+
+# ========================== SUBSCRIPTION ENDPOINTS ==========================
+
+import stripe as stripe_lib
+stripe_lib.api_key = STRIPE_API_KEY
+if "sk_test_emergent" in STRIPE_API_KEY:
+    stripe_lib.api_base = "https://integrations.emergentagent.com/stripe"
+
+SUBSCRIPTION_PRICE_MXN = 39.00
+SUBSCRIPTION_TRIAL_DAYS = 30
+
+async def get_or_create_stripe_price():
+    """Get or create the Bookvia monthly subscription price in Stripe."""
+    # Check if we already have a price stored
+    config = await db.stripe_config.find_one({"type": "subscription_price"})
+    if config and config.get("price_id"):
+        return config["price_id"]
+    
+    try:
+        # Create product
+        product = stripe_lib.Product.create(
+            name="Bookvia Suscripción Mensual",
+            description="Suscripción mensual a la plataforma Bookvia"
+        )
+        # Create price (39 MXN monthly)
+        price = stripe_lib.Price.create(
+            product=product.id,
+            unit_amount=int(SUBSCRIPTION_PRICE_MXN * 100),
+            currency="mxn",
+            recurring={"interval": "month"}
+        )
+        await db.stripe_config.update_one(
+            {"type": "subscription_price"},
+            {"$set": {"price_id": price.id, "product_id": product.id}},
+            upsert=True
+        )
+        return price.id
+    except Exception as e:
+        logger.error(f"Failed to create Stripe price: {e}")
+        return None
+
+
+@businesses_router.post("/me/subscribe")
+async def create_subscription_checkout(request: Request, token_data: TokenData = Depends(require_business)):
+    """Create a Stripe Checkout Session for the monthly subscription."""
+    user = await db.users.find_one({"id": token_data.user_id})
+    if not user or not user.get("business_id"):
+        raise HTTPException(status_code=404, detail="Business not found")
+    
+    business = await db.businesses.find_one({"id": user["business_id"]})
+    if not business:
+        raise HTTPException(status_code=404, detail="Business not found")
+    
+    # Check if already subscribed
+    if business.get("stripe_subscription_id"):
+        raise HTTPException(status_code=400, detail="Already subscribed")
+    
+    price_id = await get_or_create_stripe_price()
+    if not price_id:
+        raise HTTPException(status_code=500, detail="Payment configuration error")
+    
+    body = await request.json()
+    origin_url = body.get("origin_url", os.environ.get("BASE_URL", ""))
+    success_url = f"{origin_url}/business/subscription/success?session_id={{CHECKOUT_SESSION_ID}}"
+    cancel_url = f"{origin_url}/business/dashboard"
+    
+    try:
+        # Create or get Stripe Customer
+        customer_id = business.get("stripe_customer_id")
+        if not customer_id:
+            customer = stripe_lib.Customer.create(
+                email=business.get("email"),
+                name=business.get("name"),
+                metadata={"business_id": business["id"]}
+            )
+            customer_id = customer.id
+            await db.businesses.update_one(
+                {"id": business["id"]},
+                {"$set": {"stripe_customer_id": customer_id}}
+            )
+        
+        # Create Checkout Session for subscription
+        session = stripe_lib.checkout.Session.create(
+            customer=customer_id,
+            payment_method_types=["card"],
+            mode="subscription",
+            line_items=[{"price": price_id, "quantity": 1}],
+            subscription_data={"trial_period_days": SUBSCRIPTION_TRIAL_DAYS},
+            success_url=success_url,
+            cancel_url=cancel_url,
+            metadata={"business_id": business["id"]}
+        )
+        
+        # Record the transaction
+        await db.payment_transactions.insert_one({
+            "id": generate_id(),
+            "business_id": business["id"],
+            "session_id": session.id,
+            "type": "subscription",
+            "amount": SUBSCRIPTION_PRICE_MXN,
+            "currency": "mxn",
+            "payment_status": "pending",
+            "created_at": datetime.now(timezone.utc).isoformat()
+        })
+        
+        return {"url": session.url, "session_id": session.id}
+    except Exception as e:
+        logger.error(f"Stripe subscription error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@businesses_router.get("/me/subscription/status")
+async def get_subscription_status(session_id: str = None, token_data: TokenData = Depends(require_business)):
+    """Check subscription status."""
+    user = await db.users.find_one({"id": token_data.user_id})
+    if not user or not user.get("business_id"):
+        raise HTTPException(status_code=404, detail="Business not found")
+    
+    business = await db.businesses.find_one({"id": user["business_id"]})
+    
+    # If session_id provided, verify the checkout session
+    if session_id:
+        try:
+            session = stripe_lib.checkout.Session.retrieve(session_id)
+            if session.payment_status in ("paid", "no_payment_required") or session.status == "complete":
+                subscription_id = session.subscription
+                # Update business with subscription info
+                await db.businesses.update_one(
+                    {"id": user["business_id"]},
+                    {"$set": {
+                        "stripe_subscription_id": subscription_id,
+                        "stripe_customer_id": session.customer,
+                        "subscription_status": "trialing",
+                        "subscription_started_at": datetime.now(timezone.utc).isoformat()
+                    }}
+                )
+                # Update transaction
+                await db.payment_transactions.update_one(
+                    {"session_id": session_id},
+                    {"$set": {"payment_status": "completed", "subscription_id": subscription_id}}
+                )
+                return {
+                    "status": "active",
+                    "subscription_status": "trialing",
+                    "subscription_id": subscription_id,
+                    "trial": True,
+                    "message": "Subscription activated with 30-day free trial"
+                }
+        except Exception as e:
+            logger.error(f"Stripe session check error: {e}")
+    
+    # Return current subscription status with details from Stripe
+    sub_id = business.get("stripe_subscription_id") if business else None
+    sub_status = business.get("subscription_status", "none") if business else "none"
+    
+    result = {
+        "status": sub_status if sub_id else "none",
+        "subscription_status": sub_status,
+        "subscription_id": sub_id,
+        "trial": sub_status == "trialing",
+        "current_period_end": None,
+        "cancel_at_period_end": False
+    }
+    
+    # Fetch live details from Stripe if subscription exists
+    if sub_id:
+        try:
+            sub = stripe_lib.Subscription.retrieve(sub_id)
+            result["current_period_end"] = datetime.fromtimestamp(sub.current_period_end, tz=timezone.utc).isoformat() if sub.current_period_end else None
+            result["cancel_at_period_end"] = sub.cancel_at_period_end
+            # Sync status from Stripe
+            stripe_status = sub.status  # trialing, active, past_due, canceled, unpaid
+            if stripe_status != sub_status:
+                await db.businesses.update_one(
+                    {"id": user["business_id"]},
+                    {"$set": {"subscription_status": stripe_status}}
+                )
+                result["status"] = stripe_status
+                result["subscription_status"] = stripe_status
+                result["trial"] = stripe_status == "trialing"
+        except Exception as e:
+            logger.error(f"Stripe subscription fetch error: {e}")
+    
+    return result
+
+
+@businesses_router.post("/me/subscription/cancel")
+async def cancel_subscription(token_data: TokenData = Depends(require_business)):
+    """Cancel the business subscription at the end of the current period."""
+    user = await db.users.find_one({"id": token_data.user_id})
+    if not user or not user.get("business_id"):
+        raise HTTPException(status_code=404, detail="Business not found")
+    
+    business = await db.businesses.find_one({"id": user["business_id"]})
+    if not business or not business.get("stripe_subscription_id"):
+        raise HTTPException(status_code=400, detail="No active subscription")
+    
+    try:
+        # Cancel at end of period (not immediately)
+        stripe_lib.Subscription.modify(
+            business["stripe_subscription_id"],
+            cancel_at_period_end=True
+        )
+        
+        await db.businesses.update_one(
+            {"id": business["id"]},
+            {"$set": {"subscription_cancel_requested": True}}
+        )
+        
+        return {"message": "Subscription will be canceled at the end of the current billing period"}
+    except Exception as e:
+        logger.error(f"Stripe cancel error: {e}")
+        raise HTTPException(status_code=500, detail="Error canceling subscription")
+
+
+# ========================== BUSINESS CLOSURES ENDPOINTS ==========================
+
+class ClosureDateCreate(BaseModel):
+    date: str  # YYYY-MM-DD
+    reason: Optional[str] = None
+
+@businesses_router.get("/me/closures")
+async def get_business_closures(token_data: TokenData = Depends(require_business)):
+    """Get all closure dates for the authenticated business."""
+    user = await db.users.find_one({"id": token_data.user_id})
+    if not user or not user.get("business_id"):
+        raise HTTPException(status_code=404, detail="Business not found")
+    closures = await db.business_closures.find(
+        {"business_id": user["business_id"], "is_deleted": False},
+        {"_id": 0}
+    ).to_list(500)
+    return closures
+
+@businesses_router.post("/me/closures")
+async def add_business_closure(data: ClosureDateCreate, token_data: TokenData = Depends(require_business)):
+    """Mark a date as closed."""
+    user = await db.users.find_one({"id": token_data.user_id})
+    if not user or not user.get("business_id"):
+        raise HTTPException(status_code=404, detail="Business not found")
+
+    # Check if date already marked
+    existing = await db.business_closures.find_one({
+        "business_id": user["business_id"], "date": data.date, "is_deleted": False
+    })
+    if existing:
+        raise HTTPException(status_code=400, detail="Date already marked as closed")
+
+    closure = {
+        "id": generate_id(),
+        "business_id": user["business_id"],
+        "date": data.date,
+        "reason": data.reason,
+        "is_deleted": False,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    await db.business_closures.insert_one(closure)
+    del closure["_id"]
+    return closure
+
+@businesses_router.delete("/me/closures/{date}")
+async def remove_business_closure(date: str, token_data: TokenData = Depends(require_business)):
+    """Remove a closure date (re-open)."""
+    user = await db.users.find_one({"id": token_data.user_id})
+    if not user or not user.get("business_id"):
+        raise HTTPException(status_code=404, detail="Business not found")
+    result = await db.business_closures.update_one(
+        {"business_id": user["business_id"], "date": date, "is_deleted": False},
+        {"$set": {"is_deleted": True}}
+    )
+    if result.modified_count == 0:
+        raise HTTPException(status_code=404, detail="Closure not found")
+    return {"message": "Closure removed"}
 
 
 # ========================== PHOTO UPLOAD ENDPOINTS ==========================

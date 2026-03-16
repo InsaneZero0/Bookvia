@@ -134,6 +134,14 @@ export const businessesAPI = {
   },
   deletePhoto: (photoId) => api.delete(`/businesses/me/photos/${photoId}`),
   getMyPhotos: () => api.get('/businesses/me/photos'),
+  // Closures (closed days)
+  getMyClosures: () => api.get('/businesses/me/closures'),
+  addClosure: (date, reason) => api.post('/businesses/me/closures', { date, reason }),
+  removeClosure: (date) => api.delete(`/businesses/me/closures/${date}`),
+  // Subscription
+  createSubscription: (originUrl) => api.post('/businesses/me/subscribe', { origin_url: originUrl }),
+  getSubscriptionStatus: (sessionId) => api.get(`/businesses/me/subscription/status${sessionId ? `?session_id=${sessionId}` : ''}`),
+  cancelSubscription: () => api.post('/businesses/me/subscription/cancel'),
 };
 
 // Services API
