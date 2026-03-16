@@ -304,7 +304,8 @@ export default function BusinessRegisterPage() {
         throw new Error('No checkout URL');
       }
     } catch (error) {
-      toast.error(language === 'es' ? 'Error al iniciar suscripción. Podrás hacerlo después desde tu panel.' : 'Error starting subscription. You can do it later from your dashboard.');
+      console.error('Subscription error:', error?.response?.data || error);
+      toast.error(language === 'es' ? 'Error al conectar con el procesador de pagos. Intenta de nuevo o contacta soporte.' : 'Error connecting to payment processor. Try again or contact support.');
       setLoading(false);
     }
   };
