@@ -1061,11 +1061,11 @@ export default function BusinessRegisterPage() {
             <ul className="space-y-2 text-sm text-muted-foreground">
               <li className="flex items-center gap-2">
                 <CheckCircle2 className="h-4 w-4 text-green-600" />
-                {language === 'es' ? '3 meses gratis de prueba' : '3 months free trial'}
+                {language === 'es' ? '1 mes gratis de suscripción' : '1 month free subscription'}
               </li>
               <li className="flex items-center gap-2">
                 <CheckCircle2 className="h-4 w-4 text-green-600" />
-                {language === 'es' ? 'Solo 8% de comisión por transacción' : 'Only 8% commission per transaction'}
+                {language === 'es' ? 'Pequeñas comisiones' : 'Low fees'}
               </li>
               <li className="flex items-center gap-2">
                 <CheckCircle2 className="h-4 w-4 text-green-600" />
