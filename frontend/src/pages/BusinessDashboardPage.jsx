@@ -21,7 +21,8 @@ import { toast } from 'sonner';
 import {
   Calendar as CalendarIcon, DollarSign, Star, Users, Clock, CheckCircle2,
   XCircle, AlertTriangle, TrendingUp, Settings, UserCog, Image, Upload,
-  Trash2, Eye, Plus, Pencil, BarChart3, Briefcase, ArrowUpRight, Phone
+  Trash2, Eye, Plus, Pencil, BarChart3, Briefcase, ArrowUpRight, Phone,
+  Ban, CalendarOff
 } from 'lucide-react';
 
 export default function BusinessDashboardPage() {
@@ -36,6 +37,7 @@ export default function BusinessDashboardPage() {
   const [services, setServices] = useState([]);
   const [workers, setWorkers] = useState([]);
   const [photos, setPhotos] = useState([]);
+  const [closures, setClosures] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [activeTab, setActiveTab] = useState('overview');
 
@@ -55,16 +57,18 @@ export default function BusinessDashboardPage() {
 
   const loadDashboard = async () => {
     try {
-      const [dashRes, servicesRes, workersRes, photosRes] = await Promise.all([
+      const [dashRes, servicesRes, workersRes, photosRes, closuresRes] = await Promise.all([
         businessesAPI.getDashboard(),
         servicesAPI.getByBusiness(business?.id || ''),
         businessesAPI.getMyWorkers().catch(() => ({ data: [] })),
         businessesAPI.getMyPhotos().catch(() => ({ data: [] })),
+        businessesAPI.getMyClosures().catch(() => ({ data: [] })),
       ]);
       setDashboardData(dashRes.data);
       setServices(Array.isArray(servicesRes.data) ? servicesRes.data : []);
       setWorkers(Array.isArray(workersRes.data) ? workersRes.data : []);
       setPhotos(Array.isArray(photosRes.data) ? photosRes.data : []);
+      setClosures(Array.isArray(closuresRes.data) ? closuresRes.data : []);
     } catch (error) {
       console.error('Error loading dashboard:', error);
     } finally {
@@ -131,6 +135,28 @@ export default function BusinessDashboardPage() {
       await businessesAPI.deletePhoto(photoId);
       setPhotos(prev => prev.filter(p => p.id !== photoId));
       toast.success(language === 'es' ? 'Foto eliminada' : 'Photo deleted');
+    } catch {
+      toast.error(language === 'es' ? 'Error' : 'Error');
+    }
+  };
+
+  // Closure handlers
+  const closedDates = closures.map(c => c.date);
+
+  const handleToggleClosure = async (date) => {
+    const dateStr = format(date, 'yyyy-MM-dd');
+    const isClosed = closedDates.includes(dateStr);
+
+    try {
+      if (isClosed) {
+        await businessesAPI.removeClosure(dateStr);
+        setClosures(prev => prev.filter(c => c.date !== dateStr));
+        toast.success(language === 'es' ? 'Día reabierto' : 'Day reopened');
+      } else {
+        const res = await businessesAPI.addClosure(dateStr, null);
+        setClosures(prev => [...prev, res.data]);
+        toast.success(language === 'es' ? 'Día marcado como cerrado' : 'Day marked as closed');
+      }
     } catch {
       toast.error(language === 'es' ? 'Error' : 'Error');
     }
@@ -236,7 +262,7 @@ export default function BusinessDashboardPage() {
 
         {/* ── Tabs ────────────────────────────────────── */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-4 max-w-xl">
+          <TabsList className="grid w-full grid-cols-5 max-w-2xl">
             <TabsTrigger value="overview" data-testid="tab-overview">
               <BarChart3 className="h-4 w-4 mr-1.5 hidden sm:inline" />
               {language === 'es' ? 'Agenda' : 'Schedule'}
@@ -248,6 +274,10 @@ export default function BusinessDashboardPage() {
             <TabsTrigger value="team" data-testid="tab-team">
               <Users className="h-4 w-4 mr-1.5 hidden sm:inline" />
               {language === 'es' ? 'Equipo' : 'Team'}
+            </TabsTrigger>
+            <TabsTrigger value="closures" data-testid="tab-closures">
+              <CalendarOff className="h-4 w-4 mr-1.5 hidden sm:inline" />
+              {language === 'es' ? 'Cierres' : 'Closures'}
             </TabsTrigger>
             <TabsTrigger value="photos" data-testid="tab-photos">
               <Image className="h-4 w-4 mr-1.5 hidden sm:inline" />
@@ -414,6 +444,104 @@ export default function BusinessDashboardPage() {
                 )}
               </CardContent>
             </Card>
+          </TabsContent>
+
+          {/* ── Closures Tab ────────────────────────── */}
+          <TabsContent value="closures" className="mt-6">
+            <div className="grid lg:grid-cols-2 gap-6">
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base font-heading flex items-center gap-2">
+                    <CalendarOff className="h-4 w-4 text-[#F05D5E]" />
+                    {language === 'es' ? 'Marcar días cerrados' : 'Mark closed days'}
+                  </CardTitle>
+                  <p className="text-xs text-muted-foreground">
+                    {language === 'es'
+                      ? 'Haz clic en un día para marcarlo como cerrado. Los clientes no podrán reservar en esos días.'
+                      : 'Click a day to mark it as closed. Customers won\'t be able to book on those days.'}
+                  </p>
+                </CardHeader>
+                <CardContent>
+                  <Calendar
+                    mode="single"
+                    onSelect={(date) => date && handleToggleClosure(date)}
+                    disabled={(date) => date < new Date(new Date().setHours(0,0,0,0))}
+                    locale={language === 'es' ? es : enUS}
+                    modifiers={{ closed: closedDates.map(d => new Date(d + 'T12:00:00')) }}
+                    modifiersClassNames={{ closed: 'bg-red-100 text-red-700 font-bold dark:bg-red-900/40 dark:text-red-400' }}
+                    className="rounded-md border"
+                    data-testid="closures-calendar"
+                  />
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="pb-2 flex flex-row items-center justify-between">
+                  <CardTitle className="text-base font-heading">
+                    {language === 'es' ? 'Días cerrados programados' : 'Scheduled closures'}
+                  </CardTitle>
+                  <Badge variant="outline">{closures.length}</Badge>
+                </CardHeader>
+                <CardContent>
+                  {closures.length > 0 ? (
+                    <div className="space-y-2 max-h-[400px] overflow-y-auto pr-1">
+                      {closures
+                        .sort((a, b) => a.date.localeCompare(b.date))
+                        .map(closure => {
+                          const dateObj = new Date(closure.date + 'T12:00:00');
+                          const isPast = dateObj < new Date(new Date().setHours(0,0,0,0));
+                          return (
+                            <div
+                              key={closure.date}
+                              className={`flex items-center justify-between p-3 rounded-xl border ${isPast ? 'opacity-50' : 'border-red-200 dark:border-red-900/40 bg-red-50/50 dark:bg-red-900/10'}`}
+                              data-testid={`closure-${closure.date}`}
+                            >
+                              <div className="flex items-center gap-3">
+                                <div className="w-12 h-12 rounded-xl bg-red-100 dark:bg-red-900/30 flex flex-col items-center justify-center shrink-0">
+                                  <span className="text-[10px] text-red-600 dark:text-red-400 uppercase font-medium">
+                                    {dateObj.toLocaleDateString(language === 'es' ? 'es-MX' : 'en-US', { month: 'short' })}
+                                  </span>
+                                  <span className="text-base font-bold text-red-700 dark:text-red-300">{dateObj.getDate()}</span>
+                                </div>
+                                <div>
+                                  <p className="text-sm font-medium capitalize">
+                                    {dateObj.toLocaleDateString(language === 'es' ? 'es-MX' : 'en-US', { weekday: 'long' })}
+                                  </p>
+                                  <p className="text-xs text-muted-foreground">
+                                    {dateObj.toLocaleDateString(language === 'es' ? 'es-MX' : 'en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+                                  </p>
+                                  {closure.reason && <p className="text-xs text-muted-foreground mt-0.5">{closure.reason}</p>}
+                                </div>
+                              </div>
+                              {!isPast && (
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  className="h-8 w-8 text-red-600 hover:bg-red-100 dark:hover:bg-red-900/20"
+                                  onClick={() => handleToggleClosure(dateObj)}
+                                  data-testid={`remove-closure-${closure.date}`}
+                                >
+                                  <XCircle className="h-4 w-4" />
+                                </Button>
+                              )}
+                            </div>
+                          );
+                        })}
+                    </div>
+                  ) : (
+                    <div className="text-center py-12">
+                      <CalendarOff className="h-10 w-10 text-muted-foreground/40 mx-auto mb-3" />
+                      <p className="text-sm text-muted-foreground mb-1">
+                        {language === 'es' ? 'No tienes días cerrados' : 'No closed days scheduled'}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {language === 'es' ? 'Selecciona días en el calendario para cerrar' : 'Select days in the calendar to close'}
+                      </p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
           </TabsContent>
 
           {/* ── Photos Tab ───────────────────────────── */}

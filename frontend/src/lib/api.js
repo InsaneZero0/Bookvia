@@ -134,6 +134,10 @@ export const businessesAPI = {
   },
   deletePhoto: (photoId) => api.delete(`/businesses/me/photos/${photoId}`),
   getMyPhotos: () => api.get('/businesses/me/photos'),
+  // Closures (closed days)
+  getMyClosures: () => api.get('/businesses/me/closures'),
+  addClosure: (date, reason) => api.post('/businesses/me/closures', { date, reason }),
+  removeClosure: (date) => api.delete(`/businesses/me/closures/${date}`),
 };
 
 // Services API

@@ -1912,6 +1912,19 @@ async def get_availability(
     # Get buffer time between appointments
     buffer_minutes = business.get("min_time_between_appointments", 0)
     
+    # Check if business is closed on this date
+    closure = await db.business_closures.find_one({
+        "business_id": business_id, "date": date, "is_deleted": False
+    })
+    if closure:
+        return AvailabilityResponse(
+            date=date,
+            business_timezone=business_tz_name,
+            slots=[],
+            available_count=0,
+            total_workers=0
+        )
+    
     # Get service info
     service = None
     duration = 60
@@ -4323,6 +4336,65 @@ async def seed_countries():
         "countries_created": len(countries),
         "cities_created": len(cities)
     }
+
+
+# ========================== BUSINESS CLOSURES ENDPOINTS ==========================
+
+class ClosureDateCreate(BaseModel):
+    date: str  # YYYY-MM-DD
+    reason: Optional[str] = None
+
+@businesses_router.get("/me/closures")
+async def get_business_closures(token_data: TokenData = Depends(require_business)):
+    """Get all closure dates for the authenticated business."""
+    user = await db.users.find_one({"id": token_data.user_id})
+    if not user or not user.get("business_id"):
+        raise HTTPException(status_code=404, detail="Business not found")
+    closures = await db.business_closures.find(
+        {"business_id": user["business_id"], "is_deleted": False},
+        {"_id": 0}
+    ).to_list(500)
+    return closures
+
+@businesses_router.post("/me/closures")
+async def add_business_closure(data: ClosureDateCreate, token_data: TokenData = Depends(require_business)):
+    """Mark a date as closed."""
+    user = await db.users.find_one({"id": token_data.user_id})
+    if not user or not user.get("business_id"):
+        raise HTTPException(status_code=404, detail="Business not found")
+
+    # Check if date already marked
+    existing = await db.business_closures.find_one({
+        "business_id": user["business_id"], "date": data.date, "is_deleted": False
+    })
+    if existing:
+        raise HTTPException(status_code=400, detail="Date already marked as closed")
+
+    closure = {
+        "id": generate_id(),
+        "business_id": user["business_id"],
+        "date": data.date,
+        "reason": data.reason,
+        "is_deleted": False,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    await db.business_closures.insert_one(closure)
+    del closure["_id"]
+    return closure
+
+@businesses_router.delete("/me/closures/{date}")
+async def remove_business_closure(date: str, token_data: TokenData = Depends(require_business)):
+    """Remove a closure date (re-open)."""
+    user = await db.users.find_one({"id": token_data.user_id})
+    if not user or not user.get("business_id"):
+        raise HTTPException(status_code=404, detail="Business not found")
+    result = await db.business_closures.update_one(
+        {"business_id": user["business_id"], "date": date, "is_deleted": False},
+        {"$set": {"is_deleted": True}}
+    )
+    if result.modified_count == 0:
+        raise HTTPException(status_code=404, detail="Closure not found")
+    return {"message": "Closure removed"}
 
 
 # ========================== PHOTO UPLOAD ENDPOINTS ==========================
