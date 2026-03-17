@@ -1,0 +1,90 @@
+{
+  "summary": "Tested Cloudinary integration for image uploads with Emergent Storage fallback. All 20 backend tests passed. Fixed 3 bugs: (1) GET /api/businesses/me/photos missing 'url' field for legacy photos, (2) DELETE photo failing with KeyError for legacy photos, (3) /api/files/{path} not serving logo images. Frontend verified: logo upload required in Step 1, logo displayed in dashboard and profile.",
+
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+
+  "passed_tests": [
+    "Backend: POST /api/businesses/me/photos - upload gallery photo returns url, public_id, id, original_filename",
+    "Backend: POST /api/businesses/me/photos with .jfif file - accepts application/octet-stream content type",
+    "Backend: POST /api/businesses/me/logo - upload logo returns secure_url, public_id",
+    "Backend: GET /api/businesses/me/photos - returns list of photos with url field",
+    "Backend: DELETE /api/businesses/me/photos/{photo_id} - deletes photo",
+    "Backend: POST /api/upload/image - generic upload returns 401 without auth, 503 when Cloudinary not configured",
+    "Backend: File validation - rejects non-image files with 400, rejects files >5MB",
+    "Backend: GET /api/businesses/me/dashboard - includes logo_url and photos array",
+    "Frontend: /business/register Step 1 - shows 'Logo del negocio *' with data-testid='logo-upload-area'",
+    "Frontend: /business/register Step 1 - validation rejects if logo not uploaded (toast: 'El logo de tu negocio es obligatorio')",
+    "Frontend: Business profile page - shows logo with data-testid='business-logo'",
+    "Frontend: Business dashboard - shows logo in header avatar (after fix to /api/files endpoint)",
+    "Frontend: Business dashboard Photos tab - shows photo gallery with upload button"
+  ],
+
+  "bugs_fixed": [
+    {
+      "file": "/app/backend/server.py",
+      "issue": "GET /api/businesses/me/photos missing 'url' field for legacy photos with storage_path",
+      "fix": "Added normalization to construct url from storage_path for legacy photos"
+    },
+    {
+      "file": "/app/backend/server.py", 
+      "issue": "DELETE /api/businesses/me/photos/{id} failing with KeyError: 'url' for legacy photos",
+      "fix": "Used photo.get('url') or photo.get('storage_path') with URL construction fallback"
+    },
+    {
+      "file": "/app/backend/server.py",
+      "issue": "/api/files/{path} only checked business_photos collection, not logos stored in businesses collection",
+      "fix": "Added fallback lookup in businesses collection for logo_public_id"
+    },
+    {
+      "file": "/app/backend/server.py",
+      "issue": "POST /api/upload/image using get_current_user (optional auth) instead of require_auth",
+      "fix": "Changed dependency to require_auth so it returns 401 for unauthenticated requests"
+    }
+  ],
+
+  "test_report_links": [
+    "/app/backend/tests/test_cloudinary_integration.py",
+    "/app/test_reports/pytest/pytest_cloudinary.xml"
+  ],
+
+  "action_items": [],
+
+  "critical_code_review_comments": [],
+
+  "updated_files": [
+    "/app/backend/server.py",
+    "/app/backend/tests/test_cloudinary_integration.py"
+  ],
+
+  "success_rate": {
+    "backend": "100% (20/20 API tests passed)",
+    "frontend": "100% (5/5 UI checks passed)"
+  },
+
+  "mocked_api_note": {
+    "Cloudinary": "NOT configured in preview env - uses Emergent Object Storage fallback (expected)",
+    "Email (Resend)": "MOCKED in development"
+  },
+
+  "test_credentials": {
+    "business_email": "testrealstripe@bookvia.com",
+    "business_password": "Test1234!"
+  },
+
+  "seed_data_creation": "Uploaded test logo image (100x100 blue square) via API for dashboard logo testing",
+
+  "retest_needed": false,
+
+  "should_main_agent_self_test": false,
+
+  "context_for_next_testing_agent": "Iteration 21 tested Cloudinary integration with Emergent Storage fallback. Key findings: (1) In preview env without Cloudinary credentials, all uploads use Emergent Object Storage and URLs are /api/files/... (2) POST /api/upload/image returns 503 when Cloudinary not configured (expected), (3) Logo upload is mandatory in Step 1 registration, (4) Fixed 4 bugs related to legacy photo handling and file serving. All data-testids verified: logo-upload-area, logo-file-input, business-logo. Test business logo is now a 100x100 blue square image."
+}

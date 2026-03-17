@@ -134,6 +134,13 @@ export const businessesAPI = {
   },
   deletePhoto: (photoId) => api.delete(`/businesses/me/photos/${photoId}`),
   getMyPhotos: () => api.get('/businesses/me/photos'),
+  uploadLogo: (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api.post('/businesses/me/logo', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
   // Closures (closed days)
   getMyClosures: () => api.get('/businesses/me/closures'),
   addClosure: (date, reason) => api.post('/businesses/me/closures', { date, reason }),
