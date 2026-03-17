@@ -59,5 +59,6 @@ def generate_upload_path(business_id: str, filename: str) -> str:
     return f"{APP_NAME}/businesses/{business_id}/{uuid.uuid4()}.{ext}"
 
 
-ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif"}
+ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp", "image/gif", "image/jfif", "image/pjpeg", "application/octet-stream"}
+ALLOWED_IMAGE_EXTENSIONS = {"jpg", "jpeg", "png", "webp", "gif", "jfif", "heic", "heif"}
 MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB

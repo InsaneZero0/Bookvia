@@ -4640,7 +4640,7 @@ async def remove_business_closure(date: str, token_data: TokenData = Depends(req
 
 # ========================== PHOTO UPLOAD ENDPOINTS ==========================
 
-from services.storage import init_storage, put_object, get_object, generate_upload_path, ALLOWED_IMAGE_TYPES, MAX_FILE_SIZE
+from services.storage import init_storage, put_object, get_object, generate_upload_path, ALLOWED_IMAGE_TYPES, ALLOWED_IMAGE_EXTENSIONS, MAX_FILE_SIZE
 
 @businesses_router.post("/me/photos")
 async def upload_business_photo(file: UploadFile = File(...), token_data: TokenData = Depends(require_business)):
@@ -4649,8 +4649,15 @@ async def upload_business_photo(file: UploadFile = File(...), token_data: TokenD
     if not user or not user.get("business_id"):
         raise HTTPException(status_code=404, detail="Business not found")
 
-    if file.content_type not in ALLOWED_IMAGE_TYPES:
-        raise HTTPException(status_code=400, detail="Only JPEG, PNG, WebP and GIF images are allowed")
+    # Validate by content type OR file extension
+    ext = file.filename.split(".")[-1].lower() if "." in file.filename else ""
+    if file.content_type not in ALLOWED_IMAGE_TYPES and ext not in ALLOWED_IMAGE_EXTENSIONS:
+        raise HTTPException(status_code=400, detail=f"Only images are allowed (JPEG, PNG, WebP, GIF). Got: {file.content_type}")
+
+    # Normalize content type for JFIF and other JPEG variants
+    content_type = file.content_type
+    if ext in ("jfif", "jpg", "jpeg", "pjpeg") or content_type in ("image/jfif", "image/pjpeg", "application/octet-stream"):
+        content_type = "image/jpeg"
 
     data = await file.read()
     if len(data) > MAX_FILE_SIZE:
@@ -4660,7 +4667,7 @@ async def upload_business_photo(file: UploadFile = File(...), token_data: TokenD
     path = generate_upload_path(business_id, file.filename)
 
     try:
-        result = put_object(path, data, file.content_type)
+        result = put_object(path, data, content_type)
     except Exception as e:
         logger.error(f"Storage upload failed: {e}")
         raise HTTPException(status_code=500, detail="Failed to upload photo")
