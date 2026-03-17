@@ -212,7 +212,7 @@ export default function BusinessDashboardPage() {
         <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 mb-6">
           <div className="flex items-start gap-4">
             <Avatar className="h-16 w-16 border-2 border-background shadow-lg">
-              <AvatarImage src={photos[0]?.url} />
+              <AvatarImage src={biz?.logo_url || photos[0]?.url} />
               <AvatarFallback className="bg-[#F05D5E] text-white text-xl font-bold">
                 {getInitials(biz?.name || '')}
               </AvatarFallback>
@@ -586,7 +586,7 @@ export default function BusinessDashboardPage() {
                   {uploading ? (language === 'es' ? 'Subiendo...' : 'Uploading...') : (language === 'es' ? 'Subir fotos' : 'Upload photos')}
                   <input
                     type="file"
-                    accept="image/jpeg,image/png,image/webp,image/gif"
+                    accept="image/jpeg,image/png,image/webp,image/gif,.jfif"
                     multiple
                     onChange={handlePhotoUpload}
                     disabled={uploading}

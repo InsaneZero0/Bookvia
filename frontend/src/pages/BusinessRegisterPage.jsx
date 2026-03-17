@@ -43,9 +43,12 @@ export default function BusinessRegisterPage() {
   const [proofFile, setProofFile] = useState(null);
   const [inePreview, setInePreview] = useState(null);
   const [proofPreview, setProofPreview] = useState(null);
+  const [logoFile, setLogoFile] = useState(null);
+  const [logoPreview, setLogoPreview] = useState(null);
   
   const ineInputRef = useRef(null);
   const proofInputRef = useRef(null);
+  const logoInputRef = useRef(null);
   
   const [formData, setFormData] = useState({
     // Business info
@@ -164,6 +167,24 @@ export default function BusinessRegisterPage() {
     });
   };
 
+  const handleLogoChange = (file) => {
+    if (!file) return;
+    const validExts = ['jpg', 'jpeg', 'png', 'webp', 'jfif'];
+    const ext = file.name.split('.').pop().toLowerCase();
+    if (!validExts.includes(ext) && !file.type.startsWith('image/')) {
+      toast.error(language === 'es' ? 'Solo se permiten imágenes (JPG, PNG, WebP)' : 'Only images allowed (JPG, PNG, WebP)');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error(language === 'es' ? 'El logo no debe exceder 5MB' : 'Logo must not exceed 5MB');
+      return;
+    }
+    setLogoFile(file);
+    const reader = new FileReader();
+    reader.onload = (e) => setLogoPreview(e.target.result);
+    reader.readAsDataURL(file);
+  };
+
   const validateStep = () => {
     switch (currentStep) {
       case 0: // Business info
@@ -171,6 +192,10 @@ export default function BusinessRegisterPage() {
           toast.error(language === 'es' 
             ? 'Completa todos los campos obligatorios' 
             : 'Complete all required fields');
+          return false;
+        }
+        if (!logoFile) {
+          toast.error(language === 'es' ? 'El logo de tu negocio es obligatorio' : 'Business logo is required');
           return false;
         }
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
@@ -283,6 +308,17 @@ export default function BusinessRegisterPage() {
       };
       
       await businessRegister(registerData);
+
+      // Upload logo after registration
+      if (logoFile) {
+        try {
+          await businessesAPI.uploadLogo(logoFile);
+        } catch (logoErr) {
+          console.error('Logo upload failed:', logoErr);
+          toast.error(language === 'es' ? 'El registro fue exitoso pero no se pudo subir el logo. Podrás subirlo desde tu panel.' : 'Registration successful but logo upload failed. You can upload it from your dashboard.');
+        }
+      }
+
       toast.success(language === 'es' ? '¡Registro exitoso! Ahora activa tu suscripción.' : 'Registration successful! Now activate your subscription.', { duration: 4000 });
       setCurrentStep(4);
     } catch (error) {
@@ -463,6 +499,40 @@ export default function BusinessRegisterPage() {
                       required
                       data-testid="business-description-input"
                     />
+                  </div>
+
+                  {/* Logo upload */}
+                  <div className="space-y-2">
+                    <Label>{language === 'es' ? 'Logo del negocio' : 'Business logo'} *</Label>
+                    <div
+                      className={`relative border-2 border-dashed rounded-xl p-4 text-center cursor-pointer transition-colors hover:border-[#F05D5E]/50 ${logoPreview ? 'border-green-300 bg-green-50/50 dark:bg-green-900/10' : 'border-muted-foreground/20'}`}
+                      onClick={() => logoInputRef.current?.click()}
+                      data-testid="logo-upload-area"
+                    >
+                      <input
+                        ref={logoInputRef}
+                        type="file"
+                        className="hidden"
+                        accept="image/jpeg,image/png,image/webp,.jfif"
+                        onChange={(e) => handleLogoChange(e.target.files[0])}
+                        data-testid="logo-file-input"
+                      />
+                      {logoPreview ? (
+                        <div className="flex items-center gap-3">
+                          <img src={logoPreview} alt="Logo" className="h-16 w-16 rounded-lg object-cover border" />
+                          <div className="text-left">
+                            <p className="text-sm font-medium text-green-700 dark:text-green-300">{logoFile?.name}</p>
+                            <p className="text-xs text-muted-foreground">{language === 'es' ? 'Clic para cambiar' : 'Click to change'}</p>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="py-2">
+                          <Upload className="h-8 w-8 mx-auto text-muted-foreground/40 mb-2" />
+                          <p className="text-sm text-muted-foreground">{language === 'es' ? 'Sube el logo de tu negocio' : 'Upload your business logo'}</p>
+                          <p className="text-xs text-muted-foreground/60">{language === 'es' ? 'JPG, PNG o WebP. Máximo 5MB' : 'JPG, PNG or WebP. Max 5MB'}</p>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               )}

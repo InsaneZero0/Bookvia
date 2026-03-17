@@ -326,9 +326,11 @@ class BusinessResponse(BaseModel):
     plan_type: str = "basic"
     trial_ends_at: Optional[str] = None
     can_accept_bookings: bool = True
-    subscription_status: str = "none"  # none, trialing, active, past_due, canceled, unpaid
+    subscription_status: str = "none"
     stripe_customer_id: Optional[str] = None
     stripe_subscription_id: Optional[str] = None
+    logo_url: Optional[str] = None
+    logo_public_id: Optional[str] = None
 
 class BusinessUpdate(BaseModel):
     name: Optional[str] = None
@@ -4638,51 +4640,96 @@ async def remove_business_closure(date: str, token_data: TokenData = Depends(req
     return {"message": "Closure removed"}
 
 
-# ========================== PHOTO UPLOAD ENDPOINTS ==========================
+# ========================== PHOTO UPLOAD ENDPOINTS (Cloudinary + Emergent fallback) ==========================
 
-from services.storage import init_storage, put_object, get_object, generate_upload_path, ALLOWED_IMAGE_TYPES, MAX_FILE_SIZE
+from services.cloudinary_service import (
+    init_cloudinary, is_configured as cloudinary_configured,
+    validate_image, upload_image, delete_image as cloudinary_delete,
+    ALLOWED_EXTENSIONS as CLOUDINARY_ALLOWED_EXT
+)
+from services.storage import init_storage, put_object, get_object, generate_upload_path, ALLOWED_IMAGE_TYPES, ALLOWED_IMAGE_EXTENSIONS, MAX_FILE_SIZE
 
+
+# ── Generic upload endpoint ──────────────────────────
+@api_router.post("/upload/image")
+async def upload_image_endpoint(
+    file: UploadFile = File(...),
+    folder: str = "business_gallery",
+    entity_id: str = "",
+    token_data: TokenData = Depends(require_auth),
+):
+    """Upload an image to Cloudinary. Used by logo upload, gallery, etc."""
+    data = await file.read()
+    ok, err = validate_image(file.filename, file.content_type, len(data))
+    if not ok:
+        raise HTTPException(status_code=400, detail=err)
+
+    if not cloudinary_configured():
+        raise HTTPException(status_code=503, detail="Image storage not configured")
+
+    try:
+        result = upload_image(data, folder, entity_id)
+        return {"secure_url": result["secure_url"], "public_id": result["public_id"]}
+    except Exception as e:
+        logger.error(f"Cloudinary upload error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to upload image")
+
+
+# ── Business gallery photos ──────────────────────────
 @businesses_router.post("/me/photos")
 async def upload_business_photo(file: UploadFile = File(...), token_data: TokenData = Depends(require_business)):
-    """Upload a photo for the authenticated business."""
+    """Upload a gallery photo for the authenticated business."""
     user = await db.users.find_one({"id": token_data.user_id})
     if not user or not user.get("business_id"):
         raise HTTPException(status_code=404, detail="Business not found")
 
-    if file.content_type not in ALLOWED_IMAGE_TYPES:
-        raise HTTPException(status_code=400, detail="Only JPEG, PNG, WebP and GIF images are allowed")
-
     data = await file.read()
-    if len(data) > MAX_FILE_SIZE:
-        raise HTTPException(status_code=400, detail="File too large. Maximum 5MB")
+    ok, err = validate_image(file.filename, file.content_type, len(data))
+    if not ok:
+        raise HTTPException(status_code=400, detail=err)
 
     business_id = user["business_id"]
-    path = generate_upload_path(business_id, file.filename)
 
-    try:
-        result = put_object(path, data, file.content_type)
-    except Exception as e:
-        logger.error(f"Storage upload failed: {e}")
-        raise HTTPException(status_code=500, detail="Failed to upload photo")
+    # Try Cloudinary first, fallback to Emergent Storage
+    if cloudinary_configured():
+        try:
+            result = upload_image(data, "business_gallery", business_id)
+            photo_url = result["secure_url"]
+            public_id = result["public_id"]
+        except Exception as e:
+            logger.error(f"Cloudinary upload failed: {e}")
+            raise HTTPException(status_code=500, detail="Failed to upload photo")
+    else:
+        # Fallback: Emergent Object Storage (preview env)
+        ext = file.filename.split(".")[-1].lower() if "." in file.filename else "jpg"
+        content_type = file.content_type
+        if ext in ("jfif", "jpg", "jpeg", "pjpeg"):
+            content_type = "image/jpeg"
+        path = generate_upload_path(business_id, file.filename)
+        try:
+            result = put_object(path, data, content_type)
+            base_url = os.environ.get("BASE_URL", "")
+            photo_url = f"{base_url}/api/files/{result['path']}"
+            public_id = path
+        except Exception as e:
+            logger.error(f"Storage upload failed: {e}")
+            raise HTTPException(status_code=500, detail="Failed to upload photo")
 
-    storage_path = result["path"]
-
-    # Store file reference
+    # Store reference in DB
     file_record = {
         "id": generate_id(),
         "business_id": business_id,
-        "storage_path": storage_path,
+        "url": photo_url,
+        "public_id": public_id,
+        "storage": "cloudinary" if cloudinary_configured() else "emergent",
         "original_filename": file.filename,
         "content_type": file.content_type,
-        "size": result.get("size", len(data)),
         "is_deleted": False,
         "created_at": datetime.now(timezone.utc).isoformat()
     }
     await db.business_photos.insert_one(file_record)
 
     # Add to business photos array
-    base_url = os.environ.get("BASE_URL", "")
-    photo_url = f"{base_url}/api/files/{storage_path}"
     await db.businesses.update_one(
         {"id": business_id},
         {"$push": {"photos": photo_url}}
@@ -4691,14 +4738,14 @@ async def upload_business_photo(file: UploadFile = File(...), token_data: TokenD
     return {
         "id": file_record["id"],
         "url": photo_url,
-        "storage_path": storage_path,
+        "public_id": public_id,
         "original_filename": file.filename
     }
 
 
 @businesses_router.delete("/me/photos/{photo_id}")
 async def delete_business_photo(photo_id: str, token_data: TokenData = Depends(require_business)):
-    """Soft-delete a business photo."""
+    """Delete a business photo."""
     user = await db.users.find_one({"id": token_data.user_id})
     if not user or not user.get("business_id"):
         raise HTTPException(status_code=404, detail="Business not found")
@@ -4707,15 +4754,23 @@ async def delete_business_photo(photo_id: str, token_data: TokenData = Depends(r
     if not photo:
         raise HTTPException(status_code=404, detail="Photo not found")
 
+    # Delete from cloud storage
+    if photo.get("storage") == "cloudinary" and photo.get("public_id"):
+        cloudinary_delete(photo["public_id"])
+
     await db.business_photos.update_one({"id": photo_id}, {"$set": {"is_deleted": True}})
 
-    # Remove from business photos array
-    base_url = os.environ.get("BASE_URL", "")
-    photo_url = f"{base_url}/api/files/{photo['storage_path']}"
-    await db.businesses.update_one(
-        {"id": user["business_id"]},
-        {"$pull": {"photos": photo_url}}
-    )
+    # Remove from business photos array - handle legacy photos with storage_path instead of url
+    photo_url = photo.get("url") or photo.get("storage_path")
+    if photo_url:
+        # For legacy photos, construct URL from storage_path
+        if not photo_url.startswith("http"):
+            base_url = os.environ.get("BASE_URL", "")
+            photo_url = f"{base_url}/api/files/{photo_url}"
+        await db.businesses.update_one(
+            {"id": user["business_id"]},
+            {"$pull": {"photos": photo_url}}
+        )
 
     return {"message": "Photo deleted"}
 
@@ -4732,17 +4787,78 @@ async def get_business_photos(token_data: TokenData = Depends(require_business))
         {"_id": 0}
     ).to_list(100)
 
+    # Normalize: ensure all photos have 'url' field (handle legacy photos with storage_path)
     base_url = os.environ.get("BASE_URL", "")
-    for p in photos:
-        p["url"] = f"{base_url}/api/files/{p['storage_path']}"
+    for photo in photos:
+        if "url" not in photo and "storage_path" in photo:
+            photo["url"] = f"{base_url}/api/files/{photo['storage_path']}"
 
     return photos
 
 
+# ── Business logo upload ──────────────────────────
+@businesses_router.post("/me/logo")
+async def upload_business_logo(file: UploadFile = File(...), token_data: TokenData = Depends(require_business)):
+    """Upload or replace the business logo."""
+    user = await db.users.find_one({"id": token_data.user_id})
+    if not user or not user.get("business_id"):
+        raise HTTPException(status_code=404, detail="Business not found")
+
+    data = await file.read()
+    ok, err = validate_image(file.filename, file.content_type, len(data))
+    if not ok:
+        raise HTTPException(status_code=400, detail=err)
+
+    business_id = user["business_id"]
+    business = await db.businesses.find_one({"id": business_id})
+
+    if cloudinary_configured():
+        # Delete old logo if exists
+        old_public_id = business.get("logo_public_id") if business else None
+        if old_public_id:
+            cloudinary_delete(old_public_id)
+
+        try:
+            result = upload_image(data, "business_logo", business_id)
+            logo_url = result["secure_url"]
+            public_id = result["public_id"]
+        except Exception as e:
+            logger.error(f"Logo upload failed: {e}")
+            raise HTTPException(status_code=500, detail="Failed to upload logo")
+    else:
+        # Fallback: Emergent storage
+        path = generate_upload_path(business_id, f"logo_{file.filename}")
+        content_type = "image/jpeg" if file.filename.lower().endswith(("jfif", "jpg", "jpeg")) else file.content_type
+        try:
+            result = put_object(path, data, content_type)
+            base_url = os.environ.get("BASE_URL", "")
+            logo_url = f"{base_url}/api/files/{result['path']}"
+            public_id = path
+        except Exception as e:
+            logger.error(f"Logo upload failed: {e}")
+            raise HTTPException(status_code=500, detail="Failed to upload logo")
+
+    await db.businesses.update_one(
+        {"id": business_id},
+        {"$set": {"logo_url": logo_url, "logo_public_id": public_id}}
+    )
+
+    return {"secure_url": logo_url, "public_id": public_id}
+
+
+# ── Serve files from Emergent storage (legacy/fallback) ──────────
 @api_router.get("/files/{path:path}")
 async def serve_file(path: str):
-    """Serve uploaded files from object storage."""
-    record = await db.business_photos.find_one({"storage_path": path, "is_deleted": False})
+    """Serve uploaded files from Emergent object storage (fallback)."""
+    # Check business_photos collection first
+    record = await db.business_photos.find_one({"public_id": path, "is_deleted": False})
+    
+    # If not found in photos, check if it's a logo (stored in businesses collection)
+    if not record:
+        business = await db.businesses.find_one({"logo_public_id": path})
+        if business:
+            record = {"content_type": "image/jpeg"}  # Default for logos
+    
     if not record:
         raise HTTPException(status_code=404, detail="File not found")
 
@@ -4822,3 +4938,9 @@ async def startup_event():
         logger.info("Object storage initialized")
     except Exception as e:
         logger.warning(f"Object storage init failed (uploads will retry): {e}")
+    # Initialize Cloudinary
+    from services.cloudinary_service import init_cloudinary
+    if init_cloudinary():
+        logger.info("Cloudinary initialized")
+    else:
+        logger.warning("Cloudinary not configured - using fallback storage")
