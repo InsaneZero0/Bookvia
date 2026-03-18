@@ -60,10 +60,12 @@ export function AuthProvider({ children }) {
     
     localStorage.setItem('bookvia-token', token);
     localStorage.setItem('bookvia-business', JSON.stringify(businessData));
-    localStorage.setItem('bookvia-user', JSON.stringify({ role: 'business', email }));
+    // Include business_id in user so ServiceManagementPage can use user.business_id
+    const userData = { role: 'business', email, business_id: businessData.id };
+    localStorage.setItem('bookvia-user', JSON.stringify(userData));
     
     setBusiness(businessData);
-    setUser({ role: 'business', email });
+    setUser(userData);
     setIsAuthenticated(true);
     
     return businessData;
@@ -75,10 +77,12 @@ export function AuthProvider({ children }) {
     
     localStorage.setItem('bookvia-token', token);
     localStorage.setItem('bookvia-business', JSON.stringify(businessData));
-    localStorage.setItem('bookvia-user', JSON.stringify({ role: 'business', email: data.email }));
+    // Include business_id in user so ServiceManagementPage can use user.business_id
+    const userData = { role: 'business', email: data.email, business_id: businessData.id };
+    localStorage.setItem('bookvia-user', JSON.stringify(userData));
     
     setBusiness(businessData);
-    setUser({ role: 'business', email: data.email });
+    setUser(userData);
     setIsAuthenticated(true);
     
     return businessData;

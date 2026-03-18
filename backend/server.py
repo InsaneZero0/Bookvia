@@ -233,6 +233,7 @@ class UserResponse(BaseModel):
     gender: Optional[str] = None
     photo_url: Optional[str] = None
     role: str = "user"
+    business_id: Optional[str] = None  # For business users
     active_appointments_count: int = 0
     cancellation_count: int = 0
     suspended_until: Optional[str] = None
@@ -465,6 +466,7 @@ class BookingResponse(BaseModel):
     date: str
     time: str
     end_time: str
+    duration_minutes: int = 60
     status: str
     notes: Optional[str] = None
     is_home_service: bool = False
@@ -1800,7 +1802,7 @@ async def remove_worker_exception(
 
 # ========================== SERVICE ROUTES ==========================
 
-@services_router.post("/", response_model=ServiceResponse)
+@services_router.post("", response_model=ServiceResponse)
 async def create_service(service: ServiceCreate, token_data: TokenData = Depends(require_business)):
     user = await db.users.find_one({"id": token_data.user_id})
     if not user or not user.get("business_id"):
@@ -2277,6 +2279,7 @@ async def create_booking(booking: BookingCreate, token_data: TokenData = Depends
         "date": booking.date,
         "time": booking.time,
         "end_time": end_time_dt.strftime("%H:%M"),
+        "duration_minutes": service["duration_minutes"],
         "status": AppointmentStatus.HOLD,
         "notes": booking.notes,
         "is_home_service": booking.is_home_service,
