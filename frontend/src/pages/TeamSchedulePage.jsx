@@ -45,7 +45,7 @@ for (let h = 6; h <= 23; h++) {
 
 export default function TeamSchedulePage() {
   const { t, language } = useI18n();
-  const { business, isAuthenticated, isBusiness, loading: authLoading } = useAuth();
+  const { business, user, isAuthenticated, isBusiness, loading: authLoading } = useAuth();
   const navigate = useNavigate();
 
   const [loading, setLoading] = useState(true);
