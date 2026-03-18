@@ -719,6 +719,7 @@ export default function TeamSchedulePage() {
                 ? (language === 'es' ? 'Editar trabajador' : 'Edit worker')
                 : (language === 'es' ? 'Nuevo trabajador' : 'New worker')}
             </DialogTitle>
+            <DialogDescription>{language === 'es' ? 'Datos del trabajador' : 'Worker details'}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
             {/* Photo upload */}
