@@ -27,6 +27,13 @@ Plataforma de marketplace de reservas profesionales "Bookvia". Usuarios buscan y
 - Busqueda con mapa (Leaflet/OpenStreetMap)
 - Politica de reservas mejorada
 - Calendario de dias de cierre
+- **Duracion configurable en servicios:**
+  - Cada servicio tiene duration_minutes (15-240 min)
+  - Pagina de gestion de servicios /business/services (CRUD completo)
+  - Citas calculan end_time automaticamente segun duracion
+  - Validacion de traslapes: no permite reservas superpuestas
+  - Agenda muestra bloques visuales con duracion
+  - Slots de reserva muestran rango horario (inicio - fin)
 - Suscripcion mensual OBLIGATORIA ($39 MXN/mes, 30 dias gratis, Stripe Checkout)
 - Logica de visibilidad publica (approved + subscription active/trialing)
 - **Cloudinary para imagenes:**
