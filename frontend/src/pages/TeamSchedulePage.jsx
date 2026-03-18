@@ -23,7 +23,7 @@ import { toast } from 'sonner';
 import {
   Users, Plus, Edit2, Trash2, Calendar as CalendarIcon, Clock, 
   UserX, UserCheck, Save, ChevronLeft, ChevronRight, AlertCircle,
-  Briefcase, CalendarOff, ArrowLeft
+  Briefcase, CalendarOff, ArrowLeft, Upload, Camera
 } from 'lucide-react';
 
 const DAYS_OF_WEEK = [
@@ -62,6 +62,9 @@ export default function TeamSchedulePage() {
   
   // Form states
   const [workerForm, setWorkerForm] = useState({ name: '', email: '', phone: '', bio: '' });
+  const [workerPhotoFile, setWorkerPhotoFile] = useState(null);
+  const [workerPhotoPreview, setWorkerPhotoPreview] = useState(null);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [scheduleForm, setScheduleForm] = useState({});
   const [exceptionForm, setExceptionForm] = useState({
     start_date: '',
@@ -131,6 +134,8 @@ export default function TeamSchedulePage() {
   const openCreateWorker = () => {
     setEditingWorker(null);
     setWorkerForm({ name: '', email: '', phone: '', bio: '' });
+    setWorkerPhotoFile(null);
+    setWorkerPhotoPreview(null);
     setShowWorkerDialog(true);
   };
 
@@ -142,7 +147,27 @@ export default function TeamSchedulePage() {
       phone: worker.phone || '',
       bio: worker.bio || ''
     });
+    setWorkerPhotoFile(null);
+    setWorkerPhotoPreview(worker.photo_url || null);
     setShowWorkerDialog(true);
+  };
+
+  const handleWorkerPhotoChange = (file) => {
+    if (!file) return;
+    const validExts = ['jpg', 'jpeg', 'png', 'webp', 'jfif'];
+    const ext = file.name.split('.').pop().toLowerCase();
+    if (!validExts.includes(ext) && !file.type.startsWith('image/')) {
+      toast.error(language === 'es' ? 'Solo se permiten imágenes' : 'Only images allowed');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error(language === 'es' ? 'Máximo 5MB' : 'Max 5MB');
+      return;
+    }
+    setWorkerPhotoFile(file);
+    const reader = new FileReader();
+    reader.onload = (e) => setWorkerPhotoPreview(e.target.result);
+    reader.readAsDataURL(file);
   };
 
   const handleSaveWorker = async () => {
@@ -152,13 +177,28 @@ export default function TeamSchedulePage() {
     }
     
     try {
+      let savedWorker;
       if (editingWorker) {
-        await businessesAPI.updateWorker(editingWorker.id, workerForm);
+        const res = await businessesAPI.updateWorker(editingWorker.id, workerForm);
+        savedWorker = res.data || editingWorker;
         toast.success(language === 'es' ? 'Trabajador actualizado' : 'Worker updated');
       } else {
-        await businessesAPI.createWorker(workerForm);
+        const res = await businessesAPI.createWorker(workerForm);
+        savedWorker = res.data;
         toast.success(language === 'es' ? 'Trabajador creado' : 'Worker created');
       }
+
+      // Upload photo if new file selected
+      if (workerPhotoFile && savedWorker?.id) {
+        setUploadingPhoto(true);
+        try {
+          await businessesAPI.uploadWorkerPhoto(savedWorker.id, workerPhotoFile);
+        } catch {
+          toast.error(language === 'es' ? 'Error al subir la foto' : 'Error uploading photo');
+        }
+        setUploadingPhoto(false);
+      }
+
       setShowWorkerDialog(false);
       loadData();
     } catch (error) {
@@ -385,8 +425,12 @@ export default function TeamSchedulePage() {
                   <CardHeader className="pb-3">
                     <div className="flex items-start justify-between">
                       <div className="flex items-center gap-3">
-                        <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center">
-                          <Users className="h-6 w-6 text-primary" />
+                        <div className="h-12 w-12 rounded-full overflow-hidden bg-primary/10 flex items-center justify-center shrink-0">
+                          {worker.photo_url ? (
+                            <img src={worker.photo_url} alt={worker.name} className="h-full w-full object-cover" />
+                          ) : (
+                            <Users className="h-6 w-6 text-primary" />
+                          )}
                         </div>
                         <div>
                           <CardTitle className="text-lg">{worker.name}</CardTitle>
@@ -675,8 +719,38 @@ export default function TeamSchedulePage() {
                 ? (language === 'es' ? 'Editar trabajador' : 'Edit worker')
                 : (language === 'es' ? 'Nuevo trabajador' : 'New worker')}
             </DialogTitle>
+            <DialogDescription>{language === 'es' ? 'Datos del trabajador' : 'Worker details'}</DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
+            {/* Photo upload */}
+            <div className="flex justify-center">
+              <div
+                className="relative group cursor-pointer"
+                onClick={() => document.getElementById('worker-photo-input')?.click()}
+                data-testid="worker-photo-upload"
+              >
+                <div className={`h-24 w-24 rounded-full overflow-hidden border-2 transition-colors ${workerPhotoPreview ? 'border-[#F05D5E]/30' : 'border-dashed border-muted-foreground/30'} flex items-center justify-center bg-muted/20`}>
+                  {workerPhotoPreview ? (
+                    <img src={workerPhotoPreview} alt="Preview" className="h-full w-full object-cover" />
+                  ) : (
+                    <Camera className="h-8 w-8 text-muted-foreground/40" />
+                  )}
+                </div>
+                <div className="absolute inset-0 rounded-full bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                  <Upload className="h-5 w-5 text-white" />
+                </div>
+                <input
+                  id="worker-photo-input"
+                  type="file"
+                  className="hidden"
+                  accept="image/jpeg,image/png,image/webp,.jfif"
+                  onChange={(e) => handleWorkerPhotoChange(e.target.files[0])}
+                  data-testid="worker-photo-file-input"
+                />
+              </div>
+            </div>
+            <p className="text-xs text-center text-muted-foreground -mt-2">{language === 'es' ? 'Foto de perfil (opcional)' : 'Profile photo (optional)'}</p>
+
             <div>
               <Label>{language === 'es' ? 'Nombre' : 'Name'} *</Label>
               <Input 

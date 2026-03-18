@@ -1689,7 +1689,55 @@ async def delete_worker(worker_id: str, token_data: TokenData = Depends(require_
     )
     return {"message": "Worker deactivated", "worker_id": worker_id}
 
-@businesses_router.put("/my/workers/{worker_id}/reactivate")
+
+@businesses_router.post("/my/workers/{worker_id}/photo")
+async def upload_worker_photo(worker_id: str, file: UploadFile = File(...), token_data: TokenData = Depends(require_business)):
+    """Upload or replace a worker's profile photo."""
+    user = await db.users.find_one({"id": token_data.user_id})
+    if not user or not user.get("business_id"):
+        raise HTTPException(status_code=404, detail="Business not found")
+
+    worker = await db.workers.find_one({"id": worker_id, "business_id": user["business_id"]})
+    if not worker:
+        raise HTTPException(status_code=404, detail="Worker not found")
+
+    data = await file.read()
+    ok, err = validate_image(file.filename, file.content_type, len(data))
+    if not ok:
+        raise HTTPException(status_code=400, detail=err)
+
+    if cloudinary_configured():
+        old_pid = worker.get("photo_public_id")
+        if old_pid:
+            cloudinary_delete(old_pid)
+        try:
+            result = upload_image(data, "business_gallery", f"workers/{worker_id}")
+            photo_url = result["secure_url"]
+            public_id = result["public_id"]
+        except Exception as e:
+            logger.error(f"Worker photo upload failed: {e}")
+            raise HTTPException(status_code=500, detail="Failed to upload photo")
+    else:
+        path = generate_upload_path(user["business_id"], f"worker_{worker_id}_{file.filename}")
+        content_type = "image/jpeg" if file.filename.lower().endswith(("jfif", "jpg", "jpeg")) else file.content_type
+        try:
+            result = put_object(path, data, content_type)
+            base_url = os.environ.get("BASE_URL", "")
+            photo_url = f"{base_url}/api/files/{result['path']}"
+            public_id = path
+        except Exception as e:
+            logger.error(f"Worker photo upload failed: {e}")
+            raise HTTPException(status_code=500, detail="Failed to upload photo")
+
+    await db.workers.update_one(
+        {"id": worker_id},
+        {"$set": {"photo_url": photo_url, "photo_public_id": public_id}}
+    )
+
+    return {"secure_url": photo_url, "public_id": public_id}
+
+
+
 async def reactivate_worker(worker_id: str, token_data: TokenData = Depends(require_business)):
     """Reactivate a previously deactivated worker"""
     user = await db.users.find_one({"id": token_data.user_id})

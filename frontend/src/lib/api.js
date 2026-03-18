@@ -117,6 +117,13 @@ export const businessesAPI = {
   createWorker: (data) => api.post('/businesses/my/workers', data),
   updateWorker: (workerId, data) => api.put(`/businesses/my/workers/${workerId}`, data),
   deleteWorker: (workerId) => api.delete(`/businesses/my/workers/${workerId}`),
+  uploadWorkerPhoto: (workerId, file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api.post(`/businesses/my/workers/${workerId}/photo`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
   reactivateWorker: (workerId) => api.put(`/businesses/my/workers/${workerId}/reactivate`),
   updateWorkerSchedule: (workerId, schedule) => 
     api.put(`/businesses/my/workers/${workerId}/schedule`, { schedule }),
