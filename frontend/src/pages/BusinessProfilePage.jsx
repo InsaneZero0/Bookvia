@@ -897,6 +897,7 @@ export default function BusinessProfilePage() {
                       data-testid={`time-slot-${idx}`}
                     >
                       <span className="font-bold text-sm">{formatTime(slot.time)}</span>
+                      <span className="text-[10px] text-muted-foreground">{formatTime(slot.time)} - {formatTime(slot.end_time)}</span>
                       <span className="text-xs text-muted-foreground mt-0.5">{slot.worker_name}</span>
                     </button>
                   ))}
@@ -920,8 +921,9 @@ export default function BusinessProfilePage() {
               <div className="rounded-xl bg-muted/30 border p-4 space-y-3">
                 {[
                   { label: language === 'es' ? 'Servicio' : 'Service', value: selectedService?.name },
+                  { label: language === 'es' ? 'Duracion' : 'Duration', value: `${selectedService?.duration_minutes || 60} min` },
                   { label: language === 'es' ? 'Fecha' : 'Date', value: selectedDate ? format(selectedDate, 'PPP', { locale: language === 'es' ? es : enUS }) : '' },
-                  { label: language === 'es' ? 'Hora' : 'Time', value: selectedTime ? formatTime(selectedTime) : '' },
+                  { label: language === 'es' ? 'Horario' : 'Time', value: selectedTime ? `${formatTime(selectedTime)} - ${formatTime((() => { const [h, m] = selectedTime.split(':').map(Number); const end = new Date(2000, 0, 1, h, m + (selectedService?.duration_minutes || 60)); return `${String(end.getHours()).padStart(2,'0')}:${String(end.getMinutes()).padStart(2,'0')}`; })())}` : '' },
                   { label: language === 'es' ? 'Profesional' : 'Professional', value: selectedWorker?.name },
                 ].map(item => (
                   <div key={item.label} className="flex justify-between text-sm">

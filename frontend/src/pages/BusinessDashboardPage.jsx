@@ -343,42 +343,50 @@ export default function BusinessDashboardPage() {
                 <CardContent>
                   {dayBookings.length > 0 ? (
                     <div className="space-y-3 max-h-[400px] overflow-y-auto pr-1">
-                      {dayBookings.map(booking => (
-                        <div key={booking.id} className="flex items-center justify-between p-3 rounded-xl border border-border/60 hover:border-[#F05D5E]/20 transition-colors" data-testid={`booking-${booking.id}`}>
-                          <div className="flex items-center gap-3">
-                            <div className="w-14 text-center shrink-0">
-                              <p className="text-sm font-bold">{formatTime(booking.time)}</p>
-                              <p className="text-[10px] text-muted-foreground">{booking.end_time}</p>
+                      {dayBookings.map(booking => {
+                        const durationMin = booking.duration_minutes || 60;
+                        const blockHeight = Math.max(48, Math.min(durationMin * 0.8, 120));
+                        return (
+                        <div key={booking.id} className="flex items-stretch gap-0 rounded-xl border border-border/60 hover:border-[#F05D5E]/20 transition-colors overflow-hidden" data-testid={`booking-${booking.id}`} style={{minHeight: `${blockHeight}px`}}>
+                          {/* Time block indicator */}
+                          <div className="w-1.5 shrink-0 bg-[#F05D5E]/70 rounded-l-xl" />
+                          <div className="flex items-center justify-between p-3 flex-1">
+                            <div className="flex items-center gap-3">
+                              <div className="w-16 text-center shrink-0">
+                                <p className="text-sm font-bold">{formatTime(booking.time)}</p>
+                                <p className="text-[10px] text-muted-foreground">{formatTime(booking.end_time)}</p>
+                                <Badge variant="secondary" className="text-[9px] mt-0.5 px-1 py-0">{durationMin}min</Badge>
+                              </div>
+                              <Separator orientation="vertical" className="h-10" />
+                              <div>
+                                <p className="font-medium text-sm">{booking.user_name}</p>
+                                <p className="text-xs text-muted-foreground">{booking.service_name}</p>
+                                {booking.worker_name && <p className="text-xs text-muted-foreground/70">{booking.worker_name}</p>}
+                              </div>
                             </div>
-                            <Separator orientation="vertical" className="h-10" />
-                            <div>
-                              <p className="font-medium text-sm">{booking.user_name}</p>
-                              <p className="text-xs text-muted-foreground">{booking.service_name}</p>
-                              {booking.worker_name && <p className="text-xs text-muted-foreground/70">{booking.worker_name}</p>}
+                            <div className="flex items-center gap-1.5">
+                              <Badge className={`text-[10px] ${getStatusColor(booking.status)}`}>
+                                {t(`status.${booking.status}`)}
+                              </Badge>
+                              {booking.status === 'pending' && (
+                                <>
+                                  <Button size="icon" variant="ghost" className="h-7 w-7 text-green-600 hover:bg-green-50" onClick={() => handleBookingAction(booking.id, 'confirm')}>
+                                    <CheckCircle2 className="h-4 w-4" />
+                                  </Button>
+                                  <Button size="icon" variant="ghost" className="h-7 w-7 text-red-600 hover:bg-red-50" onClick={() => handleBookingAction(booking.id, 'cancel')}>
+                                    <XCircle className="h-4 w-4" />
+                                  </Button>
+                                </>
+                              )}
+                              {booking.status === 'confirmed' && (
+                                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => handleBookingAction(booking.id, 'complete')}>
+                                  {language === 'es' ? 'Completar' : 'Complete'}
+                                </Button>
+                              )}
                             </div>
-                          </div>
-                          <div className="flex items-center gap-1.5">
-                            <Badge className={`text-[10px] ${getStatusColor(booking.status)}`}>
-                              {t(`status.${booking.status}`)}
-                            </Badge>
-                            {booking.status === 'pending' && (
-                              <>
-                                <Button size="icon" variant="ghost" className="h-7 w-7 text-green-600 hover:bg-green-50" onClick={() => handleBookingAction(booking.id, 'confirm')}>
-                                  <CheckCircle2 className="h-4 w-4" />
-                                </Button>
-                                <Button size="icon" variant="ghost" className="h-7 w-7 text-red-600 hover:bg-red-50" onClick={() => handleBookingAction(booking.id, 'cancel')}>
-                                  <XCircle className="h-4 w-4" />
-                                </Button>
-                              </>
-                            )}
-                            {booking.status === 'confirmed' && (
-                              <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => handleBookingAction(booking.id, 'complete')}>
-                                {language === 'es' ? 'Completar' : 'Complete'}
-                              </Button>
-                            )}
                           </div>
                         </div>
-                      ))}
+                      );})}
                     </div>
                   ) : (
                     <div className="text-center py-12">
