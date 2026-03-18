@@ -27,12 +27,14 @@ export default function ServiceManagementPage() {
   const [form, setForm] = useState({ name: '', description: '', price: '', duration_minutes: 60 });
 
   useEffect(() => {
-    if (user?.business_id) loadServices();
+    const bizId = user?.business_id;
+    if (bizId) loadServices();
   }, [user]);
 
   const loadServices = async () => {
     try {
-      const res = await servicesAPI.getByBusiness(user.business_id);
+      const bizId = user?.business_id;
+      const res = await servicesAPI.getByBusiness(bizId);
       setServices(res.data || []);
     } catch { toast.error('Error loading services'); }
     finally { setLoading(false); }

@@ -80,25 +80,26 @@ export default function TeamSchedulePage() {
   const [dayAvailability, setDayAvailability] = useState(null);
 
   useEffect(() => {
-    // Wait for auth to initialize
     if (authLoading) return;
     
     if (!isAuthenticated || !isBusiness) {
       navigate('/login');
       return;
     }
-    if (business?.id) {
+    // Load data when business is available OR when we have a business user
+    if (business?.id || user?.business_id) {
       loadData();
     }
-  }, [authLoading, isAuthenticated, isBusiness, business?.id]);
+  }, [authLoading, isAuthenticated, isBusiness, business?.id, user?.business_id]);
 
   const loadData = async () => {
-    if (!business?.id) return;
+    const bizId = business?.id || user?.business_id;
+    if (!bizId) return;
     try {
       setLoading(true);
       const [workersRes, servicesRes] = await Promise.all([
         businessesAPI.getMyWorkers(true),
-        servicesAPI.getByBusiness(business.id),
+        servicesAPI.getByBusiness(bizId),
       ]);
       setWorkers(workersRes.data);
       setServices(servicesRes.data);
@@ -114,7 +115,8 @@ export default function TeamSchedulePage() {
   };
 
   const loadDayAvailability = useCallback(async (date, workerId) => {
-    if (!business?.id) return;
+    const bizId = business?.id || user?.business_id;
+    if (!bizId) return;
     try {
       const dateStr = format(date, 'yyyy-MM-dd');
       const res = await bookingsAPI.getAvailability(business.id, dateStr, null, workerId, true);
