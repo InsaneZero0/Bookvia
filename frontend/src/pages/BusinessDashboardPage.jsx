@@ -61,7 +61,7 @@ export default function BusinessDashboardPage() {
     try {
       const [dashRes, servicesRes, workersRes, photosRes, closuresRes] = await Promise.all([
         businessesAPI.getDashboard(),
-        servicesAPI.getByBusiness(business?.id || ''),
+        servicesAPI.getByBusiness(business?.id || user?.business_id || ''),
         businessesAPI.getMyWorkers().catch(() => ({ data: [] })),
         businessesAPI.getMyPhotos().catch(() => ({ data: [] })),
         businessesAPI.getMyClosures().catch(() => ({ data: [] })),
