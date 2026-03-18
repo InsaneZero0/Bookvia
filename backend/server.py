@@ -157,9 +157,15 @@ HOLD_EXPIRATION_MINUTES = 30
 MIN_DEPOSIT_AMOUNT = 50.0  # MXN
 
 # Visibility filter: businesses visible to public must be approved + subscription active/trialing
+# Also include businesses without subscription_status field (legacy/backwards compat)
 VISIBLE_BUSINESS_FILTER = {
     "status": BusinessStatus.APPROVED,
-    "subscription_status": {"$in": ["active", "trialing"]}
+    "$or": [
+        {"subscription_status": {"$in": ["active", "trialing"]}},
+        {"subscription_status": {"$exists": False}},
+        {"subscription_status": None},
+        {"subscription_status": "none"},
+    ]
 }
 
 # Ledger Enums
@@ -1392,7 +1398,12 @@ async def search_businesses(
     else:
         filters = {
             "status": BusinessStatus.APPROVED,
-            "subscription_status": {"$in": ["active", "trialing"]}
+            "$or": [
+                {"subscription_status": {"$in": ["active", "trialing"]}},
+                {"subscription_status": {"$exists": False}},
+                {"subscription_status": None},
+                {"subscription_status": "none"},
+            ]
         }
     
     if query:
@@ -1421,10 +1432,11 @@ async def search_businesses(
             cat = await db.categories.find_one({"id": b["category_id"]})
             if cat:
                 b["category_name"] = cat.get("name_es", "")
-        # Mark if business can accept bookings (must be approved + subscription active/trialing)
+        # Mark if business can accept bookings (must be approved + subscription active/trialing or legacy)
+        sub_status = b.get("subscription_status", "none")
         b["can_accept_bookings"] = (
             b.get("status") == BusinessStatus.APPROVED 
-            and b.get("subscription_status") in ("active", "trialing")
+            and (sub_status in ("active", "trialing", "none", None) or sub_status is None)
         )
     
     return [BusinessResponse(**b) for b in businesses]
@@ -1432,7 +1444,7 @@ async def search_businesses(
 @businesses_router.get("/featured", response_model=List[BusinessResponse])
 async def get_featured_businesses(limit: int = 8):
     businesses = await db.businesses.find(
-        {"status": BusinessStatus.APPROVED, "is_featured": True, "subscription_status": {"$in": ["active", "trialing"]}},
+        {"status": BusinessStatus.APPROVED, "is_featured": True, "$or": [{"subscription_status": {"$in": ["active", "trialing"]}}, {"subscription_status": {"$exists": False}}, {"subscription_status": None}, {"subscription_status": "none"}]},
         {"_id": 0, "password_hash": 0, "clabe": 0, "rfc": 0}
     ).sort("rating", -1).limit(limit).to_list(limit)
     
@@ -1440,7 +1452,7 @@ async def get_featured_businesses(limit: int = 8):
     if len(businesses) < limit:
         existing_ids = [b["id"] for b in businesses]
         more = await db.businesses.find(
-            {"status": BusinessStatus.APPROVED, "id": {"$nin": existing_ids}, "subscription_status": {"$in": ["active", "trialing"]}},
+            {"status": BusinessStatus.APPROVED, "id": {"$nin": existing_ids}, "$or": [{"subscription_status": {"$in": ["active", "trialing"]}}, {"subscription_status": {"$exists": False}}, {"subscription_status": None}, {"subscription_status": "none"}]},
             {"_id": 0, "password_hash": 0, "clabe": 0, "rfc": 0}
         ).sort("rating", -1).limit(limit - len(businesses)).to_list(limit - len(businesses))
         businesses.extend(more)
@@ -1449,10 +1461,17 @@ async def get_featured_businesses(limit: int = 8):
 
 @businesses_router.get("/slug/{slug}", response_model=BusinessResponse)
 async def get_business_by_slug(slug: str):
+    """Get business by slug or ID (fallback)."""
     business = await db.businesses.find_one(
         {"slug": slug},
         {"_id": 0, "password_hash": 0, "clabe": 0, "rfc": 0, "ine_url": 0, "proof_of_address_url": 0}
     )
+    if not business:
+        # Fallback: try finding by ID
+        business = await db.businesses.find_one(
+            {"id": slug},
+            {"_id": 0, "password_hash": 0, "clabe": 0, "rfc": 0, "ine_url": 0, "proof_of_address_url": 0}
+        )
     if not business:
         raise HTTPException(status_code=404, detail="Business not found")
     
@@ -2189,7 +2208,7 @@ async def create_booking(booking: BookingCreate, token_data: TokenData = Depends
     if business["status"] != BusinessStatus.APPROVED:
         raise HTTPException(status_code=400, detail="Business is not accepting bookings")
     
-    if business.get("subscription_status") not in ("active", "trialing"):
+    if business.get("subscription_status") in ("canceled", "past_due", "unpaid"):
         raise HTTPException(status_code=400, detail="Business subscription is not active")
     
     # Get service

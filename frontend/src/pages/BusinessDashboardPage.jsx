@@ -235,7 +235,11 @@ export default function BusinessDashboardPage() {
             </div>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => navigate(`/business/${biz?.slug}`)} data-testid="view-profile-button">
+            <Button variant="outline" size="sm" onClick={() => {
+              const profileSlug = biz?.slug || biz?.id;
+              if (profileSlug) navigate(`/business/${profileSlug}`);
+              else toast.error(language === 'es' ? 'Perfil no disponible' : 'Profile not available');
+            }} data-testid="view-profile-button">
               <Eye className="h-4 w-4 mr-1.5" />{language === 'es' ? 'Ver perfil' : 'View profile'}
             </Button>
             <Button variant="outline" size="sm" onClick={() => navigate('/business/settings')}>
