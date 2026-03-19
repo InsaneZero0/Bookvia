@@ -7,7 +7,7 @@ import requests
 import os
 from datetime import datetime, timedelta
 
-BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://reserve-stripe-test.preview.emergentagent.com').rstrip('/')
+BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', 'https://booking-platform-104.preview.emergentagent.com').rstrip('/')
 
 # Test credentials from requirements
 BUSINESS_EMAIL = "testspa@test.com"
