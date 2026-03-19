@@ -183,7 +183,7 @@ export default function BusinessProfilePage() {
   const [selectedService, setSelectedService] = useState(null);
   const [selectedDate, setSelectedDate] = useState(null);
   const [selectedTime, setSelectedTime] = useState(null);
-  const [selectedWorker, setSelectedWorker] = useState(null); // null = not selected, {id:'any'} = anyone, {id, name} = specific
+  const [selectedWorker, setSelectedWorker] = useState(null); // null = not selected, {id, name} = specific worker
   const [availableSlots, setAvailableSlots] = useState([]);
   const [serviceWorkers, setServiceWorkers] = useState([]); // workers that offer the selected service
   const [slotsLoading, setSlotsLoading] = useState(false);
@@ -253,14 +253,9 @@ export default function BusinessProfilePage() {
     setSlotsLoading(true);
     try {
       const dateStr = format(selectedDate, 'yyyy-MM-dd');
-      const workerId = selectedWorker?.id === 'any' ? undefined : selectedWorker?.id;
+      const workerId = selectedWorker?.id;
       const res = await bookingsAPI.getAvailability(business.id, dateStr, selectedService?.id, workerId);
-      let slots = Array.isArray(res.data?.slots) ? res.data.slots : [];
-      // If "anyone" selected, filter slots to only workers who offer this service
-      if (selectedWorker?.id === 'any' && serviceWorkers.length > 0) {
-        const validWorkerIds = serviceWorkers.map(w => w.id);
-        slots = slots.filter(s => validWorkerIds.includes(s.worker_id));
-      }
+      const slots = Array.isArray(res.data?.slots) ? res.data.slots : [];
       setAvailableSlots(slots);
     } catch {
       setAvailableSlots([]);
@@ -314,10 +309,6 @@ export default function BusinessProfilePage() {
 
   const handleTimeSelect = (slot) => {
     setSelectedTime(slot.time);
-    // If "anyone" was selected, now we know which worker was assigned
-    if (selectedWorker?.id === 'any') {
-      setSelectedWorker({ id: slot.worker_id, name: slot.worker_name, isAutoAssigned: true });
-    }
     setBookingStep(4);
   };
 
@@ -909,21 +900,6 @@ export default function BusinessProfilePage() {
               <p className="text-sm text-muted-foreground">{language === 'es' ? 'Selecciona quien te atendera:' : 'Select who will attend you:'}</p>
 
               <div className="space-y-2 max-h-60 overflow-y-auto">
-                {/* "Anyone" option */}
-                <button
-                  onClick={() => handleWorkerSelect({ id: 'any', name: language === 'es' ? 'Cualquier profesional' : 'Any professional' })}
-                  className="w-full flex items-center gap-3 p-3 rounded-xl border-2 border-dashed hover:border-[#F05D5E] hover:bg-[#F05D5E]/5 transition-all text-left"
-                  data-testid="worker-any"
-                >
-                  <div className="h-10 w-10 rounded-full bg-[#F05D5E]/10 flex items-center justify-center shrink-0">
-                    <Users className="h-5 w-5 text-[#F05D5E]" />
-                  </div>
-                  <div>
-                    <p className="font-medium text-sm">{language === 'es' ? 'Cualquiera disponible' : 'Anyone available'}</p>
-                    <p className="text-xs text-muted-foreground">{language === 'es' ? 'Se asignara automaticamente' : 'Will be auto-assigned'}</p>
-                  </div>
-                </button>
-
                 {/* Specific workers */}
                 {serviceWorkers.map(worker => (
                   <button
