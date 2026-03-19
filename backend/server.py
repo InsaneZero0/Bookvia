@@ -1604,12 +1604,12 @@ async def get_business_dashboard(token_data: TokenData = Depends(require_busines
     today_appointments = await db.bookings.count_documents({
         "business_id": business["id"],
         "date": today,
-        "status": {"$in": [AppointmentStatus.HOLD, AppointmentStatus.CONFIRMED]}
+        "status": AppointmentStatus.CONFIRMED
     })
     
     pending_appointments = await db.bookings.count_documents({
         "business_id": business["id"],
-        "status": AppointmentStatus.HOLD
+        "status": AppointmentStatus.CONFIRMED
     })
     
     # This month revenue
@@ -1624,7 +1624,7 @@ async def get_business_dashboard(token_data: TokenData = Depends(require_busines
     
     total_appointments = await db.bookings.count_documents({
         "business_id": business["id"],
-        "status": {"$in": [AppointmentStatus.HOLD, AppointmentStatus.CONFIRMED, AppointmentStatus.COMPLETED, AppointmentStatus.NO_SHOW]}
+        "status": {"$in": [AppointmentStatus.CONFIRMED, AppointmentStatus.COMPLETED, AppointmentStatus.NO_SHOW]}
     })
     
     return {
@@ -1729,9 +1729,9 @@ async def get_business_stats_detail(
     
     if stat_type == "today":
         filters["date"] = today
-        filters["status"] = {"$in": [AppointmentStatus.HOLD, AppointmentStatus.CONFIRMED]}
+        filters["status"] = AppointmentStatus.CONFIRMED
     elif stat_type == "pending":
-        filters["status"] = AppointmentStatus.HOLD
+        filters["status"] = AppointmentStatus.CONFIRMED
     elif stat_type == "revenue":
         filters["status"] = AppointmentStatus.COMPLETED
         if date_from and date_to:
@@ -1740,7 +1740,7 @@ async def get_business_stats_detail(
             filters["date"] = {"$gte": first_of_month}
     elif stat_type == "total":
         filters["status"] = {"$in": [
-            AppointmentStatus.HOLD, AppointmentStatus.CONFIRMED, 
+            AppointmentStatus.CONFIRMED, 
             AppointmentStatus.COMPLETED, AppointmentStatus.NO_SHOW
         ]}
         if date_from and date_to:
