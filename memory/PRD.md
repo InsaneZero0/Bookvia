@@ -1,67 +1,80 @@
 # Bookvia - PRD (Product Requirements Document)
 
-## Problema Original
-Plataforma de marketplace de reservas profesionales "Bookvia". Usuarios buscan y reservan servicios. Negocios gestionan sus servicios y citas. Panel de admin con 2FA.
+## Descripcion General
+Bookvia es una plataforma marketplace de reservas profesionales que conecta negocios de servicios (belleza, salud, fitness, etc.) con clientes. La plataforma permite a los negocios registrarse, gestionar servicios, equipo y citas, mientras que los clientes pueden buscar, reservar y pagar anticipos.
 
-## Stack Tecnologico
-- **Backend:** FastAPI, MongoDB, pyotp (2FA), cloudinary
-- **Frontend:** React, Shadcn/UI, React Router, react-leaflet
-- **Pagos:** Stripe (modo prueba real con sk_test_51...)
-- **Imagenes:** Cloudinary (produccion) + Emergent Object Storage (preview/fallback)
-- **Mapas:** Leaflet + OpenStreetMap
-- **Despliegue:** Vercel (frontend), Railway (backend)
-- **Email/SMS:** Resend y Twilio (MOCKED)
+## Arquitectura
+- **Frontend:** React + Shadcn/UI + React Router + lucide-react
+- **Backend:** FastAPI + MongoDB (Motor async)
+- **Integraciones:** Stripe (pagos nativos), Cloudinary (imagenes), Emergent Object Storage (fallback), Resend (email - MOCKED)
+
+## Stack Tecnico
+```
+/app/
+├── backend/
+│   ├── services/
+│   │   ├── cloudinary_service.py
+│   │   └── storage.py
+│   ├── middleware/
+│   │   └── rate_limit.py
+│   └── server.py
+├── frontend/
+│   ├── src/
+│   │   ├── lib/
+│   │   │   ├── api.js
+│   │   │   ├── auth.js
+│   │   │   └── i18n.js
+│   │   ├── pages/
+│   │   │   ├── BusinessDashboardPage.jsx
+│   │   │   ├── BusinessProfilePage.jsx
+│   │   │   ├── BusinessRegisterPage.jsx
+│   │   │   ├── BusinessSettingsPage.jsx
+│   │   │   ├── ServiceManagementPage.jsx
+│   │   │   ├── TeamSchedulePage.jsx
+│   │   │   └── ...
+│   │   └── App.js
+│   └── .env
+└── .env (backend)
+```
 
 ## Funcionalidades Implementadas
-- Registro/Login de usuarios y negocios
-- Autenticacion JWT con 2FA para administradores
-- Pagos con Stripe (anticipos + suscripciones)
-- Gestion de trabajadores y equipo
-- Sistema de libro contable
-- SEO: sitemap.xml, robots.txt, meta-tags dinamicos
-- Paginas de Ayuda, legales, perfil negocio, busqueda, inicio
-- Panel de administracion con aprobacion de negocios
-- Dashboard de negocio (Agenda, Servicios, Equipo, Fotos, Cierres, Suscripcion)
-- Dashboard de usuario (Citas, Favoritos, Perfil editable)
-- Home page profesional
-- Busqueda con mapa (Leaflet/OpenStreetMap)
-- Politica de reservas mejorada
-- Calendario de dias de cierre
-- **Duracion configurable en servicios:**
-  - Cada servicio tiene duration_minutes (15-240 min)
-  - Pagina de gestion de servicios /business/services (CRUD completo)
-  - Citas calculan end_time automaticamente segun duracion
-  - Validacion de traslapes: no permite reservas superpuestas
-  - Agenda muestra bloques visuales con duracion
-  - Slots de reserva muestran rango horario (inicio - fin)
-- Suscripcion mensual OBLIGATORIA ($39 MXN/mes, 30 dias gratis, Stripe Checkout)
-- Logica de visibilidad publica (approved + subscription active/trialing)
-- **Cloudinary para imagenes:**
-  - Logo de negocio (obligatorio en registro, step 1)
-  - Galeria de fotos del negocio
-  - Estructura: bookvia/businesses/logos/, bookvia/businesses/gallery/
-  - Solo se guarda secure_url y public_id en MongoDB
-  - Soporte para .jfif, .jpg, .jpeg, .png, .webp
-  - Eliminacion de imagenes en Cloudinary al borrar fotos
 
-## Modelo de Datos - Campos Clave
-- `businesses.logo_url`: URL del logo en Cloudinary
-- `businesses.logo_public_id`: public_id para gestion en Cloudinary
-- `businesses.photos[]`: Array de URLs de galeria
-- `businesses.subscription_status`: none | trialing | active | past_due | canceled | unpaid
-- `business_photos`: Coleccion con url, public_id, storage type, is_deleted
+### Core
+- [x] Autenticacion JWT (usuario y negocio)
+- [x] Registro de negocio multi-paso con suscripcion obligatoria (Stripe)
+- [x] Sistema de aprobacion de negocios por admin
+- [x] Paneles: usuario, negocio, administrador
+- [x] Sistema de busqueda con filtros y mapa (Leaflet/OpenStreetMap)
+- [x] 2FA para admin (pyotp)
 
-## Endpoints de Imagenes
-- `POST /api/businesses/me/photos` - Subir foto a galeria
-- `POST /api/businesses/me/logo` - Subir/reemplazar logo
-- `DELETE /api/businesses/me/photos/{id}` - Eliminar foto
-- `GET /api/businesses/me/photos` - Listar fotos
-- `POST /api/upload/image` - Upload generico
+### Reservas
+- [x] Flujo multi-paso: Fecha -> Trabajador -> Hora -> Confirmar
+- [x] Anticipo con Stripe Checkout (libreria nativa)
+- [x] Duracion configurable de servicios
+- [x] Bloqueo automatico de agenda
+- [x] Cancelacion con politicas configurables
 
-## Variables de Entorno Requeridas (Railway)
-- `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`
-- `STRIPE_API_KEY` (clave real sk_test_51...)
-- `MONGO_URL`, `DB_NAME`, `JWT_SECRET`, `CORS_ORIGINS`
+### Gestion de Negocio
+- [x] CRUD de servicios con duracion
+- [x] Gestion de equipo con fotos de perfil
+- [x] Asignacion de servicios por trabajador
+- [x] Sistema de cierres/vacaciones
+- [x] Gestion de suscripcion (ver estado, cancelar)
+- [x] **Tarjetas de estadisticas clickeables** con modal de detalle y filtro por rango de fechas
+- [x] **Sistema de veto/blacklist de clientes** (por email, telefono o userId)
+- [x] Pagina de configuracion del negocio (/business/settings)
+
+### Imagenes
+- [x] Cloudinary como almacenamiento primario (produccion)
+- [x] Emergent Object Storage como fallback (preview)
+- [x] Logo obligatorio en registro
+- [x] Galeria de fotos del negocio
+
+### Blacklist/Veto
+- [x] CRUD completo (agregar por email/telefono/userId, listar, eliminar)
+- [x] Enforcement en backend: busqueda, perfil por slug, acceso directo, y reservas
+- [x] Cliente vetado NO ve el negocio (404 silencioso, sin mensaje de veto)
+- [x] UI en /business/settings con formulario y lista
 
 ## Bugs Resueltos
 - [2026-03-11] Conflicto de rutas Admin vs SEO
@@ -72,20 +85,38 @@ Plataforma de marketplace de reservas profesionales "Bookvia". Usuarios buscan y
 - [2026-03-17] Stripe: precio cacheado invalido con nueva clave real
 - [2026-03-17] .jfif no aceptado como formato de imagen
 - [2026-03-17] Fotos legacy sin campo url (compatibilidad storage_path)
-- [2026-03-19] Error de pago anticipo: migrado de emergentintegrations a stripe nativo para compatibilidad con Railway
+- [2026-03-19] Error pago anticipo: migrado de emergentintegrations a stripe nativo
+- [2026-03-19] Visibilidad negocios legacy sin subscription_status
 
-## Backlog Priorizado
+## Backlog (P0-P3)
+
 ### P1
-- Recuperar contrasena (flujo "olvide mi contrasena")
-- Activar emails reales (configurar Resend - pendiente dominio)
+- [ ] Recuperar contrasena (flujo completo)
+- [ ] Activar emails reales (Resend)
 
 ### P2
-- Recordatorios de citas (email 24h antes)
-- Login con Google
-- Notificaciones in-app
+- [ ] Recordatorios de citas (email 24h antes)
+- [ ] Login con Google (Emergent-managed)
 
 ### P3
-- PWA, Stripe Connect, Notificaciones push, App movil
+- [ ] Convertir a PWA
+- [ ] Stripe Connect (pagos a negocios)
+- [ ] Notificaciones Push
+- [ ] Webhook Stripe (customer.subscription.deleted)
+- [ ] Optimizacion imagenes Cloudinary (thumbnails)
+- [ ] Aplicacion nativa
 
 ## Refactorizacion Pendiente
-- Migrar logica de backend/server.py a archivos separados en backend/routers/
+- [ ] Modularizar server.py en routers separados (auth.py, bookings.py, workers.py, etc.)
+
+## Esquema DB Clave
+- **businesses:** subscription_status, approval_status, logo_url, logo_public_id, photos[]
+- **workers:** service_ids[], photo_public_id
+- **appointments:** worker_id, end_time, duration_minutes, service_name
+- **blacklist:** id, business_id, email, phone, user_id, reason, created_at
+- **services:** duration_minutes
+
+## Notas Tecnicas
+- Stripe usa libreria nativa `stripe` (no emergentintegrations) para compatibilidad con Railway
+- Negocios legacy (sin subscription_status) siguen visibles via filtro $or
+- Email service (Resend) esta MOCKED, pendiente configuracion
