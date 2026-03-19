@@ -169,6 +169,9 @@ export default function BusinessProfilePage() {
   const { isAuthenticated, user } = useAuth();
   const navigate = useNavigate();
 
+  // Check if the logged-in user is the business owner
+  const isOwner = isAuthenticated && user && business && (user.business_id === business.id || user.id === business.user_id);
+
   // Data
   const [business, setBusiness] = useState(null);
   const [services, setServices] = useState([]);
@@ -521,15 +524,17 @@ export default function BusinessProfilePage() {
                       </div>
                       <div className="text-right flex flex-col items-end gap-2">
                         <span className="text-lg font-bold text-[#F05D5E]">{formatCurrency(service.price)}</span>
-                        <Button
-                          size="sm"
-                          className="btn-coral text-xs px-5 py-1.5 h-8"
-                          onClick={() => startBooking(service)}
-                          disabled={business.status !== 'approved'}
-                          data-testid={`book-service-${service.id}`}
-                        >
-                          {language === 'es' ? 'Reservar' : 'Book'}
-                        </Button>
+                        {!isOwner && (
+                          <Button
+                            size="sm"
+                            className="btn-coral text-xs px-5 py-1.5 h-8"
+                            onClick={() => startBooking(service)}
+                            disabled={business.status !== 'approved'}
+                            data-testid={`book-service-${service.id}`}
+                          >
+                            {language === 'es' ? 'Reservar' : 'Book'}
+                          </Button>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -744,7 +749,7 @@ export default function BusinessProfilePage() {
                     </div>
                   )}
 
-                  {business.status === 'approved' ? (
+                  {business.status === 'approved' && !isOwner ? (
                     <>
                       {/* Service Selection */}
                       <div className="space-y-2">
@@ -825,27 +830,29 @@ export default function BusinessProfilePage() {
       </div>
 
       {/* ─── Mobile Bottom Bar ──────────────────────── */}
-      <div className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-background border-t p-3 safe-area-bottom" data-testid="mobile-booking-bar">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            {services.length > 0 && (
-              <>
-                <span className="text-xs text-muted-foreground">{language === 'es' ? 'Desde' : 'From'}</span>
-                <span className="text-lg font-bold ml-1">{formatCurrency(Math.min(...services.map(s => s.price)))}</span>
-              </>
-            )}
+      {!isOwner && (
+        <div className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-background border-t p-3 safe-area-bottom" data-testid="mobile-booking-bar">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              {services.length > 0 && (
+                <>
+                  <span className="text-xs text-muted-foreground">{language === 'es' ? 'Desde' : 'From'}</span>
+                  <span className="text-lg font-bold ml-1">{formatCurrency(Math.min(...services.map(s => s.price)))}</span>
+                </>
+              )}
+            </div>
+            <Button
+              className="btn-coral px-8"
+              onClick={() => services.length > 0 && startBooking(services[0])}
+              disabled={services.length === 0 || business.status !== 'approved'}
+              data-testid="mobile-book-now"
+            >
+              <CalendarIcon className="h-4 w-4 mr-2" />
+              {language === 'es' ? 'Reservar' : 'Book'}
+            </Button>
           </div>
-          <Button
-            className="btn-coral px-8"
-            onClick={() => services.length > 0 && startBooking(services[0])}
-            disabled={services.length === 0 || business.status !== 'approved'}
-            data-testid="mobile-book-now"
-          >
-            <CalendarIcon className="h-4 w-4 mr-2" />
-            {language === 'es' ? 'Reservar' : 'Book'}
-          </Button>
         </div>
-      </div>
+      )}
 
       {/* ─── Booking Dialog ─────────────────────────── */}
       <Dialog open={bookingOpen} onOpenChange={setBookingOpen}>
