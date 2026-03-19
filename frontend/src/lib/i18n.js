@@ -132,11 +132,13 @@ const translations = {
     'footer.rights': 'Todos los derechos reservados',
     
     // Status
+    'status.hold': 'Pendiente de pago',
     'status.pending': 'Pendiente',
     'status.confirmed': 'Confirmada',
     'status.completed': 'Completada',
     'status.cancelled': 'Cancelada',
-    'status.no_show': 'No asistió',
+    'status.no_show': 'No asistio',
+    'status.expired': 'Expirada',
     
     // Badges
     'badge.new': 'Nuevo',
@@ -274,11 +276,13 @@ const translations = {
     'footer.rights': 'All rights reserved',
     
     // Status
+    'status.hold': 'Awaiting payment',
     'status.pending': 'Pending',
     'status.confirmed': 'Confirmed',
     'status.completed': 'Completed',
     'status.cancelled': 'Cancelled',
     'status.no_show': 'No show',
+    'status.expired': 'Expired',
     
     // Badges
     'badge.new': 'New',

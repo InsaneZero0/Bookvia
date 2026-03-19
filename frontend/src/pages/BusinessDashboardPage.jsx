@@ -130,6 +130,12 @@ export default function BusinessDashboardPage() {
     }
   };
 
+  const closeStatsModal = () => {
+    setStatsModal(prev => ({ ...prev, open: false }));
+    // Refresh dashboard stats
+    loadDashboard();
+  };
+
   const handlePhotoUpload = async (e) => {
     const files = Array.from(e.target.files);
     if (!files.length) return;
@@ -770,7 +776,7 @@ export default function BusinessDashboardPage() {
         </Tabs>
 
         {/* ── Stats Detail Modal ─────────────────────── */}
-        <Dialog open={statsModal.open} onOpenChange={(open) => { if (!open) setStatsModal(prev => ({ ...prev, open: false })); }}>
+        <Dialog open={statsModal.open} onOpenChange={(open) => { if (!open) closeStatsModal(); }}>
           <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col" data-testid="stats-detail-modal">
             <DialogHeader>
               <DialogTitle className="font-heading">{statsModal.title}</DialogTitle>

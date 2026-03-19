@@ -55,11 +55,13 @@ export function formatRelativeTime(dateString, locale = 'es-MX') {
 
 export function getStatusColor(status) {
   const colors = {
+    hold: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400',
     pending: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400',
     confirmed: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
     completed: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400',
     cancelled: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
     no_show: 'bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400',
+    expired: 'bg-gray-100 text-gray-500 dark:bg-gray-900/30 dark:text-gray-500',
     approved: 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400',
     rejected: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400',
     suspended: 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400',
