@@ -169,9 +169,6 @@ export default function BusinessProfilePage() {
   const { isAuthenticated, user } = useAuth();
   const navigate = useNavigate();
 
-  // Check if the logged-in user is the business owner
-  const isOwner = isAuthenticated && user && business && (user.business_id === business.id || user.id === business.user_id);
-
   // Data
   const [business, setBusiness] = useState(null);
   const [services, setServices] = useState([]);
@@ -199,6 +196,9 @@ export default function BusinessProfilePage() {
   const teamRef = useRef(null);
   const reviewsRef = useRef(null);
   const locationRef = useRef(null);
+
+  // Check if the logged-in user is the business owner
+  const isOwner = isAuthenticated && user && business && (user.business_id === business.id || user.id === business.user_id);
 
   // ─── Data Loading ─────────────────────────────────
   useEffect(() => {
