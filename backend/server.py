@@ -1653,12 +1653,15 @@ async def get_business_workers(
     return [WorkerResponse(**w) for w in workers]
 
 @businesses_router.get("/{business_id}/workers", response_model=List[WorkerResponse])
-async def get_workers_by_business(business_id: str, include_inactive: bool = False):
-    """Get workers for a specific business (public endpoint)"""
+async def get_workers_by_business(business_id: str, service_id: Optional[str] = None, include_inactive: bool = False):
+    """Get workers for a specific business (public endpoint), optionally filtered by service."""
     filters = {"business_id": business_id}
     if not include_inactive:
         filters["active"] = True
     workers = await db.workers.find(filters, {"_id": 0}).to_list(100)
+    # Filter by service_id: include workers who have the service in their service_ids or have no service_ids set (legacy)
+    if service_id:
+        workers = [w for w in workers if not w.get("service_ids") or service_id in w.get("service_ids", [])]
     return [WorkerResponse(**w) for w in workers]
 
 @businesses_router.get("/my/workers/{worker_id}", response_model=WorkerResponse)
@@ -1669,6 +1672,28 @@ async def get_worker(worker_id: str, token_data: TokenData = Depends(require_bus
     if not worker:
         raise HTTPException(status_code=404, detail="Worker not found")
     return WorkerResponse(**worker)
+
+@businesses_router.put("/my/workers/{worker_id}/services")
+async def update_worker_services(worker_id: str, request: Request, token_data: TokenData = Depends(require_business)):
+    """Update which services a worker can perform."""
+    user = await db.users.find_one({"id": token_data.user_id})
+    if not user or not user.get("business_id"):
+        raise HTTPException(status_code=404, detail="Business not found")
+    
+    worker = await db.workers.find_one({"id": worker_id, "business_id": user["business_id"]})
+    if not worker:
+        raise HTTPException(status_code=404, detail="Worker not found")
+    
+    body = await request.json()
+    service_ids = body.get("service_ids", [])
+    
+    await db.workers.update_one(
+        {"id": worker_id},
+        {"$set": {"service_ids": service_ids}}
+    )
+    
+    return {"message": "Worker services updated", "service_ids": service_ids}
+
 
 @businesses_router.put("/my/workers/{worker_id}", response_model=WorkerResponse)
 async def update_worker(
@@ -2039,7 +2064,11 @@ async def get_availability(
     
     workers = await db.workers.find(worker_filter, {"_id": 0}).to_list(100)
     
-    # Filter workers by service if allowed_worker_ids is set
+    # Filter workers by service: check worker.service_ids contains the service
+    if service_id:
+        workers = [w for w in workers if not w.get("service_ids") or service_id in w.get("service_ids", [])]
+    
+    # Also filter by allowed_worker_ids from service model
     if allowed_workers:
         workers = [w for w in workers if w["id"] in allowed_workers]
     
@@ -2230,6 +2259,11 @@ async def create_booking(booking: BookingCreate, token_data: TokenData = Depends
             worker_filter["id"] = {"$in": allowed_worker_ids}
         
         workers = await db.workers.find(worker_filter).to_list(100)
+        
+        # Filter workers by service_ids (worker must offer this service)
+        if service_id:
+            workers = [w for w in workers if not w.get("service_ids") or service_id in w.get("service_ids", [])]
+        
         if not workers:
             raise HTTPException(status_code=400, detail="No workers available for this service")
         
@@ -2303,6 +2337,10 @@ async def create_booking(booking: BookingCreate, token_data: TokenData = Depends
     worker = await db.workers.find_one({"id": worker_id})
     if not worker:
         raise HTTPException(status_code=404, detail="Worker not found")
+    
+    # Also check worker's own service_ids
+    if worker.get("service_ids") and booking.service_id not in worker.get("service_ids", []):
+        raise HTTPException(status_code=400, detail="Selected worker does not offer this service")
     
     if not worker.get("active", True):
         raise HTTPException(status_code=400, detail="Worker is not active")

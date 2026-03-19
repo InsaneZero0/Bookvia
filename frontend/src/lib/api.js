@@ -108,8 +108,8 @@ export const businessesAPI = {
   updateMe: (data) => api.put('/businesses/me', data),
   getDashboard: () => api.get('/businesses/me/dashboard'),
   // Workers (for specific business - public)
-  getWorkers: (businessId, includeInactive = false) => 
-    api.get(`/businesses/${businessId}/workers`, { params: { include_inactive: includeInactive } }),
+  getWorkers: (businessId, includeInactive = false, serviceId = null) => 
+    api.get(`/businesses/${businessId}/workers`, { params: { include_inactive: includeInactive, ...(serviceId ? { service_id: serviceId } : {}) } }),
   // Workers (for authenticated business)
   getMyWorkers: (includeInactive = false) => 
     api.get('/businesses/my/workers', { params: { include_inactive: includeInactive } }),
@@ -125,6 +125,7 @@ export const businessesAPI = {
     });
   },
   reactivateWorker: (workerId) => api.put(`/businesses/my/workers/${workerId}/reactivate`),
+  updateWorkerServices: (workerId, serviceIds) => api.put(`/businesses/my/workers/${workerId}/services`, { service_ids: serviceIds }),
   updateWorkerSchedule: (workerId, schedule) => 
     api.put(`/businesses/my/workers/${workerId}/schedule`, { schedule }),
   addWorkerException: (workerId, exception) => 
