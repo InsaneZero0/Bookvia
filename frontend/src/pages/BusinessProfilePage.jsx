@@ -183,8 +183,9 @@ export default function BusinessProfilePage() {
   const [selectedService, setSelectedService] = useState(null);
   const [selectedDate, setSelectedDate] = useState(null);
   const [selectedTime, setSelectedTime] = useState(null);
-  const [selectedWorker, setSelectedWorker] = useState(null);
+  const [selectedWorker, setSelectedWorker] = useState(null); // null = not selected, {id:'any'} = anyone, {id, name} = specific
   const [availableSlots, setAvailableSlots] = useState([]);
+  const [serviceWorkers, setServiceWorkers] = useState([]); // workers that offer the selected service
   const [slotsLoading, setSlotsLoading] = useState(false);
   const [bookingStep, setBookingStep] = useState(1);
   const [bookingNotes, setBookingNotes] = useState('');
@@ -203,7 +204,7 @@ export default function BusinessProfilePage() {
   }, [slug]);
 
   useEffect(() => {
-    if (selectedDate && selectedService && business) {
+    if (selectedDate && selectedService && selectedWorker && business) {
       loadAvailability();
     }
   }, [selectedDate, selectedService, selectedWorker]);
@@ -252,8 +253,15 @@ export default function BusinessProfilePage() {
     setSlotsLoading(true);
     try {
       const dateStr = format(selectedDate, 'yyyy-MM-dd');
-      const res = await bookingsAPI.getAvailability(business.id, dateStr, selectedService?.id, selectedWorker?.id || undefined);
-      setAvailableSlots(Array.isArray(res.data?.slots) ? res.data.slots : []);
+      const workerId = selectedWorker?.id === 'any' ? undefined : selectedWorker?.id;
+      const res = await bookingsAPI.getAvailability(business.id, dateStr, selectedService?.id, workerId);
+      let slots = Array.isArray(res.data?.slots) ? res.data.slots : [];
+      // If "anyone" selected, filter slots to only workers who offer this service
+      if (selectedWorker?.id === 'any' && serviceWorkers.length > 0) {
+        const validWorkerIds = serviceWorkers.map(w => w.id);
+        slots = slots.filter(s => validWorkerIds.includes(s.worker_id));
+      }
+      setAvailableSlots(slots);
     } catch {
       setAvailableSlots([]);
     } finally {
@@ -277,7 +285,7 @@ export default function BusinessProfilePage() {
     } catch { toast.error(language === 'es' ? 'Error' : 'Error'); }
   };
 
-  const startBooking = (service) => {
+  const startBooking = async (service) => {
     if (!isAuthenticated) {
       navigate('/login', { state: { from: { pathname: `/business/${slug}` } } });
       return;
@@ -287,14 +295,30 @@ export default function BusinessProfilePage() {
     setSelectedTime(null);
     setSelectedWorker(null);
     setAvailableSlots([]);
+    setServiceWorkers([]);
     setBookingStep(1);
     setBookingOpen(true);
+    // Load workers for this service
+    try {
+      const res = await businessesAPI.getWorkers(business.id, false, service.id);
+      setServiceWorkers(Array.isArray(res.data) ? res.data : []);
+    } catch { setServiceWorkers([]); }
+  };
+
+  const handleWorkerSelect = (worker) => {
+    setSelectedWorker(worker);
+    setSelectedTime(null);
+    setAvailableSlots([]);
+    setBookingStep(3);
   };
 
   const handleTimeSelect = (slot) => {
     setSelectedTime(slot.time);
-    setSelectedWorker({ id: slot.worker_id, name: slot.worker_name });
-    setBookingStep(3);
+    // If "anyone" was selected, now we know which worker was assigned
+    if (selectedWorker?.id === 'any') {
+      setSelectedWorker({ id: slot.worker_id, name: slot.worker_name, isAutoAssigned: true });
+    }
+    setBookingStep(4);
   };
 
   const handleConfirmBooking = async () => {
@@ -837,22 +861,23 @@ export default function BusinessProfilePage() {
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="font-heading">{language === 'es' ? 'Reservar cita' : 'Book appointment'}</DialogTitle>
-            <DialogDescription>{selectedService?.name} — {formatCurrency(selectedService?.price || 0)}</DialogDescription>
+            <DialogDescription>{selectedService?.name} — {formatCurrency(selectedService?.price || 0)} — {selectedService?.duration_minutes || 60} min</DialogDescription>
           </DialogHeader>
 
-          {/* Steps */}
-          <div className="flex items-center justify-center gap-2 py-3">
+          {/* Steps indicator */}
+          <div className="flex items-center justify-center gap-1.5 py-3">
             {[
               { n: 1, label: language === 'es' ? 'Fecha' : 'Date' },
-              { n: 2, label: language === 'es' ? 'Hora' : 'Time' },
-              { n: 3, label: language === 'es' ? 'Confirmar' : 'Confirm' },
+              { n: 2, label: language === 'es' ? 'Profesional' : 'Professional' },
+              { n: 3, label: language === 'es' ? 'Hora' : 'Time' },
+              { n: 4, label: language === 'es' ? 'Confirmar' : 'Confirm' },
             ].map(step => (
-              <div key={step.n} className="flex items-center gap-1.5">
+              <div key={step.n} className="flex items-center gap-1">
                 <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-colors ${bookingStep >= step.n ? 'bg-[#F05D5E] text-white' : 'bg-muted text-muted-foreground'}`}>
                   {step.n}
                 </div>
                 <span className="text-xs hidden sm:inline">{step.label}</span>
-                {step.n < 3 && <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+                {step.n < 4 && <ChevronRight className="h-3 w-3 text-muted-foreground" />}
               </div>
             ))}
           </div>
@@ -871,15 +896,75 @@ export default function BusinessProfilePage() {
             </div>
           )}
 
-          {/* Step 2: Time */}
+          {/* Step 2: Worker Selection */}
           {bookingStep === 2 && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <p className="font-medium text-sm">{format(selectedDate, 'EEEE, d MMMM', { locale: language === 'es' ? es : enUS })}</p>
+                <Button variant="ghost" size="sm" onClick={() => setBookingStep(1)}>
+                  <ChevronLeft className="h-4 w-4 mr-1" />{language === 'es' ? 'Cambiar' : 'Change'}
+                </Button>
+              </div>
+
+              <p className="text-sm text-muted-foreground">{language === 'es' ? 'Selecciona quien te atendera:' : 'Select who will attend you:'}</p>
+
+              <div className="space-y-2 max-h-60 overflow-y-auto">
+                {/* "Anyone" option */}
+                <button
+                  onClick={() => handleWorkerSelect({ id: 'any', name: language === 'es' ? 'Cualquier profesional' : 'Any professional' })}
+                  className="w-full flex items-center gap-3 p-3 rounded-xl border-2 border-dashed hover:border-[#F05D5E] hover:bg-[#F05D5E]/5 transition-all text-left"
+                  data-testid="worker-any"
+                >
+                  <div className="h-10 w-10 rounded-full bg-[#F05D5E]/10 flex items-center justify-center shrink-0">
+                    <Users className="h-5 w-5 text-[#F05D5E]" />
+                  </div>
+                  <div>
+                    <p className="font-medium text-sm">{language === 'es' ? 'Cualquiera disponible' : 'Anyone available'}</p>
+                    <p className="text-xs text-muted-foreground">{language === 'es' ? 'Se asignara automaticamente' : 'Will be auto-assigned'}</p>
+                  </div>
+                </button>
+
+                {/* Specific workers */}
+                {serviceWorkers.map(worker => (
+                  <button
+                    key={worker.id}
+                    onClick={() => handleWorkerSelect(worker)}
+                    className="w-full flex items-center gap-3 p-3 rounded-xl border hover:border-[#F05D5E] hover:bg-[#F05D5E]/5 transition-all text-left"
+                    data-testid={`worker-${worker.id}`}
+                  >
+                    <div className="h-10 w-10 rounded-full overflow-hidden bg-muted flex items-center justify-center shrink-0">
+                      {worker.photo_url ? (
+                        <img src={worker.photo_url} alt={worker.name} className="h-full w-full object-cover" />
+                      ) : (
+                        <User className="h-5 w-5 text-muted-foreground" />
+                      )}
+                    </div>
+                    <div>
+                      <p className="font-medium text-sm">{worker.name}</p>
+                      {worker.bio && <p className="text-xs text-muted-foreground line-clamp-1">{worker.bio}</p>}
+                    </div>
+                  </button>
+                ))}
+
+                {serviceWorkers.length === 0 && (
+                  <p className="text-sm text-center text-muted-foreground py-4">
+                    {language === 'es' ? 'No hay profesionales disponibles para este servicio' : 'No professionals available for this service'}
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Step 3: Time */}
+          {bookingStep === 3 && (
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="font-medium text-sm">{format(selectedDate, 'EEEE, d MMMM', { locale: language === 'es' ? es : enUS })}</p>
+                  <p className="text-xs text-muted-foreground">{selectedWorker?.name}</p>
                 </div>
-                <Button variant="ghost" size="sm" onClick={() => setBookingStep(1)}>
-                  <ChevronLeft className="h-4 w-4 mr-1" />{language === 'es' ? 'Cambiar fecha' : 'Change date'}
+                <Button variant="ghost" size="sm" onClick={() => { setBookingStep(2); setSelectedWorker(null); setAvailableSlots([]); }}>
+                  <ChevronLeft className="h-4 w-4 mr-1" />{language === 'es' ? 'Cambiar' : 'Change'}
                 </Button>
               </div>
 
@@ -898,23 +983,23 @@ export default function BusinessProfilePage() {
                     >
                       <span className="font-bold text-sm">{formatTime(slot.time)}</span>
                       <span className="text-[10px] text-muted-foreground">{formatTime(slot.time)} - {formatTime(slot.end_time)}</span>
-                      <span className="text-xs text-muted-foreground mt-0.5">{slot.worker_name}</span>
+                      {selectedWorker?.id === 'any' && <span className="text-xs text-muted-foreground mt-0.5">{slot.worker_name}</span>}
                     </button>
                   ))}
                 </div>
               ) : (
                 <div className="text-center py-8">
                   <CalendarIcon className="h-10 w-10 mx-auto text-muted-foreground/40 mb-2" />
-                  <p className="text-sm text-muted-foreground">{language === 'es' ? 'No hay horarios disponibles para esta fecha' : 'No slots available for this date'}</p>
+                  <p className="text-sm text-muted-foreground">{language === 'es' ? 'No hay horarios disponibles' : 'No slots available'}</p>
                 </div>
               )}
             </div>
           )}
 
-          {/* Step 3: Confirm */}
-          {bookingStep === 3 && (
+          {/* Step 4: Confirm */}
+          {bookingStep === 4 && (
             <div className="space-y-4">
-              <Button variant="ghost" size="sm" onClick={() => setBookingStep(2)}>
+              <Button variant="ghost" size="sm" onClick={() => setBookingStep(3)}>
                 <ChevronLeft className="h-4 w-4 mr-1" />{language === 'es' ? 'Cambiar hora' : 'Change time'}
               </Button>
 

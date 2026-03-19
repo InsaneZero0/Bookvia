@@ -135,7 +135,7 @@ export default function TeamSchedulePage() {
   // Worker CRUD
   const openCreateWorker = () => {
     setEditingWorker(null);
-    setWorkerForm({ name: '', email: '', phone: '', bio: '' });
+    setWorkerForm({ name: '', email: '', phone: '', bio: '', service_ids: [] });
     setWorkerPhotoFile(null);
     setWorkerPhotoPreview(null);
     setShowWorkerDialog(true);
@@ -147,7 +147,8 @@ export default function TeamSchedulePage() {
       name: worker.name,
       email: worker.email || '',
       phone: worker.phone || '',
-      bio: worker.bio || ''
+      bio: worker.bio || '',
+      service_ids: worker.service_ids || [],
     });
     setWorkerPhotoFile(null);
     setWorkerPhotoPreview(worker.photo_url || null);
@@ -199,6 +200,14 @@ export default function TeamSchedulePage() {
           toast.error(language === 'es' ? 'Error al subir la foto' : 'Error uploading photo');
         }
         setUploadingPhoto(false);
+      }
+
+      // Update service_ids if changed
+      const workerId = savedWorker?.id || editingWorker?.id;
+      if (workerId && workerForm.service_ids) {
+        try {
+          await businessesAPI.updateWorkerServices(workerId, workerForm.service_ids);
+        } catch { /* silent - service_ids will be saved next time */ }
       }
 
       setShowWorkerDialog(false);
@@ -447,6 +456,20 @@ export default function TeamSchedulePage() {
                   <CardContent className="space-y-4">
                     {worker.bio && (
                       <p className="text-sm text-muted-foreground line-clamp-2">{worker.bio}</p>
+                    )}
+                    {/* Show assigned services */}
+                    {worker.service_ids && worker.service_ids.length > 0 && (
+                      <div className="flex flex-wrap gap-1">
+                        {worker.service_ids.map(sid => {
+                          const svc = services.find(s => s.id === sid);
+                          return svc ? (
+                            <Badge key={sid} variant="secondary" className="text-[10px]">{svc.name}</Badge>
+                          ) : null;
+                        })}
+                      </div>
+                    )}
+                    {(!worker.service_ids || worker.service_ids.length === 0) && (
+                      <Badge variant="outline" className="text-[10px] text-muted-foreground">{language === 'es' ? 'Todos los servicios' : 'All services'}</Badge>
                     )}
                     
                     {/* Quick schedule preview */}
@@ -787,6 +810,36 @@ export default function TeamSchedulePage() {
                 placeholder={language === 'es' ? 'Especialidades, experiencia...' : 'Specialties, experience...'}
                 rows={3}
               />
+            </div>
+            <div>
+              <Label>{language === 'es' ? 'Servicios que realiza' : 'Services provided'}</Label>
+              <div className="mt-2 space-y-2 max-h-40 overflow-y-auto border rounded-lg p-3">
+                {services.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">{language === 'es' ? 'No hay servicios registrados' : 'No services registered'}</p>
+                ) : services.map(service => (
+                  <label key={service.id} className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 rounded p-1" data-testid={`worker-service-${service.id}`}>
+                    <input
+                      type="checkbox"
+                      className="rounded border-gray-300 text-[#F05D5E] focus:ring-[#F05D5E]"
+                      checked={(workerForm.service_ids || []).includes(service.id)}
+                      onChange={(e) => {
+                        setWorkerForm(prev => {
+                          const ids = prev.service_ids || [];
+                          return {
+                            ...prev,
+                            service_ids: e.target.checked
+                              ? [...ids, service.id]
+                              : ids.filter(id => id !== service.id)
+                          };
+                        });
+                      }}
+                    />
+                    <span className="text-sm">{service.name}</span>
+                    <span className="text-xs text-muted-foreground ml-auto">{service.duration_minutes}min</span>
+                  </label>
+                ))}
+              </div>
+              <p className="text-[11px] text-muted-foreground mt-1">{language === 'es' ? 'Si no seleccionas ninguno, podra atender todos los servicios.' : 'If none selected, worker can handle all services.'}</p>
             </div>
           </div>
           <DialogFooter>

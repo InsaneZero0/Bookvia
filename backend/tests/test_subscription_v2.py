@@ -96,7 +96,7 @@ class TestSubscriptionEndpoints:
         
         response = requests.post(
             f"{BASE_URL}/api/businesses/me/subscribe",
-            json={"origin_url": "https://reserve-stripe-test.preview.emergentagent.com"},
+            json={"origin_url": "https://booking-platform-104.preview.emergentagent.com"},
             headers=headers
         )
         
