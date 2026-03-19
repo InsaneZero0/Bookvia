@@ -2681,8 +2681,6 @@ async def create_deposit_checkout(
     token_data: TokenData = Depends(require_auth)
 ):
     """Create Stripe Checkout session for booking deposit"""
-    from emergentintegrations.payments.stripe.checkout import StripeCheckout, CheckoutSessionRequest
-    
     # Get booking
     booking = await db.bookings.find_one({"id": checkout_req.booking_id})
     if not booking:
@@ -2716,10 +2714,14 @@ async def create_deposit_checkout(
         "status": {"$in": [TransactionStatus.CREATED, TransactionStatus.PAID]}
     })
     if existing_tx and existing_tx.get("stripe_session_id"):
-        # Return existing session if still valid
-        return {"url": f"https://checkout.stripe.com/pay/{existing_tx['stripe_session_id']}", 
-                "session_id": existing_tx["stripe_session_id"],
-                "existing": True}
+        try:
+            existing_session = stripe_lib.checkout.Session.retrieve(existing_tx["stripe_session_id"])
+            if existing_session.status != "expired":
+                return {"url": existing_session.url, 
+                        "session_id": existing_tx["stripe_session_id"],
+                        "existing": True}
+        except Exception:
+            pass
     
     # Get business
     business = await db.businesses.find_one({"id": booking["business_id"]})
@@ -2752,49 +2754,56 @@ async def create_deposit_checkout(
     
     await db.transactions.insert_one(transaction_doc)
     
-    # Create Stripe Checkout Session
-    host_url = str(request.base_url).rstrip('/')
-    webhook_url = f"{host_url}/api/webhook/stripe"
-    
-    stripe_checkout = StripeCheckout(api_key=STRIPE_API_KEY, webhook_url=webhook_url)
-    
-    origin = request.headers.get('origin', host_url)
+    origin = request.headers.get('origin', str(request.base_url).rstrip('/'))
     success_url = f"{origin}/payment/success?session_id={{CHECKOUT_SESSION_ID}}&booking_id={checkout_req.booking_id}"
     cancel_url = f"{origin}/payment/cancel?booking_id={checkout_req.booking_id}"
     
-    checkout_request = CheckoutSessionRequest(
-        amount=float(deposit_amount),
-        currency="mxn",
-        success_url=success_url,
-        cancel_url=cancel_url,
-        metadata={
-            "transaction_id": transaction_id,
-            "booking_id": checkout_req.booking_id,
-            "user_id": token_data.user_id,
-            "business_id": booking["business_id"],
-            "type": "deposit"
-        }
-    )
-    
-    session = await stripe_checkout.create_checkout_session(checkout_request)
+    try:
+        session = stripe_lib.checkout.Session.create(
+            payment_method_types=["card"],
+            mode="payment",
+            line_items=[{
+                "price_data": {
+                    "currency": "mxn",
+                    "unit_amount": int(deposit_amount * 100),
+                    "product_data": {
+                        "name": f"Anticipo - {service['name'] if service else 'Reserva'}" if service else "Anticipo de reserva",
+                        "description": f"Anticipo para {business['name']}" if business else "Anticipo de reserva"
+                    }
+                },
+                "quantity": 1
+            }],
+            success_url=success_url,
+            cancel_url=cancel_url,
+            metadata={
+                "transaction_id": transaction_id,
+                "booking_id": checkout_req.booking_id,
+                "user_id": token_data.user_id,
+                "business_id": booking["business_id"],
+                "type": "deposit"
+            }
+        )
+    except Exception as e:
+        logger.error(f"Stripe checkout error: {e}")
+        raise HTTPException(status_code=500, detail=f"Error creating payment session: {str(e)}")
     
     # Update transaction with session ID
     await db.transactions.update_one(
         {"id": transaction_id},
-        {"$set": {"stripe_session_id": session.session_id}}
+        {"$set": {"stripe_session_id": session.id}}
     )
     
     # Update booking with transaction reference
     await db.bookings.update_one(
         {"id": checkout_req.booking_id},
-        {"$set": {"transaction_id": transaction_id, "stripe_session_id": session.session_id}}
+        {"$set": {"transaction_id": transaction_id, "stripe_session_id": session.id}}
     )
     
-    logger.info(f"Created checkout session {session.session_id} for booking {checkout_req.booking_id}")
+    logger.info(f"Created checkout session {session.id} for booking {checkout_req.booking_id}")
     
     return {
         "url": session.url, 
-        "session_id": session.session_id,
+        "session_id": session.id,
         "transaction_id": transaction_id,
         "amount": deposit_amount,
         "fee": fees["fee_amount"]
@@ -2803,22 +2812,19 @@ async def create_deposit_checkout(
 @payments_router.get("/checkout/status/{session_id}")
 async def get_checkout_status(session_id: str, request: Request):
     """Check checkout session status"""
-    from emergentintegrations.payments.stripe.checkout import StripeCheckout
-    
-    host_url = str(request.base_url).rstrip('/')
-    webhook_url = f"{host_url}/api/webhook/stripe"
-    
-    stripe_checkout = StripeCheckout(api_key=STRIPE_API_KEY, webhook_url=webhook_url)
-    status = await stripe_checkout.get_checkout_status(session_id)
+    try:
+        session = stripe_lib.checkout.Session.retrieve(session_id)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Could not retrieve session: {str(e)}")
     
     # Get transaction
     transaction = await db.transactions.find_one({"stripe_session_id": session_id})
     
     return {
-        "status": status.status,
-        "payment_status": status.payment_status,
-        "amount_total": status.amount_total,
-        "currency": status.currency,
+        "status": session.status,
+        "payment_status": session.payment_status,
+        "amount_total": session.amount_total,
+        "currency": session.currency,
         "transaction_id": transaction["id"] if transaction else None,
         "booking_id": transaction["booking_id"] if transaction else None
     }
@@ -2840,127 +2846,131 @@ async def get_transaction(transaction_id: str, token_data: TokenData = Depends(r
 @api_router.post("/webhook/stripe")
 async def stripe_webhook(request: Request):
     """Handle Stripe webhook events - SOURCE OF TRUTH for payments"""
-    from emergentintegrations.payments.stripe.checkout import StripeCheckout
-    
-    host_url = str(request.base_url).rstrip('/')
-    webhook_url = f"{host_url}/api/webhook/stripe"
-    
-    stripe_checkout = StripeCheckout(api_key=STRIPE_API_KEY, webhook_url=webhook_url)
-    
     body = await request.body()
     signature = request.headers.get("Stripe-Signature", "")
     
     try:
-        webhook_response = await stripe_checkout.handle_webhook(body, signature)
-        session_id = webhook_response.session_id
-        
-        logger.info(f"Webhook received: session={session_id}, status={webhook_response.payment_status}")
-        
-        # Idempotency check
-        transaction = await db.transactions.find_one({"stripe_session_id": session_id})
-        if not transaction:
-            logger.warning(f"No transaction found for session {session_id}")
-            return {"status": "ignored", "reason": "no_transaction"}
-        
-        # Already processed?
-        if transaction["status"] == TransactionStatus.PAID:
-            logger.info(f"Transaction {transaction['id']} already paid, ignoring duplicate webhook")
-            return {"status": "already_processed"}
-        
-        if webhook_response.payment_status == "paid":
-            now = datetime.now(timezone.utc).isoformat()
-            
-            # Update transaction
-            await db.transactions.update_one(
-                {"id": transaction["id"]},
-                {"$set": {
-                    "status": TransactionStatus.PAID,
-                    "stripe_payment_intent_id": webhook_response.payment_intent if hasattr(webhook_response, 'payment_intent') else None,
-                    "paid_at": now,
-                    "updated_at": now
-                }}
+        # Try to verify with webhook secret if available
+        webhook_secret = os.environ.get("STRIPE_WEBHOOK_SECRET")
+        if webhook_secret:
+            event = stripe_lib.Webhook.construct_event(body, signature, webhook_secret)
+        else:
+            event = stripe_lib.Event.construct_from(
+                stripe_lib.util.convert_to_stripe_object(
+                    __import__('json').loads(body)
+                ),
+                stripe_lib.api_key
             )
+        
+        if event.type == "checkout.session.completed":
+            session = event.data.object
+            session_id = session.id
+            payment_status = "paid" if session.payment_status == "paid" else "unpaid"
             
-            # Create ledger entries for payment
-            await create_transaction_ledger_entries(transaction, TransactionStatus.PAID)
+            logger.info(f"Webhook received: session={session_id}, status={payment_status}")
             
-            # Update booking to CONFIRMED
-            await db.bookings.update_one(
-                {"id": transaction["booking_id"]},
-                {"$set": {
-                    "status": AppointmentStatus.CONFIRMED,
-                    "deposit_paid": True,
-                    "confirmed_at": now
-                }}
-            )
+            # Idempotency check
+            transaction = await db.transactions.find_one({"stripe_session_id": session_id})
+            if not transaction:
+                logger.warning(f"No transaction found for session {session_id}")
+                return {"status": "ignored", "reason": "no_transaction"}
             
-            # Get booking details for notification
-            booking = await db.bookings.find_one({"id": transaction["booking_id"]})
-            business = await db.businesses.find_one({"id": transaction["business_id"]})
-            user = await db.users.find_one({"id": transaction["user_id"]})
-            service = await db.services.find_one({"id": booking["service_id"]}) if booking else None
+            # Already processed?
+            if transaction["status"] == TransactionStatus.PAID:
+                logger.info(f"Transaction {transaction['id']} already paid, ignoring duplicate webhook")
+                return {"status": "already_processed"}
             
-            # Notify user
-            if user:
-                await create_notification(
-                    user["id"],
-                    "Pago Confirmado",
-                    f"Tu anticipo de ${transaction['amount_total']} MXN ha sido confirmado para {service['name'] if service else 'tu cita'}",
-                    "system",
-                    {"booking_id": transaction["booking_id"], "transaction_id": transaction["id"]}
+            if payment_status == "paid":
+                now = datetime.now(timezone.utc).isoformat()
+                
+                # Update transaction
+                await db.transactions.update_one(
+                    {"id": transaction["id"]},
+                    {"$set": {
+                        "status": TransactionStatus.PAID,
+                        "stripe_payment_intent_id": session.payment_intent if hasattr(session, 'payment_intent') else None,
+                        "paid_at": now,
+                        "updated_at": now
+                    }}
                 )
-            
-            # Notify business
-            if business:
-                await create_notification(
-                    business["user_id"],
-                    "Reserva Confirmada",
-                    f"Nueva reserva confirmada de {user['full_name'] if user else 'cliente'} - Anticipo recibido",
-                    "booking",
-                    {"booking_id": transaction["booking_id"]}
+                
+                # Create ledger entries for payment
+                await create_transaction_ledger_entries(transaction, TransactionStatus.PAID)
+                
+                # Update booking to CONFIRMED
+                await db.bookings.update_one(
+                    {"id": transaction["booking_id"]},
+                    {"$set": {
+                        "status": AppointmentStatus.CONFIRMED,
+                        "deposit_paid": True,
+                        "confirmed_at": now
+                    }}
                 )
-            
-            # Notify worker (email + internal notification)
-            if booking and booking.get("worker_id"):
-                worker = await db.workers.find_one({"id": booking["worker_id"]})
-                if worker:
-                    # Internal notification
-                    # Find worker's user account if they have one
-                    worker_user = await db.users.find_one({"email": worker.get("email")}) if worker.get("email") else None
-                    if worker_user:
-                        await create_notification(
-                            worker_user["id"],
-                            "Nueva cita asignada",
-                            f"Se te ha asignado una cita: {service['name'] if service else 'servicio'} el {booking['date']} a las {booking['time']}",
-                            "worker_assignment",
-                            {"booking_id": booking["id"]}
-                        )
-                    
-                    # Email notification to worker (mock/real via email service)
-                    if worker.get("email"):
-                        from services.email import send_worker_assignment
-                        try:
-                            await send_worker_assignment(
-                                worker_email=worker["email"],
-                                worker_name=worker["name"],
-                                business_name=business["name"] if business else "Bookvia",
-                                service_name=service["name"] if service else "Servicio",
-                                client_name=user["full_name"] if user else "Cliente",
-                                date=booking["date"],
-                                time=booking["time"],
-                                notes=booking.get("notes")
+                
+                # Get booking details for notification
+                booking = await db.bookings.find_one({"id": transaction["booking_id"]})
+                business = await db.businesses.find_one({"id": transaction["business_id"]})
+                user = await db.users.find_one({"id": transaction["user_id"]})
+                service = await db.services.find_one({"id": booking["service_id"]}) if booking else None
+                
+                # Notify user
+                if user:
+                    await create_notification(
+                        user["id"],
+                        "Pago Confirmado",
+                        f"Tu anticipo de ${transaction['amount_total']} MXN ha sido confirmado para {service['name'] if service else 'tu cita'}",
+                        "system",
+                        {"booking_id": transaction["booking_id"], "transaction_id": transaction["id"]}
+                    )
+                
+                # Notify business
+                if business:
+                    await create_notification(
+                        business["user_id"],
+                        "Reserva Confirmada",
+                        f"Nueva reserva confirmada de {user['full_name'] if user else 'cliente'} - Anticipo recibido",
+                        "booking",
+                        {"booking_id": transaction["booking_id"]}
+                    )
+                
+                # Notify worker (email + internal notification)
+                if booking and booking.get("worker_id"):
+                    worker = await db.workers.find_one({"id": booking["worker_id"]})
+                    if worker:
+                        worker_user = await db.users.find_one({"email": worker.get("email")}) if worker.get("email") else None
+                        if worker_user:
+                            await create_notification(
+                                worker_user["id"],
+                                "Nueva cita asignada",
+                                f"Se te ha asignado una cita: {service['name'] if service else 'servicio'} el {booking['date']} a las {booking['time']}",
+                                "worker_assignment",
+                                {"booking_id": booking["id"]}
                             )
-                            logger.info(f"Worker notification sent to {worker['email']} for booking {booking['id']}")
-                        except Exception as e:
-                            logger.error(f"Error sending worker notification: {e}")
-            
-            # Update business balance (pending payout)
-            await db.businesses.update_one(
-                {"id": transaction["business_id"]},
-                {"$inc": {"pending_balance": transaction["payout_amount"]}}
-            )
-            
-            logger.info(f"Payment confirmed for booking {transaction['booking_id']}")
+                        
+                        if worker.get("email"):
+                            from services.email import send_worker_assignment
+                            try:
+                                await send_worker_assignment(
+                                    worker_email=worker["email"],
+                                    worker_name=worker["name"],
+                                    business_name=business["name"] if business else "Bookvia",
+                                    service_name=service["name"] if service else "Servicio",
+                                    client_name=user["full_name"] if user else "Cliente",
+                                    date=booking["date"],
+                                    time=booking["time"],
+                                    notes=booking.get("notes")
+                                )
+                                logger.info(f"Worker notification sent to {worker['email']} for booking {booking['id']}")
+                            except Exception as e:
+                                logger.error(f"Error sending worker notification: {e}")
+                
+                # Update business balance (pending payout)
+                await db.businesses.update_one(
+                    {"id": transaction["business_id"]},
+                    {"$inc": {"pending_balance": transaction["payout_amount"]}}
+                )
+                
+                logger.info(f"Payment confirmed for booking {transaction['booking_id']}")
         
         return {"status": "success"}
         
@@ -3349,32 +3359,36 @@ async def get_business_transactions(
 # Legacy checkout endpoint (for subscriptions)
 @payments_router.post("/checkout/session")
 async def create_checkout_session(request: Request, payment: PaymentCreate, token_data: TokenData = Depends(require_auth)):
-    from emergentintegrations.payments.stripe.checkout import StripeCheckout, CheckoutSessionRequest
-    
-    host_url = str(request.base_url).rstrip('/')
-    webhook_url = f"{host_url}/api/webhook/stripe"
-    
-    stripe_checkout = StripeCheckout(api_key=STRIPE_API_KEY, webhook_url=webhook_url)
-    
-    origin = request.headers.get('origin', host_url)
+    origin = request.headers.get('origin', str(request.base_url).rstrip('/'))
     success_url = f"{origin}/payment/success?session_id={{CHECKOUT_SESSION_ID}}"
     cancel_url = f"{origin}/payment/cancel"
     
-    checkout_request = CheckoutSessionRequest(
-        amount=float(payment.amount),
-        currency=payment.currency.lower(),
-        success_url=success_url,
-        cancel_url=cancel_url,
-        metadata={
-            "user_id": token_data.user_id,
-            "booking_id": payment.booking_id or "",
-            "subscription_type": payment.subscription_type or ""
-        }
-    )
-    
-    session = await stripe_checkout.create_checkout_session(checkout_request)
-    
-    return {"url": session.url, "session_id": session.session_id}
+    try:
+        session = stripe_lib.checkout.Session.create(
+            payment_method_types=["card"],
+            mode="payment",
+            line_items=[{
+                "price_data": {
+                    "currency": payment.currency.lower(),
+                    "unit_amount": int(float(payment.amount) * 100),
+                    "product_data": {
+                        "name": "Pago Bookvia"
+                    }
+                },
+                "quantity": 1
+            }],
+            success_url=success_url,
+            cancel_url=cancel_url,
+            metadata={
+                "user_id": token_data.user_id,
+                "booking_id": payment.booking_id or "",
+                "subscription_type": payment.subscription_type or ""
+            }
+        )
+        return {"url": session.url, "session_id": session.id}
+    except Exception as e:
+        logger.error(f"Stripe checkout error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 # ========================== NOTIFICATION ROUTES ==========================
 
