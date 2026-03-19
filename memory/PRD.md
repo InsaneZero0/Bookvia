@@ -72,6 +72,7 @@ Plataforma de marketplace de reservas profesionales "Bookvia". Usuarios buscan y
 - [2026-03-17] Stripe: precio cacheado invalido con nueva clave real
 - [2026-03-17] .jfif no aceptado como formato de imagen
 - [2026-03-17] Fotos legacy sin campo url (compatibilidad storage_path)
+- [2026-03-19] Error de pago anticipo: migrado de emergentintegrations a stripe nativo para compatibilidad con Railway
 
 ## Backlog Priorizado
 ### P1
