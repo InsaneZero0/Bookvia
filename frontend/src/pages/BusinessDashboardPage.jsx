@@ -9,6 +9,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Separator } from '@/components/ui/separator';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { useAuth } from '@/lib/auth';
@@ -42,6 +43,9 @@ export default function BusinessDashboardPage() {
   const [activeTab, setActiveTab] = useState('overview');
   const [subscriptionData, setSubscriptionData] = useState(null);
   const [cancelingSubscription, setCancelingSubscription] = useState(false);
+  const [statsModal, setStatsModal] = useState({ open: false, type: null, title: '', bookings: [], loading: false, totalRevenue: null });
+  const [statsDateFrom, setStatsDateFrom] = useState('');
+  const [statsDateTo, setStatsDateTo] = useState('');
 
   useEffect(() => {
     if (!isAuthenticated || !isBusiness) {
@@ -107,6 +111,22 @@ export default function BusinessDashboardPage() {
       loadDashboard();
     } catch {
       toast.error(language === 'es' ? 'Error al actualizar' : 'Error updating');
+    }
+  };
+
+  const openStatsModal = async (type, title, dateFrom, dateTo) => {
+    setStatsModal({ open: true, type, title, bookings: [], loading: true, totalRevenue: null });
+    try {
+      const res = await bookingsAPI.getStatsDetail(type, dateFrom || undefined, dateTo || undefined);
+      setStatsModal(prev => ({ 
+        ...prev, 
+        bookings: res.data.bookings || [], 
+        loading: false,
+        totalRevenue: res.data.total_revenue 
+      }));
+    } catch {
+      setStatsModal(prev => ({ ...prev, bookings: [], loading: false }));
+      toast.error(language === 'es' ? 'Error al cargar datos' : 'Error loading data');
     }
   };
 
@@ -268,12 +288,17 @@ export default function BusinessDashboardPage() {
         {/* ── Stats Cards ────────────────────────────── */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
           {[
-            { icon: CalendarIcon, label: language === 'es' ? 'Citas hoy' : "Today's bookings", value: stats?.today_appointments || 0, color: 'text-blue-500 bg-blue-50' },
-            { icon: Clock, label: language === 'es' ? 'Pendientes' : 'Pending', value: stats?.pending_appointments || 0, color: 'text-amber-500 bg-amber-50' },
-            { icon: DollarSign, label: language === 'es' ? 'Ingresos mes' : 'Monthly revenue', value: formatCurrency(stats?.month_revenue || 0), color: 'text-emerald-500 bg-emerald-50' },
-            { icon: TrendingUp, label: language === 'es' ? 'Total citas' : 'Total bookings', value: stats?.total_appointments || 0, color: 'text-violet-500 bg-violet-50' },
+            { icon: CalendarIcon, label: language === 'es' ? 'Citas hoy' : "Today's bookings", value: stats?.today_appointments || 0, color: 'text-blue-500 bg-blue-50', type: 'today', title: language === 'es' ? 'Citas de hoy' : "Today's bookings" },
+            { icon: Clock, label: language === 'es' ? 'Pendientes' : 'Pending', value: stats?.pending_appointments || 0, color: 'text-amber-500 bg-amber-50', type: 'pending', title: language === 'es' ? 'Citas pendientes' : 'Pending bookings' },
+            { icon: DollarSign, label: language === 'es' ? 'Ingresos mes' : 'Monthly revenue', value: formatCurrency(stats?.month_revenue || 0), color: 'text-emerald-500 bg-emerald-50', type: 'revenue', title: language === 'es' ? 'Ingresos del mes' : 'Monthly revenue' },
+            { icon: TrendingUp, label: language === 'es' ? 'Total citas' : 'Total bookings', value: stats?.total_appointments || 0, color: 'text-violet-500 bg-violet-50', type: 'total', title: language === 'es' ? 'Total de citas' : 'Total bookings' },
           ].map((stat, i) => (
-            <Card key={i} className="border-border/60">
+            <Card 
+              key={i} 
+              className="border-border/60 cursor-pointer hover:border-[#F05D5E]/30 hover:shadow-sm transition-all"
+              onClick={() => openStatsModal(stat.type, stat.title)}
+              data-testid={`stat-card-${stat.type}`}
+            >
               <CardContent className="p-4">
                 <div className="flex items-center gap-3">
                   <div className={`p-2.5 rounded-xl ${stat.color}`}>
@@ -743,6 +768,92 @@ export default function BusinessDashboardPage() {
             </Card>
           </TabsContent>
         </Tabs>
+
+        {/* ── Stats Detail Modal ─────────────────────── */}
+        <Dialog open={statsModal.open} onOpenChange={(open) => { if (!open) setStatsModal(prev => ({ ...prev, open: false })); }}>
+          <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col" data-testid="stats-detail-modal">
+            <DialogHeader>
+              <DialogTitle className="font-heading">{statsModal.title}</DialogTitle>
+              <DialogDescription>
+                {statsModal.type === 'revenue' 
+                  ? (language === 'es' ? 'Citas completadas con ingresos' : 'Completed bookings with revenue')
+                  : (language === 'es' ? 'Lista de citas' : 'Bookings list')}
+              </DialogDescription>
+            </DialogHeader>
+
+            {/* Date Range Filter (for total and revenue) */}
+            {(statsModal.type === 'total' || statsModal.type === 'revenue') && (
+              <div className="flex items-end gap-2 pb-2 border-b">
+                <div className="flex-1">
+                  <Label className="text-xs">{language === 'es' ? 'Desde' : 'From'}</Label>
+                  <Input type="date" value={statsDateFrom} onChange={e => setStatsDateFrom(e.target.value)} data-testid="stats-date-from" />
+                </div>
+                <div className="flex-1">
+                  <Label className="text-xs">{language === 'es' ? 'Hasta' : 'To'}</Label>
+                  <Input type="date" value={statsDateTo} onChange={e => setStatsDateTo(e.target.value)} data-testid="stats-date-to" />
+                </div>
+                <Button size="sm" className="btn-coral shrink-0" onClick={() => openStatsModal(statsModal.type, statsModal.title, statsDateFrom, statsDateTo)} data-testid="stats-filter-btn">
+                  {language === 'es' ? 'Filtrar' : 'Filter'}
+                </Button>
+              </div>
+            )}
+
+            {/* Results */}
+            <div className="flex-1 overflow-y-auto space-y-2 pr-1">
+              {statsModal.loading ? (
+                <div className="space-y-3 py-4">
+                  {[1,2,3].map(i => <Skeleton key={i} className="h-16" />)}
+                </div>
+              ) : statsModal.bookings.length > 0 ? (
+                <>
+                  {statsModal.totalRevenue !== null && (
+                    <div className="flex items-center justify-between p-3 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200">
+                      <span className="text-sm font-medium text-emerald-700 dark:text-emerald-300">
+                        {language === 'es' ? 'Ingresos totales' : 'Total revenue'}
+                      </span>
+                      <span className="text-lg font-bold text-emerald-700 dark:text-emerald-300" data-testid="stats-total-revenue">
+                        {formatCurrency(statsModal.totalRevenue)}
+                      </span>
+                    </div>
+                  )}
+                  <p className="text-xs text-muted-foreground">{statsModal.bookings.length} {language === 'es' ? 'citas' : 'bookings'}</p>
+                  {statsModal.bookings.map(b => (
+                    <div key={b.id} className="flex items-center gap-3 p-3 rounded-xl border border-border/60" data-testid={`stats-booking-${b.id}`}>
+                      <div className="w-14 text-center shrink-0">
+                        <p className="text-[10px] uppercase text-muted-foreground font-medium">
+                          {new Date(b.date + 'T12:00:00').toLocaleDateString(language === 'es' ? 'es-MX' : 'en-US', { month: 'short' })}
+                        </p>
+                        <p className="text-lg font-bold leading-none">{new Date(b.date + 'T12:00:00').getDate()}</p>
+                      </div>
+                      <Separator orientation="vertical" className="h-10" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{b.user_name || (language === 'es' ? 'Cliente' : 'Client')}</p>
+                        <p className="text-xs text-muted-foreground truncate">{b.service_name}</p>
+                        <div className="flex items-center gap-2 text-[11px] text-muted-foreground mt-0.5">
+                          <span>{formatTime(b.time)} - {formatTime(b.end_time)}</span>
+                          {b.worker_name && <span>| {b.worker_name}</span>}
+                        </div>
+                      </div>
+                      <div className="flex flex-col items-end gap-1 shrink-0">
+                        <Badge className={`text-[10px] ${getStatusColor(b.status)}`}>
+                          {t(`status.${b.status}`)}
+                        </Badge>
+                        {b.total_amount && (
+                          <span className="text-xs font-medium text-[#F05D5E]">{formatCurrency(b.total_amount)}</span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </>
+              ) : (
+                <div className="text-center py-12">
+                  <CalendarIcon className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
+                  <p className="text-sm text-muted-foreground">{language === 'es' ? 'No hay citas' : 'No bookings'}</p>
+                </div>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );

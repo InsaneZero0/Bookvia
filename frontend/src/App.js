@@ -22,6 +22,7 @@ import TeamSchedulePage from '@/pages/TeamSchedulePage';
 import AdminDashboardPage from '@/pages/AdminDashboardPage';
 import AdminLoginPage from '@/pages/AdminLoginPage';
 import ServiceManagementPage from '@/pages/ServiceManagementPage';
+import BusinessSettingsPage from '@/pages/BusinessSettingsPage';
 import PaymentSuccessPage from '@/pages/PaymentSuccessPage';
 import PaymentCancelPage from '@/pages/PaymentCancelPage';
 import HelpPage from '@/pages/HelpPage';
@@ -75,6 +76,7 @@ function App() {
               <Route path="/business/finance" element={<Layout showFooter={false}><BusinessFinancePage /></Layout>} />
               <Route path="/business/team" element={<Layout showFooter={false}><TeamSchedulePage /></Layout>} />
               <Route path="/business/services" element={<Layout showFooter={false}><ServiceManagementPage /></Layout>} />
+              <Route path="/business/settings" element={<Layout showFooter={false}><BusinessSettingsPage /></Layout>} />
               <Route path="/business/login" element={<LoginPage />} />
               <Route path="/business/register" element={<BusinessRegisterPage />} />
               <Route path="/business/subscription/success" element={<Layout showFooter={false}><SubscriptionSuccessPage /></Layout>} />

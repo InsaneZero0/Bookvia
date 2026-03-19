@@ -537,6 +537,23 @@ class CategoryResponse(BaseModel):
     parent_id: Optional[str] = None
     business_count: int = 0
 
+# Blacklist Models
+class BlacklistEntry(BaseModel):
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    user_id: Optional[str] = None
+    reason: Optional[str] = None
+
+class BlacklistResponse(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str
+    business_id: str
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    user_id: Optional[str] = None
+    reason: Optional[str] = None
+    created_at: str
+
 # Payment Models
 class PaymentCreate(BaseModel):
     amount: float
@@ -756,6 +773,45 @@ async def require_business(token_data: TokenData = Depends(require_auth)) -> Tok
     if token_data.role not in [UserRole.BUSINESS, UserRole.ADMIN]:
         raise HTTPException(status_code=403, detail="Business access required")
     return token_data
+
+async def is_user_blacklisted(business_id: str, user_id: str = None, email: str = None, phone: str = None) -> bool:
+    """Check if a user is blacklisted by a business using any identifier."""
+    if not user_id and not email and not phone:
+        return False
+    conditions = []
+    # Build lookup data from user record if we have user_id
+    lookup_emails = set()
+    lookup_phones = set()
+    lookup_user_ids = set()
+    if user_id:
+        lookup_user_ids.add(user_id)
+        user_doc = await db.users.find_one({"id": user_id}, {"_id": 0, "email": 1, "phone": 1})
+        if user_doc:
+            if user_doc.get("email"):
+                lookup_emails.add(user_doc["email"].lower())
+            if user_doc.get("phone"):
+                lookup_phones.add(user_doc["phone"])
+    if email:
+        lookup_emails.add(email.lower())
+    if phone:
+        lookup_phones.add(phone)
+    
+    or_conditions = []
+    if lookup_user_ids:
+        or_conditions.append({"user_id": {"$in": list(lookup_user_ids)}})
+    if lookup_emails:
+        or_conditions.append({"email": {"$in": [e.lower() for e in lookup_emails]}})
+    if lookup_phones:
+        or_conditions.append({"phone": {"$in": list(lookup_phones)}})
+    
+    if not or_conditions:
+        return False
+    
+    entry = await db.blacklist.find_one({
+        "business_id": business_id,
+        "$or": or_conditions
+    })
+    return entry is not None
 
 def generate_slug(name: str) -> str:
     slug = name.lower()
@@ -1382,6 +1438,7 @@ async def create_category(category: CategoryCreate, token_data: TokenData = Depe
 
 @businesses_router.get("", response_model=List[BusinessResponse])
 async def search_businesses(
+    request: Request,
     query: Optional[str] = None,
     category_id: Optional[str] = None,
     city: Optional[str] = None,
@@ -1389,7 +1446,8 @@ async def search_businesses(
     is_home_service: Optional[bool] = None,
     include_pending: bool = False,
     page: int = 1,
-    limit: int = 20
+    limit: int = 20,
+    current_user: Optional[TokenData] = Depends(get_current_user)
 ):
     # By default only show approved businesses with active subscription
     # If include_pending=True, also show PENDING (for profile viewing, but no bookings)
@@ -1439,10 +1497,18 @@ async def search_businesses(
             and (sub_status in ("active", "trialing", "none", None) or sub_status is None)
         )
     
+    # Filter out businesses where the current user is blacklisted
+    if current_user:
+        blacklisted_biz_ids = set()
+        for b in businesses:
+            if await is_user_blacklisted(b["id"], user_id=current_user.user_id):
+                blacklisted_biz_ids.add(b["id"])
+        businesses = [b for b in businesses if b["id"] not in blacklisted_biz_ids]
+    
     return [BusinessResponse(**b) for b in businesses]
 
 @businesses_router.get("/featured", response_model=List[BusinessResponse])
-async def get_featured_businesses(limit: int = 8):
+async def get_featured_businesses(limit: int = 8, current_user: Optional[TokenData] = Depends(get_current_user)):
     businesses = await db.businesses.find(
         {"status": BusinessStatus.APPROVED, "is_featured": True, "$or": [{"subscription_status": {"$in": ["active", "trialing"]}}, {"subscription_status": {"$exists": False}}, {"subscription_status": None}, {"subscription_status": "none"}]},
         {"_id": 0, "password_hash": 0, "clabe": 0, "rfc": 0}
@@ -1457,10 +1523,18 @@ async def get_featured_businesses(limit: int = 8):
         ).sort("rating", -1).limit(limit - len(businesses)).to_list(limit - len(businesses))
         businesses.extend(more)
     
+    # Filter out businesses where the current user is blacklisted
+    if current_user:
+        blacklisted_biz_ids = set()
+        for b in businesses:
+            if await is_user_blacklisted(b["id"], user_id=current_user.user_id):
+                blacklisted_biz_ids.add(b["id"])
+        businesses = [b for b in businesses if b["id"] not in blacklisted_biz_ids]
+    
     return [BusinessResponse(**b) for b in businesses]
 
 @businesses_router.get("/slug/{slug}", response_model=BusinessResponse)
-async def get_business_by_slug(slug: str):
+async def get_business_by_slug(slug: str, current_user: Optional[TokenData] = Depends(get_current_user)):
     """Get business by slug or ID (fallback)."""
     business = await db.businesses.find_one(
         {"slug": slug},
@@ -1475,6 +1549,10 @@ async def get_business_by_slug(slug: str):
     if not business:
         raise HTTPException(status_code=404, detail="Business not found")
     
+    # Check blacklist
+    if current_user and await is_user_blacklisted(business["id"], user_id=current_user.user_id):
+        raise HTTPException(status_code=404, detail="Business not found")
+    
     if business.get("category_id"):
         cat = await db.categories.find_one({"id": business["category_id"]})
         if cat:
@@ -1483,12 +1561,15 @@ async def get_business_by_slug(slug: str):
     return BusinessResponse(**business)
 
 @businesses_router.get("/{business_id}", response_model=BusinessResponse)
-async def get_business(business_id: str):
+async def get_business(business_id: str, current_user: Optional[TokenData] = Depends(get_current_user)):
     business = await db.businesses.find_one(
         {"id": business_id},
         {"_id": 0, "password_hash": 0, "clabe": 0, "rfc": 0, "ine_url": 0, "proof_of_address_url": 0}
     )
     if not business:
+        raise HTTPException(status_code=404, detail="Business not found")
+    # Check blacklist
+    if current_user and await is_user_blacklisted(business["id"], user_id=current_user.user_id):
         raise HTTPException(status_code=404, detail="Business not found")
     return BusinessResponse(**business)
 
@@ -1541,12 +1622,18 @@ async def get_business_dashboard(token_data: TokenData = Depends(require_busines
     
     month_revenue = sum(b.get("total_amount", 0) for b in month_bookings)
     
+    total_appointments = await db.bookings.count_documents({
+        "business_id": business["id"],
+        "status": {"$in": [AppointmentStatus.HOLD, AppointmentStatus.CONFIRMED, AppointmentStatus.COMPLETED, AppointmentStatus.NO_SHOW]}
+    })
+    
     return {
         "business": BusinessResponse(**business).model_dump(),
         "stats": {
             "today_appointments": today_appointments,
             "pending_appointments": pending_appointments,
             "month_revenue": month_revenue,
+            "total_appointments": total_appointments,
             "total_reviews": business.get("review_count", 0),
             "rating": business.get("rating", 0)
         },
@@ -1557,6 +1644,127 @@ async def get_business_dashboard(token_data: TokenData = Depends(require_busines
             "started_at": business.get("subscription_started_at"),
             "cancel_requested": business.get("subscription_cancel_requested", False)
         }
+    }
+
+# ========================== BLACKLIST ROUTES ==========================
+
+@businesses_router.get("/me/blacklist", response_model=List[BlacklistResponse])
+async def get_blacklist(token_data: TokenData = Depends(require_business)):
+    user = await db.users.find_one({"id": token_data.user_id})
+    if not user or not user.get("business_id"):
+        raise HTTPException(status_code=404, detail="Business not found")
+    entries = await db.blacklist.find(
+        {"business_id": user["business_id"]}, {"_id": 0}
+    ).sort("created_at", -1).to_list(500)
+    return [BlacklistResponse(**e) for e in entries]
+
+@businesses_router.post("/me/blacklist", response_model=BlacklistResponse)
+async def add_to_blacklist(entry: BlacklistEntry, token_data: TokenData = Depends(require_business)):
+    user = await db.users.find_one({"id": token_data.user_id})
+    if not user or not user.get("business_id"):
+        raise HTTPException(status_code=404, detail="Business not found")
+    if not entry.email and not entry.phone and not entry.user_id:
+        raise HTTPException(status_code=400, detail="At least one identifier (email, phone, or user_id) is required")
+    
+    # Normalize email
+    email_normalized = entry.email.strip().lower() if entry.email else None
+    
+    # Check if already blacklisted
+    or_conditions = []
+    if email_normalized:
+        or_conditions.append({"email": email_normalized})
+    if entry.phone:
+        or_conditions.append({"phone": entry.phone})
+    if entry.user_id:
+        or_conditions.append({"user_id": entry.user_id})
+    
+    existing = await db.blacklist.find_one({
+        "business_id": user["business_id"],
+        "$or": or_conditions
+    })
+    if existing:
+        raise HTTPException(status_code=409, detail="This user is already blacklisted")
+    
+    doc = {
+        "id": generate_id(),
+        "business_id": user["business_id"],
+        "email": email_normalized,
+        "phone": entry.phone,
+        "user_id": entry.user_id,
+        "reason": entry.reason,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    await db.blacklist.insert_one(doc)
+    return BlacklistResponse(**{k: v for k, v in doc.items() if k != "_id"})
+
+@businesses_router.delete("/me/blacklist/{entry_id}")
+async def remove_from_blacklist(entry_id: str, token_data: TokenData = Depends(require_business)):
+    user = await db.users.find_one({"id": token_data.user_id})
+    if not user or not user.get("business_id"):
+        raise HTTPException(status_code=404, detail="Business not found")
+    result = await db.blacklist.delete_one({"id": entry_id, "business_id": user["business_id"]})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Entry not found")
+    return {"message": "Removed from blacklist"}
+
+# ========================== STATS DETAIL ENDPOINT ==========================
+
+@bookings_router.get("/business/stats-detail")
+async def get_business_stats_detail(
+    stat_type: str,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    token_data: TokenData = Depends(require_business)
+):
+    """Get detailed bookings for a specific stat card."""
+    user = await db.users.find_one({"id": token_data.user_id})
+    if not user or not user.get("business_id"):
+        raise HTTPException(status_code=404, detail="Business not found")
+    
+    business_id = user["business_id"]
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    first_of_month = datetime.now(timezone.utc).replace(day=1).strftime("%Y-%m-%d")
+    
+    filters = {"business_id": business_id}
+    
+    if stat_type == "today":
+        filters["date"] = today
+        filters["status"] = {"$in": [AppointmentStatus.HOLD, AppointmentStatus.CONFIRMED]}
+    elif stat_type == "pending":
+        filters["status"] = AppointmentStatus.HOLD
+    elif stat_type == "revenue":
+        filters["status"] = AppointmentStatus.COMPLETED
+        if date_from and date_to:
+            filters["date"] = {"$gte": date_from, "$lte": date_to}
+        else:
+            filters["date"] = {"$gte": first_of_month}
+    elif stat_type == "total":
+        filters["status"] = {"$in": [
+            AppointmentStatus.HOLD, AppointmentStatus.CONFIRMED, 
+            AppointmentStatus.COMPLETED, AppointmentStatus.NO_SHOW
+        ]}
+        if date_from and date_to:
+            filters["date"] = {"$gte": date_from, "$lte": date_to}
+    else:
+        raise HTTPException(status_code=400, detail="Invalid stat_type")
+    
+    bookings = await db.bookings.find(filters, {"_id": 0}).sort("date", -1).limit(200).to_list(200)
+    
+    # Populate names
+    for b in bookings:
+        user_doc = await db.users.find_one({"id": b.get("user_id")}, {"_id": 0, "full_name": 1})
+        service_doc = await db.services.find_one({"id": b.get("service_id")}, {"_id": 0, "name": 1})
+        worker_doc = await db.workers.find_one({"id": b.get("worker_id")}, {"_id": 0, "name": 1})
+        b["user_name"] = user_doc.get("full_name") if user_doc else None
+        b["service_name"] = service_doc.get("name") if service_doc else None
+        b["worker_name"] = worker_doc.get("name") if worker_doc else None
+    
+    total_revenue = sum(b.get("total_amount", 0) for b in bookings) if stat_type == "revenue" else None
+    
+    return {
+        "bookings": bookings,
+        "count": len(bookings),
+        "total_revenue": total_revenue
     }
 
 # ========================== WORKER ROUTES ==========================
@@ -2239,6 +2447,10 @@ async def create_booking(booking: BookingCreate, token_data: TokenData = Depends
     
     if business.get("subscription_status") in ("canceled", "past_due", "unpaid"):
         raise HTTPException(status_code=400, detail="Business subscription is not active")
+    
+    # Check blacklist
+    if await is_user_blacklisted(booking.business_id, user_id=token_data.user_id):
+        raise HTTPException(status_code=404, detail="Business not found")
     
     # Get service
     service = await db.services.find_one({"id": booking.service_id})

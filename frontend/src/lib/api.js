@@ -157,6 +157,10 @@ export const businessesAPI = {
   createSubscription: (originUrl) => api.post('/businesses/me/subscribe', { origin_url: originUrl }),
   getSubscriptionStatus: (sessionId) => api.get(`/businesses/me/subscription/status${sessionId ? `?session_id=${sessionId}` : ''}`),
   cancelSubscription: () => api.post('/businesses/me/subscription/cancel'),
+  // Blacklist
+  getBlacklist: () => api.get('/businesses/me/blacklist'),
+  addToBlacklist: (data) => api.post('/businesses/me/blacklist', data),
+  removeFromBlacklist: (entryId) => api.delete(`/businesses/me/blacklist/${entryId}`),
 };
 
 // Services API
@@ -188,6 +192,9 @@ export const bookingsAPI = {
   confirm: (id) => api.put(`/bookings/${id}/confirm`),
   complete: (id) => api.put(`/bookings/${id}/complete`),
   markNoShow: (id) => api.put(`/bookings/${id}/no-show`),
+  getStatsDetail: (statType, dateFrom, dateTo) => api.get('/bookings/business/stats-detail', { 
+    params: { stat_type: statType, date_from: dateFrom, date_to: dateTo } 
+  }),
 };
 
 // Reviews API
