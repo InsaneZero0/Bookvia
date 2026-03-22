@@ -198,7 +198,7 @@ export default function BusinessProfilePage() {
   const locationRef = useRef(null);
 
   // Check if the logged-in user is the business owner
-  const isOwner = isAuthenticated && user && business && (user.business_id === business.id || user.id === business.user_id);
+  const isOwner = false;
 
   // ─── Data Loading ─────────────────────────────────
   useEffect(() => {
