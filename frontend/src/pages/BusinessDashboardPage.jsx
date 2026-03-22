@@ -833,7 +833,7 @@ export default function BusinessDashboardPage() {
                       </div>
                       <Separator orientation="vertical" className="h-10" />
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">{b.user_name || (language === 'es' ? 'Cliente' : 'Client')}</p>
+                        <p className="text-sm font-medium truncate">{b.client_name || b.user_name || (language === 'es' ? 'Cliente' : 'Client')}</p>
                         <p className="text-xs text-muted-foreground truncate">{b.service_name}</p>
                         <div className="flex items-center gap-2 text-[11px] text-muted-foreground mt-0.5">
                           <span>{formatTime(b.time)} - {formatTime(b.end_time)}</span>

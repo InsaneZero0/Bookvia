@@ -455,12 +455,18 @@ class ServiceResponse(BaseModel):
 class BookingCreate(BaseModel):
     business_id: str
     service_id: str
-    worker_id: Optional[str] = None  # null = any available
+    worker_id: Optional[str] = None
     date: str  # "2024-01-15"
     time: str  # "10:00"
     notes: Optional[str] = None
     is_home_service: bool = False
     address: Optional[str] = None
+    # Business-created booking fields
+    skip_payment: bool = False
+    client_name: Optional[str] = None
+    client_email: Optional[str] = None
+    client_phone: Optional[str] = None
+    client_info: Optional[str] = None
 
 class BookingResponse(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -494,6 +500,11 @@ class BookingResponse(BaseModel):
     service_name: Optional[str] = None
     worker_name: Optional[str] = None
     user_name: Optional[str] = None
+    # Client data (for business-created bookings)
+    client_name: Optional[str] = None
+    client_email: Optional[str] = None
+    client_phone: Optional[str] = None
+    client_info: Optional[str] = None
     # Computed fields
     can_cancel: bool = True
     hours_until_appointment: Optional[float] = None
@@ -2426,9 +2437,9 @@ async def get_availability(
 
 @bookings_router.post("/", response_model=BookingResponse)
 async def create_booking(booking: BookingCreate, token_data: TokenData = Depends(require_auth)):
-    # Check user limits
+    # Check user limits (skip for business users)
     user = await db.users.find_one({"id": token_data.user_id})
-    if user.get("active_appointments_count", 0) >= 5:
+    if token_data.role != UserRole.BUSINESS and user.get("active_appointments_count", 0) >= 5:
         raise HTTPException(status_code=400, detail="Maximum 5 active appointments allowed")
     
     # Check suspension
@@ -2448,8 +2459,8 @@ async def create_booking(booking: BookingCreate, token_data: TokenData = Depends
     if business.get("subscription_status") in ("canceled", "past_due", "unpaid"):
         raise HTTPException(status_code=400, detail="Business subscription is not active")
     
-    # Check blacklist
-    if await is_user_blacklisted(booking.business_id, user_id=token_data.user_id):
+    # Check blacklist (skip for business users)
+    if token_data.role != UserRole.BUSINESS and await is_user_blacklisted(booking.business_id, user_id=token_data.user_id):
         raise HTTPException(status_code=404, detail="Business not found")
     
     # Get service
@@ -2584,35 +2595,71 @@ async def create_booking(booking: BookingCreate, token_data: TokenData = Depends
         MIN_DEPOSIT_AMOUNT
     )
     
-    # Create booking with HOLD status
-    hold_expires_at = datetime.now(timezone.utc) + timedelta(minutes=HOLD_EXPIRATION_MINUTES)
+    # Determine if this is a business-created booking (skip payment)
+    is_biz_booking = booking.skip_payment and token_data.role == UserRole.BUSINESS
+    now_iso = datetime.now(timezone.utc).isoformat()
     
-    booking_doc = {
-        "id": generate_id(),
-        "user_id": token_data.user_id,
-        "business_id": booking.business_id,
-        "service_id": booking.service_id,
-        "worker_id": worker_id,
-        "date": booking.date,
-        "time": booking.time,
-        "end_time": end_time_dt.strftime("%H:%M"),
-        "duration_minutes": service["duration_minutes"],
-        "status": AppointmentStatus.HOLD,
-        "notes": booking.notes,
-        "is_home_service": booking.is_home_service,
-        "address": booking.address,
-        "deposit_amount": deposit_amount,
-        "deposit_paid": False,
-        "total_amount": service["price"],
-        "transaction_id": None,
-        "stripe_session_id": None,
-        "hold_expires_at": hold_expires_at.isoformat(),
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "confirmed_at": None,
-        "cancelled_at": None,
-        "cancelled_by": None,
-        "cancellation_reason": None
-    }
+    if is_biz_booking:
+        # Business creates booking: confirmed directly, no deposit needed
+        booking_doc = {
+            "id": generate_id(),
+            "user_id": token_data.user_id,
+            "business_id": booking.business_id,
+            "service_id": booking.service_id,
+            "worker_id": worker_id,
+            "date": booking.date,
+            "time": booking.time,
+            "end_time": end_time_dt.strftime("%H:%M"),
+            "duration_minutes": service["duration_minutes"],
+            "status": AppointmentStatus.CONFIRMED,
+            "notes": booking.notes,
+            "is_home_service": booking.is_home_service,
+            "address": booking.address,
+            "deposit_amount": 0,
+            "deposit_paid": True,
+            "total_amount": service["price"],
+            "transaction_id": None,
+            "stripe_session_id": None,
+            "hold_expires_at": None,
+            "created_at": now_iso,
+            "confirmed_at": now_iso,
+            "cancelled_at": None,
+            "cancelled_by": None,
+            "cancellation_reason": None,
+            "client_name": booking.client_name,
+            "client_email": booking.client_email,
+            "client_phone": booking.client_phone,
+            "client_info": booking.client_info,
+        }
+    else:
+        # Regular user: hold status, pending payment
+        hold_expires_at = datetime.now(timezone.utc) + timedelta(minutes=HOLD_EXPIRATION_MINUTES)
+        booking_doc = {
+            "id": generate_id(),
+            "user_id": token_data.user_id,
+            "business_id": booking.business_id,
+            "service_id": booking.service_id,
+            "worker_id": worker_id,
+            "date": booking.date,
+            "time": booking.time,
+            "end_time": end_time_dt.strftime("%H:%M"),
+            "duration_minutes": service["duration_minutes"],
+            "status": AppointmentStatus.HOLD,
+            "notes": booking.notes,
+            "is_home_service": booking.is_home_service,
+            "address": booking.address,
+            "deposit_amount": deposit_amount,
+            "deposit_paid": False,
+            "total_amount": service["price"],
+            "transaction_id": None,
+            "stripe_session_id": None,
+            "hold_expires_at": hold_expires_at.isoformat(),
+            "created_at": now_iso,
+            "confirmed_at": None,
+            "cancelled_at": None,
+            "cancelled_by": None,
+            "cancellation_reason": None,
+        }
     
     await db.bookings.insert_one(booking_doc)
     
@@ -2622,14 +2669,23 @@ async def create_booking(booking: BookingCreate, token_data: TokenData = Depends
         {"$inc": {"active_appointments_count": 1}}
     )
     
-    # Create notification for business (hold pending payment)
-    await create_notification(
-        business["user_id"],
-        "Nueva Reserva (Pendiente de Pago)",
-        f"Nueva reserva de {user['full_name']} para {service['name']} - Esperando pago del anticipo",
-        "booking",
-        {"booking_id": booking_doc["id"]}
-    )
+    # Notifications
+    if is_biz_booking:
+        await create_notification(
+            business["user_id"],
+            "Cita Registrada",
+            f"Cita registrada para {booking.client_name or 'Cliente'} - {service['name']} el {booking.date} a las {booking.time}",
+            "booking",
+            {"booking_id": booking_doc["id"]}
+        )
+    else:
+        await create_notification(
+            business["user_id"],
+            "Nueva Reserva (Pendiente de Pago)",
+            f"Nueva reserva de {user['full_name']} para {service['name']} - Esperando pago del anticipo",
+            "booking",
+            {"booking_id": booking_doc["id"]}
+        )
     
     booking_doc["business_name"] = business["name"]
     booking_doc["service_name"] = service["name"]
