@@ -8,6 +8,8 @@ import { Calendar } from '@/components/ui/calendar';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
@@ -191,14 +193,17 @@ export default function BusinessProfilePage() {
   const [bookingNotes, setBookingNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
+  // Client data (for business users booking on behalf of clients)
+  const [clientData, setClientData] = useState({ name: '', email: '', phone: '', info: '' });
+
   // Refs for scroll-to-section
   const servicesRef = useRef(null);
   const teamRef = useRef(null);
   const reviewsRef = useRef(null);
   const locationRef = useRef(null);
 
-  // Check if the logged-in user is the business owner
-  const isOwner = false;
+  // Check if the logged-in user is a business
+  const isBizUser = isAuthenticated && user?.role === 'business';
 
   // ─── Data Loading ─────────────────────────────────
   useEffect(() => {
@@ -294,6 +299,7 @@ export default function BusinessProfilePage() {
     setSelectedWorker(null);
     setAvailableSlots([]);
     setServiceWorkers([]);
+    setClientData({ name: '', email: '', phone: '', info: '' });
     setBookingStep(1);
     setBookingOpen(true);
     // Load workers for this service
@@ -303,22 +309,37 @@ export default function BusinessProfilePage() {
     } catch { setServiceWorkers([]); }
   };
 
+  // Step mapping: business users have an extra step (client data)
+  // Business: 1=Fecha, 2=Datos, 3=Profesional, 4=Hora, 5=Confirmar
+  // Regular:  1=Fecha, 2=Profesional, 3=Hora, 4=Confirmar
+  const stepProfesional = isBizUser ? 3 : 2;
+  const stepHora = isBizUser ? 4 : 3;
+  const stepConfirmar = isBizUser ? 5 : 4;
+
+  const handleClientDataNext = () => {
+    if (!clientData.name.trim()) {
+      toast.error(language === 'es' ? 'El nombre es obligatorio' : 'Name is required');
+      return;
+    }
+    setBookingStep(stepProfesional);
+  };
+
   const handleWorkerSelect = (worker) => {
     setSelectedWorker(worker);
     setSelectedTime(null);
     setAvailableSlots([]);
-    setBookingStep(3);
+    setBookingStep(stepHora);
   };
 
   const handleTimeSelect = (slot) => {
     setSelectedTime(slot.time);
-    setBookingStep(4);
+    setBookingStep(stepConfirmar);
   };
 
   const handleConfirmBooking = async () => {
     setSubmitting(true);
     try {
-      await bookingsAPI.create({
+      const payload = {
         business_id: business.id,
         service_id: selectedService.id,
         worker_id: selectedWorker.id,
@@ -326,10 +347,23 @@ export default function BusinessProfilePage() {
         time: selectedTime,
         notes: bookingNotes || null,
         is_home_service: false,
-      });
-      toast.success(language === 'es' ? 'Reserva creada con éxito' : 'Booking created successfully');
+      };
+      // If business user, add client data and skip_payment flag
+      if (isBizUser) {
+        payload.client_name = clientData.name;
+        payload.client_email = clientData.email || null;
+        payload.client_phone = clientData.phone || null;
+        payload.client_info = clientData.info || null;
+        payload.skip_payment = true;
+      }
+      await bookingsAPI.create(payload);
+      toast.success(language === 'es' ? 'Cita registrada con exito' : 'Appointment registered successfully');
       setBookingOpen(false);
-      navigate('/bookings');
+      if (isBizUser) {
+        navigate('/business/dashboard');
+      } else {
+        navigate('/bookings');
+      }
     } catch (error) {
       toast.error(error.response?.data?.detail || (language === 'es' ? 'Error al crear reserva' : 'Error creating booking'));
     } finally {
@@ -864,18 +898,24 @@ export default function BusinessProfilePage() {
 
           {/* Steps indicator */}
           <div className="flex items-center justify-center gap-1.5 py-3">
-            {[
+            {(isBizUser ? [
+              { n: 1, label: language === 'es' ? 'Fecha' : 'Date' },
+              { n: 2, label: language === 'es' ? 'Datos' : 'Data' },
+              { n: 3, label: language === 'es' ? 'Profesional' : 'Professional' },
+              { n: 4, label: language === 'es' ? 'Hora' : 'Time' },
+              { n: 5, label: language === 'es' ? 'Confirmar' : 'Confirm' },
+            ] : [
               { n: 1, label: language === 'es' ? 'Fecha' : 'Date' },
               { n: 2, label: language === 'es' ? 'Profesional' : 'Professional' },
               { n: 3, label: language === 'es' ? 'Hora' : 'Time' },
               { n: 4, label: language === 'es' ? 'Confirmar' : 'Confirm' },
-            ].map(step => (
+            ]).map((step, idx, arr) => (
               <div key={step.n} className="flex items-center gap-1">
                 <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-colors ${bookingStep >= step.n ? 'bg-[#F05D5E] text-white' : 'bg-muted text-muted-foreground'}`}>
                   {step.n}
                 </div>
                 <span className="text-xs hidden sm:inline">{step.label}</span>
-                {step.n < 4 && <ChevronRight className="h-3 w-3 text-muted-foreground" />}
+                {idx < arr.length - 1 && <ChevronRight className="h-3 w-3 text-muted-foreground" />}
               </div>
             ))}
           </div>
@@ -886,7 +926,7 @@ export default function BusinessProfilePage() {
               <Calendar
                 mode="single"
                 selected={selectedDate}
-                onSelect={(date) => { setSelectedDate(date); setBookingStep(2); }}
+                onSelect={(date) => { setSelectedDate(date); setBookingStep(isBizUser ? 2 : stepProfesional); }}
                 disabled={(date) => date < new Date()}
                 locale={language === 'es' ? es : enUS}
                 className="rounded-md border mx-auto"
@@ -894,8 +934,8 @@ export default function BusinessProfilePage() {
             </div>
           )}
 
-          {/* Step 2: Worker Selection */}
-          {bookingStep === 2 && (
+          {/* Step 2 (Business only): Client Data */}
+          {isBizUser && bookingStep === 2 && (
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <p className="font-medium text-sm">{format(selectedDate, 'EEEE, d MMMM', { locale: language === 'es' ? es : enUS })}</p>
@@ -903,11 +943,67 @@ export default function BusinessProfilePage() {
                   <ChevronLeft className="h-4 w-4 mr-1" />{language === 'es' ? 'Cambiar' : 'Change'}
                 </Button>
               </div>
+              <p className="text-sm text-muted-foreground">{language === 'es' ? 'Datos del cliente:' : 'Client information:'}</p>
+              <div className="space-y-3">
+                <div>
+                  <Label className="text-xs">{language === 'es' ? 'Nombre *' : 'Name *'}</Label>
+                  <Input
+                    placeholder={language === 'es' ? 'Nombre del cliente' : 'Client name'}
+                    value={clientData.name}
+                    onChange={e => setClientData(p => ({ ...p, name: e.target.value }))}
+                    data-testid="client-name-input"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">{language === 'es' ? 'Correo electronico' : 'Email'}</Label>
+                  <Input
+                    type="email"
+                    placeholder="correo@ejemplo.com"
+                    value={clientData.email}
+                    onChange={e => setClientData(p => ({ ...p, email: e.target.value }))}
+                    data-testid="client-email-input"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">{language === 'es' ? 'Telefono' : 'Phone'}</Label>
+                  <Input
+                    type="tel"
+                    placeholder="+52 123 456 7890"
+                    value={clientData.phone}
+                    onChange={e => setClientData(p => ({ ...p, phone: e.target.value }))}
+                    data-testid="client-phone-input"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">{language === 'es' ? 'Informacion adicional' : 'Additional info'}</Label>
+                  <Textarea
+                    placeholder={language === 'es' ? 'Notas sobre el cliente...' : 'Notes about the client...'}
+                    value={clientData.info}
+                    onChange={e => setClientData(p => ({ ...p, info: e.target.value }))}
+                    rows={2}
+                    data-testid="client-info-input"
+                  />
+                </div>
+              </div>
+              <Button className="w-full btn-coral" onClick={handleClientDataNext} data-testid="client-data-next">
+                {language === 'es' ? 'Continuar' : 'Continue'}
+              </Button>
+            </div>
+          )}
+
+          {/* Step: Worker Selection */}
+          {bookingStep === stepProfesional && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <p className="font-medium text-sm">{format(selectedDate, 'EEEE, d MMMM', { locale: language === 'es' ? es : enUS })}</p>
+                <Button variant="ghost" size="sm" onClick={() => setBookingStep(isBizUser ? 2 : 1)}>
+                  <ChevronLeft className="h-4 w-4 mr-1" />{language === 'es' ? 'Cambiar' : 'Change'}
+                </Button>
+              </div>
 
               <p className="text-sm text-muted-foreground">{language === 'es' ? 'Selecciona quien te atendera:' : 'Select who will attend you:'}</p>
 
               <div className="space-y-2 max-h-60 overflow-y-auto">
-                {/* Specific workers */}
                 {serviceWorkers.map(worker => (
                   <button
                     key={worker.id}
@@ -938,15 +1034,15 @@ export default function BusinessProfilePage() {
             </div>
           )}
 
-          {/* Step 3: Time */}
-          {bookingStep === 3 && (
+          {/* Step: Time */}
+          {bookingStep === stepHora && (
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="font-medium text-sm">{format(selectedDate, 'EEEE, d MMMM', { locale: language === 'es' ? es : enUS })}</p>
                   <p className="text-xs text-muted-foreground">{selectedWorker?.name}</p>
                 </div>
-                <Button variant="ghost" size="sm" onClick={() => { setBookingStep(2); setSelectedWorker(null); setAvailableSlots([]); }}>
+                <Button variant="ghost" size="sm" onClick={() => { setBookingStep(stepProfesional); setSelectedWorker(null); setAvailableSlots([]); }}>
                   <ChevronLeft className="h-4 w-4 mr-1" />{language === 'es' ? 'Cambiar' : 'Change'}
                 </Button>
               </div>
@@ -966,7 +1062,6 @@ export default function BusinessProfilePage() {
                     >
                       <span className="font-bold text-sm">{formatTime(slot.time)}</span>
                       <span className="text-[10px] text-muted-foreground">{formatTime(slot.time)} - {formatTime(slot.end_time)}</span>
-                      {selectedWorker?.id === 'any' && <span className="text-xs text-muted-foreground mt-0.5">{slot.worker_name}</span>}
                     </button>
                   ))}
                 </div>
@@ -979,10 +1074,10 @@ export default function BusinessProfilePage() {
             </div>
           )}
 
-          {/* Step 4: Confirm */}
-          {bookingStep === 4 && (
+          {/* Step: Confirm */}
+          {bookingStep === stepConfirmar && (
             <div className="space-y-4">
-              <Button variant="ghost" size="sm" onClick={() => setBookingStep(3)}>
+              <Button variant="ghost" size="sm" onClick={() => setBookingStep(stepHora)}>
                 <ChevronLeft className="h-4 w-4 mr-1" />{language === 'es' ? 'Cambiar hora' : 'Change time'}
               </Button>
 
@@ -993,6 +1088,11 @@ export default function BusinessProfilePage() {
                   { label: language === 'es' ? 'Fecha' : 'Date', value: selectedDate ? format(selectedDate, 'PPP', { locale: language === 'es' ? es : enUS }) : '' },
                   { label: language === 'es' ? 'Horario' : 'Time', value: selectedTime ? `${formatTime(selectedTime)} - ${formatTime((() => { const [h, m] = selectedTime.split(':').map(Number); const end = new Date(2000, 0, 1, h, m + (selectedService?.duration_minutes || 60)); return `${String(end.getHours()).padStart(2,'0')}:${String(end.getMinutes()).padStart(2,'0')}`; })())}` : '' },
                   { label: language === 'es' ? 'Profesional' : 'Professional', value: selectedWorker?.name },
+                  ...(isBizUser && clientData.name ? [
+                    { label: language === 'es' ? 'Cliente' : 'Client', value: clientData.name },
+                    ...(clientData.email ? [{ label: 'Email', value: clientData.email }] : []),
+                    ...(clientData.phone ? [{ label: language === 'es' ? 'Telefono' : 'Phone', value: clientData.phone }] : []),
+                  ] : []),
                 ].map(item => (
                   <div key={item.label} className="flex justify-between text-sm">
                     <span className="text-muted-foreground">{item.label}</span>
@@ -1004,10 +1104,16 @@ export default function BusinessProfilePage() {
                   <span>{language === 'es' ? 'Total' : 'Total'}</span>
                   <span className="text-[#F05D5E] font-bold">{formatCurrency(selectedService?.price || 0)}</span>
                 </div>
-                {business.requires_deposit && (
+                {!isBizUser && business.requires_deposit && (
                   <div className="flex justify-between text-xs text-muted-foreground">
                     <span>{language === 'es' ? 'Anticipo' : 'Deposit'}</span>
                     <span>{formatCurrency(business.deposit_amount)}</span>
+                  </div>
+                )}
+                {isBizUser && (
+                  <div className="text-xs text-emerald-600 flex items-center gap-1">
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                    {language === 'es' ? 'Sin anticipo — registro directo' : 'No deposit — direct registration'}
                   </div>
                 )}
               </div>
@@ -1027,7 +1133,9 @@ export default function BusinessProfilePage() {
               >
                 {submitting
                   ? (language === 'es' ? 'Confirmando...' : 'Confirming...')
-                  : (language === 'es' ? 'Confirmar reserva' : 'Confirm booking')}
+                  : isBizUser
+                    ? (language === 'es' ? 'Registrar cita' : 'Register appointment')
+                    : (language === 'es' ? 'Confirmar reserva' : 'Confirm booking')}
               </Button>
             </div>
           )}
