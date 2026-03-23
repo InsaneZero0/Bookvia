@@ -404,7 +404,7 @@ export default function BusinessDashboardPage() {
                               </div>
                               <Separator orientation="vertical" className="h-10" />
                               <div>
-                                <p className="font-medium text-sm">{booking.user_name}</p>
+                                <p className="font-medium text-sm">{booking.client_name || booking.user_name}</p>
                                 <p className="text-xs text-muted-foreground">{booking.service_name}</p>
                                 {booking.worker_name && <p className="text-xs text-muted-foreground/70">{booking.worker_name}</p>}
                               </div>
