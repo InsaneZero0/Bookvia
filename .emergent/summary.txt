@@ -1,49 +1,56 @@
 <analysis>**original_problem_statement:**
-El usuario quiere construir una plataforma de marketplace de reservas profesionales llamada Bookvia. Las últimas peticiones se centraron en mejorar la robustez y añadir nuevas funcionalidades críticas para la operación del negocio.
+El usuario quiere construir una plataforma de marketplace de reservas profesionales llamada Bookvia. Las últimas peticiones del usuario se han centrado en solucionar bugs críticos del flujo de pago y de la visualización de datos, y en añadir nuevas funcionalidades de gestión para los negocios.
 
-**Solicitudes recientes implementadas:**
-1.  **Suscripción Obligatoria:** Hacer que el registro de tarjeta con Stripe sea obligatorio en el paso 5 del registro de negocios, eliminando la opción de hacerlo después.
-2.  **Flujo de Aprobación:** Después del registro de tarjeta, el negocio debe quedar en estado  y no ser visible públicamente hasta ser aprobado.
-3.  **Gestión de Suscripción:** Añadir una sección en el panel del negocio para ver el estado de la suscripción y cancelarla.
-4.  **Integración con Cloudinary:** Migrar el almacenamiento de imágenes (logos, galerías) desde Emergent Object Storage a Cloudinary para el entorno de producción, configurándolo mediante variables de entorno (, , ).
-5.  **Duración de Servicios:** Permitir a los negocios definir una duración en minutos para cada servicio, y que la agenda se bloquee automáticamente por ese tiempo al crear una cita.
-6.  **Fotos de Perfil para Personal:** Añadir la funcionalidad para que los negocios puedan subir una foto de perfil para cada miembro de su equipo.
-7.  **Selección de Trabajador en Reserva:** Modificar el flujo de reserva para que el cliente, después de elegir fecha, pueda seleccionar un trabajador específico o la opción Cualquiera, mostrando solo los horarios disponibles correspondientes.
-8.  **Asignación de Servicios por Trabajador:** En el panel del negocio, permitir al dueño asignar qué servicios específicos puede realizar cada trabajador.
+**Solicitudes recientes:**
+1.  **Reparación del Flujo de Pago:** Arreglar un error crítico que impedía a los clientes pagar el anticipo de una reserva a través de Stripe. Esto se solucionó migrando la integración de Stripe de una librería interna () a la librería nativa de .
+2.  **Sistema de Veto de Clientes:** Implementar una sección en la configuración del negocio para que los dueños puedan vetar o bloquear clientes por email, teléfono o ID de usuario, impidiéndoles ver o reservar en su negocio.
+3.  **Dashboard Interactivo:** Hacer que las tarjetas de estadísticas del panel de negocio (citas de hoy, pendientes, etc.) sean clickeables y abran un modal con una lista detallada de las citas correspondientes y un filtro por rango de fechas.
+4.  **Reserva por Dueño de Negocio:** Permitir que los dueños de negocios puedan crear citas para sus clientes directamente desde el perfil del negocio. Este flujo incluye un nuevo paso para introducir los datos del cliente (nombre, email, teléfono) y omite el pago del anticipo, confirmando la cita automáticamente.
+5.  **Filtro de Citas Pendientes:** Modificar el dashboard para que la sección Pendientes solo muestre citas Confirmadas (es decir, con el anticipo ya pagado), para evitar confusión con las citas que aún están en espera de pago ().
+6.  **Corrección de Bugs de UI:** Se solucionaron múltiples bugs que provocaban que la página del perfil del negocio apareciera en blanco o no fuera accesible desde el botón Ver perfil. Los problemas estaban relacionados con errores de JavaScript () y la falta del campo  en los datos de negocios antiguos.
 
 **User's preferred language**: Español
 
 **what currently exists?**
-La aplicación es un stack completo con un backend de FastAPI y un frontend de React. La monetización se gestiona a través de suscripciones de Stripe, y el almacenamiento de imágenes ahora se delega a Cloudinary, con un fallback a Emergent Object Storage para el entorno de vista previa.
-
-Funcionalidades clave:
-*   Autenticación JWT.
-*   Flujo de registro de negocio con suscripción obligatoria a través de Stripe Checkout.
-*   Sistema de aprobación de negocios por parte del administrador.
+La aplicación es un stack completo con un backend de FastAPI, un frontend de React y MongoDB como base de datos. Las funcionalidades principales incluyen:
+*   Autenticación JWT para usuarios y negocios.
+*   Flujo de registro de negocio con suscripción obligatoria a Stripe y aprobación por un administrador.
 *   Paneles de control para usuarios, negocios y administradores.
 *   Almacenamiento de imágenes con Cloudinary.
-*   Gestión de servicios con duración configurable.
-*   Gestión de equipo con fotos de perfil y asignación de servicios.
-*   Flujo de reserva multi-paso:  ->  ->  -> .
-*   Lógica de visibilidad que oculta negocios no aprobados o con suscripciones inactivas.
+*   Gestión de servicios (con duración), equipo (con fotos) y asignación de servicios a trabajadores.
+*   Flujo de reserva multi-paso que se adapta según si el usuario es un cliente normal o el dueño del negocio.
+*   Los dueños de negocios pueden registrar citas para clientes sin necesidad de pagar un anticipo.
+*   Sistema de veto/blacklist de clientes a nivel de negocio.
+*   Dashboard de negocio con estadísticas interactivas que muestran listas detalladas de citas.
 
 **Last working item**:
-El agente acaba de completar una funcionalidad compleja que permite a los clientes seleccionar un trabajador específico (o Cualquiera) durante el proceso de reserva y permite a los dueños de negocios asignar servicios a cada trabajador.
+El agente estaba investigando un bug crítico reportado por el usuario: después de que un cliente paga una reserva a través de Stripe, la cita no se actualiza al estado confirmado y, por lo tanto, no aparece correctamente en el panel del negocio.
 
-- Last item agent was working: Implementación del flujo de selección de trabajador y asignación de servicios. Esto implicó:
-    1.  **Backend**: Modificar el endpoint de disponibilidad para filtrar por trabajador y servicio, añadir un endpoint público para obtener trabajadores por servicio y otro para actualizar los servicios de un trabajador.
-    2.  **Frontend (Perfil de Negocio)**: Rediseñar el diálogo de reserva para incluir un nuevo paso de selección de trabajador.
-    3.  **Frontend (Panel de Equipo)**: Añadir una interfaz en el diálogo de edición de trabajador para asignarles servicios mediante checkboxes.
-- Status: USER VERIFICATION PENDING
-- Agent Testing Done: Y
-- Which testing method agent to use? NA
+- Last item agent was working: Investigando por qué una cita pagada no se actualiza a . El agente comenzó a revisar los archivos relacionados con el éxito del pago.
+- Status: IN PROGRESS
+- Agent Testing Done: N
+- Which testing method agent to use? both
 - User Testing Done: N
 
 **All Pending/In progress Issue list**:
-No hay issues pendientes. Todos los bugs reportados por el usuario durante la sesión (problemas de visibilidad de datos antiguos, errores de navegación, etc.) fueron resueltos.
+- Issue 1: La cita pagada con Stripe no se actualiza a 'confirmado'. (P0)
+
+  Issues Detail:
+  - Issue 1:
+     - **Description**: Un cliente completa el pago de un anticipo en la página de Stripe Checkout, pero al regresar a la aplicación, la cita permanece en su estado anterior (probablemente ) en lugar de actualizarse a . Como resultado, no aparece en las listas de citas confirmadas del negocio.
+     - **Attempted fixes**: Ninguno. La investigación acaba de comenzar. El agente identificó  como un punto de partida.
+     - **Next debug checklist**:
+       1.  **Verificar Webhook de Stripe ():** Revisar el endpoint . Asegurarse de que está recibiendo el evento  de Stripe. Añadir logs para registrar todos los eventos entrantes.
+       2.  **Lógica del Webhook ():** Dentro del manejador del webhook, auditar la lógica que extrae el , busca la transacción/reserva correspondiente en la base de datos y actualiza su estado a  y  a .
+       3.  **Página de Éxito ():** Analizar qué hace esta página. ¿Realiza una llamada al backend para verificar el estado del pago (ej. )? ¿O simplemente muestra un mensaje estático?
+       4.  **Base de Datos ( collection):** Después de realizar un pago de prueba, inspeccionar manualmente el documento de la reserva en MongoDB para ver si el  y  se han actualizado.
+     - **Why fix this issue and what will be achieved with the fix?** Este es el flujo de monetización principal para las citas. Si no funciona, el negocio no puede operar correctamente, ya que los pagos de los clientes no se reflejan en el sistema.
+     - **Status**: IN PROGRESS
+     - **Is recurring issue?** N
+     - **Should Test frontend/backend/both after fix?** both
 
 **In progress Task List**:
-No hay tareas en progreso. La última tarea fue completada y probada.
+- No hay tareas en progreso más allá del bug mencionado.
 
 **Upcoming and Future Tasks**
 **Upcoming Tasks:**
@@ -56,129 +63,101 @@ No hay tareas en progreso. La última tarea fue completada y probada.
 *   **P3: 📱 Convertir a PWA:** Añadir la funcionalidad de Progressive Web App.
 *   **Stripe Connect:** Integración para automatizar los pagos a los negocios.
 *   **Notificaciones Push:** Implementar notificaciones push.
-*   **Aplicación Nativa:** Desarrollo de una aplicación móvil nativa.
-*   **Sugerencia del agente:** Añadir un webhook () para sincronizar automáticamente el estado de la suscripción desde Stripe a la base de datos.
-*   **Sugerencia del agente:** Usar transformaciones de Cloudinary para optimizar la carga de imágenes (thumbnails).
+*   **Refactorización:** Modularizar el archivo  en  separados, ya que ha crecido a más de 5000 líneas y es difícil de mantener.
 
 **Completed work in this session**
-- **Flujo de Suscripción Mejorado:**
-    - Se hizo obligatorio el registro de tarjeta en el paso 5, eliminando la opción de omitir.
-    - El negocio queda como  tras el registro.
-    - Se añadió una pestaña de Suscripción en el panel del negocio para gestionar el plan.
-- **Integración de Cloudinary:**
-    - Se integró el SDK de Cloudinary en el backend para gestionar logos y galerías de fotos, usando variables de entorno para las credenciales.
-    - Se implementó un sistema de fallback a Emergent Object Storage para el entorno de vista previa.
-    - Se hizo obligatorio el logo en el registro y se añadió la subida en el panel.
-- **Duración Configurable de Servicios:**
-    - Se creó una página () para la gestión completa (CRUD) de servicios, incluyendo la duración.
-    - Se actualizó el flujo de reserva para usar la duración del servicio al calcular la hora de fin y bloquear la agenda.
-- **Gestión de Equipo Mejorada:**
-    - Se implementó la subida de fotos de perfil para cada trabajador.
-    - Se añadió una UI para que los dueños de negocios asignen servicios específicos a cada trabajador.
-- **Nuevo Flujo de Reserva:**
-    - Se rediseñó el diálogo de reserva al flujo: **Fecha -> Trabajador -> Hora -> Confirmar**.
-    - La disponibilidad de horarios se filtra dinámicamente según el trabajador seleccionado (o Cualquiera).
-- **Corrección de Bugs Críticos:**
-    - Se solucionó un problema con la clave de Stripe en producción ( vs. clave real).
-    - Se resolvió un bug de precio no encontrado de Stripe limpiando un precio cacheado en la base de datos.
-    - Se arregló la visibilidad de negocios legacy (antiguos) que no tenían , asegurando que sigan apareciendo.
-    - Se corrigió un error de carga infinita (skeletons) en páginas del panel () debido a que  no estaba definido en el  hook.
-    - Se solucionó un bug que navegaba a  al hacer clic en Ver perfil.
+- **Migración a Stripe Nativo:** Se solucionó un error crítico de pago de anticipo reemplazando el uso de  por la librería nativa de  en el backend, lo que garantiza la compatibilidad con el entorno de despliegue de Railway.
+- **Sistema de Veto de Clientes:** Se implementó un CRUD completo para que los negocios puedan añadir, ver y eliminar clientes vetados por email, teléfono o ID de usuario desde su página de configuración. El veto se aplica en el backend para impedir la búsqueda y reserva.
+- **Dashboard Interactivo y Preciso:**
+    - Se hicieron clickeables las tarjetas de estadísticas para mostrar un modal con detalles y filtro de fechas.
+    - Se corrigieron las consultas para que el contador de Pendientes ahora muestre Confirmadas (solo citas con anticipo pagado), y se ajustaron las demás estadísticas para excluir las citas en .
+- **Flujo de Reserva para Negocios:** Se creó un nuevo flujo de reserva para los dueños de negocios que les permite registrar citas para sus clientes sin pagar anticipo. Este flujo incluye un nuevo paso para recopilar los datos del cliente.
+- **Eliminación de Cualquiera Disponible:** Se eliminó la opción Cualquiera disponible del flujo de reserva, forzando al cliente a seleccionar un trabajador específico.
+- **Corrección de Múltiples Bugs de UI:**
+    - Se solucionó un error de JavaScript () que rompía la página del perfil del negocio.
+    - Se robusteció el backend para generar  para negocios antiguos que no lo tenían, y el frontend para usar el uid=0(root) gid=0(root) groups=0(root) como fallback, arreglando el botón Ver perfil.
+    - Se corrigieron traducciones y colores faltantes para el estado  de las citas.
 
 **Code Architecture**
 
 
 **Key Technical Concepts**
-- **Frontend:** React, Shadcn/UI, React Router, .
 - **Backend:** FastAPI, MongoDB.
-- **Integraciones:**
-    - **Stripe:** Suscripciones recurrentes con Stripe Checkout.
-    - **Cloudinary:** Almacenamiento de imágenes primario (logos, galerías).
-    - **Emergent Object Storage:** Almacenamiento de imágenes de fallback para el entorno de vista previa.
+- **Frontend:** React, Shadcn/UI, React Router.
+- **Integraciones:** Stripe (usando la librería nativa de Python), Cloudinary.
+- **Lógica Condicional:** Se implementó una lógica compleja en el frontend () y backend () para diferenciar los flujos de reserva entre clientes normales y dueños de negocios ().
+- **Webhook de Stripe:** El flujo de confirmación de pago depende críticamente de un webhook que debe procesar el evento .
 
 **key DB schema**
+- **blacklist (Nueva Colección):**
+  - 
+- **bookings:**
+  - Añadidos , ,  para citas creadas por el negocio.
+  - El campo  se establece en  y  en  automáticamente si la reserva la hace un negocio.
 - **businesses:**
-    - Añadidos , .
-    - Añadidos , .
-    -  ahora es una lista de objetos .
-- **workers:**
-    - Añadido  para asociar los servicios que puede realizar.
-    - Añadido .
-- **appointments:**
-    - Añadidos , , , .
+  - El backend ahora asegura que el campo  exista, generándolo si es necesario al cargar el dashboard.
 
 **changes in tech stack**
-- Se añadió la dependencia  al backend.
+- Se eliminó la dependencia de  para los pagos de Stripe y se estandarizó el uso de la librería nativa .
 
 **All files of reference**
-- **Cloudinary y Suscripciones:**
-    - 
-    - 
-    - 
-    - 
-- **Duración y Selección de Trabajador:**
-    -  (flujo de reserva)
-    -  (asignación de servicios)
-    -  (CRUD de servicios)
-    - 
-    - 
+- : El manejador del webhook de Stripe y el endpoint  son cruciales para el bug actual.
+- : La página a la que llega el usuario después de pagar.
+- : Donde el negocio espera ver la cita confirmada.
+- : Donde el cliente espera ver su cita confirmada.
 
 **Areas that need refactoring**:
--  ha crecido considerablemente y contiene lógica de negocio que debería modularizarse en archivos de enrutadores dedicados (ej. , , ) para mejorar la mantenibilidad.
+- : Es extremadamente grande (+5300 líneas) y necesita ser dividido urgentemente en  modulares (ej: , , ) para mejorar la mantenibilidad.
+- : Es muy complejo (+1100 líneas) y maneja múltiples flujos de reserva. Debería descomponerse en componentes más pequeños.
 
 **key api endpoints**
-- : Sube el logo del negocio.
-- : Sube una foto a la galería del negocio.
-- : Elimina una foto por su .
-- : Sube la foto de perfil de un trabajador.
-- : Obtiene los trabajadores que pueden realizar un servicio.
-- : Actualiza la lista de servicios asignados a un trabajador.
-- , , : CRUD para servicios.
+- : Endpoint crítico para recibir eventos de Stripe y confirmar pagos.
+- : Para verificar el estado de una sesión de pago.
+- : Lógica modificada para manejar  para dueños de negocio.
+- , , : CRUD para el sistema de veto.
+- : Endpoint para poblar los modales de estadísticas del dashboard.
 
 **Critical Info for New Agent**
-- **Doble Sistema de Almacenamiento:** La aplicación está configurada para usar **Cloudinary** en producción (leyendo las credenciales de variables de entorno) y **Emergent Object Storage** como fallback en el entorno de vista previa (donde las credenciales de Cloudinary no están presentes). El código en  maneja esta lógica condicional.
-- **Visibilidad de Negocios Legacy:** Se implementó una corrección crucial para que los negocios antiguos (que no tienen los campos  o ) sigan siendo visibles. El filtro de visibilidad ahora es .
-- **Flujo de Reserva Rediseñado:** El cambio más significativo para el usuario final es el nuevo flujo de reserva (). La lógica del frontend en  y del backend en  ha sido modificada extensamente para soportar esto.
+- **Prioridad Máxima:** El bug del flujo de pago es crítico y bloquea una funcionalidad esencial. La investigación debe centrarse en el webhook de Stripe en  para asegurar que el evento  se procesa correctamente y actualiza la reserva en la base de datos.
+- **Desincronización de Entornos:** El usuario a menudo experimenta problemas en su entorno de producción (Vercel/Railway) que no existen en el entorno de vista previa. Esto suele deberse a que el backend en Railway no se ha desplegado con los últimos cambios. El agente debe ser consciente de esto y guiar al usuario para que despliegue ambos servicios.
+- **Puntos Frágiles del Código:** La página del perfil del negocio () ha sido una fuente recurrente de bugs de JavaScript. Cualquier modificación en este archivo debe ser probada exhaustivamente.
 
 **documents and test reports created in this job**
 - 
-- 
-- 
-- 
-- 
+-  (actualizado)
 
 **Last 10 User Messages and any pending HUMAN messages**
-1.  **Solicitud:** Implementar selección de trabajador en el flujo de reserva y asignación de servicios a trabajadores en el panel. (COMPLETADO)
-2.  **Reporte de Bug:** no esta cargando la pagina (esqueletos infinitos en ). (COMPLETADO - Se corrigió  para obtener  y  de forma segura).
-3.  **Reporte de Bug:** en cualquier boton para agregar equipo me sale error. (COMPLETADO - Error de  en ).
-4.  **Reporte de Bug:** no aparecen los servicios, el equipo, las fotos y tampoco me deja ver mi perfil de negocio. (COMPLETADO - Problema de visibilidad por  faltante en datos legacy y  indefinido).
-5.  **Pregunta:** ¿y ya se vera toda la informacion que tenia antes?. (RESPONDIDO - Sí, tras desplegar los fixes).
-6.  **Pregunta/Diálogo:** Discusión sobre por qué el error de Stripe persistía en Vercel/Railway. (RESPONDIDO - Se explicó que la BD de producción y las variables de entorno de Railway también debían actualizarse).
-7.  **Reporte de Bug:** no me deja subir fotos y me aparece ese error. (COMPLETADO - Se añadió soporte para  y se implementó la integración con Cloudinary).
-8.  **Solicitud:** Implementar integración con Cloudinary. (COMPLETADO)
-9.  **Diálogo:** Discusión sobre las credenciales de Stripe para producción. (RESUELTO - El usuario proporcionó la clave, que fue añadida al ).
-10. **Reporte de Bug:** Error de Stripe en Vercel. (COMPLETADO - Se explicó que se debía a la clave  y se corrigió el código para manejar claves reales).
+1.  **User:** Reporta que una cita pagada para el 1 de abril no aparece en el dashboard. (BUG ACTUAL)
+2.  **User:** Reporta que el perfil del negocio sigue sin verse. (FIXED)
+3.  **User:** Reporta que el botón de perfil no funciona. (FIXED)
+4.  **User:** Reporta que el perfil de negocio no se ve, muestra una página en blanco. (FIXED)
+5.  **User:** Pide revertir el cambio de ocultar los botones de reserva para el dueño. (REVERTED)
+6.  **User:** Reporta que la página no se ve tras un cambio. (FIXED)
+7.  **User:** Pide que las citas pendientes solo muestren las confirmadas (con anticipo pagado). (IMPLEMENTED)
+8.  **User:** Pide ocultar los botones de Reservar cuando el dueño ve su propio perfil. (IMPLEMENTED, then REVERTED)
+9.  **User:** Reporta que el conteo de citas en el dashboard es incorrecto y no aparecen. (FIXED)
+10. **User:** Pide un nuevo flujo para que los negocios reserven para clientes sin pagar anticipo y con un paso para datos del cliente. (IMPLEMENTED)
 
 **Project Health Check:**
-- **Broken:** Ninguna funcionalidad está rota. Los últimos bugs reportados fueron corregidos.
-- **Mocked:** El servicio de correo electrónico (Resend) sigue simulado, pendiente de configuración por parte del usuario.
+- **Broken:** El flujo de confirmación de pago está roto. Los pagos se realizan en Stripe, pero la aplicación no actualiza el estado de la reserva, lo que constituye un fallo crítico.
+- **Mocked:** El servicio de envío de correos (Resend) sigue simulado y pendiente de configuración.
 
 **3rd Party Integrations**
-- **Stripe:** Para pagos de anticipos y suscripciones recurrentes.
-- **Cloudinary:** Almacenamiento primario de imágenes (logos, galerías).
+- **Stripe:** Para suscripciones y pagos de anticipos (usando la librería nativa de Python).
+- **Cloudinary:** Almacenamiento primario de imágenes.
 - **Emergent Object Storage:** Almacenamiento de imágenes de fallback.
-- **pyotp:** Para 2FA de administrador.
+- **pyotp:** Para 2FA del administrador.
 - **Leaflet / OpenStreetMap:** Para el mapa en la página de búsqueda.
 
 **Testing status**
-- **Testing agent used after significant changes:** YES, se utilizó consistentemente para validar cada nueva funcionalidad y corrección de bugs.
+- **Testing agent used after significant changes:** YES
 - **Troubleshoot agent used after agent stuck in loop:** NO
-- **Test files created:** Sí, el testing agent creó y utilizó archivos de prueba temporales (, etc.).
+- **Test files created:** Sí, el testing agent generó y utilizó archivos de prueba.
 - **Known regressions:** Ninguna.
 
 **Credentials to test flow:**
-- Una clave de prueba real de Stripe () está configurada en .
-- Las credenciales de Cloudinary no están en el , por lo que el sistema usará el fallback a Emergent Object Storage en el entorno de vista previa.
+- Una clave de prueba de Stripe está disponible en .
+- No hay credenciales de Cloudinary, por lo que se utiliza el fallback a Emergent Object Storage.
 
 **What agent forgot to execute**
-Nada. Todas las solicitudes del usuario y los problemas que surgieron durante la sesión fueron abordados y resueltos.</analysis>
+- El agente no ha olvidado nada; la investigación del bug de pago actual está en su fase inicial.</analysis>
