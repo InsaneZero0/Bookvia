@@ -1233,6 +1233,19 @@ async def login_business(credentials: UserLogin):
     if not user:
         raise HTTPException(status_code=500, detail="User account not found")
     
+    # Ensure required defaults for BusinessResponse
+    business.setdefault("description", "")
+    business.setdefault("category_id", "")
+    business.setdefault("address", "")
+    business.setdefault("city", "")
+    business.setdefault("state", "")
+    business.setdefault("country", "MX")
+    business.setdefault("zip_code", "")
+    business.setdefault("subscription_status", "none")
+    
+    # Remove MongoDB _id
+    business.pop("_id", None)
+    
     token = create_token(user["id"], UserRole.BUSINESS, business["email"])
     return {"token": token, "business": BusinessResponse(**business).model_dump()}
 
@@ -1608,6 +1621,8 @@ async def get_business_dashboard(token_data: TokenData = Depends(require_busines
         raise HTTPException(status_code=404, detail="Business not found")
     
     business = await db.businesses.find_one({"id": user["business_id"]}, {"_id": 0, "password_hash": 0})
+    if not business:
+        raise HTTPException(status_code=404, detail="Business document not found")
     
     # Ensure slug exists
     if not business.get("slug"):
@@ -1615,24 +1630,35 @@ async def get_business_dashboard(token_data: TokenData = Depends(require_busines
         business["slug"] = slug
         await db.businesses.update_one({"id": business["id"]}, {"$set": {"slug": slug}})
     
+    # Ensure required fields have defaults to prevent Pydantic validation errors
+    business.setdefault("description", "")
+    business.setdefault("category_id", "")
+    business.setdefault("address", "")
+    business.setdefault("city", "")
+    business.setdefault("state", "")
+    business.setdefault("country", "MX")
+    business.setdefault("zip_code", "")
+    business.setdefault("subscription_status", "none")
+    
     # Get stats
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    bid = business["id"]
     
     today_appointments = await db.bookings.count_documents({
-        "business_id": business["id"],
+        "business_id": bid,
         "date": today,
         "status": AppointmentStatus.CONFIRMED
     })
     
     pending_appointments = await db.bookings.count_documents({
-        "business_id": business["id"],
+        "business_id": bid,
         "status": AppointmentStatus.CONFIRMED
     })
     
     # This month revenue
     first_of_month = datetime.now(timezone.utc).replace(day=1).strftime("%Y-%m-%d")
     month_bookings = await db.bookings.find({
-        "business_id": business["id"],
+        "business_id": bid,
         "date": {"$gte": first_of_month},
         "status": AppointmentStatus.COMPLETED
     }).to_list(1000)
@@ -1640,12 +1666,19 @@ async def get_business_dashboard(token_data: TokenData = Depends(require_busines
     month_revenue = sum(b.get("total_amount", 0) for b in month_bookings)
     
     total_appointments = await db.bookings.count_documents({
-        "business_id": business["id"],
+        "business_id": bid,
         "status": {"$in": [AppointmentStatus.CONFIRMED, AppointmentStatus.COMPLETED, AppointmentStatus.NO_SHOW]}
     })
     
+    try:
+        biz_response = BusinessResponse(**business).model_dump()
+    except Exception as e:
+        logger.error(f"BusinessResponse validation error for {bid}: {e}")
+        logger.error(f"Business fields: {list(business.keys())}")
+        raise HTTPException(status_code=500, detail=f"Error loading business data: {str(e)}")
+    
     return {
-        "business": BusinessResponse(**business).model_dump(),
+        "business": biz_response,
         "stats": {
             "today_appointments": today_appointments,
             "pending_appointments": pending_appointments,

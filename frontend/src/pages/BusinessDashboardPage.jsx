@@ -33,6 +33,7 @@ export default function BusinessDashboardPage() {
 
   const [loading, setLoading] = useState(true);
   const [dashboardData, setDashboardData] = useState(null);
+  const [dashboardError, setDashboardError] = useState(null);
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [dayBookings, setDayBookings] = useState([]);
   const [services, setServices] = useState([]);
@@ -63,6 +64,7 @@ export default function BusinessDashboardPage() {
 
   const loadDashboard = async () => {
     try {
+      setDashboardError(null);
       const [dashRes, servicesRes, workersRes, photosRes, closuresRes] = await Promise.all([
         businessesAPI.getDashboard(),
         servicesAPI.getByBusiness(business?.id || user?.business_id || ''),
@@ -82,6 +84,9 @@ export default function BusinessDashboardPage() {
       } catch { setSubscriptionData(null); }
     } catch (error) {
       console.error('Error loading dashboard:', error);
+      const detail = error?.response?.data?.detail || error?.message || 'Error desconocido';
+      setDashboardError(detail);
+      toast.error(language === 'es' ? `Error al cargar el panel: ${detail}` : `Dashboard error: ${detail}`);
     } finally {
       setLoading(false);
     }
@@ -92,7 +97,8 @@ export default function BusinessDashboardPage() {
       const dateStr = format(selectedDate, 'yyyy-MM-dd');
       const res = await bookingsAPI.getBusiness({ date: dateStr });
       setDayBookings(Array.isArray(res.data) ? res.data : []);
-    } catch {
+    } catch (error) {
+      console.error('Error loading bookings:', error);
       setDayBookings([]);
     }
   };
@@ -285,6 +291,22 @@ export default function BusinessDashboardPage() {
         </div>
 
         {/* Status Alert */}
+        {dashboardError && (
+          <Card className="mb-6 border-red-500/50 bg-red-50 dark:bg-red-900/20" data-testid="dashboard-error-alert">
+            <CardContent className="p-4 flex items-center gap-3">
+              <AlertTriangle className="h-5 w-5 text-red-600 shrink-0" />
+              <div className="flex-1">
+                <p className="font-medium text-red-800 dark:text-red-200 text-sm">
+                  {language === 'es' ? 'Error al cargar el panel' : 'Dashboard loading error'}
+                </p>
+                <p className="text-xs text-red-700 dark:text-red-300">{dashboardError}</p>
+              </div>
+              <Button size="sm" variant="outline" onClick={loadDashboard}>
+                {language === 'es' ? 'Reintentar' : 'Retry'}
+              </Button>
+            </CardContent>
+          </Card>
+        )}
         {biz?.status === 'pending' && (
           <Card className="mb-6 border-yellow-500/50 bg-yellow-50 dark:bg-yellow-900/20">
             <CardContent className="p-4 flex items-center gap-3">
