@@ -261,10 +261,20 @@ export default function BusinessDashboardPage() {
             </div>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => {
-              const profileSlug = biz?.slug || biz?.id || dashboardData?.business?.slug || dashboardData?.business?.id;
-              if (profileSlug) navigate(`/business/${profileSlug}`);
-              else toast.error(language === 'es' ? 'Perfil no disponible' : 'Profile not available');
+            <Button variant="outline" size="sm" onClick={async () => {
+              let profileSlug = biz?.slug || biz?.id;
+              if (!profileSlug) {
+                // Fallback: fetch business ID from user profile
+                try {
+                  const meRes = await businessesAPI.getDashboard();
+                  profileSlug = meRes.data?.business?.slug || meRes.data?.business?.id;
+                } catch {}
+              }
+              if (profileSlug) {
+                window.location.href = `/business/${profileSlug}`;
+              } else {
+                toast.error(language === 'es' ? 'Perfil no disponible. Intenta recargar la pagina.' : 'Profile not available. Try reloading the page.');
+              }
             }} data-testid="view-profile-button">
               <Eye className="h-4 w-4 mr-1.5" />{language === 'es' ? 'Ver perfil' : 'View profile'}
             </Button>
