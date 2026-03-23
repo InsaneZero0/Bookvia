@@ -558,17 +558,15 @@ export default function BusinessProfilePage() {
                       </div>
                       <div className="text-right flex flex-col items-end gap-2">
                         <span className="text-lg font-bold text-[#F05D5E]">{formatCurrency(service.price)}</span>
-                        {!isOwner && (
-                          <Button
-                            size="sm"
-                            className="btn-coral text-xs px-5 py-1.5 h-8"
-                            onClick={() => startBooking(service)}
-                            disabled={business.status !== 'approved'}
-                            data-testid={`book-service-${service.id}`}
-                          >
-                            {language === 'es' ? 'Reservar' : 'Book'}
-                          </Button>
-                        )}
+                        <Button
+                          size="sm"
+                          className="btn-coral text-xs px-5 py-1.5 h-8"
+                          onClick={() => startBooking(service)}
+                          disabled={business.status !== 'approved'}
+                          data-testid={`book-service-${service.id}`}
+                        >
+                          {language === 'es' ? 'Reservar' : 'Book'}
+                        </Button>
                       </div>
                     </div>
                   ))}
@@ -783,7 +781,7 @@ export default function BusinessProfilePage() {
                     </div>
                   )}
 
-                  {business.status === 'approved' && !isOwner ? (
+                  {business.status === 'approved' ? (
                     <>
                       {/* Service Selection */}
                       <div className="space-y-2">
@@ -864,7 +862,7 @@ export default function BusinessProfilePage() {
       </div>
 
       {/* ─── Mobile Bottom Bar ──────────────────────── */}
-      {!isOwner && (
+      {(
         <div className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-background border-t p-3 safe-area-bottom" data-testid="mobile-booking-bar">
           <div className="flex items-center justify-between gap-3">
             <div>
