@@ -3085,7 +3085,7 @@ async def create_deposit_checkout(
 
 @payments_router.get("/checkout/status/{session_id}")
 async def get_checkout_status(session_id: str, request: Request):
-    """Check checkout session status"""
+    """Check checkout session status - also acts as webhook fallback to confirm payment"""
     try:
         session = stripe_lib.checkout.Session.retrieve(session_id)
     except Exception as e:
@@ -3093,6 +3093,75 @@ async def get_checkout_status(session_id: str, request: Request):
     
     # Get transaction
     transaction = await db.transactions.find_one({"stripe_session_id": session_id})
+    
+    # Fallback: if Stripe says paid but our DB hasn't been updated (webhook didn't fire)
+    if transaction and session.payment_status == "paid" and transaction["status"] != TransactionStatus.PAID:
+        now = datetime.now(timezone.utc).isoformat()
+        logger.info(f"Checkout status fallback: confirming payment for transaction {transaction['id']} (webhook may not have fired)")
+        
+        # Update transaction
+        await db.transactions.update_one(
+            {"id": transaction["id"]},
+            {"$set": {
+                "status": TransactionStatus.PAID,
+                "stripe_payment_intent_id": session.payment_intent if hasattr(session, 'payment_intent') else None,
+                "paid_at": now,
+                "updated_at": now
+            }}
+        )
+        
+        # Create ledger entries
+        try:
+            await create_transaction_ledger_entries(transaction, TransactionStatus.PAID)
+        except Exception as e:
+            logger.error(f"Fallback ledger error: {e}")
+        
+        # Update booking to CONFIRMED
+        await db.bookings.update_one(
+            {"id": transaction["booking_id"]},
+            {"$set": {
+                "status": AppointmentStatus.CONFIRMED,
+                "deposit_paid": True,
+                "confirmed_at": now
+            }}
+        )
+        
+        # Update business pending balance
+        await db.businesses.update_one(
+            {"id": transaction["business_id"]},
+            {"$inc": {"pending_balance": transaction["payout_amount"]}}
+        )
+        
+        # Send notifications (best-effort)
+        try:
+            booking = await db.bookings.find_one({"id": transaction["booking_id"]})
+            business = await db.businesses.find_one({"id": transaction["business_id"]})
+            user = await db.users.find_one({"id": transaction["user_id"]})
+            service = await db.services.find_one({"id": booking["service_id"]}) if booking else None
+            
+            if user:
+                await create_notification(
+                    user["id"],
+                    "Pago Confirmado",
+                    f"Tu anticipo de ${transaction['amount_total']} MXN ha sido confirmado para {service['name'] if service else 'tu cita'}",
+                    "system",
+                    {"booking_id": transaction["booking_id"], "transaction_id": transaction["id"]}
+                )
+            if business:
+                await create_notification(
+                    business["user_id"],
+                    "Reserva Confirmada",
+                    f"Nueva reserva confirmada - Anticipo recibido",
+                    "booking",
+                    {"booking_id": transaction["booking_id"]}
+                )
+        except Exception as e:
+            logger.error(f"Fallback notification error: {e}")
+        
+        logger.info(f"Fallback: Payment confirmed for booking {transaction['booking_id']}")
+        
+        # Refresh transaction data after update
+        transaction = await db.transactions.find_one({"stripe_session_id": session_id})
     
     return {
         "status": session.status,
