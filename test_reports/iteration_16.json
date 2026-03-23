@@ -50,5 +50,5 @@
 
   "should_main_agent_self_test": false,
 
-  "context_for_next_testing_agent": "Iteration 16 tested the payout schedule radio-card selector. Key data-testids: commission-info-block (visible only when option-with-deposit is selected), payout-triday (10%), payout-biweekly (8%), payout-monthly (4% - default), help-payout-schedule. The old terms checkbox 'Acepto los Términos de Servicio...(8%)' has been successfully removed. payout_schedule field is stored in DB only when requires_deposit=true, otherwise null. App URL: https://booking-platform-104.preview.emergentagent.com"
+  "context_for_next_testing_agent": "Iteration 16 tested the payout schedule radio-card selector. Key data-testids: commission-info-block (visible only when option-with-deposit is selected), payout-triday (10%), payout-biweekly (8%), payout-monthly (4% - default), help-payout-schedule. The old terms checkbox 'Acepto los Términos de Servicio...(8%)' has been successfully removed. payout_schedule field is stored in DB only when requires_deposit=true, otherwise null. App URL: https://stripe-webhook-debug-2.preview.emergentagent.com"
 }

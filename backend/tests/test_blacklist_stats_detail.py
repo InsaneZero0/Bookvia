@@ -13,7 +13,7 @@ from datetime import datetime, timedelta
 
 BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
 if not BASE_URL:
-    BASE_URL = 'https://booking-platform-104.preview.emergentagent.com'
+    BASE_URL = 'https://stripe-webhook-debug-2.preview.emergentagent.com'
 
 # Test credentials - using testrealstripe business (working credentials)
 BUSINESS_EMAIL = "testrealstripe@bookvia.com"
