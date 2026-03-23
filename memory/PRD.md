@@ -87,6 +87,7 @@ Bookvia es una plataforma marketplace de reservas profesionales que conecta nego
 - [2026-03-17] Fotos legacy sin campo url (compatibilidad storage_path)
 - [2026-03-19] Error pago anticipo: migrado de emergentintegrations a stripe nativo
 - [2026-03-19] Visibilidad negocios legacy sin subscription_status
+- [2026-03-23] P0: Pago de anticipo no confirmaba la reserva (fallback en checkout/status)
 
 ## Backlog (P0-P3)
 
