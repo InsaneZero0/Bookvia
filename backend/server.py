@@ -327,7 +327,7 @@ class BusinessResponse(BaseModel):
     min_time_between_appointments: int = 0
     photos: List[str] = []
     logo_url: Optional[str] = None
-    slug: str
+    slug: Optional[str] = None
     created_at: str
     is_featured: bool = False
     plan_type: str = "basic"
@@ -1608,6 +1608,12 @@ async def get_business_dashboard(token_data: TokenData = Depends(require_busines
         raise HTTPException(status_code=404, detail="Business not found")
     
     business = await db.businesses.find_one({"id": user["business_id"]}, {"_id": 0, "password_hash": 0})
+    
+    # Ensure slug exists
+    if not business.get("slug"):
+        slug = f"{business['name'].lower().replace(' ', '-')}-{business['id'][:8]}"
+        business["slug"] = slug
+        await db.businesses.update_one({"id": business["id"]}, {"$set": {"slug": slug}})
     
     # Get stats
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
