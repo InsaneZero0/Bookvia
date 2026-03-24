@@ -178,9 +178,9 @@ export default function UserBookingsPage() {
           <div className="flex items-start gap-4">
             <div className="w-16 h-16 rounded-xl bg-muted flex flex-col items-center justify-center flex-shrink-0">
               <span className="text-xs text-muted-foreground uppercase">
-                {new Date(booking.date).toLocaleDateString(language === 'es' ? 'es-MX' : 'en-US', { month: 'short' })}
+                {new Date(booking.date + 'T12:00:00').toLocaleDateString(language === 'es' ? 'es-MX' : 'en-US', { month: 'short' })}
               </span>
-              <span className="text-2xl font-bold">{new Date(booking.date).getDate()}</span>
+              <span className="text-2xl font-bold">{new Date(booking.date + 'T12:00:00').getDate()}</span>
             </div>
             
             <div className="flex-1 min-w-0">

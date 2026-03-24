@@ -171,9 +171,9 @@ export default function UserDashboardPage() {
                       <div key={booking.id} className="flex items-center gap-3 p-3 rounded-xl border border-border/60 hover:border-[#F05D5E]/20 transition-colors" data-testid={`upcoming-booking-${booking.id}`}>
                         <div className="w-14 h-14 rounded-xl bg-[#F05D5E]/5 flex flex-col items-center justify-center shrink-0">
                           <span className="text-[10px] text-[#F05D5E] uppercase font-medium">
-                            {new Date(booking.date).toLocaleDateString(language === 'es' ? 'es-MX' : 'en-US', { month: 'short' })}
+                            {new Date(booking.date + 'T12:00:00').toLocaleDateString(language === 'es' ? 'es-MX' : 'en-US', { month: 'short' })}
                           </span>
-                          <span className="text-lg font-bold text-[#F05D5E]">{new Date(booking.date).getDate()}</span>
+                          <span className="text-lg font-bold text-[#F05D5E]">{new Date(booking.date + 'T12:00:00').getDate()}</span>
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="font-medium text-sm truncate">{booking.service_name}</p>

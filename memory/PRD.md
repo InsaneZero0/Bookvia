@@ -91,6 +91,7 @@ Bookvia es una plataforma marketplace de reservas profesionales que conecta nego
 - [2026-03-24] Dashboard negocio mostraba 0: `user is not defined` (faltaba destructurar `user` de useAuth)
 - [2026-03-24] Boton Completar solo activo al termino de la cita, boton Cancelar agregado, tag muestra quien cancelo
 - [2026-03-24] Boton Reagendar cita: modal con calendario y horarios disponibles, libera slot anterior
+- [2026-03-24] Bug critico: fechas de citas se mostraban -1 dia en zonas horarias negativas (new Date("YYYY-MM-DD") parseaba como UTC)
 
 ## Backlog (P0-P3)
 

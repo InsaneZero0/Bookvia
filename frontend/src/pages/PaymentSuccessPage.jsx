@@ -110,7 +110,7 @@ export default function PaymentSuccessPage() {
                   <p className="text-muted-foreground">{booking.service_name}</p>
                   <div className="flex items-center gap-2 text-muted-foreground">
                     <Calendar className="h-4 w-4" />
-                    <span>{new Date(booking.date).toLocaleDateString(language === 'es' ? 'es-MX' : 'en-US', {
+                    <span>{new Date(booking.date + 'T12:00:00').toLocaleDateString(language === 'es' ? 'es-MX' : 'en-US', {
                       weekday: 'long',
                       year: 'numeric',
                       month: 'long',
