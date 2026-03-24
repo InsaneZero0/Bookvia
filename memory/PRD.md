@@ -89,6 +89,7 @@ Bookvia es una plataforma marketplace de reservas profesionales que conecta nego
 - [2026-03-19] Visibilidad negocios legacy sin subscription_status
 - [2026-03-23] P0: Pago de anticipo no confirmaba la reserva (fallback en checkout/status)
 - [2026-03-24] Dashboard negocio mostraba 0: `user is not defined` (faltaba destructurar `user` de useAuth)
+- [2026-03-24] Boton Completar solo activo al termino de la cita, boton Cancelar agregado, tag muestra quien cancelo
 
 ## Backlog (P0-P3)
 

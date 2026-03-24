@@ -109,14 +109,15 @@ export default function BusinessDashboardPage() {
         case 'confirm': await bookingsAPI.confirm(bookingId); break;
         case 'complete': await bookingsAPI.complete(bookingId); break;
         case 'no-show': await bookingsAPI.markNoShow(bookingId); break;
-        case 'cancel': await bookingsAPI.cancel(bookingId); break;
+        case 'cancel': await bookingsAPI.cancelByBusiness(bookingId, 'Cancelada por el negocio'); break;
         default: break;
       }
       toast.success(language === 'es' ? 'Actualizado' : 'Updated');
       loadDayBookings();
       loadDashboard();
-    } catch {
-      toast.error(language === 'es' ? 'Error al actualizar' : 'Error updating');
+    } catch (error) {
+      const detail = error?.response?.data?.detail || '';
+      toast.error(language === 'es' ? `Error al actualizar: ${detail}` : `Error updating: ${detail}`);
     }
   };
 
@@ -433,21 +434,30 @@ export default function BusinessDashboardPage() {
                             </div>
                             <div className="flex items-center gap-1.5">
                               <Badge className={`text-[10px] ${getStatusColor(booking.status)}`}>
-                                {t(`status.${booking.status}`)}
+                                {booking.status === 'cancelled' && booking.cancelled_by
+                                  ? (language === 'es' 
+                                    ? `Cancelada por ${booking.cancelled_by === 'business' ? 'negocio' : 'cliente'}`
+                                    : `Cancelled by ${booking.cancelled_by}`)
+                                  : t(`status.${booking.status}`)}
                               </Badge>
-                              {booking.status === 'pending' && (
-                                <>
-                                  <Button size="icon" variant="ghost" className="h-7 w-7 text-green-600 hover:bg-green-50" onClick={() => handleBookingAction(booking.id, 'confirm')}>
-                                    <CheckCircle2 className="h-4 w-4" />
-                                  </Button>
-                                  <Button size="icon" variant="ghost" className="h-7 w-7 text-red-600 hover:bg-red-50" onClick={() => handleBookingAction(booking.id, 'cancel')}>
-                                    <XCircle className="h-4 w-4" />
-                                  </Button>
-                                </>
-                              )}
-                              {booking.status === 'confirmed' && (
-                                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => handleBookingAction(booking.id, 'complete')}>
-                                  {language === 'es' ? 'Completar' : 'Complete'}
+                              {booking.status === 'confirmed' && (() => {
+                                const now = new Date();
+                                const endDt = new Date(`${booking.date}T${booking.end_time}:00`);
+                                const isPast = now >= endDt;
+                                return (
+                                  <>
+                                    <Button size="sm" variant="outline" className="h-7 text-xs" disabled={!isPast} title={!isPast ? (language === 'es' ? 'Disponible al terminar la cita' : 'Available after appointment ends') : ''} onClick={() => handleBookingAction(booking.id, 'complete')}>
+                                      {language === 'es' ? 'Completar' : 'Complete'}
+                                    </Button>
+                                    <Button size="sm" variant="outline" className="h-7 text-xs text-red-600 border-red-200 hover:bg-red-50" onClick={() => handleBookingAction(booking.id, 'cancel')} data-testid={`cancel-booking-${booking.id}`}>
+                                      {language === 'es' ? 'Cancelar' : 'Cancel'}
+                                    </Button>
+                                  </>
+                                );
+                              })()}
+                              {booking.status === 'hold' && (
+                                <Button size="sm" variant="outline" className="h-7 text-xs text-red-600 border-red-200 hover:bg-red-50" onClick={() => handleBookingAction(booking.id, 'cancel')} data-testid={`cancel-hold-${booking.id}`}>
+                                  {language === 'es' ? 'Cancelar' : 'Cancel'}
                                 </Button>
                               )}
                             </div>
