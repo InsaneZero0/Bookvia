@@ -189,6 +189,9 @@ export const bookingsAPI = {
   cancelByBusiness: (id, reason) => api.put(`/bookings/${id}/cancel/business`, { reason }),
   reschedule: (id, newDate, newTime) => 
     api.put(`/bookings/${id}/reschedule`, null, { params: { new_date: newDate, new_time: newTime } }),
+  rescheduleByBusiness: (id, data) => api.put(`/bookings/${id}/reschedule/business`, data),
+  getAvailability: (businessId, date, serviceId, workerId) => 
+    api.get(`/bookings/availability/${businessId}`, { params: { date, service_id: serviceId, worker_id: workerId } }),
   confirm: (id) => api.put(`/bookings/${id}/confirm`),
   complete: (id) => api.put(`/bookings/${id}/complete`),
   markNoShow: (id) => api.put(`/bookings/${id}/no-show`),
