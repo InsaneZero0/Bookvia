@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
 import { useI18n } from '@/lib/i18n';
@@ -21,6 +21,7 @@ import { getInitials } from '@/lib/utils';
 
 export function Navbar() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
   const { user, isAuthenticated, isAdmin, isBusiness, logout } = useAuth();
   const { t, language, toggleLanguage } = useI18n();
   const { theme, toggleTheme } = useTheme();
@@ -32,7 +33,14 @@ export function Navbar() {
     navigate('/');
   };
 
-  const isTransparent = location.pathname === '/';
+  const isHomepage = location.pathname === '/';
+  const isTransparent = isHomepage && !scrolled;
+
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 60);
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
 
   return (
     <nav 

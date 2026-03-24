@@ -89,12 +89,20 @@ export default function HomePage() {
   return (
     <div className="min-h-screen" data-testid="home-page">
 
-      {/* ═══ Hero ══════════════════════════════════════ */}
-      <section className="relative min-h-[92vh] flex items-center justify-center overflow-hidden">
+      {/* Hero */}
+      <section className="relative min-h-[92vh] flex items-center justify-center overflow-hidden bg-slate-900">
         <div className="absolute inset-0">
-          <img src="https://images.unsplash.com/photo-1551386234-48770e28e791?auto=format&fit=crop&q=80&w=2070" alt="" className="w-full h-full object-cover" />
-          <div className="absolute inset-0 bg-gradient-to-b from-slate-900/80 via-slate-900/60 to-slate-900/90" />
+          <img
+            src="https://images.unsplash.com/photo-1584884013345-88b9cf247c0c?auto=format&fit=crop&q=80&w=2070"
+            alt=""
+            className="w-full h-full object-cover opacity-30"
+            loading="eager"
+          />
+          <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-slate-900/90 to-[#F05D5E]/20" />
         </div>
+        {/* Decorative elements */}
+        <div className="absolute top-20 left-10 w-72 h-72 bg-[#F05D5E]/10 rounded-full blur-3xl" />
+        <div className="absolute bottom-20 right-10 w-96 h-96 bg-[#F05D5E]/5 rounded-full blur-3xl" />
 
         <div className="relative z-10 container-app text-center text-white py-20">
           <div className="max-w-4xl mx-auto space-y-6 animate-fade-in">
