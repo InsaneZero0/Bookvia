@@ -23,7 +23,7 @@ import {
   Calendar as CalendarIcon, DollarSign, Star, Users, Clock, CheckCircle2,
   XCircle, AlertTriangle, TrendingUp, Settings, UserCog, Image, Upload,
   Trash2, Eye, Plus, Pencil, BarChart3, Briefcase, ArrowUpRight, Phone,
-  Ban, CalendarOff, CreditCard, Shield
+  Ban, CalendarOff, CreditCard, Shield, RefreshCw
 } from 'lucide-react';
 
 export default function BusinessDashboardPage() {
@@ -47,7 +47,12 @@ export default function BusinessDashboardPage() {
   const [statsModal, setStatsModal] = useState({ open: false, type: null, title: '', bookings: [], loading: false, totalRevenue: null });
   const [statsDateFrom, setStatsDateFrom] = useState('');
   const [statsDateTo, setStatsDateTo] = useState('');
-
+  const [rescheduleModal, setRescheduleModal] = useState({ open: false, booking: null });
+  const [rescheduleDate, setRescheduleDate] = useState(null);
+  const [rescheduleSlots, setRescheduleSlots] = useState([]);
+  const [rescheduleTime, setRescheduleTime] = useState('');
+  const [rescheduleLoading, setRescheduleLoading] = useState(false);
+  const [slotsLoading, setSlotsLoading] = useState(false);
   useEffect(() => {
     if (!isAuthenticated || !isBusiness) {
       navigate('/business/login');
@@ -118,6 +123,48 @@ export default function BusinessDashboardPage() {
     } catch (error) {
       const detail = error?.response?.data?.detail || '';
       toast.error(language === 'es' ? `Error al actualizar: ${detail}` : `Error updating: ${detail}`);
+    }
+  };
+
+  const openReschedule = (booking) => {
+    setRescheduleModal({ open: true, booking });
+    setRescheduleDate(null);
+    setRescheduleSlots([]);
+    setRescheduleTime('');
+  };
+
+  const loadRescheduleSlots = async (date) => {
+    const bk = rescheduleModal.booking;
+    if (!bk || !date) return;
+    setSlotsLoading(true);
+    try {
+      const dateStr = format(date, 'yyyy-MM-dd');
+      const res = await bookingsAPI.getAvailability(bk.business_id, dateStr, bk.service_id, bk.worker_id);
+      const available = (res.data.slots || []).filter(s => s.status === 'available');
+      setRescheduleSlots(available);
+    } catch {
+      setRescheduleSlots([]);
+    } finally {
+      setSlotsLoading(false);
+    }
+  };
+
+  const handleReschedule = async () => {
+    const bk = rescheduleModal.booking;
+    if (!bk || !rescheduleDate || !rescheduleTime) return;
+    setRescheduleLoading(true);
+    try {
+      const dateStr = format(rescheduleDate, 'yyyy-MM-dd');
+      await bookingsAPI.rescheduleByBusiness(bk.id, { new_date: dateStr, new_time: rescheduleTime });
+      toast.success(language === 'es' ? 'Cita reagendada exitosamente' : 'Appointment rescheduled');
+      setRescheduleModal({ open: false, booking: null });
+      loadDayBookings();
+      loadDashboard();
+    } catch (error) {
+      const detail = error?.response?.data?.detail || '';
+      toast.error(language === 'es' ? `Error al reagendar: ${detail}` : `Reschedule error: ${detail}`);
+    } finally {
+      setRescheduleLoading(false);
     }
   };
 
@@ -449,6 +496,10 @@ export default function BusinessDashboardPage() {
                                     <Button size="sm" variant="outline" className="h-7 text-xs" disabled={!isPast} title={!isPast ? (language === 'es' ? 'Disponible al terminar la cita' : 'Available after appointment ends') : ''} onClick={() => handleBookingAction(booking.id, 'complete')}>
                                       {language === 'es' ? 'Completar' : 'Complete'}
                                     </Button>
+                                    <Button size="sm" variant="outline" className="h-7 text-xs text-blue-600 border-blue-200 hover:bg-blue-50" onClick={() => openReschedule(booking)} data-testid={`reschedule-booking-${booking.id}`}>
+                                      <RefreshCw className="h-3 w-3 mr-1" />
+                                      {language === 'es' ? 'Reagendar' : 'Reschedule'}
+                                    </Button>
                                     <Button size="sm" variant="outline" className="h-7 text-xs text-red-600 border-red-200 hover:bg-red-50" onClick={() => handleBookingAction(booking.id, 'cancel')} data-testid={`cancel-booking-${booking.id}`}>
                                       {language === 'es' ? 'Cancelar' : 'Cancel'}
                                     </Button>
@@ -456,9 +507,15 @@ export default function BusinessDashboardPage() {
                                 );
                               })()}
                               {booking.status === 'hold' && (
-                                <Button size="sm" variant="outline" className="h-7 text-xs text-red-600 border-red-200 hover:bg-red-50" onClick={() => handleBookingAction(booking.id, 'cancel')} data-testid={`cancel-hold-${booking.id}`}>
-                                  {language === 'es' ? 'Cancelar' : 'Cancel'}
-                                </Button>
+                                <>
+                                  <Button size="sm" variant="outline" className="h-7 text-xs text-blue-600 border-blue-200 hover:bg-blue-50" onClick={() => openReschedule(booking)} data-testid={`reschedule-hold-${booking.id}`}>
+                                    <RefreshCw className="h-3 w-3 mr-1" />
+                                    {language === 'es' ? 'Reagendar' : 'Reschedule'}
+                                  </Button>
+                                  <Button size="sm" variant="outline" className="h-7 text-xs text-red-600 border-red-200 hover:bg-red-50" onClick={() => handleBookingAction(booking.id, 'cancel')} data-testid={`cancel-hold-${booking.id}`}>
+                                    {language === 'es' ? 'Cancelar' : 'Cancel'}
+                                  </Button>
+                                </>
                               )}
                             </div>
                           </div>
@@ -899,6 +956,82 @@ export default function BusinessDashboardPage() {
                   <p className="text-sm text-muted-foreground">{language === 'es' ? 'No hay citas' : 'No bookings'}</p>
                 </div>
               )}
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Reschedule Modal */}
+        <Dialog open={rescheduleModal.open} onOpenChange={(open) => !open && setRescheduleModal({ open: false, booking: null })}>
+          <DialogContent className="max-w-md" data-testid="reschedule-modal">
+            <DialogHeader>
+              <DialogTitle>{language === 'es' ? 'Reagendar Cita' : 'Reschedule Appointment'}</DialogTitle>
+              <DialogDescription>
+                {rescheduleModal.booking && (
+                  <span>
+                    {rescheduleModal.booking.user_name || rescheduleModal.booking.client_name} — {rescheduleModal.booking.service_name}
+                    <br />
+                    {language === 'es' ? 'Fecha actual:' : 'Current date:'} {rescheduleModal.booking.date} {rescheduleModal.booking.time}
+                  </span>
+                )}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 mt-2">
+              <div>
+                <Label className="text-sm font-medium mb-2 block">{language === 'es' ? 'Nueva fecha' : 'New date'}</Label>
+                <Calendar
+                  mode="single"
+                  selected={rescheduleDate}
+                  onSelect={(date) => {
+                    setRescheduleDate(date);
+                    setRescheduleTime('');
+                    if (date) loadRescheduleSlots(date);
+                  }}
+                  disabled={(date) => date < new Date(new Date().setHours(0,0,0,0))}
+                  locale={language === 'es' ? es : enUS}
+                  className="rounded-md border mx-auto"
+                />
+              </div>
+
+              {rescheduleDate && (
+                <div>
+                  <Label className="text-sm font-medium mb-2 block">
+                    {language === 'es' ? 'Horario disponible' : 'Available time'} — {format(rescheduleDate, 'dd MMM yyyy', { locale: language === 'es' ? es : enUS })}
+                  </Label>
+                  {slotsLoading ? (
+                    <div className="flex gap-2 flex-wrap">
+                      {[1,2,3,4].map(i => <Skeleton key={i} className="h-9 w-20" />)}
+                    </div>
+                  ) : rescheduleSlots.length > 0 ? (
+                    <div className="flex gap-2 flex-wrap max-h-40 overflow-y-auto">
+                      {rescheduleSlots.map(slot => (
+                        <Button
+                          key={slot.time}
+                          size="sm"
+                          variant={rescheduleTime === slot.time ? 'default' : 'outline'}
+                          className="h-9 text-xs"
+                          onClick={() => setRescheduleTime(slot.time)}
+                          data-testid={`slot-${slot.time}`}
+                        >
+                          {slot.time}
+                        </Button>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">{language === 'es' ? 'No hay horarios disponibles para esta fecha' : 'No available slots for this date'}</p>
+                  )}
+                </div>
+              )}
+
+              <Button
+                className="w-full"
+                disabled={!rescheduleDate || !rescheduleTime || rescheduleLoading}
+                onClick={handleReschedule}
+                data-testid="confirm-reschedule-btn"
+              >
+                {rescheduleLoading
+                  ? (language === 'es' ? 'Reagendando...' : 'Rescheduling...')
+                  : (language === 'es' ? 'Confirmar reagendamiento' : 'Confirm reschedule')}
+              </Button>
             </div>
           </DialogContent>
         </Dialog>

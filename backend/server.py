@@ -2855,6 +2855,99 @@ async def reschedule_booking(
     
     return {"message": "Booking rescheduled"}
 
+
+class RescheduleByBusinessRequest(BaseModel):
+    new_date: str
+    new_time: str
+    new_worker_id: Optional[str] = None
+
+@bookings_router.put("/{booking_id}/reschedule/business")
+async def reschedule_booking_by_business(
+    booking_id: str,
+    req: RescheduleByBusinessRequest,
+    token_data: TokenData = Depends(require_business)
+):
+    """Reschedule a booking by business owner - no 24h restriction, frees old slot"""
+    booking = await db.bookings.find_one({"id": booking_id})
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    
+    user = await db.users.find_one({"id": token_data.user_id})
+    if not user or user.get("business_id") != booking["business_id"]:
+        raise HTTPException(status_code=403, detail="Not your business booking")
+    
+    if booking["status"] not in [AppointmentStatus.CONFIRMED, AppointmentStatus.HOLD]:
+        raise HTTPException(status_code=400, detail="Only confirmed or hold bookings can be rescheduled")
+    
+    # Get service duration
+    service = await db.services.find_one({"id": booking["service_id"]})
+    duration = service["duration_minutes"] if service else booking.get("duration_minutes", 60)
+    
+    # Calculate new end time
+    start_dt = datetime.strptime(req.new_time, "%H:%M")
+    end_dt = start_dt + timedelta(minutes=duration)
+    new_end_time = end_dt.strftime("%H:%M")
+    
+    worker_id = req.new_worker_id or booking["worker_id"]
+    
+    # Check the new slot is available (exclude current booking)
+    conflict = await db.bookings.find_one({
+        "business_id": booking["business_id"],
+        "worker_id": worker_id,
+        "date": req.new_date,
+        "status": {"$in": [AppointmentStatus.HOLD, AppointmentStatus.CONFIRMED]},
+        "id": {"$ne": booking_id},
+        "$or": [
+            {"time": {"$lt": new_end_time}, "end_time": {"$gt": req.new_time}},
+        ]
+    })
+    
+    if conflict:
+        raise HTTPException(status_code=409, detail="El horario seleccionado ya está ocupado")
+    
+    now = datetime.now(timezone.utc).isoformat()
+    old_date = booking["date"]
+    old_time = booking["time"]
+    
+    update_fields = {
+        "date": req.new_date,
+        "time": req.new_time,
+        "end_time": new_end_time,
+        "rescheduled_at": now,
+        "rescheduled_by": "business",
+    }
+    if req.new_worker_id:
+        update_fields["worker_id"] = req.new_worker_id
+    
+    await db.bookings.update_one(
+        {"id": booking_id},
+        {"$set": update_fields}
+    )
+    
+    # Notify client
+    try:
+        worker = await db.workers.find_one({"id": worker_id})
+        worker_name = worker["name"] if worker else ""
+        await create_notification(
+            booking["user_id"],
+            "Cita Reagendada",
+            f"Tu cita del {old_date} a las {old_time} fue reagendada al {req.new_date} a las {req.new_time} con {worker_name}",
+            "booking",
+            {"booking_id": booking_id}
+        )
+    except Exception as e:
+        logger.error(f"Reschedule notification error: {e}")
+    
+    logger.info(f"Business rescheduled booking {booking_id}: {old_date} {old_time} -> {req.new_date} {req.new_time}")
+    
+    return {
+        "message": "Cita reagendada exitosamente",
+        "new_date": req.new_date,
+        "new_time": req.new_time,
+        "new_end_time": new_end_time
+    }
+
+
 @bookings_router.put("/{booking_id}/confirm")
 async def confirm_booking(booking_id: str, token_data: TokenData = Depends(require_business)):
     user = await db.users.find_one({"id": token_data.user_id})
