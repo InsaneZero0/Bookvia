@@ -6,14 +6,16 @@ import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Textarea } from '@/components/ui/textarea';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { useAuth } from '@/lib/auth';
 import { useI18n } from '@/lib/i18n';
-import { bookingsAPI, paymentsAPI } from '@/lib/api';
+import { bookingsAPI, paymentsAPI, reviewsAPI } from '@/lib/api';
 import { formatTime, getStatusColor } from '@/lib/utils';
 import { toast } from 'sonner';
 import {
   Calendar, Clock, User, ChevronRight, AlertTriangle, XCircle, 
-  CreditCard, Timer, CheckCircle2, AlertCircle, Ban
+  CreditCard, Timer, CheckCircle2, AlertCircle, Ban, Star
 } from 'lucide-react';
 
 const STATUS_CONFIG = {
@@ -59,6 +61,12 @@ export default function UserBookingsPage() {
   const [loading, setLoading] = useState(true);
   const [paymentLoading, setPaymentLoading] = useState(null);
   const [cancelLoading, setCancelLoading] = useState(null);
+  const [reviewModal, setReviewModal] = useState({ open: false, booking: null });
+  const [reviewRating, setReviewRating] = useState(0);
+  const [reviewHover, setReviewHover] = useState(0);
+  const [reviewComment, setReviewComment] = useState('');
+  const [reviewLoading, setReviewLoading] = useState(false);
+  const [reviewedBookings, setReviewedBookings] = useState(new Set());
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -143,6 +151,35 @@ export default function UserBookingsPage() {
       toast.error(message);
     } finally {
       setCancelLoading(null);
+    }
+  };
+
+  const openReview = (booking) => {
+    setReviewModal({ open: true, booking });
+    setReviewRating(0);
+    setReviewHover(0);
+    setReviewComment('');
+  };
+
+  const submitReview = async () => {
+    const bk = reviewModal.booking;
+    if (!bk || reviewRating < 1) return;
+    setReviewLoading(true);
+    try {
+      await reviewsAPI.create({
+        business_id: bk.business_id,
+        booking_id: bk.id,
+        rating: reviewRating,
+        comment: reviewComment.trim() || null,
+      });
+      toast.success(language === 'es' ? 'Reseña enviada. ¡Gracias!' : 'Review submitted. Thank you!');
+      setReviewedBookings(prev => new Set([...prev, bk.id]));
+      setReviewModal({ open: false, booking: null });
+    } catch (error) {
+      const detail = error?.response?.data?.detail || '';
+      toast.error(detail || (language === 'es' ? 'Error al enviar reseña' : 'Error submitting review'));
+    } finally {
+      setReviewLoading(false);
     }
   };
 
@@ -288,15 +325,24 @@ export default function UserBookingsPage() {
                 </div>
               )}
 
-              {booking.status === 'completed' && !booking.has_review && (
+              {/* Review button for past/completed bookings */}
+              {(booking.status === 'completed' || (booking.status === 'confirmed' && booking.date <= new Date().toISOString().split('T')[0])) && !booking.has_review && !reviewedBookings.has(booking.id) && (
                 <Button
                   variant="outline"
                   size="sm"
-                  className="mt-4"
-                  onClick={() => navigate(`/review/${booking.id}`)}
+                  className="mt-4 text-amber-600 border-amber-200 hover:bg-amber-50"
+                  onClick={() => openReview(booking)}
+                  data-testid={`review-booking-${booking.id}`}
                 >
-                  {language === 'es' ? 'Dejar reseña' : 'Leave review'}
+                  <Star className="h-4 w-4 mr-1" />
+                  {language === 'es' ? 'Calificar servicio' : 'Rate service'}
                 </Button>
+              )}
+              {(booking.has_review || reviewedBookings.has(booking.id)) && (
+                <div className="mt-4 flex items-center gap-1 text-sm text-amber-600">
+                  <Star className="h-4 w-4 fill-amber-500" />
+                  {language === 'es' ? 'Ya calificaste este servicio' : 'Already rated'}
+                </div>
               )}
 
               {/* Cancellation info */}
@@ -431,6 +477,68 @@ export default function UserBookingsPage() {
             )}
           </TabsContent>
         </Tabs>
+
+        {/* Review Modal */}
+        <Dialog open={reviewModal.open} onOpenChange={(open) => !open && setReviewModal({ open: false, booking: null })}>
+          <DialogContent className="max-w-sm" data-testid="review-modal">
+            <DialogHeader>
+              <DialogTitle>{language === 'es' ? 'Calificar servicio' : 'Rate service'}</DialogTitle>
+              <DialogDescription>
+                {reviewModal.booking && (
+                  <span>{reviewModal.booking.service_name} — {reviewModal.booking.business_name}</span>
+                )}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-5 mt-2">
+              <div className="flex justify-center gap-2">
+                {[1, 2, 3, 4, 5].map((star) => (
+                  <button
+                    key={star}
+                    type="button"
+                    className="p-1 transition-transform hover:scale-110"
+                    onMouseEnter={() => setReviewHover(star)}
+                    onMouseLeave={() => setReviewHover(0)}
+                    onClick={() => setReviewRating(star)}
+                    data-testid={`star-${star}`}
+                  >
+                    <Star
+                      className={`h-9 w-9 transition-colors ${
+                        star <= (reviewHover || reviewRating)
+                          ? 'fill-amber-400 text-amber-400'
+                          : 'text-gray-300'
+                      }`}
+                    />
+                  </button>
+                ))}
+              </div>
+              <p className="text-center text-sm text-muted-foreground">
+                {reviewRating === 0 && (language === 'es' ? 'Selecciona una calificación' : 'Select a rating')}
+                {reviewRating === 1 && (language === 'es' ? 'Muy malo' : 'Very bad')}
+                {reviewRating === 2 && (language === 'es' ? 'Malo' : 'Bad')}
+                {reviewRating === 3 && (language === 'es' ? 'Regular' : 'Average')}
+                {reviewRating === 4 && (language === 'es' ? 'Bueno' : 'Good')}
+                {reviewRating === 5 && (language === 'es' ? 'Excelente' : 'Excellent')}
+              </p>
+              <Textarea
+                placeholder={language === 'es' ? 'Escribe una reseña (opcional)' : 'Write a review (optional)'}
+                value={reviewComment}
+                onChange={(e) => setReviewComment(e.target.value)}
+                rows={3}
+                data-testid="review-comment"
+              />
+              <Button
+                className="w-full"
+                disabled={reviewRating < 1 || reviewLoading}
+                onClick={submitReview}
+                data-testid="submit-review-btn"
+              >
+                {reviewLoading
+                  ? (language === 'es' ? 'Enviando...' : 'Submitting...')
+                  : (language === 'es' ? 'Enviar calificación' : 'Submit rating')}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );

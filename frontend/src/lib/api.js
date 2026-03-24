@@ -202,7 +202,7 @@ export const bookingsAPI = {
 
 // Reviews API
 export const reviewsAPI = {
-  create: (data) => api.post('/reviews', data),
+  create: (data) => api.post('/reviews/', data),
   getByBusiness: (businessId, params) => api.get(`/reviews/business/${businessId}`, { params }),
 };
 

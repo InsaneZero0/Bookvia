@@ -508,6 +508,8 @@ class BookingResponse(BaseModel):
     # Computed fields
     can_cancel: bool = True
     hours_until_appointment: Optional[float] = None
+    has_review: bool = False
+    business_slug: Optional[str] = None
 
 # Review Models
 class ReviewCreate(BaseModel):
@@ -2758,8 +2760,13 @@ async def get_my_bookings(
         worker = await db.workers.find_one({"id": b["worker_id"]})
         
         b["business_name"] = business["name"] if business else None
+        b["business_slug"] = business.get("slug") if business else None
         b["service_name"] = service["name"] if service else None
         b["worker_name"] = worker["name"] if worker else None
+        
+        # Check if already reviewed
+        existing_review = await db.reviews.find_one({"booking_id": b["id"]})
+        b["has_review"] = existing_review is not None
         
         # Calculate hours until appointment
         try:
@@ -3010,15 +3017,23 @@ async def complete_booking(booking_id: str, token_data: TokenData = Depends(requ
 
 @reviews_router.post("/", response_model=ReviewResponse)
 async def create_review(review: ReviewCreate, token_data: TokenData = Depends(require_auth)):
-    # Verify booking was completed
+    # Verify booking was completed (or confirmed with past date)
     booking = await db.bookings.find_one({
         "id": review.booking_id,
         "user_id": token_data.user_id,
-        "status": AppointmentStatus.COMPLETED
     })
     
     if not booking:
-        raise HTTPException(status_code=400, detail="Can only review completed bookings")
+        raise HTTPException(status_code=400, detail="Booking not found")
+    
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    is_past = booking.get("date", "") <= today
+    allowed_statuses = [AppointmentStatus.COMPLETED]
+    if is_past:
+        allowed_statuses.append(AppointmentStatus.CONFIRMED)
+    
+    if booking["status"] not in allowed_statuses:
+        raise HTTPException(status_code=400, detail="Solo puedes calificar citas completadas o pasadas")
     
     # Check if already reviewed
     existing = await db.reviews.find_one({"booking_id": review.booking_id})
