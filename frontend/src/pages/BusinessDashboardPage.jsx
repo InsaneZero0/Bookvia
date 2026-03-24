@@ -28,7 +28,7 @@ import {
 
 export default function BusinessDashboardPage() {
   const { t, language } = useI18n();
-  const { business, isAuthenticated, isBusiness } = useAuth();
+  const { business, user, isAuthenticated, isBusiness } = useAuth();
   const navigate = useNavigate();
 
   const [loading, setLoading] = useState(true);
