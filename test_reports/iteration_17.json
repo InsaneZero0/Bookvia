@@ -71,5 +71,5 @@
 
   "should_main_agent_self_test": false,
 
-  "context_for_next_testing_agent": "Iteration 17 tested the business closures feature. Key data-testids: tab-closures (on business dashboard), closures-calendar (inside Cierres tab). The closures endpoints are at /api/businesses/me/closures (GET/POST/DELETE). Test business: test_closures_biz@bookvia.com / TestPass123!. The availability endpoint (/api/bookings/availability/{business_id}) returns empty slots when a date is closed. App URL: https://stripe-webhook-debug-2.preview.emergentagent.com"
+  "context_for_next_testing_agent": "Iteration 17 tested the business closures feature. Key data-testids: tab-closures (on business dashboard), closures-calendar (inside Cierres tab). The closures endpoints are at /api/businesses/me/closures (GET/POST/DELETE). Test business: test_closures_biz@bookvia.com / TestPass123!. The availability endpoint (/api/bookings/availability/{business_id}) returns empty slots when a date is closed. App URL: https://marketplace-test-21.preview.emergentagent.com"
 }

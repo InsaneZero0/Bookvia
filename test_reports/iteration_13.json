@@ -55,5 +55,5 @@
 
   "should_main_agent_self_test": false,
 
-  "context_for_next_testing_agent": "Iteration 13 tested Home and Search page redesigns. Key data-testids: home-page, categories-section (category-card-{slug}), how-it-works-section, cities-section (city-card-{slug}), testimonials-section (testimonial-{0-3}), trust-section, business-cta-section (register-business-cta), featured-section, search-page, results-list, results-map-view, search-map, view-list-toggle, view-map-toggle, filter-category, filter-city, filter-sort, filter-rating. Map uses react-leaflet with OpenStreetMap tiles. Test business slug: test-business-5ecc65fc. App URL: https://stripe-webhook-debug-2.preview.emergentagent.com"
+  "context_for_next_testing_agent": "Iteration 13 tested Home and Search page redesigns. Key data-testids: home-page, categories-section (category-card-{slug}), how-it-works-section, cities-section (city-card-{slug}), testimonials-section (testimonial-{0-3}), trust-section, business-cta-section (register-business-cta), featured-section, search-page, results-list, results-map-view, search-map, view-list-toggle, view-map-toggle, filter-category, filter-city, filter-sort, filter-rating. Map uses react-leaflet with OpenStreetMap tiles. Test business slug: test-business-5ecc65fc. App URL: https://marketplace-test-21.preview.emergentagent.com"
 }

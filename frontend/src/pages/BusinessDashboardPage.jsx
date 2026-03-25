@@ -22,8 +22,8 @@ import { toast } from 'sonner';
 import {
   Calendar as CalendarIcon, DollarSign, Star, Users, Clock, CheckCircle2,
   XCircle, AlertTriangle, TrendingUp, Settings, UserCog, Image, Upload,
-  Trash2, Eye, Plus, Pencil, BarChart3, Briefcase, ArrowUpRight, Phone,
-  Ban, CalendarOff, CreditCard, Shield, RefreshCw
+  Trash2, Eye, Plus, Pencil, BarChart3, Briefcase, ArrowUpRight,
+  Ban, CalendarOff, CreditCard, Shield, RefreshCw, Mail, Phone
 } from 'lucide-react';
 
 export default function BusinessDashboardPage() {
@@ -53,6 +53,7 @@ export default function BusinessDashboardPage() {
   const [rescheduleTime, setRescheduleTime] = useState('');
   const [rescheduleLoading, setRescheduleLoading] = useState(false);
   const [slotsLoading, setSlotsLoading] = useState(false);
+  const [bookingDetail, setBookingDetail] = useState(null);
   useEffect(() => {
     if (!isAuthenticated || !isBusiness) {
       navigate('/business/login');
@@ -473,8 +474,8 @@ export default function BusinessDashboardPage() {
                                 <Badge variant="secondary" className="text-[9px] mt-0.5 px-1 py-0">{durationMin}min</Badge>
                               </div>
                               <Separator orientation="vertical" className="h-10" />
-                              <div>
-                                <p className="font-medium text-sm">{booking.client_name || booking.user_name}</p>
+                              <div className="cursor-pointer" onClick={() => setBookingDetail(booking)}>
+                                <p className="font-medium text-sm hover:text-[#F05D5E] transition-colors">{booking.client_name || booking.user_name}</p>
                                 <p className="text-xs text-muted-foreground">{booking.service_name}</p>
                                 {booking.worker_name && <p className="text-xs text-muted-foreground/70">{booking.worker_name}</p>}
                               </div>
@@ -1033,6 +1034,93 @@ export default function BusinessDashboardPage() {
                   : (language === 'es' ? 'Confirmar reagendamiento' : 'Confirm reschedule')}
               </Button>
             </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Booking Detail Modal */}
+        <Dialog open={!!bookingDetail} onOpenChange={(open) => !open && setBookingDetail(null)}>
+          <DialogContent className="max-w-sm" data-testid="booking-detail-modal">
+            <DialogHeader>
+              <DialogTitle>{language === 'es' ? 'Detalle de la cita' : 'Booking detail'}</DialogTitle>
+            </DialogHeader>
+            {bookingDetail && (() => {
+              const b = bookingDetail;
+              const name = b.client_name || b.user_name || (language === 'es' ? 'Sin nombre' : 'No name');
+              const email = b.client_email || b.user_email;
+              const phone = b.client_phone || b.user_phone;
+              return (
+                <div className="space-y-4 mt-1">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-full bg-[#F05D5E]/10 flex items-center justify-center text-[#F05D5E] font-bold text-lg">
+                      {name.charAt(0).toUpperCase()}
+                    </div>
+                    <div>
+                      <p className="font-semibold">{name}</p>
+                      <Badge className={`text-[10px] ${getStatusColor(b.status)}`}>
+                        {b.status === 'cancelled' && b.cancelled_by
+                          ? (language === 'es' ? `Cancelada por ${b.cancelled_by === 'business' ? 'negocio' : 'cliente'}` : `Cancelled by ${b.cancelled_by}`)
+                          : t(`status.${b.status}`)}
+                      </Badge>
+                    </div>
+                  </div>
+                  <Separator />
+                  <div className="grid gap-2.5 text-sm">
+                    {email && (
+                      <div className="flex items-center gap-2">
+                        <Mail className="h-4 w-4 text-muted-foreground shrink-0" />
+                        <a href={`mailto:${email}`} className="text-blue-600 hover:underline truncate">{email}</a>
+                      </div>
+                    )}
+                    {phone && (
+                      <div className="flex items-center gap-2">
+                        <Phone className="h-4 w-4 text-muted-foreground shrink-0" />
+                        <a href={`tel:${phone}`} className="text-blue-600 hover:underline">{phone}</a>
+                      </div>
+                    )}
+                    {!email && !phone && (
+                      <p className="text-muted-foreground text-xs italic">{language === 'es' ? 'No hay datos de contacto disponibles' : 'No contact info available'}</p>
+                    )}
+                  </div>
+                  <Separator />
+                  <div className="grid gap-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">{language === 'es' ? 'Servicio' : 'Service'}</span>
+                      <span className="font-medium">{b.service_name}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">{language === 'es' ? 'Profesional' : 'Professional'}</span>
+                      <span className="font-medium">{b.worker_name || '-'}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">{language === 'es' ? 'Fecha' : 'Date'}</span>
+                      <span className="font-medium">{new Date(b.date + 'T12:00:00').toLocaleDateString(language === 'es' ? 'es-MX' : 'en-US', { weekday: 'short', day: 'numeric', month: 'short' })}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">{language === 'es' ? 'Horario' : 'Time'}</span>
+                      <span className="font-medium">{b.time} - {b.end_time}</span>
+                    </div>
+                    {b.deposit_amount > 0 && (
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">{language === 'es' ? 'Anticipo' : 'Deposit'}</span>
+                        <span className="font-medium">{b.deposit_paid ? '✓' : '✗'} ${b.deposit_amount} MXN</span>
+                      </div>
+                    )}
+                    {b.total_amount > 0 && (
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Total</span>
+                        <span className="font-medium">${b.total_amount} MXN</span>
+                      </div>
+                    )}
+                    {b.notes && (
+                      <div className="mt-1">
+                        <p className="text-muted-foreground text-xs mb-1">{language === 'es' ? 'Notas' : 'Notes'}</p>
+                        <p className="text-sm bg-muted/50 p-2 rounded">{b.notes}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
           </DialogContent>
         </Dialog>
       </div>

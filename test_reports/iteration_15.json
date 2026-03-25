@@ -55,7 +55,7 @@
 
   "should_main_agent_self_test": false,
 
-  "context_for_next_testing_agent": "Iteration 15 tested the new commission info block feature. Key data-testids: commission-info-block (visible only inside option-with-deposit when selected). The block displays 3 deposit schedule options with their respective fees (10%, 8%, 4%). A bug was fixed: Badge component was not imported but was being used - import added. App URL: https://stripe-webhook-debug-2.preview.emergentagent.com",
+  "context_for_next_testing_agent": "Iteration 15 tested the new commission info block feature. Key data-testids: commission-info-block (visible only inside option-with-deposit when selected). The block displays 3 deposit schedule options with their respective fees (10%, 8%, 4%). A bug was fixed: Badge component was not imported but was being used - import added. App URL: https://marketplace-test-21.preview.emergentagent.com",
 
   "fix_applied": {
     "file": "/app/frontend/src/pages/BusinessRegisterPage.jsx",
