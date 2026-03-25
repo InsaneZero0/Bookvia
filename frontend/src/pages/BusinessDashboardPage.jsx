@@ -1042,6 +1042,9 @@ export default function BusinessDashboardPage() {
           <DialogContent className="max-w-sm" data-testid="booking-detail-modal">
             <DialogHeader>
               <DialogTitle>{language === 'es' ? 'Detalle de la cita' : 'Booking detail'}</DialogTitle>
+              <DialogDescription>
+                {language === 'es' ? 'Información del cliente y la cita' : 'Client and booking information'}
+              </DialogDescription>
             </DialogHeader>
             {bookingDetail && (() => {
               const b = bookingDetail;
