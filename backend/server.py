@@ -2748,6 +2748,9 @@ async def get_my_bookings(
     if upcoming:
         today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         filters["date"] = {"$gte": today}
+    else:
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        filters["date"] = {"$lt": today}
     
     bookings = await db.bookings.find(filters, {"_id": 0}).sort("date", 1).to_list(100)
     
