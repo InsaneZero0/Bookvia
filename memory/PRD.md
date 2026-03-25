@@ -63,6 +63,7 @@ Bookvia es una plataforma marketplace de reservas profesionales que conecta nego
 - [x] **Tarjetas de estadisticas clickeables** con modal de detalle y filtro por rango de fechas
 - [x] **Sistema de veto/blacklist de clientes** (por email, telefono o userId)
 - [x] Pagina de configuracion del negocio (/business/settings)
+- [x] **Modal de Detalle de Cita/Cliente**: click en nombre del cliente muestra info completa (email, tel, servicio, fecha, monto)
 
 ### Imagenes
 - [x] Cloudinary como almacenamiento primario (produccion)
@@ -93,6 +94,7 @@ Bookvia es una plataforma marketplace de reservas profesionales que conecta nego
 - [2026-03-24] Boton Reagendar cita: modal con calendario y horarios disponibles, libera slot anterior
 - [2026-03-24] Bug critico: fechas de citas se mostraban -1 dia en zonas horarias negativas (new Date("YYYY-MM-DD") parseaba como UTC)
 - [2026-03-24] Sistema de reseñas: boton "Calificar servicio" con estrellas 1-5 y reseña opcional, visible en perfil del negocio
+- [2026-03-25] Modal "Detalle de la cita" en BusinessDashboard: click en nombre del cliente abre modal con nombre, email, telefono, servicio, profesional, fecha, horario, anticipo y total. Testeado al 100%.
 
 ## Backlog (P0-P3)
 

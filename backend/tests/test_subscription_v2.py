@@ -96,7 +96,7 @@ class TestSubscriptionEndpoints:
         
         response = requests.post(
             f"{BASE_URL}/api/businesses/me/subscribe",
-            json={"origin_url": "https://stripe-webhook-debug-2.preview.emergentagent.com"},
+            json={"origin_url": "https://marketplace-test-21.preview.emergentagent.com"},
             headers=headers
         )
         

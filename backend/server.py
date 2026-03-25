@@ -500,6 +500,8 @@ class BookingResponse(BaseModel):
     service_name: Optional[str] = None
     worker_name: Optional[str] = None
     user_name: Optional[str] = None
+    user_email: Optional[str] = None
+    user_phone: Optional[str] = None
     # Client data (for business-created bookings)
     client_name: Optional[str] = None
     client_email: Optional[str] = None
@@ -2813,6 +2815,8 @@ async def get_business_bookings(
         worker = await db.workers.find_one({"id": b["worker_id"]})
         
         b["user_name"] = booking_user["full_name"] if booking_user else None
+        b["user_email"] = booking_user.get("email") if booking_user else b.get("client_email")
+        b["user_phone"] = booking_user.get("phone") if booking_user else b.get("client_phone")
         b["service_name"] = service["name"] if service else None
         b["worker_name"] = worker["name"] if worker else None
         

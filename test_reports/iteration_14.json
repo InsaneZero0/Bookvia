@@ -67,7 +67,7 @@
 
   "should_main_agent_self_test": false,
 
-  "context_for_next_testing_agent": "Iteration 14 tested the booking policy redesign in the business registration form. Key data-testids: option-with-deposit, option-without-deposit, deposit-amount-input, cancellation-days-deposit-input, cancellation-days-no-deposit-input, help-deposit-amount, help-cancellation-deposit, help-cancellation-no-deposit. Backend fix applied: cancellation_days field was not being saved to business_doc - now fixed in server.py. The form is multi-step with file upload required at Step 3. Test businesses created: TEST_Spa With Deposit, TEST_Spa No Deposit, TEST_Spa Default. App URL: https://stripe-webhook-debug-2.preview.emergentagent.com",
+  "context_for_next_testing_agent": "Iteration 14 tested the booking policy redesign in the business registration form. Key data-testids: option-with-deposit, option-without-deposit, deposit-amount-input, cancellation-days-deposit-input, cancellation-days-no-deposit-input, help-deposit-amount, help-cancellation-deposit, help-cancellation-no-deposit. Backend fix applied: cancellation_days field was not being saved to business_doc - now fixed in server.py. The form is multi-step with file upload required at Step 3. Test businesses created: TEST_Spa With Deposit, TEST_Spa No Deposit, TEST_Spa Default. App URL: https://marketplace-test-21.preview.emergentagent.com",
 
   "rca_of_the_issue": "Bug found: cancellation_days field was defined in BusinessCreate model (line 279) and BusinessResponse model (line 311) but was NOT being saved to the MongoDB document in the register_business function. The fix was adding 'cancellation_days': business.cancellation_days to the business_doc dictionary at line ~1095."
 }
