@@ -4917,22 +4917,20 @@ async def get_cities(country_code: str = "MX"):
 
 @api_router.post("/seed/countries")
 async def seed_countries():
-    """Seed countries and cities for multi-country support"""
-    # Default countries
-    countries = [
-        {
-            "code": "MX",
-            "name_es": "México",
-            "name_en": "Mexico",
-            "currency_code": "MXN",
-            "default_language": "es",
-            "timezone_default": "America/Mexico_City",
-            "phone_prefix": "+52",
-            "active": True
-        }
-    ]
-    
-    # Default Mexican cities
+    """Seed countries and cities for multi-country support (idempotent via upsert)"""
+    from data.countries import COUNTRIES
+
+    upserted = 0
+    for c in COUNTRIES:
+        result = await db.countries.update_one(
+            {"code": c["code"]},
+            {"$set": c},
+            upsert=True,
+        )
+        if result.upserted_id or result.modified_count:
+            upserted += 1
+
+    # Default Mexican cities (only insert missing ones)
     cities = [
         {"country_code": "MX", "name": "Ciudad de México", "slug": "cdmx", "state": "CDMX", "timezone": "America/Mexico_City", "active": True, "business_count": 0},
         {"country_code": "MX", "name": "Guadalajara", "slug": "guadalajara", "state": "Jalisco", "timezone": "America/Mexico_City", "active": True, "business_count": 0},
@@ -4945,40 +4943,36 @@ async def seed_countries():
         {"country_code": "MX", "name": "Querétaro", "slug": "queretaro", "state": "Querétaro", "timezone": "America/Mexico_City", "active": True, "business_count": 0},
         {"country_code": "MX", "name": "San Luis Potosí", "slug": "san-luis-potosi", "state": "San Luis Potosí", "timezone": "America/Mexico_City", "active": True, "business_count": 0},
     ]
-    
-    # Check if already seeded
-    existing_countries = await db.countries.count_documents({})
-    if existing_countries > 0:
-        return {"message": "Countries already seeded", "countries": existing_countries}
-    
-    # Insert countries
-    await db.countries.insert_many(countries)
-    
-    # Insert cities
-    await db.cities.insert_many(cities)
-    
-    # Update existing businesses to have country_code = MX if missing
+    cities_upserted = 0
+    for city in cities:
+        result = await db.cities.update_one(
+            {"slug": city["slug"], "country_code": city["country_code"]},
+            {"$set": city},
+            upsert=True,
+        )
+        if result.upserted_id or result.modified_count:
+            cities_upserted += 1
+
+    # Backfill: existing businesses without country_code default to MX
     await db.businesses.update_many(
         {"country_code": {"$exists": False}},
         {"$set": {"country_code": "MX"}}
     )
-    
-    # Update existing ledger_entries to have country_code = MX if missing
     await db.ledger_entries.update_many(
         {"country_code": {"$exists": False}},
         {"$set": {"country_code": "MX"}}
     )
-    
-    # Update existing settlements to have country_code = MX if missing
     await db.settlements.update_many(
         {"country_code": {"$exists": False}},
         {"$set": {"country_code": "MX"}}
     )
-    
+
+    total_countries = await db.countries.count_documents({})
     return {
-        "message": "Countries and cities seeded successfully",
-        "countries_created": len(countries),
-        "cities_created": len(cities)
+        "message": "Countries seed completed (idempotent)",
+        "countries_total": total_countries,
+        "countries_upserted": upserted,
+        "cities_upserted": cities_upserted,
     }
 
 
