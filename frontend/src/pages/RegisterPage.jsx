@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -7,8 +7,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAuth } from '@/lib/auth';
 import { useI18n } from '@/lib/i18n';
+import { countries, getCountryByCode } from '@/lib/countries';
 import { toast } from 'sonner';
-import { Eye, EyeOff, ArrowLeft, Mail, Lock, User, Phone, Calendar } from 'lucide-react';
+import { Eye, EyeOff, ArrowLeft, Mail, Lock, User, Phone, Calendar, Globe, Search } from 'lucide-react';
 
 export default function RegisterPage() {
   const { t, language } = useI18n();
@@ -21,15 +22,46 @@ export default function RegisterPage() {
     confirmPassword: '',
     full_name: '',
     phone: '',
+    country: 'MX',
     birth_date: '',
     gender: '',
     preferred_language: language,
   });
+  const [phoneNumber, setPhoneNumber] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [countrySearch, setCountrySearch] = useState('');
+
+  const selectedCountry = getCountryByCode(formData.country) || countries[0];
+
+  const filteredCountries = useMemo(() => {
+    if (!countrySearch.trim()) return countries;
+    const q = countrySearch.toLowerCase();
+    return countries.filter(c =>
+      c.name.toLowerCase().includes(q) ||
+      c.nameEn.toLowerCase().includes(q) ||
+      c.code.toLowerCase().includes(q) ||
+      c.phone.includes(q)
+    );
+  }, [countrySearch]);
 
   const handleChange = (e) => {
     setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
+  };
+
+  const handlePhoneChange = (e) => {
+    const digits = e.target.value.replace(/\D/g, '').slice(0, 10);
+    setPhoneNumber(digits);
+    setFormData(prev => ({ ...prev, phone: `${selectedCountry.phone}${digits}` }));
+  };
+
+  const handleCountryChange = (code) => {
+    const c = getCountryByCode(code);
+    setFormData(prev => ({
+      ...prev,
+      country: code,
+      phone: c ? `${c.phone}${phoneNumber}` : prev.phone,
+    }));
   };
 
   const handleSubmit = async (e) => {
@@ -42,6 +74,11 @@ export default function RegisterPage() {
 
     if (formData.password.length < 6) {
       toast.error(language === 'es' ? 'La contraseña debe tener al menos 6 caracteres' : 'Password must be at least 6 characters');
+      return;
+    }
+
+    if (phoneNumber.length < 7) {
+      toast.error(language === 'es' ? 'El número de teléfono debe tener al menos 7 dígitos' : 'Phone number must have at least 7 digits');
       return;
     }
 
@@ -123,22 +160,73 @@ export default function RegisterPage() {
                 </div>
               </div>
 
+              {/* Country */}
+              <div className="space-y-2">
+                <Label>{language === 'es' ? 'País' : 'Country'} *</Label>
+                <Select value={formData.country} onValueChange={handleCountryChange}>
+                  <SelectTrigger className="h-12" data-testid="country-select">
+                    <SelectValue>
+                      <span className="flex items-center gap-2">
+                        <span className="text-lg leading-none">{selectedCountry.flag}</span>
+                        <span>{language === 'es' ? selectedCountry.name : selectedCountry.nameEn}</span>
+                      </span>
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent className="max-h-64">
+                    <div className="sticky top-0 bg-popover p-2 border-b">
+                      <div className="relative">
+                        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                        <input
+                          type="text"
+                          placeholder={language === 'es' ? 'Buscar país...' : 'Search country...'}
+                          value={countrySearch}
+                          onChange={(e) => setCountrySearch(e.target.value)}
+                          className="w-full pl-8 pr-3 py-2 text-sm rounded-md border bg-transparent outline-none focus:ring-1 focus:ring-ring"
+                          data-testid="country-search-input"
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      </div>
+                    </div>
+                    {filteredCountries.map(c => (
+                      <SelectItem key={c.code} value={c.code} data-testid={`country-option-${c.code}`}>
+                        <span className="flex items-center gap-2">
+                          <span className="text-lg leading-none">{c.flag}</span>
+                          <span className="flex-1">{language === 'es' ? c.name : c.nameEn}</span>
+                          <span className="text-muted-foreground text-xs ml-1">({c.phone})</span>
+                        </span>
+                      </SelectItem>
+                    ))}
+                    {filteredCountries.length === 0 && (
+                      <div className="py-4 text-center text-sm text-muted-foreground">
+                        {language === 'es' ? 'No se encontraron países' : 'No countries found'}
+                      </div>
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
+
               {/* Phone */}
               <div className="space-y-2">
                 <Label htmlFor="phone">{t('auth.phone')} *</Label>
-                <div className="relative">
-                  <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-                  <Input
+                <div className="flex gap-0 items-center rounded-md border border-input focus-within:ring-1 focus-within:ring-ring h-12 overflow-hidden">
+                  <div className="flex items-center gap-1.5 px-3 bg-muted/50 h-full border-r shrink-0 select-none">
+                    <span className="text-base leading-none">{selectedCountry.flag}</span>
+                    <span className="text-sm font-medium text-foreground">{selectedCountry.phone}</span>
+                  </div>
+                  <input
                     id="phone"
                     name="phone"
                     type="tel"
-                    placeholder="+52 55 1234 5678"
-                    value={formData.phone}
-                    onChange={handleChange}
-                    className="pl-10 h-12"
+                    inputMode="numeric"
+                    placeholder="55 1234 5678"
+                    value={phoneNumber}
+                    onChange={handlePhoneChange}
+                    maxLength={10}
+                    className="flex-1 h-full px-3 text-sm bg-transparent outline-none placeholder:text-muted-foreground"
                     required
                     data-testid="phone-input"
                   />
+                  <span className="text-xs text-muted-foreground pr-3 shrink-0">{phoneNumber.length}/10</span>
                 </div>
               </div>
 
