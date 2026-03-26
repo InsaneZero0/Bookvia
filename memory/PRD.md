@@ -95,6 +95,7 @@ Bookvia es una plataforma marketplace de reservas profesionales que conecta nego
 - [2026-03-24] Bug critico: fechas de citas se mostraban -1 dia en zonas horarias negativas (new Date("YYYY-MM-DD") parseaba como UTC)
 - [2026-03-24] Sistema de reseñas: boton "Calificar servicio" con estrellas 1-5 y reseña opcional, visible en perfil del negocio
 - [2026-03-25] Modal "Detalle de la cita" en BusinessDashboard: click en nombre del cliente abre modal con nombre, email, telefono, servicio, profesional, fecha, horario, anticipo y total. Testeado al 100%.
+- [2026-03-26] Selector de pais en registro de usuario: dropdown con banderas, busqueda, codigo telefonico automatico segun pais, telefono limitado a 10 digitos. Campo 'country' guardado en backend.
 
 ## Backlog (P0-P3)
 
