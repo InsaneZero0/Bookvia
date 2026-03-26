@@ -219,6 +219,7 @@ class UserCreate(BaseModel):
     password: str
     full_name: str
     phone: str
+    country: Optional[str] = None
     birth_date: Optional[str] = None
     gender: Optional[str] = None
     photo_url: Optional[str] = None
@@ -1049,6 +1050,7 @@ async def register_user(user: UserCreate):
         "password_hash": hash_password(user.password),
         "full_name": user.full_name,
         "phone": user.phone,
+        "country": user.country,
         "phone_verified": False,
         "birth_date": user.birth_date,
         "gender": user.gender,
