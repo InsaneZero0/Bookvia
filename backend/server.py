@@ -287,6 +287,8 @@ class BusinessCreate(BaseModel):
     proof_of_address_url: Optional[str] = None
     clabe: str
     legal_name: str
+    # Owner info
+    owner_birth_date: Optional[str] = None
     # Business settings
     requires_deposit: bool = False
     deposit_amount: float = 50.0
@@ -1179,6 +1181,7 @@ async def register_business(business: BusinessCreate):
         "proof_of_address_url": business.proof_of_address_url,
         "clabe": business.clabe,
         "legal_name": business.legal_name,
+        "owner_birth_date": business.owner_birth_date,
         "status": BusinessStatus.PENDING,
         "rating": 0.0,
         "rating_sum": 0.0,
