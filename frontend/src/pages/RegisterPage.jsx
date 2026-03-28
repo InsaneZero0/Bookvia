@@ -8,8 +8,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useAuth } from '@/lib/auth';
 import { useI18n } from '@/lib/i18n';
 import { countries, getCountryByCode } from '@/lib/countries';
+import { AgeVerification } from '@/components/AgeVerification';
 import { toast } from 'sonner';
-import { Eye, EyeOff, ArrowLeft, Mail, Lock, User, Phone, Calendar, Globe, Search } from 'lucide-react';
+import { Eye, EyeOff, ArrowLeft, Mail, Lock, User, Phone, Globe, Search } from 'lucide-react';
 
 export default function RegisterPage() {
   const { t, language } = useI18n();
@@ -31,6 +32,7 @@ export default function RegisterPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [countrySearch, setCountrySearch] = useState('');
+  const [ageValid, setAgeValid] = useState(false);
 
   const selectedCountry = getCountryByCode(formData.country) || countries[0];
 
@@ -79,6 +81,11 @@ export default function RegisterPage() {
 
     if (phoneNumber.length < 7) {
       toast.error(language === 'es' ? 'El número de teléfono debe tener al menos 7 dígitos' : 'Phone number must have at least 7 digits');
+      return;
+    }
+
+    if (!ageValid) {
+      toast.error(language === 'es' ? 'Debes tener al menos 16 años para registrarte' : 'You must be at least 16 years old to register');
       return;
     }
 
@@ -230,39 +237,27 @@ export default function RegisterPage() {
                 </div>
               </div>
 
-              {/* Birth Date & Gender */}
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="birth_date">{t('auth.birthDate')}</Label>
-                  <div className="relative">
-                    <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-                    <Input
-                      id="birth_date"
-                      name="birth_date"
-                      type="date"
-                      value={formData.birth_date}
-                      onChange={handleChange}
-                      className="pl-10 h-12"
-                      data-testid="birthdate-input"
-                    />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label>{t('auth.gender')}</Label>
-                  <Select 
-                    value={formData.gender} 
-                    onValueChange={(value) => setFormData(prev => ({ ...prev, gender: value }))}
-                  >
-                    <SelectTrigger className="h-12" data-testid="gender-select">
-                      <SelectValue placeholder={language === 'es' ? 'Seleccionar' : 'Select'} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="male">{t('auth.gender.male')}</SelectItem>
-                      <SelectItem value="female">{t('auth.gender.female')}</SelectItem>
-                      <SelectItem value="other">{t('auth.gender.other')}</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+              {/* Age Verification & Gender */}
+              <AgeVerification
+                onDateChange={(date) => setFormData(prev => ({ ...prev, birth_date: date }))}
+                onAgeValid={setAgeValid}
+                minAge={16}
+              />
+              <div className="space-y-2">
+                <Label>{t('auth.gender')}</Label>
+                <Select 
+                  value={formData.gender} 
+                  onValueChange={(value) => setFormData(prev => ({ ...prev, gender: value }))}
+                >
+                  <SelectTrigger className="h-12" data-testid="gender-select">
+                    <SelectValue placeholder={language === 'es' ? 'Seleccionar' : 'Select'} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="male">{t('auth.gender.male')}</SelectItem>
+                    <SelectItem value="female">{t('auth.gender.female')}</SelectItem>
+                    <SelectItem value="other">{t('auth.gender.other')}</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
 
               {/* Password */}

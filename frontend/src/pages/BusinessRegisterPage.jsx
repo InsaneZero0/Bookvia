@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,12 +12,14 @@ import { Progress } from '@/components/ui/progress';
 import { useAuth } from '@/lib/auth';
 import { useI18n } from '@/lib/i18n';
 import { categoriesAPI, businessesAPI } from '@/lib/api';
+import { countries, getCountryByCode } from '@/lib/countries';
+import { AgeVerification } from '@/components/AgeVerification';
 import { toast } from 'sonner';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { 
   ArrowLeft, ArrowRight, Mail, Lock, Phone, Building2, MapPin, 
   FileText, CreditCard, Upload, CheckCircle2, AlertTriangle, Eye, EyeOff,
-  HelpCircle, CalendarX, Banknote
+  HelpCircle, CalendarX, Banknote, Globe, Search
 } from 'lucide-react';
 
 const STEPS = [
@@ -37,6 +39,10 @@ export default function BusinessRegisterPage() {
   const [loading, setLoading] = useState(false);
   const [categories, setCategories] = useState([]);
   const [showPassword, setShowPassword] = useState(false);
+  const [phoneNumber, setPhoneNumber] = useState('');
+  const [countrySearch, setCountrySearch] = useState('');
+  const [ageValid, setAgeValid] = useState(false);
+  const [ownerBirthDate, setOwnerBirthDate] = useState('');
   
   // File upload states
   const [ineFile, setIneFile] = useState(null);
@@ -80,6 +86,19 @@ export default function BusinessRegisterPage() {
     accepts_terms: false,
   });
 
+  const selectedCountry = getCountryByCode(formData.country) || countries[0];
+
+  const filteredCountries = useMemo(() => {
+    if (!countrySearch.trim()) return countries;
+    const q = countrySearch.toLowerCase();
+    return countries.filter(c =>
+      c.name.toLowerCase().includes(q) ||
+      c.nameEn.toLowerCase().includes(q) ||
+      c.code.toLowerCase().includes(q) ||
+      c.phone.includes(q)
+    );
+  }, [countrySearch]);
+
   useEffect(() => {
     loadCategories();
   }, []);
@@ -98,6 +117,21 @@ export default function BusinessRegisterPage() {
     setFormData(prev => ({
       ...prev,
       [name]: type === 'checkbox' ? checked : value
+    }));
+  };
+
+  const handlePhoneChange = (e) => {
+    const digits = e.target.value.replace(/\D/g, '').slice(0, 10);
+    setPhoneNumber(digits);
+    setFormData(prev => ({ ...prev, phone: `${selectedCountry.phone}${digits}` }));
+  };
+
+  const handleCountryChange = (code) => {
+    const c = getCountryByCode(code);
+    setFormData(prev => ({
+      ...prev,
+      country: code,
+      phone: c ? `${c.phone}${phoneNumber}` : prev.phone,
     }));
   };
 
@@ -200,6 +234,14 @@ export default function BusinessRegisterPage() {
         }
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
           toast.error(language === 'es' ? 'Email inválido' : 'Invalid email');
+          return false;
+        }
+        if (phoneNumber.length < 7) {
+          toast.error(language === 'es' ? 'El número de teléfono debe tener al menos 7 dígitos' : 'Phone number must have at least 7 digits');
+          return false;
+        }
+        if (!ageValid) {
+          toast.error(language === 'es' ? 'El responsable debe tener al menos 16 años' : 'The owner must be at least 16 years old');
           return false;
         }
         return true;
@@ -305,6 +347,7 @@ export default function BusinessRegisterPage() {
         deposit_amount: formData.requires_deposit ? Number(formData.deposit_amount) : 50,
         cancellation_days: Number(formData.cancellation_days) || 1,
         payout_schedule: formData.requires_deposit ? formData.payout_schedule : null,
+        owner_birth_date: ownerBirthDate,
       };
       
       await businessRegister(registerData);
@@ -447,22 +490,75 @@ export default function BusinessRegisterPage() {
                         />
                       </div>
                     </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="phone">{language === 'es' ? 'Teléfono' : 'Phone'} *</Label>
-                      <div className="relative">
-                        <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-                        <Input
-                          id="phone"
-                          name="phone"
-                          type="tel"
-                          placeholder="+52 55 1234 5678"
-                          value={formData.phone}
-                          onChange={handleChange}
-                          className="pl-10 h-12"
-                          required
-                          data-testid="business-phone-input"
-                        />
+                  </div>
+
+                  {/* Country */}
+                  <div className="space-y-2">
+                    <Label>{language === 'es' ? 'País' : 'Country'} *</Label>
+                    <Select value={formData.country} onValueChange={handleCountryChange}>
+                      <SelectTrigger className="h-12" data-testid="business-country-select">
+                        <SelectValue>
+                          <span className="flex items-center gap-2">
+                            <span className="text-lg leading-none">{selectedCountry.flag}</span>
+                            <span>{language === 'es' ? selectedCountry.name : selectedCountry.nameEn}</span>
+                          </span>
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectContent className="max-h-64">
+                        <div className="sticky top-0 bg-popover p-2 border-b">
+                          <div className="relative">
+                            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                            <input
+                              type="text"
+                              placeholder={language === 'es' ? 'Buscar país...' : 'Search country...'}
+                              value={countrySearch}
+                              onChange={(e) => setCountrySearch(e.target.value)}
+                              className="w-full pl-8 pr-3 py-2 text-sm rounded-md border bg-transparent outline-none focus:ring-1 focus:ring-ring"
+                              data-testid="business-country-search-input"
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                          </div>
+                        </div>
+                        {filteredCountries.map(c => (
+                          <SelectItem key={c.code} value={c.code} data-testid={`biz-country-option-${c.code}`}>
+                            <span className="flex items-center gap-2">
+                              <span className="text-lg leading-none">{c.flag}</span>
+                              <span className="flex-1">{language === 'es' ? c.name : c.nameEn}</span>
+                              <span className="text-muted-foreground text-xs ml-1">({c.phone})</span>
+                            </span>
+                          </SelectItem>
+                        ))}
+                        {filteredCountries.length === 0 && (
+                          <div className="py-4 text-center text-sm text-muted-foreground">
+                            {language === 'es' ? 'No se encontraron países' : 'No countries found'}
+                          </div>
+                        )}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  {/* Phone with country code */}
+                  <div className="space-y-2">
+                    <Label>{language === 'es' ? 'Teléfono' : 'Phone'} *</Label>
+                    <div className="flex gap-0 items-center rounded-md border border-input focus-within:ring-1 focus-within:ring-ring h-12 overflow-hidden">
+                      <div className="flex items-center gap-1.5 px-3 bg-muted/50 h-full border-r shrink-0 select-none">
+                        <span className="text-base leading-none">{selectedCountry.flag}</span>
+                        <span className="text-sm font-medium text-foreground">{selectedCountry.phone}</span>
                       </div>
+                      <input
+                        id="biz-phone"
+                        name="phone"
+                        type="tel"
+                        inputMode="numeric"
+                        placeholder="55 1234 5678"
+                        value={phoneNumber}
+                        onChange={handlePhoneChange}
+                        maxLength={10}
+                        className="flex-1 h-full px-3 text-sm bg-transparent outline-none placeholder:text-muted-foreground"
+                        required
+                        data-testid="business-phone-input"
+                      />
+                      <span className="text-xs text-muted-foreground pr-3 shrink-0">{phoneNumber.length}/10</span>
                     </div>
                   </div>
 
@@ -498,6 +594,20 @@ export default function BusinessRegisterPage() {
                       className="min-h-[100px]"
                       required
                       data-testid="business-description-input"
+                    />
+                  </div>
+
+                  {/* Age Verification for business owner */}
+                  <div className="rounded-xl border bg-muted/30 p-4">
+                    <p className="text-xs text-muted-foreground mb-3">
+                      {language === 'es' 
+                        ? 'Edad del responsable del negocio' 
+                        : 'Age of the business owner'}
+                    </p>
+                    <AgeVerification
+                      onDateChange={setOwnerBirthDate}
+                      onAgeValid={setAgeValid}
+                      minAge={16}
                     />
                   </div>
 
@@ -607,10 +717,22 @@ export default function BusinessRegisterPage() {
                         onValueChange={(value) => setFormData(prev => ({ ...prev, country: value }))}
                       >
                         <SelectTrigger className="h-12">
-                          <SelectValue />
+                          <SelectValue>
+                            <span className="flex items-center gap-2">
+                              <span className="text-lg leading-none">{selectedCountry.flag}</span>
+                              <span>{language === 'es' ? selectedCountry.name : selectedCountry.nameEn}</span>
+                            </span>
+                          </SelectValue>
                         </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="MX">México</SelectItem>
+                        <SelectContent className="max-h-52">
+                          {countries.map(c => (
+                            <SelectItem key={c.code} value={c.code}>
+                              <span className="flex items-center gap-2">
+                                <span className="text-lg leading-none">{c.flag}</span>
+                                <span>{language === 'es' ? c.name : c.nameEn}</span>
+                              </span>
+                            </SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
                     </div>
