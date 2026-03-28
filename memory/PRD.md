@@ -97,6 +97,7 @@ Bookvia es una plataforma marketplace de reservas profesionales que conecta nego
 - [2026-03-25] Modal "Detalle de la cita" en BusinessDashboard: click en nombre del cliente abre modal con nombre, email, telefono, servicio, profesional, fecha, horario, anticipo y total. Testeado al 100%.
 - [2026-03-26] Selector de pais en registro de usuario: dropdown con banderas, busqueda, codigo telefonico automatico segun pais, telefono limitado a 10 digitos. Campo 'country' guardado en backend.
 - [2026-03-26] Sincronizacion de 75 paises a MongoDB via seed idempotente (upsert). Fuente maestra unica en backend/data/countries.py, espejada en frontend/src/lib/countries.js. Cada pais incluye code, name, phonePrefix, currency, timezone, language, flag, isActive.
+- [2026-03-28] Selector de pais y verificacion de edad en registro de negocio. Telefono con codigo de pais dinamico. Verificacion de edad 16+ con selectores Dia/Mes/Ano y feedback visual (pastel/check/stop). Aplica a ambos registros (usuario y negocio).
 
 ## Backlog (P0-P3)
 
