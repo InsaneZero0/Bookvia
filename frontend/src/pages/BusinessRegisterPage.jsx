@@ -15,6 +15,7 @@ import { categoriesAPI, businessesAPI } from '@/lib/api';
 import { countries, getCountryByCode } from '@/lib/countries';
 import { getDetectedCountry } from '@/lib/detectCountry';
 import { AgeVerification } from '@/components/AgeVerification';
+import { CitySelector } from '@/components/CitySelector';
 import { toast } from 'sonner';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { 
@@ -670,24 +671,20 @@ export default function BusinessRegisterPage() {
 
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label htmlFor="city">{language === 'es' ? 'Ciudad' : 'City'} *</Label>
-                      <Input
-                        id="city"
-                        name="city"
-                        placeholder="CDMX"
+                      <Label>{language === 'es' ? 'Ciudad' : 'City'} *</Label>
+                      <CitySelector
+                        countryCode={formData.country}
                         value={formData.city}
-                        onChange={handleChange}
-                        className="h-12"
+                        onChange={(city) => setFormData(prev => ({ ...prev, city }))}
                         required
-                        data-testid="city-input"
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="state">{language === 'es' ? 'Estado' : 'State'} *</Label>
+                      <Label htmlFor="state">{language === 'es' ? 'Estado / Región' : 'State / Region'} *</Label>
                       <Input
                         id="state"
                         name="state"
-                        placeholder={language === 'es' ? 'Ciudad de México' : 'Mexico City'}
+                        placeholder={language === 'es' ? 'Ej: Jalisco' : 'E.g.: California'}
                         value={formData.state}
                         onChange={handleChange}
                         className="h-12"

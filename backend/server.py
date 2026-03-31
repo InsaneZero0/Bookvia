@@ -220,6 +220,7 @@ class UserCreate(BaseModel):
     full_name: str
     phone: str
     country: Optional[str] = None
+    city: Optional[str] = None
     birth_date: Optional[str] = None
     gender: Optional[str] = None
     photo_url: Optional[str] = None
@@ -1053,6 +1054,7 @@ async def register_user(user: UserCreate):
         "full_name": user.full_name,
         "phone": user.phone,
         "country": user.country,
+        "city": user.city,
         "phone_verified": False,
         "birth_date": user.birth_date,
         "gender": user.gender,
@@ -4931,6 +4933,7 @@ async def get_cities(country_code: str = "MX"):
 async def seed_countries():
     """Seed countries and cities for multi-country support (idempotent via upsert)"""
     from data.countries import COUNTRIES
+    from data.cities import CITIES as CITIES_DATA
 
     upserted = 0
     for c in COUNTRIES:
@@ -4942,21 +4945,9 @@ async def seed_countries():
         if result.upserted_id or result.modified_count:
             upserted += 1
 
-    # Default Mexican cities (only insert missing ones)
-    cities = [
-        {"country_code": "MX", "name": "Ciudad de México", "slug": "cdmx", "state": "CDMX", "timezone": "America/Mexico_City", "active": True, "business_count": 0},
-        {"country_code": "MX", "name": "Guadalajara", "slug": "guadalajara", "state": "Jalisco", "timezone": "America/Mexico_City", "active": True, "business_count": 0},
-        {"country_code": "MX", "name": "Monterrey", "slug": "monterrey", "state": "Nuevo León", "timezone": "America/Monterrey", "active": True, "business_count": 0},
-        {"country_code": "MX", "name": "Puebla", "slug": "puebla", "state": "Puebla", "timezone": "America/Mexico_City", "active": True, "business_count": 0},
-        {"country_code": "MX", "name": "Tijuana", "slug": "tijuana", "state": "Baja California", "timezone": "America/Tijuana", "active": True, "business_count": 0},
-        {"country_code": "MX", "name": "León", "slug": "leon", "state": "Guanajuato", "timezone": "America/Mexico_City", "active": True, "business_count": 0},
-        {"country_code": "MX", "name": "Cancún", "slug": "cancun", "state": "Quintana Roo", "timezone": "America/Cancun", "active": True, "business_count": 0},
-        {"country_code": "MX", "name": "Mérida", "slug": "merida", "state": "Yucatán", "timezone": "America/Merida", "active": True, "business_count": 0},
-        {"country_code": "MX", "name": "Querétaro", "slug": "queretaro", "state": "Querétaro", "timezone": "America/Mexico_City", "active": True, "business_count": 0},
-        {"country_code": "MX", "name": "San Luis Potosí", "slug": "san-luis-potosi", "state": "San Luis Potosí", "timezone": "America/Mexico_City", "active": True, "business_count": 0},
-    ]
+    # Seed cities from master data (idempotent via upsert)
     cities_upserted = 0
-    for city in cities:
+    for city in CITIES_DATA:
         result = await db.cities.update_one(
             {"slug": city["slug"], "country_code": city["country_code"]},
             {"$set": city},
