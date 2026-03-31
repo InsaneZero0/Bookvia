@@ -13,6 +13,7 @@ import { useAuth } from '@/lib/auth';
 import { useI18n } from '@/lib/i18n';
 import { categoriesAPI, businessesAPI } from '@/lib/api';
 import { countries, getCountryByCode } from '@/lib/countries';
+import { getDetectedCountry } from '@/lib/detectCountry';
 import { AgeVerification } from '@/components/AgeVerification';
 import { toast } from 'sonner';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -67,7 +68,7 @@ export default function BusinessRegisterPage() {
     address: '',
     city: '',
     state: '',
-    country: 'MX',
+    country: getDetectedCountry(),
     zip_code: '',
     // Documents
     rfc: '',
