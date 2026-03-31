@@ -15,13 +15,16 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { 
   Menu, X, Sun, Moon, Globe, User, Calendar, Heart, Bell, 
-  LogOut, Building2, LayoutDashboard, ChevronDown
+  LogOut, Building2, LayoutDashboard, ChevronDown, MapPin
 } from 'lucide-react';
 import { getInitials } from '@/lib/utils';
+import { detectCountry } from '@/lib/detectCountry';
+import { getCountryByCode } from '@/lib/countries';
 
 export function Navbar() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+  const [detectedCountry, setDetectedCountry] = useState(null);
   const { user, isAuthenticated, isAdmin, isBusiness, logout } = useAuth();
   const { t, language, toggleLanguage } = useI18n();
   const { theme, toggleTheme } = useTheme();
@@ -40,6 +43,13 @@ export function Navbar() {
     const onScroll = () => setScrolled(window.scrollY > 60);
     window.addEventListener('scroll', onScroll, { passive: true });
     return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+
+  useEffect(() => {
+    detectCountry().then(code => {
+      const c = getCountryByCode(code);
+      if (c) setDetectedCountry(c);
+    });
   }, []);
 
   return (
@@ -68,6 +78,22 @@ export function Navbar() {
 
           {/* Desktop Navigation */}
           <div className="hidden md:flex items-center gap-6">
+            {/* Country flag indicator */}
+            {detectedCountry && (
+              <div
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border transition-colors cursor-default ${
+                  isTransparent
+                    ? 'border-white/20 bg-white/10 text-white'
+                    : 'border-border bg-muted/50 text-foreground'
+                }`}
+                data-testid="country-indicator"
+                title={language === 'es' ? detectedCountry.name : detectedCountry.nameEn}
+              >
+                <MapPin className="h-3 w-3 opacity-60" />
+                <span className="text-base leading-none">{detectedCountry.flag}</span>
+                <span className="text-xs font-medium">{detectedCountry.code}</span>
+              </div>
+            )}
             <Link 
               to="/search" 
               className={`text-sm font-medium transition-colors hover:text-[#F05D5E] ${
@@ -251,6 +277,13 @@ export function Navbar() {
               <div className="border-t border-border/50 my-2" />
               
               <div className="flex items-center gap-2 px-4">
+                {detectedCountry && (
+                  <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-border bg-muted/50 text-foreground mr-1">
+                    <MapPin className="h-3 w-3 opacity-60" />
+                    <span className="text-base leading-none">{detectedCountry.flag}</span>
+                    <span className="text-xs font-medium">{detectedCountry.code}</span>
+                  </div>
+                )}
                 <Button variant="ghost" size="icon" onClick={toggleLanguage}>
                   <Globe className="h-5 w-5" />
                 </Button>

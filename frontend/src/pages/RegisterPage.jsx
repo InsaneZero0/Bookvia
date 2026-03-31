@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useAuth } from '@/lib/auth';
 import { useI18n } from '@/lib/i18n';
 import { countries, getCountryByCode } from '@/lib/countries';
+import { getDetectedCountry } from '@/lib/detectCountry';
 import { AgeVerification } from '@/components/AgeVerification';
 import { toast } from 'sonner';
 import { Eye, EyeOff, ArrowLeft, Mail, Lock, User, Phone, Globe, Search } from 'lucide-react';
@@ -23,7 +24,7 @@ export default function RegisterPage() {
     confirmPassword: '',
     full_name: '',
     phone: '',
-    country: 'MX',
+    country: getDetectedCountry(),
     birth_date: '',
     gender: '',
     preferred_language: language,
