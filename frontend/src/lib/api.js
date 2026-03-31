@@ -102,7 +102,7 @@ export const categoriesAPI = {
 // Businesses API
 export const businessesAPI = {
   search: (params) => api.get('/businesses', { params }),
-  getFeatured: (limit = 8) => api.get('/businesses/featured', { params: { limit } }),
+  getFeatured: (limit = 8, country_code) => api.get('/businesses/featured', { params: { limit, ...(country_code ? { country_code } : {}) } }),
   getBySlug: (slug) => api.get(`/businesses/slug/${slug}`),
   getById: (id) => api.get(`/businesses/${id}`),
   updateMe: (data) => api.put('/businesses/me', data),

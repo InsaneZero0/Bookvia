@@ -1544,17 +1544,23 @@ async def search_businesses(
     return [BusinessResponse(**b) for b in businesses]
 
 @businesses_router.get("/featured", response_model=List[BusinessResponse])
-async def get_featured_businesses(limit: int = 8, current_user: Optional[TokenData] = Depends(get_current_user)):
+async def get_featured_businesses(limit: int = 8, country_code: Optional[str] = None, current_user: Optional[TokenData] = Depends(get_current_user)):
+    base_filter = {"status": BusinessStatus.APPROVED, "is_featured": True, "$or": [{"subscription_status": {"$in": ["active", "trialing"]}}, {"subscription_status": {"$exists": False}}, {"subscription_status": None}, {"subscription_status": "none"}]}
+    if country_code:
+        base_filter["country_code"] = country_code.upper()
     businesses = await db.businesses.find(
-        {"status": BusinessStatus.APPROVED, "is_featured": True, "$or": [{"subscription_status": {"$in": ["active", "trialing"]}}, {"subscription_status": {"$exists": False}}, {"subscription_status": None}, {"subscription_status": "none"}]},
+        base_filter,
         {"_id": 0, "password_hash": 0, "clabe": 0, "rfc": 0}
     ).sort("rating", -1).limit(limit).to_list(limit)
     
     # If not enough featured, add top rated
     if len(businesses) < limit:
         existing_ids = [b["id"] for b in businesses]
+        more_filter = {"status": BusinessStatus.APPROVED, "id": {"$nin": existing_ids}, "$or": [{"subscription_status": {"$in": ["active", "trialing"]}}, {"subscription_status": {"$exists": False}}, {"subscription_status": None}, {"subscription_status": "none"}]}
+        if country_code:
+            more_filter["country_code"] = country_code.upper()
         more = await db.businesses.find(
-            {"status": BusinessStatus.APPROVED, "id": {"$nin": existing_ids}, "$or": [{"subscription_status": {"$in": ["active", "trialing"]}}, {"subscription_status": {"$exists": False}}, {"subscription_status": None}, {"subscription_status": "none"}]},
+            more_filter,
             {"_id": 0, "password_hash": 0, "clabe": 0, "rfc": 0}
         ).sort("rating", -1).limit(limit - len(businesses)).to_list(limit - len(businesses))
         businesses.extend(more)
