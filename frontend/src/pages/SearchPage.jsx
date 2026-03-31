@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { BusinessCard } from '@/components/BusinessCard';
 import { useI18n } from '@/lib/i18n';
 import { useAuth } from '@/lib/auth';
+import { useCountry } from '@/lib/countryContext';
 import { businessesAPI, categoriesAPI, usersAPI } from '@/lib/api';
 import { Search, SlidersHorizontal, MapPin, X, Filter, List, Map as MapIcon, Star } from 'lucide-react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
@@ -58,6 +59,7 @@ function MapBoundsUpdater({ businesses }) {
 export default function SearchPage() {
   const { t, language } = useI18n();
   const { isAuthenticated } = useAuth();
+  const { countryCode } = useCountry();
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
 
@@ -86,11 +88,11 @@ export default function SearchPage() {
     loadCategories();
     loadCities();
     loadFavorites();
-  }, []);
+  }, [countryCode]);
 
   useEffect(() => {
     loadBusinesses();
-  }, [categoryId, city, minRating, homeService, requiresDeposit, sortBy, onlyFeatured, page]);
+  }, [categoryId, city, minRating, homeService, requiresDeposit, sortBy, onlyFeatured, page, countryCode]);
 
   const loadCategories = async () => {
     try {
@@ -102,18 +104,12 @@ export default function SearchPage() {
   const loadCities = async () => {
     try {
       const baseUrl = process.env.REACT_APP_BACKEND_URL || '';
-      const res = await fetch(`${baseUrl}/api/cities?country_code=MX`);
+      const res = await fetch(`${baseUrl}/api/cities?country_code=${countryCode}`);
       if (!res.ok) throw new Error();
       const data = await res.json();
       setCities(Array.isArray(data) ? data : []);
     } catch {
-      setCities([
-        { name: 'Ciudad de México', slug: 'cdmx' },
-        { name: 'Guadalajara', slug: 'guadalajara' },
-        { name: 'Monterrey', slug: 'monterrey' },
-        { name: 'Puebla', slug: 'puebla' },
-        { name: 'Cancún', slug: 'cancun' },
-      ]);
+      setCities([]);
     }
   };
 
@@ -132,6 +128,7 @@ export default function SearchPage() {
         query: query || undefined,
         category_id: categoryId && categoryId !== 'all' ? categoryId : undefined,
         city: city || undefined,
+        country_code: countryCode || undefined,
         min_rating: minRating[0] > 0 ? minRating[0] : undefined,
         is_home_service: homeService || undefined,
         page, limit: 20,

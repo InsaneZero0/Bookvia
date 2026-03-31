@@ -1475,6 +1475,7 @@ async def search_businesses(
     query: Optional[str] = None,
     category_id: Optional[str] = None,
     city: Optional[str] = None,
+    country_code: Optional[str] = None,
     min_rating: Optional[float] = None,
     is_home_service: Optional[bool] = None,
     include_pending: bool = False,
@@ -1497,6 +1498,8 @@ async def search_businesses(
             ]
         }
     
+    if country_code:
+        filters["country_code"] = country_code.upper()
     if query:
         filters["$or"] = [
             {"name": {"$regex": query, "$options": "i"}},

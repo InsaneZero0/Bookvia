@@ -3,6 +3,7 @@ import { Toaster } from '@/components/ui/sonner';
 import { ThemeProvider } from '@/components/ThemeProvider';
 import { AuthProvider } from '@/lib/auth';
 import { I18nProvider } from '@/lib/i18n';
+import { CountryProvider } from '@/lib/countryContext';
 import { Navbar } from '@/components/Navbar';
 import { Footer } from '@/components/Footer';
 
@@ -53,6 +54,7 @@ function App() {
     <ThemeProvider defaultTheme="light" storageKey="bookvia-theme">
       <I18nProvider>
         <AuthProvider>
+          <CountryProvider>
           <BrowserRouter>
             <Routes>
               {/* Public Pages */}
@@ -117,6 +119,7 @@ function App() {
             </Routes>
             <Toaster position="top-center" richColors />
           </BrowserRouter>
+          </CountryProvider>
         </AuthProvider>
       </I18nProvider>
     </ThemeProvider>
