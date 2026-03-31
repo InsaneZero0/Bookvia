@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
 import { useI18n } from '@/lib/i18n';
+import { useCountry } from '@/lib/countryContext';
 import { useTheme } from '@/components/ThemeProvider';
 import { Button } from '@/components/ui/button';
 import {
@@ -11,22 +12,24 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { 
   Menu, X, Sun, Moon, Globe, User, Calendar, Heart, Bell, 
-  LogOut, Building2, LayoutDashboard, ChevronDown, MapPin
+  LogOut, Building2, LayoutDashboard, ChevronDown, MapPin, Search
 } from 'lucide-react';
 import { getInitials } from '@/lib/utils';
-import { detectCountry } from '@/lib/detectCountry';
-import { getCountryByCode } from '@/lib/countries';
+import { countries } from '@/lib/countries';
 
 export function Navbar() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
-  const [detectedCountry, setDetectedCountry] = useState(null);
+  const [countryOpen, setCountryOpen] = useState(false);
+  const [countrySearch, setCountrySearch] = useState('');
   const { user, isAuthenticated, isAdmin, isBusiness, logout } = useAuth();
   const { t, language, toggleLanguage } = useI18n();
+  const { country, setCountry } = useCountry();
   const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
   const location = useLocation();
@@ -39,17 +42,21 @@ export function Navbar() {
   const isHomepage = location.pathname === '/';
   const isTransparent = isHomepage && !scrolled;
 
+  const filteredCountries = useMemo(() => {
+    if (!countrySearch.trim()) return countries;
+    const q = countrySearch.toLowerCase();
+    return countries.filter(c =>
+      c.name.toLowerCase().includes(q) ||
+      c.nameEn.toLowerCase().includes(q) ||
+      c.code.toLowerCase().includes(q) ||
+      c.phone.includes(q)
+    );
+  }, [countrySearch]);
+
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 60);
     window.addEventListener('scroll', onScroll, { passive: true });
     return () => window.removeEventListener('scroll', onScroll);
-  }, []);
-
-  useEffect(() => {
-    detectCountry().then(code => {
-      const c = getCountryByCode(code);
-      if (c) setDetectedCountry(c);
-    });
   }, []);
 
   return (
@@ -78,21 +85,68 @@ export function Navbar() {
 
           {/* Desktop Navigation */}
           <div className="hidden md:flex items-center gap-6">
-            {/* Country flag indicator */}
-            {detectedCountry && (
-              <div
-                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border transition-colors cursor-default ${
-                  isTransparent
-                    ? 'border-white/20 bg-white/10 text-white'
-                    : 'border-border bg-muted/50 text-foreground'
-                }`}
-                data-testid="country-indicator"
-                title={language === 'es' ? detectedCountry.name : detectedCountry.nameEn}
-              >
-                <MapPin className="h-3 w-3 opacity-60" />
-                <span className="text-base leading-none">{detectedCountry.flag}</span>
-                <span className="text-xs font-medium">{detectedCountry.code}</span>
-              </div>
+            {/* Country selector */}
+            {country && (
+              <Popover open={countryOpen} onOpenChange={(open) => { setCountryOpen(open); if (!open) setCountrySearch(''); }}>
+                <PopoverTrigger asChild>
+                  <button
+                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border transition-all cursor-pointer hover:scale-105 ${
+                      isTransparent
+                        ? 'border-white/20 bg-white/10 text-white hover:bg-white/20'
+                        : 'border-border bg-muted/50 text-foreground hover:bg-muted'
+                    }`}
+                    data-testid="country-indicator"
+                    title={language === 'es' ? 'Cambiar país' : 'Change country'}
+                  >
+                    <MapPin className="h-3 w-3 opacity-60" />
+                    <span className="text-base leading-none">{country.flag}</span>
+                    <span className="text-xs font-medium">{country.code}</span>
+                    <ChevronDown className="h-3 w-3 opacity-50" />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent align="start" className="w-72 p-0" sideOffset={8}>
+                  <div className="p-3 border-b">
+                    <p className="text-xs font-medium text-muted-foreground mb-2">
+                      {language === 'es' ? 'Explorar negocios en:' : 'Browse businesses in:'}
+                    </p>
+                    <div className="relative">
+                      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <input
+                        type="text"
+                        placeholder={language === 'es' ? 'Buscar país...' : 'Search country...'}
+                        value={countrySearch}
+                        onChange={(e) => setCountrySearch(e.target.value)}
+                        className="w-full pl-8 pr-3 py-2 text-sm rounded-md border bg-transparent outline-none focus:ring-1 focus:ring-ring"
+                        data-testid="navbar-country-search"
+                        autoFocus
+                      />
+                    </div>
+                  </div>
+                  <div className="max-h-64 overflow-y-auto py-1">
+                    {filteredCountries.map(c => (
+                      <button
+                        key={c.code}
+                        onClick={() => { setCountry(c.code); setCountryOpen(false); setCountrySearch(''); }}
+                        className={`flex items-center gap-2.5 w-full px-3 py-2 text-sm hover:bg-muted transition-colors ${
+                          c.code === country.code ? 'bg-muted font-medium' : ''
+                        }`}
+                        data-testid={`nav-country-${c.code}`}
+                      >
+                        <span className="text-lg leading-none">{c.flag}</span>
+                        <span className="flex-1 text-left">{language === 'es' ? c.name : c.nameEn}</span>
+                        {c.code === country.code && (
+                          <span className="text-xs text-[#F05D5E] font-semibold">&#10003;</span>
+                        )}
+                      </button>
+                    ))}
+                    {filteredCountries.length === 0 && (
+                      <p className="py-4 text-center text-sm text-muted-foreground">
+                        {language === 'es' ? 'No se encontraron países' : 'No countries found'}
+                      </p>
+                    )}
+                  </div>
+                </PopoverContent>
+              </Popover>
             )}
             <Link 
               to="/search" 
@@ -277,12 +331,50 @@ export function Navbar() {
               <div className="border-t border-border/50 my-2" />
               
               <div className="flex items-center gap-2 px-4">
-                {detectedCountry && (
-                  <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-border bg-muted/50 text-foreground mr-1">
-                    <MapPin className="h-3 w-3 opacity-60" />
-                    <span className="text-base leading-none">{detectedCountry.flag}</span>
-                    <span className="text-xs font-medium">{detectedCountry.code}</span>
-                  </div>
+                {country && (
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <button className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-border bg-muted/50 text-foreground hover:bg-muted mr-1">
+                        <MapPin className="h-3 w-3 opacity-60" />
+                        <span className="text-base leading-none">{country.flag}</span>
+                        <span className="text-xs font-medium">{country.code}</span>
+                        <ChevronDown className="h-3 w-3 opacity-50" />
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent align="start" className="w-72 p-0" sideOffset={8}>
+                      <div className="p-3 border-b">
+                        <p className="text-xs font-medium text-muted-foreground mb-2">
+                          {language === 'es' ? 'Explorar negocios en:' : 'Browse businesses in:'}
+                        </p>
+                        <div className="relative">
+                          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                          <input
+                            type="text"
+                            placeholder={language === 'es' ? 'Buscar país...' : 'Search country...'}
+                            className="w-full pl-8 pr-3 py-2 text-sm rounded-md border bg-transparent outline-none focus:ring-1 focus:ring-ring"
+                            autoFocus
+                          />
+                        </div>
+                      </div>
+                      <div className="max-h-52 overflow-y-auto py-1">
+                        {countries.map(c => (
+                          <button
+                            key={c.code}
+                            onClick={() => { setCountry(c.code); setMobileMenuOpen(false); }}
+                            className={`flex items-center gap-2.5 w-full px-3 py-2 text-sm hover:bg-muted transition-colors ${
+                              c.code === country.code ? 'bg-muted font-medium' : ''
+                            }`}
+                          >
+                            <span className="text-lg leading-none">{c.flag}</span>
+                            <span className="flex-1 text-left">{language === 'es' ? c.name : c.nameEn}</span>
+                            {c.code === country.code && (
+                              <span className="text-xs text-[#F05D5E] font-semibold">&#10003;</span>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    </PopoverContent>
+                  </Popover>
                 )}
                 <Button variant="ghost" size="icon" onClick={toggleLanguage}>
                   <Globe className="h-5 w-5" />
