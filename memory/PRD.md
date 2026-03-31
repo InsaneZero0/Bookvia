@@ -100,6 +100,7 @@ Bookvia es una plataforma marketplace de reservas profesionales que conecta nego
 - [2026-03-28] Selector de pais y verificacion de edad en registro de negocio. Telefono con codigo de pais dinamico. Verificacion de edad 16+ con selectores Dia/Mes/Ano y feedback visual (pastel/check/stop). Aplica a ambos registros (usuario y negocio).
 - [2026-03-31] Deteccion automatica de pais por IP (ipapi.co) con fallback por timezone del navegador. Banderita con codigo de pais en Navbar estilo Amazon. Registros pre-seleccionan el pais detectado. Cache de 24h en localStorage.
 - [2026-03-31] Selector de pais clickable en Navbar: Popover con busqueda y lista de paises con banderas. Al cambiar pais, filtra negocios por country_code en busqueda. CountryContext global con persistencia en localStorage.
+- [2026-03-31] HomePage dinamico por pais: badge hero "La plataforma #1 en [pais]", ciudades filtradas por pais (10 ciudades MX seeded), negocios destacados por pais, seccion de ciudades se oculta si no hay ciudades para el pais. Categorias siempre visibles.
 
 ## Backlog (P0-P3)
 
