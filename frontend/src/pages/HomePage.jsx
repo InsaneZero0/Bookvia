@@ -38,8 +38,11 @@ export default function HomePage() {
   const [city, setCity] = useState('');
   const [serviceOpen, setServiceOpen] = useState(false);
   const [cityOpen, setCityOpen] = useState(false);
+  const [citySearch, setCitySearch] = useState('');
+  const [heroCities, setHeroCities] = useState([]);
   const serviceRef = useRef(null);
   const cityRef = useRef(null);
+  const citySearchRef = useRef(null);
 
   // Close dropdowns on outside click
   useEffect(() => {
@@ -50,6 +53,15 @@ export default function HomePage() {
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, []);
+
+  // Load cities with businesses for the hero dropdown
+  useEffect(() => {
+    const baseUrl = process.env.REACT_APP_BACKEND_URL || '';
+    fetch(`${baseUrl}/api/cities?country_code=${countryCode}&with_businesses=true`)
+      .then(r => r.ok ? r.json() : [])
+      .then(data => setHeroCities(Array.isArray(data) ? data : []))
+      .catch(() => setHeroCities([]));
+  }, [countryCode]);
 
   useEffect(() => {
     loadData();
