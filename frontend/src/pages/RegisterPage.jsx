@@ -10,6 +10,7 @@ import { useI18n } from '@/lib/i18n';
 import { countries, getCountryByCode } from '@/lib/countries';
 import { getDetectedCountry } from '@/lib/detectCountry';
 import { AgeVerification } from '@/components/AgeVerification';
+import { CitySelector } from '@/components/CitySelector';
 import { toast } from 'sonner';
 import { Eye, EyeOff, ArrowLeft, Mail, Lock, User, Phone, Globe, Search } from 'lucide-react';
 
@@ -25,6 +26,7 @@ export default function RegisterPage() {
     full_name: '',
     phone: '',
     country: getDetectedCountry(),
+    city: '',
     birth_date: '',
     gender: '',
     preferred_language: language,
@@ -236,6 +238,17 @@ export default function RegisterPage() {
                   />
                   <span className="text-xs text-muted-foreground pr-3 shrink-0">{phoneNumber.length}/10</span>
                 </div>
+              </div>
+
+              {/* City */}
+              <div className="space-y-2">
+                <Label>{language === 'es' ? 'Ciudad' : 'City'} *</Label>
+                <CitySelector
+                  countryCode={formData.country}
+                  value={formData.city}
+                  onChange={(city) => setFormData(prev => ({ ...prev, city }))}
+                  required
+                />
               </div>
 
               {/* Age Verification & Gender */}

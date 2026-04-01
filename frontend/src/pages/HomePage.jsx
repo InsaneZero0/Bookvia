@@ -5,17 +5,14 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Calendar } from '@/components/ui/calendar';
 import { BusinessCard } from '@/components/BusinessCard';
 import { useI18n } from '@/lib/i18n';
+import { useCountry } from '@/lib/countryContext';
 import { categoriesAPI, businessesAPI, utilityAPI } from '@/lib/api';
-import { format } from 'date-fns';
-import { es, enUS } from 'date-fns/locale';
 import {
-  Search, MapPin, CalendarIcon, ArrowRight, CheckCircle2,
+  Search, MapPin, ArrowRight, CheckCircle2,
   Sparkles, Heart, Dumbbell, Flower2, Scale, Briefcase, Car, PawPrint,
-  Star, Shield, Clock, Users, Quote, ChevronLeft, ChevronRight
+  Star, Shield, Clock, Users, Quote, CalendarIcon
 } from 'lucide-react';
 
 const iconMap = {
@@ -23,48 +20,43 @@ const iconMap = {
 };
 
 const TESTIMONIALS = [
-  { name: 'María García', city: 'CDMX', rating: 5, avatar: 'MG', text: 'Encontré mi estilista ideal en minutos. La reserva fue súper fácil y el recordatorio automático me salvó de olvidarla.', service: 'Corte y Color' },
-  { name: 'Carlos Rodríguez', city: 'Guadalajara', rating: 5, avatar: 'CR', text: 'Como dueño de barbería, Bookvia me ayudó a organizar mis citas y reducir las cancelaciones. Mis clientes aman la facilidad.', service: 'Barbería Premium' },
-  { name: 'Ana Martínez', city: 'Monterrey', rating: 5, avatar: 'AM', text: 'La mejor plataforma para reservar servicios de belleza. Puedo ver reseñas, precios y disponibilidad todo en un mismo lugar.', service: 'Spa Facial' },
-  { name: 'Roberto Sánchez', city: 'Puebla', rating: 5, avatar: 'RS', text: 'Reservé un masaje a domicilio en 2 minutos. El terapeuta llegó puntual y todo fue perfecto. Repetiré seguro.', service: 'Masaje Relajante' },
-];
-
-const CITIES = [
-  { name: 'Ciudad de México', slug: 'cdmx', businesses: 850, image: 'https://images.unsplash.com/photo-1585464231875-d9ef1f5ad396?w=400&h=300&fit=crop' },
-  { name: 'Guadalajara', slug: 'guadalajara', businesses: 420, image: 'https://images.unsplash.com/photo-1610403838702-0352e023a502?w=400&h=300&fit=crop' },
-  { name: 'Monterrey', slug: 'monterrey', businesses: 380, image: 'https://images.unsplash.com/photo-1622567863958-3be4f3ab0f4d?w=400&h=300&fit=crop' },
-  { name: 'Cancún', slug: 'cancun', businesses: 290, image: 'https://images.unsplash.com/photo-1510097467424-192d713fd8b2?w=400&h=300&fit=crop' },
-  { name: 'Puebla', slug: 'puebla', businesses: 210, image: 'https://images.unsplash.com/photo-1518105779142-d975f22f1b0a?w=400&h=300&fit=crop' },
-  { name: 'Mérida', slug: 'merida', businesses: 175, image: 'https://images.unsplash.com/photo-1547995886-6dc09384c6e6?w=400&h=300&fit=crop' },
+  { name: 'Maria Garcia', city: 'CDMX', rating: 5, avatar: 'MG', text: 'Encontre mi estilista ideal en minutos. La reserva fue super facil y el recordatorio automatico me salvo de olvidarla.', service: 'Corte y Color' },
+  { name: 'Carlos Rodriguez', city: 'Guadalajara', rating: 5, avatar: 'CR', text: 'Como dueno de barberia, Bookvia me ayudo a organizar mis citas y reducir las cancelaciones. Mis clientes aman la facilidad.', service: 'Barberia Premium' },
+  { name: 'Ana Martinez', city: 'Monterrey', rating: 5, avatar: 'AM', text: 'La mejor plataforma para reservar servicios de belleza. Puedo ver resenas, precios y disponibilidad todo en un mismo lugar.', service: 'Spa Facial' },
+  { name: 'Roberto Sanchez', city: 'Puebla', rating: 5, avatar: 'RS', text: 'Reserve un masaje a domicilio en 2 minutos. El terapeuta llego puntual y todo fue perfecto. Repetire seguro.', service: 'Masaje Relajante' },
 ];
 
 export default function HomePage() {
   const { t, language } = useI18n();
+  const { countryCode, country } = useCountry();
   const navigate = useNavigate();
   const [categories, setCategories] = useState([]);
   const [featuredBusinesses, setFeaturedBusinesses] = useState([]);
+  const [cities, setCities] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [city, setCity] = useState('');
-  const [date, setDate] = useState(null);
-  const [testimonialIdx, setTestimonialIdx] = useState(0);
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [countryCode]);
 
   const loadData = async () => {
     try {
       await utilityAPI.seed().catch(() => {});
-      const [catRes, bizRes] = await Promise.all([
+      const baseUrl = process.env.REACT_APP_BACKEND_URL || '';
+      const [catRes, bizRes, citiesRes] = await Promise.all([
         categoriesAPI.getAll(),
-        businessesAPI.getFeatured(8),
+        businessesAPI.getFeatured(8, countryCode),
+        fetch(`${baseUrl}/api/cities?country_code=${countryCode}`).then(r => r.ok ? r.json() : []).catch(() => []),
       ]);
       setCategories(Array.isArray(catRes.data) ? catRes.data : []);
       setFeaturedBusinesses(Array.isArray(bizRes.data) ? bizRes.data : []);
+      setCities(Array.isArray(citiesRes) ? citiesRes : []);
     } catch {
       setCategories([]);
       setFeaturedBusinesses([]);
+      setCities([]);
     } finally {
       setLoading(false);
     }
@@ -75,9 +67,10 @@ export default function HomePage() {
     const params = new URLSearchParams();
     if (searchQuery) params.set('q', searchQuery);
     if (city) params.set('city', city);
-    if (date) params.set('date', format(date, 'yyyy-MM-dd'));
     navigate(`/search?${params.toString()}`);
   };
+
+  const countryName = language === 'es' ? country?.name : country?.nameEn;
 
   const steps = [
     { icon: Search, title: language === 'es' ? 'Busca' : 'Search', desc: language === 'es' ? 'Encuentra el servicio que necesitas cerca de ti' : 'Find the service you need near you' },
@@ -107,7 +100,7 @@ export default function HomePage() {
         <div className="relative z-10 container-app text-center text-white py-20">
           <div className="max-w-4xl mx-auto space-y-6 animate-fade-in">
             <Badge className="bg-white/10 text-white border-white/20 text-sm px-4 py-1.5 backdrop-blur-sm">
-              {language === 'es' ? 'La plataforma #1 de reservas en México' : '#1 Booking platform in Mexico'}
+              {language === 'es' ? `La plataforma #1 de reservas en ${countryName}` : `#1 Booking platform in ${countryName}`}
             </Badge>
 
             <h1 className="text-4xl sm:text-5xl lg:text-7xl font-heading font-extrabold tracking-tight leading-[1.1]">
@@ -289,38 +282,42 @@ export default function HomePage() {
         </section>
       )}
 
-      {/* ═══ Popular Cities ═══════════════════════════ */}
-      <section className="section-padding bg-muted/30" data-testid="cities-section">
-        <div className="container-app">
-          <div className="text-center mb-10">
-            <h2 className="text-2xl sm:text-3xl font-heading font-bold tracking-tight">
-              {language === 'es' ? 'Populares por ciudad' : 'Popular by city'}
-            </h2>
-            <p className="text-muted-foreground mt-2 text-sm">
-              {language === 'es' ? 'Descubre los mejores servicios en tu ciudad' : 'Discover the best services in your city'}
-            </p>
-          </div>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-4">
-            {CITIES.map(c => (
-              <Card
-                key={c.slug}
-                className="group cursor-pointer overflow-hidden border-0 shadow-sm hover:shadow-lg transition-all duration-300"
-                onClick={() => navigate(`/search?city=${c.name}`)}
-                data-testid={`city-card-${c.slug}`}
-              >
-                <div className="relative h-36 sm:h-44 overflow-hidden">
-                  <img src={c.image} alt={c.name} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
-                  <div className="absolute inset-0 bg-gradient-to-t from-slate-900/80 to-transparent" />
-                  <div className="absolute bottom-3 left-3 right-3 text-white">
-                    <h3 className="font-heading font-bold text-sm sm:text-lg">{c.name}</h3>
-                    <p className="text-xs text-white/60">{c.businesses}+ {language === 'es' ? 'negocios' : 'businesses'}</p>
+      {/* Popular Cities */}
+      {cities.length > 0 && (
+        <section className="section-padding bg-muted/30" data-testid="cities-section">
+          <div className="container-app">
+            <div className="text-center mb-10">
+              <h2 className="text-2xl sm:text-3xl font-heading font-bold tracking-tight">
+                {language === 'es' ? `Ciudades en ${countryName}` : `Cities in ${countryName}`}
+              </h2>
+              <p className="text-muted-foreground mt-2 text-sm">
+                {language === 'es' ? 'Descubre los mejores servicios en tu ciudad' : 'Discover the best services in your city'}
+              </p>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 md:gap-4">
+              {cities.map(c => (
+                <Card
+                  key={c.slug || c.name}
+                  className="group cursor-pointer overflow-hidden border-0 shadow-sm hover:shadow-lg transition-all duration-300 hover:-translate-y-1"
+                  onClick={() => navigate(`/search?city=${c.name}`)}
+                  data-testid={`city-card-${c.slug || c.name}`}
+                >
+                  <div className="p-4 text-center space-y-1">
+                    <div className="w-10 h-10 mx-auto rounded-full bg-[#F05D5E]/10 flex items-center justify-center mb-2">
+                      <MapPin className="h-5 w-5 text-[#F05D5E]" />
+                    </div>
+                    <h3 className="font-heading font-bold text-sm">{c.name}</h3>
+                    {c.state && <p className="text-xs text-muted-foreground">{c.state}</p>}
+                    {c.business_count > 0 && (
+                      <p className="text-xs text-[#F05D5E] font-medium">{c.business_count}+ {language === 'es' ? 'negocios' : 'businesses'}</p>
+                    )}
                   </div>
-                </div>
-              </Card>
-            ))}
+                </Card>
+              ))}
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+      )}
 
       {/* ═══ Testimonials ═════════════════════════════ */}
       <section className="section-padding bg-background" data-testid="testimonials-section">

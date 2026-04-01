@@ -220,6 +220,7 @@ class UserCreate(BaseModel):
     full_name: str
     phone: str
     country: Optional[str] = None
+    city: Optional[str] = None
     birth_date: Optional[str] = None
     gender: Optional[str] = None
     photo_url: Optional[str] = None
@@ -1053,6 +1054,7 @@ async def register_user(user: UserCreate):
         "full_name": user.full_name,
         "phone": user.phone,
         "country": user.country,
+        "city": user.city,
         "phone_verified": False,
         "birth_date": user.birth_date,
         "gender": user.gender,
@@ -1544,17 +1546,23 @@ async def search_businesses(
     return [BusinessResponse(**b) for b in businesses]
 
 @businesses_router.get("/featured", response_model=List[BusinessResponse])
-async def get_featured_businesses(limit: int = 8, current_user: Optional[TokenData] = Depends(get_current_user)):
+async def get_featured_businesses(limit: int = 8, country_code: Optional[str] = None, current_user: Optional[TokenData] = Depends(get_current_user)):
+    base_filter = {"status": BusinessStatus.APPROVED, "is_featured": True, "$or": [{"subscription_status": {"$in": ["active", "trialing"]}}, {"subscription_status": {"$exists": False}}, {"subscription_status": None}, {"subscription_status": "none"}]}
+    if country_code:
+        base_filter["country_code"] = country_code.upper()
     businesses = await db.businesses.find(
-        {"status": BusinessStatus.APPROVED, "is_featured": True, "$or": [{"subscription_status": {"$in": ["active", "trialing"]}}, {"subscription_status": {"$exists": False}}, {"subscription_status": None}, {"subscription_status": "none"}]},
+        base_filter,
         {"_id": 0, "password_hash": 0, "clabe": 0, "rfc": 0}
     ).sort("rating", -1).limit(limit).to_list(limit)
     
     # If not enough featured, add top rated
     if len(businesses) < limit:
         existing_ids = [b["id"] for b in businesses]
+        more_filter = {"status": BusinessStatus.APPROVED, "id": {"$nin": existing_ids}, "$or": [{"subscription_status": {"$in": ["active", "trialing"]}}, {"subscription_status": {"$exists": False}}, {"subscription_status": None}, {"subscription_status": "none"}]}
+        if country_code:
+            more_filter["country_code"] = country_code.upper()
         more = await db.businesses.find(
-            {"status": BusinessStatus.APPROVED, "id": {"$nin": existing_ids}, "$or": [{"subscription_status": {"$in": ["active", "trialing"]}}, {"subscription_status": {"$exists": False}}, {"subscription_status": None}, {"subscription_status": "none"}]},
+            more_filter,
             {"_id": 0, "password_hash": 0, "clabe": 0, "rfc": 0}
         ).sort("rating", -1).limit(limit - len(businesses)).to_list(limit - len(businesses))
         businesses.extend(more)
@@ -4925,6 +4933,7 @@ async def get_cities(country_code: str = "MX"):
 async def seed_countries():
     """Seed countries and cities for multi-country support (idempotent via upsert)"""
     from data.countries import COUNTRIES
+    from data.cities import CITIES as CITIES_DATA
 
     upserted = 0
     for c in COUNTRIES:
@@ -4936,21 +4945,9 @@ async def seed_countries():
         if result.upserted_id or result.modified_count:
             upserted += 1
 
-    # Default Mexican cities (only insert missing ones)
-    cities = [
-        {"country_code": "MX", "name": "Ciudad de México", "slug": "cdmx", "state": "CDMX", "timezone": "America/Mexico_City", "active": True, "business_count": 0},
-        {"country_code": "MX", "name": "Guadalajara", "slug": "guadalajara", "state": "Jalisco", "timezone": "America/Mexico_City", "active": True, "business_count": 0},
-        {"country_code": "MX", "name": "Monterrey", "slug": "monterrey", "state": "Nuevo León", "timezone": "America/Monterrey", "active": True, "business_count": 0},
-        {"country_code": "MX", "name": "Puebla", "slug": "puebla", "state": "Puebla", "timezone": "America/Mexico_City", "active": True, "business_count": 0},
-        {"country_code": "MX", "name": "Tijuana", "slug": "tijuana", "state": "Baja California", "timezone": "America/Tijuana", "active": True, "business_count": 0},
-        {"country_code": "MX", "name": "León", "slug": "leon", "state": "Guanajuato", "timezone": "America/Mexico_City", "active": True, "business_count": 0},
-        {"country_code": "MX", "name": "Cancún", "slug": "cancun", "state": "Quintana Roo", "timezone": "America/Cancun", "active": True, "business_count": 0},
-        {"country_code": "MX", "name": "Mérida", "slug": "merida", "state": "Yucatán", "timezone": "America/Merida", "active": True, "business_count": 0},
-        {"country_code": "MX", "name": "Querétaro", "slug": "queretaro", "state": "Querétaro", "timezone": "America/Mexico_City", "active": True, "business_count": 0},
-        {"country_code": "MX", "name": "San Luis Potosí", "slug": "san-luis-potosi", "state": "San Luis Potosí", "timezone": "America/Mexico_City", "active": True, "business_count": 0},
-    ]
+    # Seed cities from master data (idempotent via upsert)
     cities_upserted = 0
-    for city in cities:
+    for city in CITIES_DATA:
         result = await db.cities.update_one(
             {"slug": city["slug"], "country_code": city["country_code"]},
             {"$set": city},
