@@ -102,6 +102,7 @@ Bookvia es una plataforma marketplace de reservas profesionales que conecta nego
 - [2026-03-31] Selector de pais clickable en Navbar: Popover con busqueda y lista de paises con banderas. Al cambiar pais, filtra negocios por country_code en busqueda. CountryContext global con persistencia en localStorage.
 - [2026-03-31] HomePage dinamico por pais: badge hero "La plataforma #1 en [pais]", ciudades filtradas por pais (10 ciudades MX seeded), negocios destacados por pais, seccion de ciudades se oculta si no hay ciudades para el pais. Categorias siempre visibles.
 - [2026-03-31] Selector de ciudad dinamico en registros (usuario y negocio): combobox con busqueda que carga ciudades del pais seleccionado. 122+ ciudades seeded para 16 paises. Permite texto libre si la ciudad no esta en la lista. Backend guarda city en usuario.
+- [2026-04-01] Hero search bar convertido a 2 dropdowns con listas: servicios (categorias) y ciudades (filtradas por pais seleccionado). Incluye opcion "Todos los servicios" y "Todas las ciudades".
 
 ## Backlog (P0-P3)
 

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,7 +12,7 @@ import { categoriesAPI, businessesAPI, utilityAPI } from '@/lib/api';
 import {
   Search, MapPin, ArrowRight, CheckCircle2,
   Sparkles, Heart, Dumbbell, Flower2, Scale, Briefcase, Car, PawPrint,
-  Star, Shield, Clock, Users, Quote, CalendarIcon
+  Star, Shield, Clock, Users, Quote, CalendarIcon, ChevronDown
 } from 'lucide-react';
 
 const iconMap = {
@@ -36,6 +36,20 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [city, setCity] = useState('');
+  const [serviceOpen, setServiceOpen] = useState(false);
+  const [cityOpen, setCityOpen] = useState(false);
+  const serviceRef = useRef(null);
+  const cityRef = useRef(null);
+
+  // Close dropdowns on outside click
+  useEffect(() => {
+    const handler = (e) => {
+      if (serviceRef.current && !serviceRef.current.contains(e.target)) setServiceOpen(false);
+      if (cityRef.current && !cityRef.current.contains(e.target)) setCityOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
 
   useEffect(() => {
     loadData();
@@ -121,25 +135,93 @@ export default function HomePage() {
             <form onSubmit={handleSearch} className="mt-10">
               <div className="bg-white/10 backdrop-blur-xl rounded-2xl p-2 max-w-3xl mx-auto border border-white/20">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                  <div className="relative">
-                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
-                    <Input
-                      placeholder={language === 'es' ? '¿Qué servicio buscas?' : 'What service?'}
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      className="pl-12 h-14 bg-white border-0 text-slate-900 placeholder:text-slate-400 rounded-xl"
+                  {/* Service Dropdown */}
+                  <div className="relative" ref={serviceRef}>
+                    <button
+                      type="button"
+                      onClick={() => { setServiceOpen(!serviceOpen); setCityOpen(false); }}
+                      className="flex items-center gap-2 w-full h-14 px-4 bg-white rounded-xl text-left"
                       data-testid="search-service-input"
-                    />
+                    >
+                      <Search className="h-5 w-5 text-slate-400 shrink-0" />
+                      <span className={`flex-1 text-sm truncate ${searchQuery ? 'text-slate-900' : 'text-slate-400'}`}>
+                        {searchQuery || (language === 'es' ? '¿Qué servicio buscas?' : 'What service?')}
+                      </span>
+                      <ChevronDown className={`h-4 w-4 text-slate-400 transition-transform ${serviceOpen ? 'rotate-180' : ''}`} />
+                    </button>
+                    {serviceOpen && categories.length > 0 && (
+                      <div className="absolute z-50 mt-1 w-full bg-white rounded-xl shadow-xl border max-h-64 overflow-y-auto animate-in fade-in-0 zoom-in-95">
+                        <button
+                          type="button"
+                          onClick={() => { setSearchQuery(''); setServiceOpen(false); }}
+                          className={`flex items-center gap-3 w-full px-4 py-3 text-sm hover:bg-slate-50 transition-colors text-left border-b ${!searchQuery ? 'bg-slate-50 font-medium' : ''}`}
+                        >
+                          <Search className="h-4 w-4 text-slate-400" />
+                          <span className="text-slate-700">{language === 'es' ? 'Todos los servicios' : 'All services'}</span>
+                        </button>
+                        {categories.map(cat => (
+                          <button
+                            key={cat.id}
+                            type="button"
+                            onClick={() => { setSearchQuery(language === 'es' ? cat.name_es : cat.name_en); setServiceOpen(false); }}
+                            className={`flex items-center gap-3 w-full px-4 py-3 text-sm hover:bg-slate-50 transition-colors text-left ${
+                              searchQuery === (language === 'es' ? cat.name_es : cat.name_en) ? 'bg-slate-50 font-medium' : ''
+                            }`}
+                            data-testid={`search-cat-${cat.id}`}
+                          >
+                            <span className="text-lg">{cat.icon || '💼'}</span>
+                            <span className="text-slate-700">{language === 'es' ? cat.name_es : cat.name_en}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                  <div className="relative">
-                    <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
-                    <Input
-                      placeholder={language === 'es' ? '¿En qué ciudad?' : 'Which city?'}
-                      value={city}
-                      onChange={(e) => setCity(e.target.value)}
-                      className="pl-12 h-14 bg-white border-0 text-slate-900 placeholder:text-slate-400 rounded-xl"
+                  {/* City Dropdown */}
+                  <div className="relative" ref={cityRef}>
+                    <button
+                      type="button"
+                      onClick={() => { setCityOpen(!cityOpen); setServiceOpen(false); }}
+                      className="flex items-center gap-2 w-full h-14 px-4 bg-white rounded-xl text-left"
                       data-testid="search-city-input"
-                    />
+                    >
+                      <MapPin className="h-5 w-5 text-slate-400 shrink-0" />
+                      <span className={`flex-1 text-sm truncate ${city ? 'text-slate-900' : 'text-slate-400'}`}>
+                        {city || (language === 'es' ? '¿En qué ciudad?' : 'Which city?')}
+                      </span>
+                      <ChevronDown className={`h-4 w-4 text-slate-400 transition-transform ${cityOpen ? 'rotate-180' : ''}`} />
+                    </button>
+                    {cityOpen && (
+                      <div className="absolute z-50 mt-1 w-full bg-white rounded-xl shadow-xl border max-h-64 overflow-y-auto animate-in fade-in-0 zoom-in-95">
+                        <button
+                          type="button"
+                          onClick={() => { setCity(''); setCityOpen(false); }}
+                          className={`flex items-center gap-3 w-full px-4 py-3 text-sm hover:bg-slate-50 transition-colors text-left border-b ${!city ? 'bg-slate-50 font-medium' : ''}`}
+                        >
+                          <MapPin className="h-4 w-4 text-slate-400" />
+                          <span className="text-slate-700">{language === 'es' ? 'Todas las ciudades' : 'All cities'}</span>
+                        </button>
+                        {cities.map(c => (
+                          <button
+                            key={c.slug || c.name}
+                            type="button"
+                            onClick={() => { setCity(c.name); setCityOpen(false); }}
+                            className={`flex items-center gap-3 w-full px-4 py-3 text-sm hover:bg-slate-50 transition-colors text-left ${
+                              city === c.name ? 'bg-slate-50 font-medium' : ''
+                            }`}
+                            data-testid={`search-city-${c.slug || c.name}`}
+                          >
+                            <MapPin className="h-4 w-4 text-[#F05D5E]" />
+                            <span className="flex-1 text-slate-700">{c.name}</span>
+                            {c.state && <span className="text-xs text-slate-400">{c.state}</span>}
+                          </button>
+                        ))}
+                        {cities.length === 0 && (
+                          <div className="py-4 text-center text-sm text-slate-400">
+                            {language === 'es' ? 'No hay ciudades para este país' : 'No cities for this country'}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                   <Button type="submit" className="h-14 btn-coral text-base rounded-xl" data-testid="search-submit-button">
                     {language === 'es' ? 'Buscar' : 'Search'}
