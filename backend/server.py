@@ -1439,13 +1439,24 @@ async def get_favorites(token_data: TokenData = Depends(require_auth)):
 # ========================== CATEGORY ROUTES ==========================
 
 @categories_router.get("", response_model=List[CategoryResponse])
-async def get_categories():
+async def get_categories(city: Optional[str] = None, country_code: Optional[str] = None):
     categories = await db.categories.find({}, {"_id": 0}).to_list(100)
+    
+    # Build business filter - optionally scoped to city+country
+    biz_filter = {**VISIBLE_BUSINESS_FILTER}
+    if city:
+        biz_filter["city"] = city
+    if country_code:
+        biz_filter["country_code"] = country_code.upper()
     
     # Add business count for each category
     for cat in categories:
-        count = await db.businesses.count_documents({"category_id": cat["id"], **VISIBLE_BUSINESS_FILTER})
+        count = await db.businesses.count_documents({"category_id": cat["id"], **biz_filter})
         cat["business_count"] = count
+    
+    # If filtering by city, only return categories that actually have businesses
+    if city:
+        categories = [c for c in categories if c["business_count"] > 0]
     
     return [CategoryResponse(**c) for c in categories]
 
