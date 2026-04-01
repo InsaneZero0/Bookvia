@@ -135,48 +135,7 @@ export default function HomePage() {
             <form onSubmit={handleSearch} className="mt-10">
               <div className="bg-white/10 backdrop-blur-xl rounded-2xl p-2 max-w-3xl mx-auto border border-white/20">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                  {/* Service Dropdown */}
-                  <div className="relative" ref={serviceRef}>
-                    <button
-                      type="button"
-                      onClick={() => { setServiceOpen(!serviceOpen); setCityOpen(false); }}
-                      className="flex items-center gap-2 w-full h-14 px-4 bg-white rounded-xl text-left"
-                      data-testid="search-service-input"
-                    >
-                      <Search className="h-5 w-5 text-slate-400 shrink-0" />
-                      <span className={`flex-1 text-sm truncate ${searchQuery ? 'text-slate-900' : 'text-slate-400'}`}>
-                        {searchQuery || (language === 'es' ? '¿Qué servicio buscas?' : 'What service?')}
-                      </span>
-                      <ChevronDown className={`h-4 w-4 text-slate-400 transition-transform ${serviceOpen ? 'rotate-180' : ''}`} />
-                    </button>
-                    {serviceOpen && categories.length > 0 && (
-                      <div className="absolute z-50 mt-1 w-full bg-white rounded-xl shadow-xl border max-h-64 overflow-y-auto animate-in fade-in-0 zoom-in-95">
-                        <button
-                          type="button"
-                          onClick={() => { setSearchQuery(''); setServiceOpen(false); }}
-                          className={`flex items-center gap-3 w-full px-4 py-3 text-sm hover:bg-slate-50 transition-colors text-left border-b ${!searchQuery ? 'bg-slate-50 font-medium' : ''}`}
-                        >
-                          <Search className="h-4 w-4 text-slate-400" />
-                          <span className="text-slate-700">{language === 'es' ? 'Todos los servicios' : 'All services'}</span>
-                        </button>
-                        {categories.map(cat => (
-                          <button
-                            key={cat.id}
-                            type="button"
-                            onClick={() => { setSearchQuery(language === 'es' ? cat.name_es : cat.name_en); setServiceOpen(false); }}
-                            className={`flex items-center gap-3 w-full px-4 py-3 text-sm hover:bg-slate-50 transition-colors text-left ${
-                              searchQuery === (language === 'es' ? cat.name_es : cat.name_en) ? 'bg-slate-50 font-medium' : ''
-                            }`}
-                            data-testid={`search-cat-${cat.id}`}
-                          >
-                            <span className="text-lg">{cat.icon || '💼'}</span>
-                            <span className="text-slate-700">{language === 'es' ? cat.name_es : cat.name_en}</span>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  {/* City Dropdown */}
+                  {/* City Dropdown (first) */}
                   <div className="relative" ref={cityRef}>
                     <button
                       type="button"
@@ -220,6 +179,47 @@ export default function HomePage() {
                             {language === 'es' ? 'No hay ciudades para este país' : 'No cities for this country'}
                           </div>
                         )}
+                      </div>
+                    )}
+                  </div>
+                  {/* Service Dropdown (second) */}
+                  <div className="relative" ref={serviceRef}>
+                    <button
+                      type="button"
+                      onClick={() => { setServiceOpen(!serviceOpen); setCityOpen(false); }}
+                      className="flex items-center gap-2 w-full h-14 px-4 bg-white rounded-xl text-left"
+                      data-testid="search-service-input"
+                    >
+                      <Search className="h-5 w-5 text-slate-400 shrink-0" />
+                      <span className={`flex-1 text-sm truncate ${searchQuery ? 'text-slate-900' : 'text-slate-400'}`}>
+                        {searchQuery || (language === 'es' ? '¿Qué servicio buscas?' : 'What service?')}
+                      </span>
+                      <ChevronDown className={`h-4 w-4 text-slate-400 transition-transform ${serviceOpen ? 'rotate-180' : ''}`} />
+                    </button>
+                    {serviceOpen && categories.length > 0 && (
+                      <div className="absolute z-50 mt-1 w-full bg-white rounded-xl shadow-xl border max-h-64 overflow-y-auto animate-in fade-in-0 zoom-in-95">
+                        <button
+                          type="button"
+                          onClick={() => { setSearchQuery(''); setServiceOpen(false); }}
+                          className={`flex items-center gap-3 w-full px-4 py-3 text-sm hover:bg-slate-50 transition-colors text-left border-b ${!searchQuery ? 'bg-slate-50 font-medium' : ''}`}
+                        >
+                          <Search className="h-4 w-4 text-slate-400" />
+                          <span className="text-slate-700">{language === 'es' ? 'Todos los servicios' : 'All services'}</span>
+                        </button>
+                        {categories.map(cat => (
+                          <button
+                            key={cat.id}
+                            type="button"
+                            onClick={() => { setSearchQuery(language === 'es' ? cat.name_es : cat.name_en); setServiceOpen(false); }}
+                            className={`flex items-center gap-3 w-full px-4 py-3 text-sm hover:bg-slate-50 transition-colors text-left ${
+                              searchQuery === (language === 'es' ? cat.name_es : cat.name_en) ? 'bg-slate-50 font-medium' : ''
+                            }`}
+                            data-testid={`search-cat-${cat.id}`}
+                          >
+                            <span className="text-lg">{cat.icon || '💼'}</span>
+                            <span className="text-slate-700">{language === 'es' ? cat.name_es : cat.name_en}</span>
+                          </button>
+                        ))}
                       </div>
                     )}
                   </div>
