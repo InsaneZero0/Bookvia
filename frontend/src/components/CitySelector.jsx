@@ -1,12 +1,13 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useI18n } from '@/lib/i18n';
-import { MapPin, ChevronDown, X } from 'lucide-react';
+import { MapPin, ChevronDown, X, TrendingUp } from 'lucide-react';
 
-export function CitySelector({ countryCode, value, onChange, placeholder, required = false }) {
+export function CitySelector({ countryCode, value, onChange, onCityData, placeholder, required = false, showDemand = false }) {
   const { language } = useI18n();
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [cities, setCities] = useState([]);
+  const [demandMap, setDemandMap] = useState({});
   const [loading, setLoading] = useState(false);
   const wrapperRef = useRef(null);
   const inputRef = useRef(null);
@@ -25,24 +26,43 @@ export function CitySelector({ countryCode, value, onChange, placeholder, requir
     if (!countryCode) return;
     setLoading(true);
     const baseUrl = process.env.REACT_APP_BACKEND_URL || '';
-    fetch(`${baseUrl}/api/cities?country_code=${countryCode}`)
-      .then(r => r.ok ? r.json() : [])
-      .then(data => setCities(Array.isArray(data) ? data : []))
-      .catch(() => setCities([]))
-      .finally(() => setLoading(false));
-  }, [countryCode]);
+    const fetches = [
+      fetch(`${baseUrl}/api/cities?country_code=${countryCode}`).then(r => r.ok ? r.json() : []).catch(() => []),
+    ];
+    if (showDemand) {
+      fetches.push(
+        fetch(`${baseUrl}/api/cities?country_code=${countryCode}&with_businesses=true`).then(r => r.ok ? r.json() : []).catch(() => [])
+      );
+    }
+    Promise.all(fetches).then(([allCities, demandCities]) => {
+      setCities(Array.isArray(allCities) ? allCities : []);
+      if (demandCities) {
+        const map = {};
+        (Array.isArray(demandCities) ? demandCities : []).forEach(c => { map[c.name] = c.business_count || 0; });
+        setDemandMap(map);
+      }
+    }).finally(() => setLoading(false));
+  }, [countryCode, showDemand]);
 
   const filtered = useMemo(() => {
-    if (!search.trim()) return cities;
-    const q = search.toLowerCase();
-    return cities.filter(c =>
-      c.name.toLowerCase().includes(q) ||
-      (c.state || '').toLowerCase().includes(q)
-    );
-  }, [search, cities]);
+    let list = cities;
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      list = list.filter(c =>
+        c.name.toLowerCase().includes(q) ||
+        (c.state || '').toLowerCase().includes(q)
+      );
+    }
+    // If showDemand, sort cities with businesses first
+    if (showDemand && Object.keys(demandMap).length > 0) {
+      list = [...list].sort((a, b) => (demandMap[b.name] || 0) - (demandMap[a.name] || 0));
+    }
+    return list;
+  }, [search, cities, showDemand, demandMap]);
 
-  const handleSelect = (cityName) => {
-    onChange(cityName);
+  const handleSelect = (cityObj) => {
+    onChange(cityObj.name);
+    if (onCityData) onCityData(cityObj);
     setSearch('');
     setOpen(false);
   };
@@ -102,7 +122,7 @@ export function CitySelector({ countryCode, value, onChange, placeholder, requir
                 <button
                   key={c.slug || c.name}
                   type="button"
-                  onClick={() => handleSelect(c.name)}
+                  onClick={() => handleSelect(c)}
                   className={`flex items-center gap-2.5 w-full px-3 py-2 text-sm hover:bg-muted transition-colors text-left ${
                     c.name === value ? 'bg-muted font-medium' : ''
                   }`}
@@ -111,6 +131,12 @@ export function CitySelector({ countryCode, value, onChange, placeholder, requir
                   <MapPin className="h-3.5 w-3.5 text-[#F05D5E] shrink-0" />
                   <span className="flex-1">{c.name}</span>
                   {c.state && <span className="text-xs text-muted-foreground">{c.state}</span>}
+                  {showDemand && demandMap[c.name] > 0 && (
+                    <span className="flex items-center gap-0.5 text-[10px] font-medium text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20 px-1.5 py-0.5 rounded-full">
+                      <TrendingUp className="h-2.5 w-2.5" />
+                      {demandMap[c.name]}
+                    </span>
+                  )}
                 </button>
               ))}
             </div>

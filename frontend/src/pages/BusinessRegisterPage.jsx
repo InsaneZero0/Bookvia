@@ -676,6 +676,12 @@ export default function BusinessRegisterPage() {
                         countryCode={formData.country}
                         value={formData.city}
                         onChange={(city) => setFormData(prev => ({ ...prev, city }))}
+                        onCityData={(cityObj) => {
+                          if (cityObj.state && !formData.state) {
+                            setFormData(prev => ({ ...prev, city: cityObj.name, state: cityObj.state }));
+                          }
+                        }}
+                        showDemand
                         required
                       />
                     </div>
