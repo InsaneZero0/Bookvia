@@ -1439,13 +1439,24 @@ async def get_favorites(token_data: TokenData = Depends(require_auth)):
 # ========================== CATEGORY ROUTES ==========================
 
 @categories_router.get("", response_model=List[CategoryResponse])
-async def get_categories():
+async def get_categories(city: Optional[str] = None, country_code: Optional[str] = None):
     categories = await db.categories.find({}, {"_id": 0}).to_list(100)
+    
+    # Build business filter - optionally scoped to city+country
+    biz_filter = {**VISIBLE_BUSINESS_FILTER}
+    if city:
+        biz_filter["city"] = city
+    if country_code:
+        biz_filter["country_code"] = country_code.upper()
     
     # Add business count for each category
     for cat in categories:
-        count = await db.businesses.count_documents({"category_id": cat["id"], **VISIBLE_BUSINESS_FILTER})
+        count = await db.businesses.count_documents({"category_id": cat["id"], **biz_filter})
         cat["business_count"] = count
+    
+    # If filtering by city, only return categories that actually have businesses
+    if city:
+        categories = [c for c in categories if c["business_count"] > 0]
     
     return [CategoryResponse(**c) for c in categories]
 
@@ -4910,23 +4921,58 @@ async def update_contact_message(
 # ========================== CITIES & COUNTRIES ==========================
 
 @api_router.get("/cities")
-async def get_cities(country_code: str = "MX"):
-    """Get list of cities with businesses for a country"""
-    # First check if we have cities in the cities collection
-    cities_from_db = await db.cities.find(
-        {"country_code": country_code.upper(), "active": True},
-        {"_id": 0}
-    ).to_list(500)
-    
+async def get_cities(country_code: str = "MX", with_businesses: bool = False, q: Optional[str] = None):
+    """Get list of cities for a country. If with_businesses=True, only returns cities that have approved businesses, sorted by count."""
+    country_upper = country_code.upper()
+
+    if with_businesses:
+        # Aggregate: count approved businesses per city in this country
+        pipeline = [
+            {"$match": {**VISIBLE_BUSINESS_FILTER, "country_code": country_upper}},
+            {"$group": {"_id": "$city", "count": {"$sum": 1}}},
+            {"$match": {"_id": {"$ne": None}}},
+            {"$sort": {"count": -1}},
+        ]
+        if q:
+            pipeline[0]["$match"]["city"] = {"$regex": q, "$options": "i"}
+
+        agg_results = await db.businesses.aggregate(pipeline).to_list(200)
+
+        cities_out = []
+        for r in agg_results:
+            city_name = r["_id"]
+            # Try to enrich with seeded city data (state, slug)
+            seeded = await db.cities.find_one(
+                {"name": city_name, "country_code": country_upper},
+                {"_id": 0}
+            )
+            if seeded:
+                seeded["business_count"] = r["count"]
+                cities_out.append(seeded)
+            else:
+                cities_out.append({
+                    "name": city_name,
+                    "slug": city_name.lower().replace(" ", "-"),
+                    "country_code": country_upper,
+                    "business_count": r["count"],
+                })
+        return cities_out
+
+    # Default: return all seeded cities for the country
+    filter_q = {"country_code": country_upper, "active": True}
+    if q:
+        filter_q["name"] = {"$regex": q, "$options": "i"}
+
+    cities_from_db = await db.cities.find(filter_q, {"_id": 0}).sort("name", 1).to_list(500)
     if cities_from_db:
         return cities_from_db
-    
+
     # Fallback: get from businesses
     cities = await db.businesses.distinct("city", {
         **VISIBLE_BUSINESS_FILTER,
-        "country_code": country_code.upper()
+        "country_code": country_upper
     })
-    return [{"name": city, "slug": generate_slug(city), "country_code": country_code.upper()} for city in cities if city]
+    return [{"name": city, "slug": city.lower().replace(" ", "-"), "country_code": country_upper} for city in cities if city]
 
 
 @api_router.post("/seed/countries")

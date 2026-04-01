@@ -102,6 +102,10 @@ Bookvia es una plataforma marketplace de reservas profesionales que conecta nego
 - [2026-03-31] Selector de pais clickable en Navbar: Popover con busqueda y lista de paises con banderas. Al cambiar pais, filtra negocios por country_code en busqueda. CountryContext global con persistencia en localStorage.
 - [2026-03-31] HomePage dinamico por pais: badge hero "La plataforma #1 en [pais]", ciudades filtradas por pais (10 ciudades MX seeded), negocios destacados por pais, seccion de ciudades se oculta si no hay ciudades para el pais. Categorias siempre visibles.
 - [2026-03-31] Selector de ciudad dinamico en registros (usuario y negocio): combobox con busqueda que carga ciudades del pais seleccionado. 122+ ciudades seeded para 16 paises. Permite texto libre si la ciudad no esta en la lista. Backend guarda city en usuario.
+- [2026-04-01] Hero search bar convertido a 2 dropdowns con listas: servicios (categorias) y ciudades (filtradas por pais seleccionado). Incluye opcion "Todos los servicios" y "Todas las ciudades".
+- [2026-04-01] Smart Dropdowns en Hero: Dropdown de ciudades con barra de busqueda interna, solo muestra ciudades con negocios activos (ordenadas por cantidad). Dropdown de servicios se filtra dinamicamente segun la ciudad seleccionada (solo categorias con negocios en esa ciudad). Backend: /api/cities?with_businesses=true y /api/categories?city=X&country_code=Y.
+- [2026-04-01] CitySelector mejorado con prop showDemand: muestra badges verdes con conteo de negocios por ciudad, ordena por demanda, auto-rellena campo estado al seleccionar ciudad. Usado en registro de negocio paso 2.
+- [2026-04-01] SearchPage estado vacio inteligente: mensaje dinamico segun filtros ("No hay negocios de [X] en [Y]"), boton Limpiar filtros y CTA "¿Tienes un negocio? Registralo aqui" que redirige a /business/register.
 
 ## Backlog (P0-P3)
 

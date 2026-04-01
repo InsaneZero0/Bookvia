@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,7 +12,7 @@ import { categoriesAPI, businessesAPI, utilityAPI } from '@/lib/api';
 import {
   Search, MapPin, ArrowRight, CheckCircle2,
   Sparkles, Heart, Dumbbell, Flower2, Scale, Briefcase, Car, PawPrint,
-  Star, Shield, Clock, Users, Quote, CalendarIcon
+  Star, Shield, Clock, Users, Quote, CalendarIcon, ChevronDown
 } from 'lucide-react';
 
 const iconMap = {
@@ -36,6 +36,42 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [city, setCity] = useState('');
+  const [serviceOpen, setServiceOpen] = useState(false);
+  const [cityOpen, setCityOpen] = useState(false);
+  const [citySearch, setCitySearch] = useState('');
+  const [heroCities, setHeroCities] = useState([]);
+  const [filteredCategories, setFilteredCategories] = useState(null);
+  const serviceRef = useRef(null);
+  const cityRef = useRef(null);
+
+  // Close dropdowns on outside click
+  useEffect(() => {
+    const handler = (e) => {
+      if (serviceRef.current && !serviceRef.current.contains(e.target)) setServiceOpen(false);
+      if (cityRef.current && !cityRef.current.contains(e.target)) { setCityOpen(false); setCitySearch(''); }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  // Load cities with businesses for the hero dropdown
+  useEffect(() => {
+    const baseUrl = process.env.REACT_APP_BACKEND_URL || '';
+    fetch(`${baseUrl}/api/cities?country_code=${countryCode}&with_businesses=true`)
+      .then(r => r.ok ? r.json() : [])
+      .then(data => setHeroCities(Array.isArray(data) ? data : []))
+      .catch(() => setHeroCities([]));
+  }, [countryCode]);
+
+  // When city changes, load categories filtered by that city
+  useEffect(() => {
+    if (!city) { setFilteredCategories(null); return; }
+    const baseUrl = process.env.REACT_APP_BACKEND_URL || '';
+    fetch(`${baseUrl}/api/categories?city=${encodeURIComponent(city)}&country_code=${countryCode}`)
+      .then(r => r.ok ? r.json() : [])
+      .then(data => setFilteredCategories(Array.isArray(data) ? data : []))
+      .catch(() => setFilteredCategories(null));
+  }, [city, countryCode]);
 
   useEffect(() => {
     loadData();
@@ -121,25 +157,120 @@ export default function HomePage() {
             <form onSubmit={handleSearch} className="mt-10">
               <div className="bg-white/10 backdrop-blur-xl rounded-2xl p-2 max-w-3xl mx-auto border border-white/20">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                  <div className="relative">
-                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
-                    <Input
-                      placeholder={language === 'es' ? '¿Qué servicio buscas?' : 'What service?'}
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      className="pl-12 h-14 bg-white border-0 text-slate-900 placeholder:text-slate-400 rounded-xl"
-                      data-testid="search-service-input"
-                    />
-                  </div>
-                  <div className="relative">
-                    <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
-                    <Input
-                      placeholder={language === 'es' ? '¿En qué ciudad?' : 'Which city?'}
-                      value={city}
-                      onChange={(e) => setCity(e.target.value)}
-                      className="pl-12 h-14 bg-white border-0 text-slate-900 placeholder:text-slate-400 rounded-xl"
+                  {/* City Dropdown (first) — Smart: only cities with businesses + search */}
+                  <div className="relative" ref={cityRef}>
+                    <button
+                      type="button"
+                      onClick={() => { setCityOpen(!cityOpen); setServiceOpen(false); setTimeout(() => { const el = document.getElementById('hero-city-search'); if (el) el.focus(); }, 100); }}
+                      className="flex items-center gap-2 w-full h-14 px-4 bg-white rounded-xl text-left"
                       data-testid="search-city-input"
-                    />
+                    >
+                      <MapPin className="h-5 w-5 text-slate-400 shrink-0" />
+                      <span className={`flex-1 text-sm truncate ${city ? 'text-slate-900' : 'text-slate-400'}`}>
+                        {city || (language === 'es' ? '¿En qué ciudad?' : 'Which city?')}
+                      </span>
+                      <ChevronDown className={`h-4 w-4 text-slate-400 transition-transform ${cityOpen ? 'rotate-180' : ''}`} />
+                    </button>
+                    {cityOpen && (
+                      <div className="absolute z-50 mt-1 w-full bg-white rounded-xl shadow-xl border max-h-72 overflow-hidden animate-in fade-in-0 zoom-in-95">
+                        {/* Search input */}
+                        <div className="p-2 border-b sticky top-0 bg-white">
+                          <input
+                            id="hero-city-search"
+                            type="text"
+                            placeholder={language === 'es' ? 'Buscar ciudad...' : 'Search city...'}
+                            value={citySearch}
+                            onChange={e => setCitySearch(e.target.value)}
+                            className="w-full px-3 py-2 text-sm text-slate-900 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#F05D5E]/30"
+                            data-testid="city-search-input"
+                            autoComplete="off"
+                          />
+                        </div>
+                        <div className="overflow-y-auto max-h-52">
+                          <button
+                            type="button"
+                            onClick={() => { setCity(''); setSearchQuery(''); setCityOpen(false); setCitySearch(''); }}
+                            className={`flex items-center gap-3 w-full px-4 py-3 text-sm hover:bg-slate-50 transition-colors text-left border-b ${!city ? 'bg-slate-50 font-medium' : ''}`}
+                          >
+                            <MapPin className="h-4 w-4 text-slate-400" />
+                            <span className="text-slate-700">{language === 'es' ? 'Todas las ciudades' : 'All cities'}</span>
+                          </button>
+                          {heroCities
+                            .filter(c => !citySearch || c.name.toLowerCase().includes(citySearch.toLowerCase()))
+                            .map(c => (
+                            <button
+                              key={c.slug || c.name}
+                              type="button"
+                              onClick={() => { setCity(c.name); setCityOpen(false); setCitySearch(''); setSearchQuery(''); }}
+                              className={`flex items-center gap-3 w-full px-4 py-3 text-sm hover:bg-slate-50 transition-colors text-left ${
+                                city === c.name ? 'bg-slate-50 font-medium' : ''
+                              }`}
+                              data-testid={`search-city-${c.slug || c.name}`}
+                            >
+                              <MapPin className="h-4 w-4 text-[#F05D5E]" />
+                              <span className="flex-1 text-slate-700">{c.name}</span>
+                              <span className="text-xs text-slate-400">{c.business_count} {language === 'es' ? 'negocios' : 'biz'}</span>
+                            </button>
+                          ))}
+                          {heroCities.filter(c => !citySearch || c.name.toLowerCase().includes(citySearch.toLowerCase())).length === 0 && (
+                            <div className="py-4 text-center text-sm text-slate-400">
+                              {language === 'es' ? 'No se encontraron ciudades' : 'No cities found'}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  {/* Service Dropdown (second) — Smart: filtered by selected city */}
+                  <div className="relative" ref={serviceRef}>
+                    <button
+                      type="button"
+                      onClick={() => { setServiceOpen(!serviceOpen); setCityOpen(false); }}
+                      className="flex items-center gap-2 w-full h-14 px-4 bg-white rounded-xl text-left"
+                      data-testid="search-service-input"
+                    >
+                      <Search className="h-5 w-5 text-slate-400 shrink-0" />
+                      <span className={`flex-1 text-sm truncate ${searchQuery ? 'text-slate-900' : 'text-slate-400'}`}>
+                        {searchQuery || (language === 'es' ? '¿Qué servicio buscas?' : 'What service?')}
+                      </span>
+                      <ChevronDown className={`h-4 w-4 text-slate-400 transition-transform ${serviceOpen ? 'rotate-180' : ''}`} />
+                    </button>
+                    {serviceOpen && (() => {
+                      const displayCats = filteredCategories !== null ? filteredCategories : categories;
+                      return displayCats.length > 0 ? (
+                      <div className="absolute z-50 mt-1 w-full bg-white rounded-xl shadow-xl border max-h-64 overflow-y-auto animate-in fade-in-0 zoom-in-95">
+                        <button
+                          type="button"
+                          onClick={() => { setSearchQuery(''); setServiceOpen(false); }}
+                          className={`flex items-center gap-3 w-full px-4 py-3 text-sm hover:bg-slate-50 transition-colors text-left border-b ${!searchQuery ? 'bg-slate-50 font-medium' : ''}`}
+                        >
+                          <Search className="h-4 w-4 text-slate-400" />
+                          <span className="text-slate-700">{language === 'es' ? 'Todos los servicios' : 'All services'}</span>
+                        </button>
+                        {displayCats.map(cat => (
+                          <button
+                            key={cat.id}
+                            type="button"
+                            onClick={() => { setSearchQuery(language === 'es' ? cat.name_es : cat.name_en); setServiceOpen(false); }}
+                            className={`flex items-center gap-3 w-full px-4 py-3 text-sm hover:bg-slate-50 transition-colors text-left ${
+                              searchQuery === (language === 'es' ? cat.name_es : cat.name_en) ? 'bg-slate-50 font-medium' : ''
+                            }`}
+                            data-testid={`search-cat-${cat.id}`}
+                          >
+                            <span className="text-lg">{cat.icon || '💼'}</span>
+                            <span className="flex-1 text-slate-700">{language === 'es' ? cat.name_es : cat.name_en}</span>
+                            {city && <span className="text-xs text-slate-400">{cat.business_count}</span>}
+                          </button>
+                        ))}
+                      </div>
+                      ) : (
+                      <div className="absolute z-50 mt-1 w-full bg-white rounded-xl shadow-xl border animate-in fade-in-0 zoom-in-95">
+                        <div className="py-4 text-center text-sm text-slate-400">
+                          {language === 'es' ? 'No hay servicios en esta ciudad' : 'No services in this city'}
+                        </div>
+                      </div>
+                      );
+                    })()}
                   </div>
                   <Button type="submit" className="h-14 btn-coral text-base rounded-xl" data-testid="search-submit-button">
                     {language === 'es' ? 'Buscar' : 'Search'}

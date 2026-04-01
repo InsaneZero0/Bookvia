@@ -14,7 +14,7 @@ import { useI18n } from '@/lib/i18n';
 import { useAuth } from '@/lib/auth';
 import { useCountry } from '@/lib/countryContext';
 import { businessesAPI, categoriesAPI, usersAPI } from '@/lib/api';
-import { Search, SlidersHorizontal, MapPin, X, Filter, List, Map as MapIcon, Star } from 'lucide-react';
+import { Search, SlidersHorizontal, MapPin, X, Filter, List, Map as MapIcon, Star, ArrowRight } from 'lucide-react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { toast } from 'sonner';
 
@@ -386,11 +386,53 @@ export default function SearchPage() {
                   </div>
                 )) : (
                   <div className="col-span-full">
-                    <Card className="p-12 text-center">
-                      <Search className="h-12 w-12 text-muted-foreground/40 mx-auto mb-3" />
-                      <h3 className="font-heading font-bold text-lg mb-1">{language === 'es' ? 'No encontramos resultados' : 'No results found'}</h3>
-                      <p className="text-sm text-muted-foreground mb-4">{language === 'es' ? 'Intenta con otros filtros' : 'Try different filters'}</p>
-                      <Button onClick={clearFilters} variant="outline" size="sm">{language === 'es' ? 'Limpiar filtros' : 'Clear filters'}</Button>
+                    <Card className="p-8 sm:p-12 text-center border-dashed" data-testid="no-results-card">
+                      <div className="max-w-md mx-auto space-y-4">
+                        <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-[#F05D5E]/10 mx-auto">
+                          <MapPin className="h-8 w-8 text-[#F05D5E]" />
+                        </div>
+                        <div>
+                          <h3 className="font-heading font-bold text-lg mb-1">
+                            {language === 'es'
+                              ? (city && query
+                                ? `No hay negocios de "${query}" en ${city}`
+                                : city
+                                  ? `Aún no hay negocios en ${city}`
+                                  : query
+                                    ? `No encontramos resultados para "${query}"`
+                                    : 'No encontramos resultados')
+                              : (city && query
+                                ? `No "${query}" businesses in ${city}`
+                                : city
+                                  ? `No businesses in ${city} yet`
+                                  : query
+                                    ? `No results for "${query}"`
+                                    : 'No results found')}
+                          </h3>
+                          <p className="text-sm text-muted-foreground">
+                            {language === 'es'
+                              ? 'Estamos creciendo. Pronto habrá más opciones disponibles.'
+                              : "We're growing. More options will be available soon."}
+                          </p>
+                        </div>
+                        <div className="flex flex-col sm:flex-row items-center justify-center gap-2 pt-2">
+                          {hasActiveFilters && (
+                            <Button onClick={clearFilters} variant="outline" size="sm" data-testid="clear-filters-btn">
+                              <X className="h-3.5 w-3.5 mr-1" />
+                              {language === 'es' ? 'Limpiar filtros' : 'Clear filters'}
+                            </Button>
+                          )}
+                          <Button
+                            onClick={() => navigate('/business/register')}
+                            size="sm"
+                            className="btn-coral"
+                            data-testid="register-business-empty-cta"
+                          >
+                            {language === 'es' ? '¿Tienes un negocio? Regístralo aquí' : 'Have a business? Register it here'}
+                            <ArrowRight className="h-3.5 w-3.5 ml-1" />
+                          </Button>
+                        </div>
+                      </div>
                     </Card>
                   </div>
                 )}
