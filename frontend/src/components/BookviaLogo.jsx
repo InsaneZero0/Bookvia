@@ -13,17 +13,11 @@ export function BookviaLogo({ variant = 'dark', size = 'text-xl', asLink = false
     <span className={`font-heading font-bold ${size} tracking-tight ${className}`} data-testid="bookvia-logo" {...props}>
       <span className={bookColor}>Book</span>
       <span className="text-[#F05D5E]">v</span>
-      <span className="text-[#F05D5E] relative inline-block">
-        {/* Hidden i to reserve space */}
-        <span style={{ visibility: 'hidden' }}>i</span>
-        {/* Bottom 70% shows just the stroke without the dot */}
-        <span className="absolute left-0 bottom-0 w-full overflow-hidden text-[#F05D5E]" style={{ height: '68%' }} aria-hidden="true">
-          i
-        </span>
-        {/* Star replaces the dot */}
+      <span className="text-[#F05D5E] relative">
+        i
         <StarIcon className="absolute text-[#F05D5E]" style={{ 
-          width: '0.45em', height: '0.45em', 
-          top: '0.05em', left: '50%', transform: 'translateX(-50%)'
+          width: '0.32em', height: '0.32em', 
+          top: '0.12em', left: '50%', transform: 'translateX(-50%)'
         }} />
       </span>
       <span className="text-[#F05D5E]">a</span>
