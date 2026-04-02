@@ -108,6 +108,7 @@ Bookvia es una plataforma marketplace de reservas profesionales que conecta nego
 - [2026-04-01] SearchPage estado vacio inteligente: mensaje dinamico segun filtros ("No hay negocios de [X] en [Y]"), boton Limpiar filtros y CTA "¿Tienes un negocio? Registralo aqui" que redirige a /business/register.
 - [2026-04-02] Auto-capitalizacion en campos de texto de registros: primera letra de cada palabra se convierte a mayuscula automaticamente (nombre, direccion, estado, razon social, ciudad). No aplica a email, password, RFC, CLABE, telefono.
 - [2026-04-02] Fix critico en buscador del Hero: antes enviaba nombre de categoria como texto (q=Automotriz) y el backend no lo encontraba por nombre de negocio. Ahora envia category_id directamente. Backend tambien busca por nombre de categoria en texto libre.
+- [2026-04-02] Logo Bookvia con estrella de 4 puntas sobre la "i": componente reutilizable BookviaLogo.jsx con variantes dark/light. Implementado en Navbar, Login, Register y titulo de pagina.
 
 ## Backlog (P0-P3)
 
