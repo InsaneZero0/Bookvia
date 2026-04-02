@@ -14,7 +14,7 @@ export function BookviaLogo({ variant = 'dark', size = 'text-xl', asLink = false
       <span className={bookColor}>Book</span>
       <span className="text-[#F05D5E]">via</span>
       <StarIcon className="inline-block text-[#F05D5E] relative" style={{ 
-        width: '0.45em', height: '0.45em', 
+        width: '0.55em', height: '0.55em', 
         top: '-0.55em', marginLeft: '0.05em'
       }} />
     </span>
