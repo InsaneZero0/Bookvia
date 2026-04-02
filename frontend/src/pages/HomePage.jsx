@@ -35,6 +35,7 @@ export default function HomePage() {
   const [cities, setCities] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCategoryId, setSelectedCategoryId] = useState('');
   const [city, setCity] = useState('');
   const [serviceOpen, setServiceOpen] = useState(false);
   const [cityOpen, setCityOpen] = useState(false);
@@ -101,7 +102,12 @@ export default function HomePage() {
   const handleSearch = (e) => {
     e.preventDefault();
     const params = new URLSearchParams();
-    if (searchQuery) params.set('q', searchQuery);
+    // If a category was selected from dropdown, use category_id filter (not text search)
+    if (selectedCategoryId) {
+      params.set('category', selectedCategoryId);
+    } else if (searchQuery) {
+      params.set('q', searchQuery);
+    }
     if (city) params.set('city', city);
     navigate(`/search?${params.toString()}`);
   };
@@ -241,27 +247,32 @@ export default function HomePage() {
                       <div className="absolute z-50 mt-1 w-full bg-white rounded-xl shadow-xl border max-h-64 overflow-y-auto animate-in fade-in-0 zoom-in-95">
                         <button
                           type="button"
-                          onClick={() => { setSearchQuery(''); setServiceOpen(false); }}
-                          className={`flex items-center gap-3 w-full px-4 py-3 text-sm hover:bg-slate-50 transition-colors text-left border-b ${!searchQuery ? 'bg-slate-50 font-medium' : ''}`}
+                          onClick={() => { setSearchQuery(''); setSelectedCategoryId(''); setServiceOpen(false); }}
+                          className={`flex items-center gap-3 w-full px-4 py-2.5 text-sm hover:bg-slate-50 transition-colors text-left border-b ${!searchQuery ? 'bg-slate-50 font-medium' : ''}`}
                         >
-                          <Search className="h-4 w-4 text-slate-400" />
+                          <Search className="h-4 w-4 text-slate-400 shrink-0" />
                           <span className="text-slate-700">{language === 'es' ? 'Todos los servicios' : 'All services'}</span>
                         </button>
-                        {displayCats.map(cat => (
+                        {displayCats.map(cat => {
+                          const IconComp = iconMap[cat.icon] || Sparkles;
+                          return (
                           <button
                             key={cat.id}
                             type="button"
-                            onClick={() => { setSearchQuery(language === 'es' ? cat.name_es : cat.name_en); setServiceOpen(false); }}
-                            className={`flex items-center gap-3 w-full px-4 py-3 text-sm hover:bg-slate-50 transition-colors text-left ${
+                            onClick={() => { setSearchQuery(language === 'es' ? cat.name_es : cat.name_en); setSelectedCategoryId(cat.id); setServiceOpen(false); }}
+                            className={`flex items-center gap-3 w-full px-4 py-2.5 text-sm hover:bg-slate-50 transition-colors text-left ${
                               searchQuery === (language === 'es' ? cat.name_es : cat.name_en) ? 'bg-slate-50 font-medium' : ''
                             }`}
                             data-testid={`search-cat-${cat.id}`}
                           >
-                            <span className="text-lg">{cat.icon || '💼'}</span>
-                            <span className="flex-1 text-slate-700">{language === 'es' ? cat.name_es : cat.name_en}</span>
-                            {city && <span className="text-xs text-slate-400">{cat.business_count}</span>}
+                            <div className="w-7 h-7 rounded-lg bg-[#F05D5E]/10 flex items-center justify-center shrink-0">
+                              <IconComp className="h-3.5 w-3.5 text-[#F05D5E]" />
+                            </div>
+                            <span className="flex-1 text-slate-700 text-left">{language === 'es' ? cat.name_es : cat.name_en}</span>
+                            {city && <span className="text-xs text-slate-400 shrink-0">{cat.business_count}</span>}
                           </button>
-                        ))}
+                          );
+                        })}
                       </div>
                       ) : (
                       <div className="absolute z-50 mt-1 w-full bg-white rounded-xl shadow-xl border animate-in fade-in-0 zoom-in-95">

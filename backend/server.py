@@ -1513,7 +1513,25 @@ async def search_businesses(
     
     if country_code:
         filters["country_code"] = country_code.upper()
-    if query:
+    if query and not category_id:
+        # Also search by matching category names
+        matching_cats = await db.categories.find(
+            {"$or": [
+                {"name_es": {"$regex": query, "$options": "i"}},
+                {"name_en": {"$regex": query, "$options": "i"}}
+            ]},
+            {"_id": 0, "id": 1}
+        ).to_list(50)
+        matching_cat_ids = [c["id"] for c in matching_cats]
+        
+        or_conditions = [
+            {"name": {"$regex": query, "$options": "i"}},
+            {"description": {"$regex": query, "$options": "i"}}
+        ]
+        if matching_cat_ids:
+            or_conditions.append({"category_id": {"$in": matching_cat_ids}})
+        filters["$or"] = or_conditions
+    elif query:
         filters["$or"] = [
             {"name": {"$regex": query, "$options": "i"}},
             {"description": {"$regex": query, "$options": "i"}}
