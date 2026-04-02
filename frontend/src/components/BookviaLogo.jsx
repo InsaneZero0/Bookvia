@@ -12,15 +12,11 @@ export function BookviaLogo({ variant = 'dark', size = 'text-xl', asLink = false
   const content = (
     <span className={`font-heading font-bold ${size} tracking-tight ${className}`} data-testid="bookvia-logo" {...props}>
       <span className={bookColor}>Book</span>
-      <span className="text-[#F05D5E]">v</span>
-      <span className="text-[#F05D5E] relative">
-        i
-        <StarIcon className="absolute text-[#F05D5E]" style={{ 
-          width: '0.55em', height: '0.55em', 
-          top: '-0.45em', left: '50%', transform: 'translateX(-50%)'
-        }} />
-      </span>
-      <span className="text-[#F05D5E]">a</span>
+      <span className="text-[#F05D5E]">via</span>
+      <StarIcon className="inline-block text-[#F05D5E] relative" style={{ 
+        width: '0.45em', height: '0.45em', 
+        top: '-0.55em', marginLeft: '0.05em'
+      }} />
     </span>
   );
 
