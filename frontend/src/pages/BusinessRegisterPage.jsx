@@ -114,11 +114,14 @@ export default function BusinessRegisterPage() {
     }
   };
 
+  const autoCapitalize = (str) => str.replace(/(^|\s)\S/g, c => c.toUpperCase());
+
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
+    const capitalizedFields = ['name', 'address', 'state', 'legal_name'];
     setFormData(prev => ({
       ...prev,
-      [name]: type === 'checkbox' ? checked : value
+      [name]: type === 'checkbox' ? checked : capitalizedFields.includes(name) ? autoCapitalize(value) : value
     }));
   };
 

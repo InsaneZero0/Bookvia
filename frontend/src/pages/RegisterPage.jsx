@@ -50,8 +50,15 @@ export default function RegisterPage() {
     );
   }, [countrySearch]);
 
+  const autoCapitalize = (str) => str.replace(/(^|\s)\S/g, c => c.toUpperCase());
+
   const handleChange = (e) => {
-    setFormData(prev => ({ ...prev, [e.target.name]: e.target.value }));
+    const { name, value } = e.target;
+    const capitalizedFields = ['full_name'];
+    setFormData(prev => ({
+      ...prev,
+      [name]: capitalizedFields.includes(name) ? autoCapitalize(value) : value,
+    }));
   };
 
   const handlePhoneChange = (e) => {

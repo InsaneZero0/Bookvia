@@ -106,6 +106,7 @@ Bookvia es una plataforma marketplace de reservas profesionales que conecta nego
 - [2026-04-01] Smart Dropdowns en Hero: Dropdown de ciudades con barra de busqueda interna, solo muestra ciudades con negocios activos (ordenadas por cantidad). Dropdown de servicios se filtra dinamicamente segun la ciudad seleccionada (solo categorias con negocios en esa ciudad). Backend: /api/cities?with_businesses=true y /api/categories?city=X&country_code=Y.
 - [2026-04-01] CitySelector mejorado con prop showDemand: muestra badges verdes con conteo de negocios por ciudad, ordena por demanda, auto-rellena campo estado al seleccionar ciudad. Usado en registro de negocio paso 2.
 - [2026-04-01] SearchPage estado vacio inteligente: mensaje dinamico segun filtros ("No hay negocios de [X] en [Y]"), boton Limpiar filtros y CTA "¿Tienes un negocio? Registralo aqui" que redirige a /business/register.
+- [2026-04-02] Auto-capitalizacion en campos de texto de registros: primera letra de cada palabra se convierte a mayuscula automaticamente (nombre, direccion, estado, razon social, ciudad). No aplica a email, password, RFC, CLABE, telefono.
 
 ## Backlog (P0-P3)
 

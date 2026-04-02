@@ -67,8 +67,10 @@ export function CitySelector({ countryCode, value, onChange, onCityData, placeho
     setOpen(false);
   };
 
+  const autoCapitalize = (str) => str.replace(/(^|\s)\S/g, c => c.toUpperCase());
+
   const handleInputChange = (e) => {
-    const val = e.target.value;
+    const val = autoCapitalize(e.target.value);
     setSearch(val);
     onChange(val);
     if (!open) setOpen(true);
