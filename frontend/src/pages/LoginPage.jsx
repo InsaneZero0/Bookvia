@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAuth } from '@/lib/auth';
 import { useI18n } from '@/lib/i18n';
+import { BookviaLogo } from '@/components/BookviaLogo';
 import { toast } from 'sonner';
 import { Eye, EyeOff, ArrowLeft, Mail, Lock, Building2 } from 'lucide-react';
 
@@ -60,9 +61,7 @@ export default function LoginPage() {
         <Card className="border-0 shadow-xl">
           <CardHeader className="text-center pb-2">
             <Link to="/" className="inline-block mb-4">
-              <span className="text-3xl font-heading font-extrabold">
-                Book<span className="text-[#F05D5E]">via</span>
-              </span>
+              <BookviaLogo variant="light" size="text-3xl" />
             </Link>
             <CardTitle className="text-2xl font-heading">{t('auth.login.title')}</CardTitle>
             <CardDescription>{t('auth.login.subtitle')}</CardDescription>

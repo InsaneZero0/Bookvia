@@ -11,6 +11,7 @@ import { countries, getCountryByCode } from '@/lib/countries';
 import { getDetectedCountry } from '@/lib/detectCountry';
 import { AgeVerification } from '@/components/AgeVerification';
 import { CitySelector } from '@/components/CitySelector';
+import { BookviaLogo } from '@/components/BookviaLogo';
 import { toast } from 'sonner';
 import { Eye, EyeOff, ArrowLeft, Mail, Lock, User, Phone, Globe, Search } from 'lucide-react';
 
@@ -130,9 +131,7 @@ export default function RegisterPage() {
         <Card className="border-0 shadow-xl">
           <CardHeader className="text-center pb-2">
             <Link to="/" className="inline-block mb-4">
-              <span className="text-3xl font-heading font-extrabold">
-                Book<span className="text-[#F05D5E]">via</span>
-              </span>
+              <BookviaLogo variant="light" size="text-3xl" />
             </Link>
             <CardTitle className="text-2xl font-heading">{t('auth.register.title')}</CardTitle>
             <CardDescription>{t('auth.register.subtitle')}</CardDescription>

@@ -4,6 +4,7 @@ import { useAuth } from '@/lib/auth';
 import { useI18n } from '@/lib/i18n';
 import { useCountry } from '@/lib/countryContext';
 import { useTheme } from '@/components/ThemeProvider';
+import { BookviaLogo } from '@/components/BookviaLogo';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -71,17 +72,11 @@ export function Navbar() {
       <div className="container-app">
         <div className="flex items-center justify-between h-16 md:h-20">
           {/* Logo */}
-          <Link 
-            to="/" 
-            className="flex items-center gap-2"
-            data-testid="logo-link"
-          >
-            <span className={`text-2xl font-heading font-extrabold tracking-tight ${
-              isTransparent ? 'text-white' : 'text-foreground'
-            }`}>
-              Book<span className="text-[#F05D5E]">via</span>
-            </span>
-          </Link>
+          <BookviaLogo 
+            variant={isTransparent ? 'dark' : 'light'} 
+            size="text-2xl" 
+            asLink 
+          />
 
           {/* Desktop Navigation */}
           <div className="hidden md:flex items-center gap-6">
