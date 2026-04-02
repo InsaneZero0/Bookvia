@@ -16,8 +16,8 @@ export function BookviaLogo({ variant = 'dark', size = 'text-xl', asLink = false
       <span className="text-[#F05D5E] relative">
         i
         <StarIcon className="absolute text-[#F05D5E]" style={{ 
-          width: '0.32em', height: '0.32em', 
-          top: '0.12em', left: '50%', transform: 'translateX(-50%)'
+          width: '0.55em', height: '0.55em', 
+          top: '-0.45em', left: '50%', transform: 'translateX(-50%)'
         }} />
       </span>
       <span className="text-[#F05D5E]">a</span>
