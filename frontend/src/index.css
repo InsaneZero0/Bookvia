@@ -98,6 +98,12 @@
     @apply backdrop-blur-md bg-white/80 dark:bg-slate-900/80;
   }
 
+  /* Auto-capitalize first letter of each word in text inputs */
+  input:not([type="email"]):not([type="password"]):not([type="tel"]):not([type="number"]):not([type="date"]):not([type="time"]):not([type="url"]):not([type="hidden"]):not([type="file"]):not([type="search"]):not([data-no-capitalize]),
+  textarea:not([data-no-capitalize]) {
+    text-transform: capitalize;
+  }
+
   .container-app {
     @apply max-w-7xl mx-auto px-4 sm:px-6 lg:px-8;
   }
