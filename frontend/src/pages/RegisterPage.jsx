@@ -106,7 +106,7 @@ export default function RegisterPage() {
       const { confirmPassword, ...registerData } = formData;
       await register(registerData);
       toast.success(language === 'es' ? '¡Cuenta creada exitosamente!' : 'Account created successfully!');
-      navigate('/verify-phone');
+      navigate('/');
     } catch (error) {
       const message = error.response?.data?.detail || (language === 'es' ? 'Error al crear cuenta' : 'Error creating account');
       toast.error(message);
