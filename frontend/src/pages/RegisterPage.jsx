@@ -294,6 +294,7 @@ export default function RegisterPage() {
                     onChange={handleChange}
                     className="pl-10 pr-10 h-12"
                     required
+                    data-no-capitalize="true"
                     data-testid="password-input"
                   />
                   <button
@@ -320,6 +321,7 @@ export default function RegisterPage() {
                     onChange={handleChange}
                     className="pl-10 h-12"
                     required
+                    data-no-capitalize="true"
                     data-testid="confirm-password-input"
                   />
                 </div>

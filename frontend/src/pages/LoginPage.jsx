@@ -136,6 +136,7 @@ export default function LoginPage() {
                     className="pl-10 pr-10 h-12"
                     required
                     data-testid="password-input"
+                    data-no-capitalize="true"
                   />
                   <button
                     type="button"
