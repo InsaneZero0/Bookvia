@@ -4810,12 +4810,13 @@ async def seed_data():
         {"id": generate_id(), "name_es": "Salones, Servicios y Eventos", "name_en": "Venues, Services & Events", "slug": "salones-servicios-eventos", "icon": "PartyPopper", "image_url": "https://images.unsplash.com/photo-1519167758481-83f550bb49b3?auto=format&fit=crop&q=80&w=2070"},
     ]
     
-    # Check if already seeded
-    existing = await db.categories.count_documents({})
-    if existing > 0:
-        return {"message": "Already seeded"}
-    
-    await db.categories.insert_many(categories)
+    # Upsert categories by slug (idempotent - adds new ones, updates existing)
+    for cat in categories:
+        await db.categories.update_one(
+            {"slug": cat["slug"]},
+            {"$setOnInsert": cat},
+            upsert=True
+        )
     
     # Create admin user from environment variables - NEVER hardcode credentials
     admin_email = ADMIN_EMAIL
