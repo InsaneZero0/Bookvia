@@ -1346,6 +1346,8 @@ async def register_business(business: BusinessCreate):
         "full_name": business.legal_name,
         "phone": business.phone,
         "phone_verified": False,
+        "email_verified": False,
+        "email_verification_token": generate_id(),
         "role": UserRole.BUSINESS,
         "business_id": business_id,
         "preferred_language": "es",
@@ -1355,16 +1357,14 @@ async def register_business(business: BusinessCreate):
     await db.businesses.insert_one(business_doc)
     await db.users.insert_one(user_doc)
     
-    token = create_token(user_id, UserRole.BUSINESS, business.email)
-    
-    # Send welcome email (non-blocking)
+    # Send verification email (non-blocking)
     try:
-        from services.email import send_welcome_business
-        await send_welcome_business(business.email, business.name)
+        from services.email import send_verification_email
+        await send_verification_email(business.email, business.name, user_doc["email_verification_token"])
     except Exception as e:
-        logger.warning(f"Failed to send welcome business email: {e}")
+        logger.warning(f"Failed to send verification email: {e}")
     
-    return {"token": token, "business": BusinessResponse(**business_doc).model_dump()}
+    return {"message": "Registro exitoso. Revisa tu correo para verificar tu cuenta.", "email": business.email}
 
 @auth_router.post("/business/login", response_model=dict)
 async def login_business(credentials: UserLogin):
@@ -1378,6 +1378,10 @@ async def login_business(credentials: UserLogin):
     user = await db.users.find_one({"business_id": business["id"]})
     if not user:
         raise HTTPException(status_code=500, detail="User account not found")
+    
+    # Check email verification
+    if not user.get("email_verified", True):
+        raise HTTPException(status_code=403, detail="email_not_verified")
     
     # Ensure required defaults for BusinessResponse
     business.setdefault("description", "")

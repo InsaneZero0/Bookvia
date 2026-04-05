@@ -92,19 +92,7 @@ export function AuthProvider({ children }) {
 
   const businessRegister = async (data) => {
     const response = await authAPI.businessRegister(data);
-    const { token, business: businessData } = response.data;
-    
-    localStorage.setItem('bookvia-token', token);
-    localStorage.setItem('bookvia-business', JSON.stringify(businessData));
-    // Include business_id in user so ServiceManagementPage can use user.business_id
-    const userData = { role: 'business', email: data.email, business_id: businessData.id };
-    localStorage.setItem('bookvia-user', JSON.stringify(userData));
-    
-    setBusiness(businessData);
-    setUser(userData);
-    setIsAuthenticated(true);
-    
-    return businessData;
+    return response.data;
   };
 
   const adminLogin = async (email, password, totpCode) => {
