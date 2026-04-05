@@ -11,7 +11,8 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+import { Switch } from '@/components/ui/switch';
 import { useAuth } from '@/lib/auth';
 import { useI18n } from '@/lib/i18n';
 import { businessesAPI, bookingsAPI, servicesAPI } from '@/lib/api';
@@ -258,6 +259,7 @@ export default function BusinessDashboardPage() {
     } finally {
       setCancelingSubscription(false);
     }
+  };
 
   // ── Manager & PIN Functions ──
   const PERMISSION_LABELS = {
@@ -355,8 +357,6 @@ export default function BusinessDashboardPage() {
     } catch (err) {
       toast.error(err?.response?.data?.detail || 'Error');
     }
-  };
-
   };
 
   const handleToggleClosure = async (date) => {
@@ -685,7 +685,54 @@ export default function BusinessDashboardPage() {
           </TabsContent>
 
           {/* ── Team Tab ─────────────────────────────── */}
-          <TabsContent value="team" className="mt-6">
+          <TabsContent value="team" className="mt-6 space-y-6">
+            {/* Security PIN Section */}
+            <Card className="border-amber-200/60 dark:border-amber-800/40">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base font-heading flex items-center gap-2">
+                  <Shield className="h-4 w-4 text-amber-500" />
+                  {language === 'es' ? 'PIN de seguridad del dueño' : 'Owner security PIN'}
+                </CardTitle>
+                <p className="text-xs text-muted-foreground">
+                  {language === 'es'
+                    ? 'Configura un PIN numérico para proteger acciones sensibles. Los gerentes usarán su propio PIN.'
+                    : 'Set a numeric PIN to protect sensitive actions. Managers will use their own PIN.'}
+                </p>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center gap-3">
+                  <div className={`p-2 rounded-lg ${ownerHasPin ? 'bg-green-50 dark:bg-green-900/20' : 'bg-amber-50 dark:bg-amber-900/20'}`}>
+                    <Shield className={`h-5 w-5 ${ownerHasPin ? 'text-green-600' : 'text-amber-500'}`} />
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm font-medium">
+                      {ownerHasPin
+                        ? (language === 'es' ? 'PIN configurado' : 'PIN configured')
+                        : (language === 'es' ? 'Sin PIN configurado' : 'No PIN configured')}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {ownerHasPin
+                        ? (language === 'es' ? 'Tu PIN está activo y protege acciones sensibles' : 'Your PIN is active and protects sensitive actions')
+                        : (language === 'es' ? 'Configura un PIN para mayor seguridad' : 'Set a PIN for extra security')}
+                    </p>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant={ownerHasPin ? 'outline' : 'default'}
+                    className={!ownerHasPin ? 'btn-coral' : ''}
+                    onClick={() => { setPinModal({ open: true, type: 'owner_setup' }); setPinValue(''); setPinConfirm(''); }}
+                    data-testid="setup-owner-pin-btn"
+                  >
+                    <Shield className="h-3.5 w-3.5 mr-1.5" />
+                    {ownerHasPin
+                      ? (language === 'es' ? 'Cambiar PIN' : 'Change PIN')
+                      : (language === 'es' ? 'Configurar PIN' : 'Set PIN')}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Team Members Card */}
             <Card>
               <CardHeader className="flex flex-row items-center justify-between pb-3">
                 <CardTitle className="text-base font-heading">{language === 'es' ? 'Mi equipo' : 'My team'}</CardTitle>
@@ -697,21 +744,55 @@ export default function BusinessDashboardPage() {
                 {workers.length > 0 ? (
                   <div className="grid sm:grid-cols-2 gap-3">
                     {workers.map(worker => (
-                      <div key={worker.id} className="flex items-center gap-3 p-3 rounded-xl border border-border/60" data-testid={`worker-item-${worker.id}`}>
-                        <Avatar className="h-11 w-11">
-                          <AvatarImage src={worker.photo_url} />
-                          <AvatarFallback className="bg-[#F05D5E]/10 text-[#F05D5E] text-sm font-bold">
-                            {getInitials(worker.name)}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-medium text-sm truncate">{worker.name}</p>
-                          {worker.bio && <p className="text-xs text-muted-foreground truncate">{worker.bio}</p>}
-                          <p className="text-xs text-muted-foreground">{worker.service_ids?.length || 0} {language === 'es' ? 'servicios' : 'services'}</p>
+                      <div key={worker.id} className="p-3 rounded-xl border border-border/60 space-y-3" data-testid={`worker-item-${worker.id}`}>
+                        <div className="flex items-center gap-3">
+                          <Avatar className="h-11 w-11">
+                            <AvatarImage src={worker.photo_url} />
+                            <AvatarFallback className="bg-[#F05D5E]/10 text-[#F05D5E] text-sm font-bold">
+                              {getInitials(worker.name)}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              <p className="font-medium text-sm truncate">{worker.name}</p>
+                              {worker.is_manager && (
+                                <Badge className="bg-amber-100 text-amber-800 border-amber-200 text-[10px] shrink-0" data-testid={`manager-badge-${worker.id}`}>
+                                  <UserCog className="h-3 w-3 mr-0.5" />
+                                  {language === 'es' ? 'Gerente' : 'Manager'}
+                                </Badge>
+                              )}
+                            </div>
+                            {worker.bio && <p className="text-xs text-muted-foreground truncate">{worker.bio}</p>}
+                            <p className="text-xs text-muted-foreground">{worker.service_ids?.length || 0} {language === 'es' ? 'servicios' : 'services'}</p>
+                          </div>
+                          <Badge variant={worker.active !== false ? 'default' : 'secondary'} className="text-[10px] shrink-0">
+                            {worker.active !== false ? (language === 'es' ? 'Activo' : 'Active') : (language === 'es' ? 'Inactivo' : 'Inactive')}
+                          </Badge>
                         </div>
-                        <Badge variant={worker.active !== false ? 'default' : 'secondary'} className="text-[10px]">
-                          {worker.active !== false ? (language === 'es' ? 'Activo' : 'Active') : (language === 'es' ? 'Inactivo' : 'Inactive')}
-                        </Badge>
+                        {/* Manager Actions */}
+                        <div className="flex items-center gap-1.5 pt-1 border-t border-border/40">
+                          {worker.is_manager ? (
+                            <>
+                              <Button size="sm" variant="outline" className="h-7 text-xs flex-1" onClick={() => openManagerModal(worker)} data-testid={`edit-permissions-${worker.id}`}>
+                                <Settings className="h-3 w-3 mr-1" />
+                                {language === 'es' ? 'Permisos' : 'Permissions'}
+                              </Button>
+                              <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => { setPinModal({ open: true, type: 'manager_pin', workerId: worker.id, workerName: worker.name }); setPinValue(''); setPinConfirm(''); }} data-testid={`set-pin-${worker.id}`}>
+                                <Shield className="h-3 w-3 mr-1" />
+                                {worker.has_manager_pin ? (language === 'es' ? 'Cambiar PIN' : 'Change PIN') : 'PIN'}
+                              </Button>
+                              <Button size="sm" variant="outline" className="h-7 text-xs text-red-600 border-red-200 hover:bg-red-50" onClick={() => handleRemoveManager(worker)} data-testid={`remove-manager-${worker.id}`}>
+                                <XCircle className="h-3 w-3 mr-1" />
+                                {language === 'es' ? 'Quitar' : 'Remove'}
+                              </Button>
+                            </>
+                          ) : (
+                            <Button size="sm" variant="outline" className="h-7 text-xs w-full text-amber-700 border-amber-200 hover:bg-amber-50" onClick={() => openManagerModal(worker)} data-testid={`designate-manager-${worker.id}`}>
+                              <UserCog className="h-3 w-3 mr-1" />
+                              {language === 'es' ? 'Designar como gerente' : 'Designate as manager'}
+                            </Button>
+                          )}
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -1234,6 +1315,135 @@ export default function BusinessDashboardPage() {
                 </div>
               );
             })()}
+          </DialogContent>
+        </Dialog>
+
+        {/* Manager Permissions Modal */}
+        <Dialog open={managerModal.open} onOpenChange={(open) => !open && setManagerModal({ open: false, worker: null })}>
+          <DialogContent className="max-w-md" data-testid="manager-permissions-modal">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <UserCog className="h-5 w-5 text-amber-500" />
+                {managerModal.worker?.is_manager
+                  ? (language === 'es' ? 'Editar permisos de gerente' : 'Edit manager permissions')
+                  : (language === 'es' ? 'Designar como gerente' : 'Designate as manager')}
+              </DialogTitle>
+              <DialogDescription>
+                {managerModal.worker?.name} — {language === 'es'
+                  ? 'Selecciona las acciones que este gerente puede realizar'
+                  : 'Select the actions this manager can perform'}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-5 mt-2 max-h-[50vh] overflow-y-auto pr-1">
+              {Object.entries(PERMISSION_GROUPS[language] || PERMISSION_GROUPS.es).map(([groupName, permKeys]) => (
+                <div key={groupName}>
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">{groupName}</p>
+                  <div className="space-y-2">
+                    {permKeys.map(key => (
+                      <div key={key} className="flex items-center justify-between p-2.5 rounded-lg border border-border/50 hover:bg-muted/30 transition-colors" data-testid={`perm-${key}`}>
+                        <Label className="text-sm cursor-pointer flex-1" htmlFor={`perm-switch-${key}`}>
+                          {PERMISSION_LABELS[key]?.[language] || key}
+                        </Label>
+                        <Switch
+                          id={`perm-switch-${key}`}
+                          checked={!!managerPermissions[key]}
+                          onCheckedChange={(checked) => setManagerPermissions(prev => ({ ...prev, [key]: checked }))}
+                          data-testid={`switch-${key}`}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <DialogFooter className="gap-2 mt-2">
+              <Button variant="outline" onClick={() => setManagerModal({ open: false, worker: null })} data-testid="cancel-manager-modal">
+                {language === 'es' ? 'Cancelar' : 'Cancel'}
+              </Button>
+              <Button
+                className="btn-coral"
+                onClick={managerModal.worker?.is_manager ? handleUpdatePermissions : handleDesignateManager}
+                data-testid="save-manager-btn"
+              >
+                <CheckCircle2 className="h-4 w-4 mr-1.5" />
+                {managerModal.worker?.is_manager
+                  ? (language === 'es' ? 'Guardar permisos' : 'Save permissions')
+                  : (language === 'es' ? 'Designar gerente' : 'Designate manager')}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* PIN Setup Modal */}
+        <Dialog open={pinModal.open} onOpenChange={(open) => { if (!open) { setPinModal({ open: false, type: null }); setPinValue(''); setPinConfirm(''); } }}>
+          <DialogContent className="max-w-sm" data-testid="pin-setup-modal">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Shield className="h-5 w-5 text-amber-500" />
+                {pinModal.type === 'owner_setup'
+                  ? (language === 'es' ? 'PIN de seguridad del dueño' : 'Owner security PIN')
+                  : (language === 'es' ? `PIN para ${pinModal.workerName || 'gerente'}` : `PIN for ${pinModal.workerName || 'manager'}`)}
+              </DialogTitle>
+              <DialogDescription>
+                {language === 'es'
+                  ? 'Ingresa un PIN numérico de 4 a 6 dígitos'
+                  : 'Enter a numeric PIN of 4 to 6 digits'}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 mt-2">
+              <div>
+                <Label className="text-sm mb-1.5 block">{language === 'es' ? 'Nuevo PIN' : 'New PIN'}</Label>
+                <Input
+                  type="password"
+                  inputMode="numeric"
+                  maxLength={6}
+                  placeholder="••••"
+                  value={pinValue}
+                  onChange={(e) => setPinValue(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  data-testid="pin-input"
+                  data-no-capitalize="true"
+                />
+              </div>
+              <div>
+                <Label className="text-sm mb-1.5 block">{language === 'es' ? 'Confirmar PIN' : 'Confirm PIN'}</Label>
+                <Input
+                  type="password"
+                  inputMode="numeric"
+                  maxLength={6}
+                  placeholder="••••"
+                  value={pinConfirm}
+                  onChange={(e) => setPinConfirm(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  data-testid="pin-confirm-input"
+                  data-no-capitalize="true"
+                />
+              </div>
+              {pinValue && pinConfirm && pinValue !== pinConfirm && (
+                <p className="text-xs text-red-500 flex items-center gap-1">
+                  <XCircle className="h-3 w-3" />
+                  {language === 'es' ? 'Los PINs no coinciden' : 'PINs do not match'}
+                </p>
+              )}
+              {pinValue && pinValue.length >= 4 && pinValue === pinConfirm && (
+                <p className="text-xs text-green-600 flex items-center gap-1">
+                  <CheckCircle2 className="h-3 w-3" />
+                  {language === 'es' ? 'PINs coinciden' : 'PINs match'}
+                </p>
+              )}
+            </div>
+            <DialogFooter className="gap-2 mt-2">
+              <Button variant="outline" onClick={() => { setPinModal({ open: false, type: null }); setPinValue(''); setPinConfirm(''); }} data-testid="cancel-pin-modal">
+                {language === 'es' ? 'Cancelar' : 'Cancel'}
+              </Button>
+              <Button
+                className="btn-coral"
+                disabled={pinValue.length < 4 || pinValue !== pinConfirm}
+                onClick={pinModal.type === 'owner_setup' ? handleSaveOwnerPin : handleSetManagerPin}
+                data-testid="save-pin-btn"
+              >
+                <Shield className="h-4 w-4 mr-1.5" />
+                {language === 'es' ? 'Guardar PIN' : 'Save PIN'}
+              </Button>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
       </div>

@@ -2000,6 +2000,8 @@ async def get_business_workers(
         filters["active"] = True
     
     workers = await db.workers.find(filters, {"_id": 0}).to_list(100)
+    for w in workers:
+        w["has_manager_pin"] = bool(w.get("manager_pin_hash"))
     return [WorkerResponse(**w) for w in workers]
 
 @businesses_router.get("/{business_id}/workers", response_model=List[WorkerResponse])
