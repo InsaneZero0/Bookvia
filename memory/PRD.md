@@ -6,7 +6,7 @@ Bookvia es una plataforma marketplace de reservas profesionales que conecta nego
 ## Arquitectura
 - **Frontend:** React + Shadcn/UI + React Router + lucide-react
 - **Backend:** FastAPI + MongoDB (Motor async)
-- **Integraciones:** Stripe (pagos nativos), Cloudinary (imagenes), Emergent Object Storage (fallback), Resend (email - MOCKED)
+- **Integraciones:** Stripe (pagos nativos), Cloudinary (imagenes), Emergent Object Storage (fallback), Resend (email produccion)
 
 ## Stack Tecnico
 ```
@@ -14,12 +14,17 @@ Bookvia es una plataforma marketplace de reservas profesionales que conecta nego
 ├── backend/
 │   ├── services/
 │   │   ├── cloudinary_service.py
-│   │   └── storage.py
+│   │   ├── storage.py
+│   │   └── email.py          // Resend con plantillas HTML
 │   ├── middleware/
 │   │   └── rate_limit.py
 │   └── server.py
 ├── frontend/
 │   ├── src/
+│   │   ├── components/
+│   │   │   ├── BookviaLogo.jsx
+│   │   │   ├── CitySelector.jsx
+│   │   │   └── ui/           // Shadcn components
 │   │   ├── lib/
 │   │   │   ├── api.js
 │   │   │   ├── auth.js
@@ -31,6 +36,8 @@ Bookvia es una plataforma marketplace de reservas profesionales que conecta nego
 │   │   │   ├── BusinessSettingsPage.jsx
 │   │   │   ├── ServiceManagementPage.jsx
 │   │   │   ├── TeamSchedulePage.jsx
+│   │   │   ├── HomePage.jsx
+│   │   │   ├── SearchPage.jsx
 │   │   │   └── ...
 │   │   └── App.js
 │   └── .env
@@ -46,6 +53,7 @@ Bookvia es una plataforma marketplace de reservas profesionales que conecta nego
 - [x] Paneles: usuario, negocio, administrador
 - [x] Sistema de busqueda con filtros y mapa (Leaflet/OpenStreetMap)
 - [x] 2FA para admin (pyotp)
+- [x] Smart Dropdowns en Hero (ciudades con negocios, categorias dinamicas)
 
 ### Reservas
 - [x] Flujo multi-paso: Fecha -> Trabajador -> Hora -> Confirmar
@@ -53,6 +61,7 @@ Bookvia es una plataforma marketplace de reservas profesionales que conecta nego
 - [x] Duracion configurable de servicios
 - [x] Bloqueo automatico de agenda
 - [x] Cancelacion con politicas configurables
+- [x] Sistema de resenas (1-5 estrellas con comentarios)
 
 ### Gestion de Negocio
 - [x] CRUD de servicios con duracion
@@ -60,10 +69,22 @@ Bookvia es una plataforma marketplace de reservas profesionales que conecta nego
 - [x] Asignacion de servicios por trabajador
 - [x] Sistema de cierres/vacaciones
 - [x] Gestion de suscripcion (ver estado, cancelar)
-- [x] **Tarjetas de estadisticas clickeables** con modal de detalle y filtro por rango de fechas
-- [x] **Sistema de veto/blacklist de clientes** (por email, telefono o userId)
+- [x] Tarjetas de estadisticas clickeables con modal de detalle y filtro por rango de fechas
+- [x] Sistema de veto/blacklist de clientes (por email, telefono o userId)
 - [x] Pagina de configuracion del negocio (/business/settings)
-- [x] **Modal de Detalle de Cita/Cliente**: click en nombre del cliente muestra info completa (email, tel, servicio, fecha, monto)
+- [x] Modal de Detalle de Cita/Cliente
+- [x] Botones Completar, Cancelar, Reagendar para el dueno
+- [x] Registro de quien cancelo (cancelled_by)
+
+### Sistema de Gerentes y PIN (Fase 1 - COMPLETADA)
+- [x] PIN de seguridad del dueno (configurar/cambiar, 4-6 digitos)
+- [x] Verificacion de PIN del dueno (endpoint)
+- [x] Designar trabajador como gerente con permisos granulares
+- [x] Permisos agrupados: Citas (completar, reagendar, cancelar), Clientes (bloquear, ver datos), Negocio (editar servicios, perfil, reportes)
+- [x] Editar permisos de gerente existente
+- [x] Configurar PIN del gerente (4-6 digitos)
+- [x] Quitar rol de gerente (limpia permisos, PIN, metadata)
+- [x] UI completa en pestana Equipo: seccion PIN dueno, badges de gerente, botones contextuales
 
 ### Imagenes
 - [x] Cloudinary como almacenamiento primario (produccion)
@@ -71,51 +92,33 @@ Bookvia es una plataforma marketplace de reservas profesionales que conecta nego
 - [x] Logo obligatorio en registro
 - [x] Galeria de fotos del negocio
 
+### Email
+- [x] Resend integrado con dominio verificado (bookvia.app)
+- [x] Templates HTML: bienvenida usuario, bienvenida negocio, confirmacion cita, cancelacion
+
 ### Blacklist/Veto
 - [x] CRUD completo (agregar por email/telefono/userId, listar, eliminar)
 - [x] Enforcement en backend: busqueda, perfil por slug, acceso directo, y reservas
-- [x] Cliente vetado NO ve el negocio (404 silencioso, sin mensaje de veto)
-- [x] UI en /business/settings con formulario y lista
+- [x] Cliente vetado NO ve el negocio (404 silencioso)
+- [x] UI en /business/settings
 
-## Bugs Resueltos
-- [2026-03-11] Conflicto de rutas Admin vs SEO
-- [2026-03-11] Admin login no redirige al panel
-- [2026-03-15] cancellation_days no se guardaba en MongoDB
-- [2026-03-16] Stripe API: faltaba api_base para proxy Emergent
-- [2026-03-16] businessesAPI no importado en BusinessRegisterPage
-- [2026-03-17] Stripe: precio cacheado invalido con nueva clave real
-- [2026-03-17] .jfif no aceptado como formato de imagen
-- [2026-03-17] Fotos legacy sin campo url (compatibilidad storage_path)
-- [2026-03-19] Error pago anticipo: migrado de emergentintegrations a stripe nativo
-- [2026-03-19] Visibilidad negocios legacy sin subscription_status
-- [2026-03-23] P0: Pago de anticipo no confirmaba la reserva (fallback en checkout/status)
-- [2026-03-24] Dashboard negocio mostraba 0: `user is not defined` (faltaba destructurar `user` de useAuth)
-- [2026-03-24] Boton Completar solo activo al termino de la cita, boton Cancelar agregado, tag muestra quien cancelo
-- [2026-03-24] Boton Reagendar cita: modal con calendario y horarios disponibles, libera slot anterior
-- [2026-03-24] Bug critico: fechas de citas se mostraban -1 dia en zonas horarias negativas (new Date("YYYY-MM-DD") parseaba como UTC)
-- [2026-03-24] Sistema de reseñas: boton "Calificar servicio" con estrellas 1-5 y reseña opcional, visible en perfil del negocio
-- [2026-03-25] Modal "Detalle de la cita" en BusinessDashboard: click en nombre del cliente abre modal con nombre, email, telefono, servicio, profesional, fecha, horario, anticipo y total. Testeado al 100%.
-- [2026-03-26] Selector de pais en registro de usuario: dropdown con banderas, busqueda, codigo telefonico automatico segun pais, telefono limitado a 10 digitos. Campo 'country' guardado en backend.
-- [2026-03-26] Sincronizacion de 75 paises a MongoDB via seed idempotente (upsert). Fuente maestra unica en backend/data/countries.py, espejada en frontend/src/lib/countries.js. Cada pais incluye code, name, phonePrefix, currency, timezone, language, flag, isActive.
-- [2026-03-28] Selector de pais y verificacion de edad en registro de negocio. Telefono con codigo de pais dinamico. Verificacion de edad 16+ con selectores Dia/Mes/Ano y feedback visual (pastel/check/stop). Aplica a ambos registros (usuario y negocio).
-- [2026-03-31] Deteccion automatica de pais por IP (ipapi.co) con fallback por timezone del navegador. Banderita con codigo de pais en Navbar estilo Amazon. Registros pre-seleccionan el pais detectado. Cache de 24h en localStorage.
-- [2026-03-31] Selector de pais clickable en Navbar: Popover con busqueda y lista de paises con banderas. Al cambiar pais, filtra negocios por country_code en busqueda. CountryContext global con persistencia en localStorage.
-- [2026-03-31] HomePage dinamico por pais: badge hero "La plataforma #1 en [pais]", ciudades filtradas por pais (10 ciudades MX seeded), negocios destacados por pais, seccion de ciudades se oculta si no hay ciudades para el pais. Categorias siempre visibles.
-- [2026-03-31] Selector de ciudad dinamico en registros (usuario y negocio): combobox con busqueda que carga ciudades del pais seleccionado. 122+ ciudades seeded para 16 paises. Permite texto libre si la ciudad no esta en la lista. Backend guarda city en usuario.
-- [2026-04-01] Hero search bar convertido a 2 dropdowns con listas: servicios (categorias) y ciudades (filtradas por pais seleccionado). Incluye opcion "Todos los servicios" y "Todas las ciudades".
-- [2026-04-01] Smart Dropdowns en Hero: Dropdown de ciudades con barra de busqueda interna, solo muestra ciudades con negocios activos (ordenadas por cantidad). Dropdown de servicios se filtra dinamicamente segun la ciudad seleccionada (solo categorias con negocios en esa ciudad). Backend: /api/cities?with_businesses=true y /api/categories?city=X&country_code=Y.
-- [2026-04-01] CitySelector mejorado con prop showDemand: muestra badges verdes con conteo de negocios por ciudad, ordena por demanda, auto-rellena campo estado al seleccionar ciudad. Usado en registro de negocio paso 2.
-- [2026-04-01] SearchPage estado vacio inteligente: mensaje dinamico segun filtros ("No hay negocios de [X] en [Y]"), boton Limpiar filtros y CTA "¿Tienes un negocio? Registralo aqui" que redirige a /business/register.
-- [2026-04-02] Auto-capitalizacion en campos de texto de registros: primera letra de cada palabra se convierte a mayuscula automaticamente (nombre, direccion, estado, razon social, ciudad). No aplica a email, password, RFC, CLABE, telefono.
-- [2026-04-02] Fix critico en buscador del Hero: antes enviaba nombre de categoria como texto (q=Automotriz) y el backend no lo encontraba por nombre de negocio. Ahora envia category_id directamente. Backend tambien busca por nombre de categoria en texto libre.
-- [2026-04-02] Logo Bookvia con estrella de 4 puntas sobre la "i": componente reutilizable BookviaLogo.jsx con variantes dark/light. Implementado en Navbar, Login, Register y titulo de pagina.
-- [2026-04-05] Integracion Resend para emails reales desde hola@bookvia.app. Templates HTML profesionales para: bienvenida usuario, bienvenida negocio, confirmacion de cita, cancelacion. Dominio verificado con DKIM/SPF/DMARC.
+### Internacionalizacion
+- [x] Auto-capitalizacion de inputs via CSS (excluye passwords/emails)
+- [x] Logo Bookvia con estrella de 4 puntas (BookviaLogo.jsx)
+- [x] Deteccion automatica de pais por IP (ipapi.co)
+- [x] Selector de pais en Navbar estilo Amazon
+- [x] 50+ ciudades US, 122+ ciudades para 16 paises
 
 ## Backlog (P0-P3)
 
+### P0
+- [ ] Sistema de Gerentes Fase 2: Login con PIN para gerentes, validacion de PIN antes de acciones protegidas
+- [ ] Refactorizar server.py (~6000 lineas) en routers modulares
+
 ### P1
-- [ ] Recuperar contrasena (flujo completo)
-- [ ] Activar emails reales (Resend)
+- [ ] Sistema de Gerentes Fase 3: Historial de actividad/auditoria
+- [ ] Recuperar contrasena (flujo completo con Resend)
+- [ ] Completar emails transaccionales (recordatorios, etc.)
 
 ### P2
 - [ ] Recordatorios de citas (email 24h antes)
@@ -127,19 +130,17 @@ Bookvia es una plataforma marketplace de reservas profesionales que conecta nego
 - [ ] Notificaciones Push
 - [ ] Webhook Stripe (customer.subscription.deleted)
 - [ ] Optimizacion imagenes Cloudinary (thumbnails)
-- [ ] Aplicacion nativa
-
-## Refactorizacion Pendiente
-- [ ] Modularizar server.py en routers separados (auth.py, bookings.py, workers.py, etc.)
 
 ## Esquema DB Clave
-- **businesses:** subscription_status, approval_status, logo_url, logo_public_id, photos[]
-- **workers:** service_ids[], photo_public_id
+- **businesses:** subscription_status, approval_status, logo_url, owner_pin_hash
+- **workers:** service_ids[], photo_public_id, is_manager, manager_permissions{}, manager_pin_hash, has_manager_pin
 - **appointments:** worker_id, end_time, duration_minutes, service_name
 - **blacklist:** id, business_id, email, phone, user_id, reason, created_at
 - **services:** duration_minutes
+- **reviews:** user_id, business_id, booking_id, rating, comment
 
 ## Notas Tecnicas
 - Stripe usa libreria nativa `stripe` (no emergentintegrations) para compatibilidad con Railway
 - Negocios legacy (sin subscription_status) siguen visibles via filtro $or
-- Email service (Resend) esta MOCKED, pendiente configuracion
+- Resend integrado con llave de produccion y dominio verificado (bookvia.app)
+- Timezone: SIEMPRE usar new Date(dateString + 'T12:00:00') para parsear YYYY-MM-DD del backend
