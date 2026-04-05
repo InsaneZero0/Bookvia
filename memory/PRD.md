@@ -1,120 +1,69 @@
 # Bookvia - PRD (Product Requirements Document)
 
 ## Descripcion General
-Bookvia es una plataforma marketplace de reservas profesionales que conecta negocios de servicios (belleza, salud, fitness, etc.) con clientes. La plataforma permite a los negocios registrarse, gestionar servicios, equipo y citas, mientras que los clientes pueden buscar, reservar y pagar anticipos.
+Bookvia es una plataforma marketplace de reservas profesionales que conecta negocios de servicios con clientes. Permite a los negocios registrarse, gestionar servicios, equipo y citas. Los clientes pueden buscar, reservar y pagar anticipos.
 
 ## Arquitectura
 - **Frontend:** React + Shadcn/UI + React Router + lucide-react
 - **Backend:** FastAPI + MongoDB (Motor async)
-- **Integraciones:** Stripe (pagos nativos), Cloudinary (imagenes), Emergent Object Storage (fallback), Resend (email - MOCKED)
-
-## Stack Tecnico
-```
-/app/
-├── backend/
-│   ├── services/
-│   │   ├── cloudinary_service.py
-│   │   └── storage.py
-│   ├── middleware/
-│   │   └── rate_limit.py
-│   └── server.py
-├── frontend/
-│   ├── src/
-│   │   ├── lib/
-│   │   │   ├── api.js
-│   │   │   ├── auth.js
-│   │   │   └── i18n.js
-│   │   ├── pages/
-│   │   │   ├── BusinessDashboardPage.jsx
-│   │   │   ├── BusinessProfilePage.jsx
-│   │   │   ├── BusinessRegisterPage.jsx
-│   │   │   ├── BusinessSettingsPage.jsx
-│   │   │   ├── ServiceManagementPage.jsx
-│   │   │   ├── TeamSchedulePage.jsx
-│   │   │   └── ...
-│   │   └── App.js
-│   └── .env
-└── .env (backend)
-```
+- **Integraciones:** Stripe (pagos nativos), Cloudinary (imagenes), Emergent Object Storage (fallback), Resend (email produccion)
 
 ## Funcionalidades Implementadas
 
 ### Core
-- [x] Autenticacion JWT (usuario y negocio)
-- [x] Registro de negocio multi-paso con suscripcion obligatoria (Stripe)
-- [x] Sistema de aprobacion de negocios por admin
-- [x] Paneles: usuario, negocio, administrador
-- [x] Sistema de busqueda con filtros y mapa (Leaflet/OpenStreetMap)
+- [x] Autenticacion JWT (usuario, negocio, administrador de negocio)
+- [x] Registro de negocio multi-paso con suscripcion Stripe
+- [x] Aprobacion de negocios por admin
+- [x] Paneles: usuario, negocio, admin del sistema
+- [x] Busqueda con filtros y mapa (Leaflet/OpenStreetMap)
+- [x] Smart Dropdowns en Hero
 - [x] 2FA para admin (pyotp)
 
 ### Reservas
-- [x] Flujo multi-paso: Fecha -> Trabajador -> Hora -> Confirmar
-- [x] Anticipo con Stripe Checkout (libreria nativa)
-- [x] Duracion configurable de servicios
-- [x] Bloqueo automatico de agenda
-- [x] Cancelacion con politicas configurables
+- [x] Flujo multi-paso con anticipo Stripe Checkout
+- [x] Duracion configurable, bloqueo de agenda
+- [x] Cancelacion con politicas, sistema de resenas
 
 ### Gestion de Negocio
-- [x] CRUD de servicios con duracion
-- [x] Gestion de equipo con fotos de perfil
-- [x] Asignacion de servicios por trabajador
-- [x] Sistema de cierres/vacaciones
-- [x] Gestion de suscripcion (ver estado, cancelar)
-- [x] **Tarjetas de estadisticas clickeables** con modal de detalle y filtro por rango de fechas
-- [x] **Sistema de veto/blacklist de clientes** (por email, telefono o userId)
-- [x] Pagina de configuracion del negocio (/business/settings)
-- [x] **Modal de Detalle de Cita/Cliente**: click en nombre del cliente muestra info completa (email, tel, servicio, fecha, monto)
+- [x] CRUD servicios, equipo, cierres, suscripcion
+- [x] Stats clickeables, veto/blacklist, modal detalle cita/cliente
+- [x] Completar, Cancelar, Reagendar citas
 
-### Imagenes
-- [x] Cloudinary como almacenamiento primario (produccion)
-- [x] Emergent Object Storage como fallback (preview)
-- [x] Logo obligatorio en registro
-- [x] Galeria de fotos del negocio
+### Sistema de Administradores y PIN (Fase 1 + 2 + 3 COMPLETADAS)
+**Fase 1 - Gestion de Administradores:**
+- [x] PIN de seguridad del dueno (4-6 digitos)
+- [x] Designar trabajador como administrador con permisos granulares
+- [x] Permisos: Citas (completar, reagendar, cancelar), Clientes (bloquear, ver datos), Negocio (servicios, perfil, reportes)
+- [x] Editar/quitar administrador, configurar PIN
 
-### Blacklist/Veto
-- [x] CRUD completo (agregar por email/telefono/userId, listar, eliminar)
-- [x] Enforcement en backend: busqueda, perfil por slug, acceso directo, y reservas
-- [x] Cliente vetado NO ve el negocio (404 silencioso, sin mensaje de veto)
-- [x] UI en /business/settings con formulario y lista
+**Fase 2 - Login y Proteccion:**
+- [x] Login con PIN para administradores (sub-toggle "Soy el dueno / Soy administrador")
+- [x] Dashboard restringido por permisos (tabs, botones, stats filtrados)
+- [x] Banner de sesion de administrador
+- [x] hasPermission() en AuthContext
 
-## Bugs Resueltos
-- [2026-03-11] Conflicto de rutas Admin vs SEO
-- [2026-03-11] Admin login no redirige al panel
-- [2026-03-15] cancellation_days no se guardaba en MongoDB
-- [2026-03-16] Stripe API: faltaba api_base para proxy Emergent
-- [2026-03-16] businessesAPI no importado en BusinessRegisterPage
-- [2026-03-17] Stripe: precio cacheado invalido con nueva clave real
-- [2026-03-17] .jfif no aceptado como formato de imagen
-- [2026-03-17] Fotos legacy sin campo url (compatibilidad storage_path)
-- [2026-03-19] Error pago anticipo: migrado de emergentintegrations a stripe nativo
-- [2026-03-19] Visibilidad negocios legacy sin subscription_status
-- [2026-03-23] P0: Pago de anticipo no confirmaba la reserva (fallback en checkout/status)
-- [2026-03-24] Dashboard negocio mostraba 0: `user is not defined` (faltaba destructurar `user` de useAuth)
-- [2026-03-24] Boton Completar solo activo al termino de la cita, boton Cancelar agregado, tag muestra quien cancelo
-- [2026-03-24] Boton Reagendar cita: modal con calendario y horarios disponibles, libera slot anterior
-- [2026-03-24] Bug critico: fechas de citas se mostraban -1 dia en zonas horarias negativas (new Date("YYYY-MM-DD") parseaba como UTC)
-- [2026-03-24] Sistema de reseñas: boton "Calificar servicio" con estrellas 1-5 y reseña opcional, visible en perfil del negocio
-- [2026-03-25] Modal "Detalle de la cita" en BusinessDashboard: click en nombre del cliente abre modal con nombre, email, telefono, servicio, profesional, fecha, horario, anticipo y total. Testeado al 100%.
-- [2026-03-26] Selector de pais en registro de usuario: dropdown con banderas, busqueda, codigo telefonico automatico segun pais, telefono limitado a 10 digitos. Campo 'country' guardado en backend.
-- [2026-03-26] Sincronizacion de 75 paises a MongoDB via seed idempotente (upsert). Fuente maestra unica en backend/data/countries.py, espejada en frontend/src/lib/countries.js. Cada pais incluye code, name, phonePrefix, currency, timezone, language, flag, isActive.
-- [2026-03-28] Selector de pais y verificacion de edad en registro de negocio. Telefono con codigo de pais dinamico. Verificacion de edad 16+ con selectores Dia/Mes/Ano y feedback visual (pastel/check/stop). Aplica a ambos registros (usuario y negocio).
-- [2026-03-31] Deteccion automatica de pais por IP (ipapi.co) con fallback por timezone del navegador. Banderita con codigo de pais en Navbar estilo Amazon. Registros pre-seleccionan el pais detectado. Cache de 24h en localStorage.
-- [2026-03-31] Selector de pais clickable en Navbar: Popover con busqueda y lista de paises con banderas. Al cambiar pais, filtra negocios por country_code en busqueda. CountryContext global con persistencia en localStorage.
-- [2026-03-31] HomePage dinamico por pais: badge hero "La plataforma #1 en [pais]", ciudades filtradas por pais (10 ciudades MX seeded), negocios destacados por pais, seccion de ciudades se oculta si no hay ciudades para el pais. Categorias siempre visibles.
-- [2026-03-31] Selector de ciudad dinamico en registros (usuario y negocio): combobox con busqueda que carga ciudades del pais seleccionado. 122+ ciudades seeded para 16 paises. Permite texto libre si la ciudad no esta en la lista. Backend guarda city en usuario.
-- [2026-04-01] Hero search bar convertido a 2 dropdowns con listas: servicios (categorias) y ciudades (filtradas por pais seleccionado). Incluye opcion "Todos los servicios" y "Todas las ciudades".
-- [2026-04-01] Smart Dropdowns en Hero: Dropdown de ciudades con barra de busqueda interna, solo muestra ciudades con negocios activos (ordenadas por cantidad). Dropdown de servicios se filtra dinamicamente segun la ciudad seleccionada (solo categorias con negocios en esa ciudad). Backend: /api/cities?with_businesses=true y /api/categories?city=X&country_code=Y.
-- [2026-04-01] CitySelector mejorado con prop showDemand: muestra badges verdes con conteo de negocios por ciudad, ordena por demanda, auto-rellena campo estado al seleccionar ciudad. Usado en registro de negocio paso 2.
-- [2026-04-01] SearchPage estado vacio inteligente: mensaje dinamico segun filtros ("No hay negocios de [X] en [Y]"), boton Limpiar filtros y CTA "¿Tienes un negocio? Registralo aqui" que redirige a /business/register.
-- [2026-04-02] Auto-capitalizacion en campos de texto de registros: primera letra de cada palabra se convierte a mayuscula automaticamente (nombre, direccion, estado, razon social, ciudad). No aplica a email, password, RFC, CLABE, telefono.
-- [2026-04-02] Fix critico en buscador del Hero: antes enviaba nombre de categoria como texto (q=Automotriz) y el backend no lo encontraba por nombre de negocio. Ahora envia category_id directamente. Backend tambien busca por nombre de categoria en texto libre.
-- [2026-04-02] Logo Bookvia con estrella de 4 puntas sobre la "i": componente reutilizable BookviaLogo.jsx con variantes dark/light. Implementado en Navbar, Login, Register y titulo de pagina.
+**Fase 3 - Historial de Actividad:**
+- [x] Coleccion business_activity_logs en MongoDB
+- [x] Logging automatico en: completar/cancelar/reagendar citas, designar/quitar/editar admin
+- [x] Endpoint GET /api/businesses/my/activity-log con filtros (actor_type, action) y paginacion
+- [x] Acceso restringido solo al dueno (403 para admins)
+- [x] Pestana "Actividad" en dashboard con filtros, iconos por tipo, badges de actor, paginacion
 
-## Backlog (P0-P3)
+### Email
+- [x] Resend integrado con dominio verificado (bookvia.app)
+
+### Internacionalizacion
+- [x] Auto-capitalizacion, logo con estrella, deteccion de pais por IP
+- [x] 50+ ciudades US, 122+ ciudades para 16 paises
+
+## Backlog
+
+### P0 (Tecnica)
+- [ ] Refactorizar server.py (~6000 lineas) en routers modulares
 
 ### P1
-- [ ] Recuperar contrasena (flujo completo)
-- [ ] Activar emails reales (Resend)
+- [ ] Recuperar contrasena (flujo completo con Resend)
+- [ ] Completar emails transaccionales (recordatorios, confirmaciones)
 
 ### P2
 - [ ] Recordatorios de citas (email 24h antes)
@@ -124,21 +73,16 @@ Bookvia es una plataforma marketplace de reservas profesionales que conecta nego
 - [ ] Convertir a PWA
 - [ ] Stripe Connect (pagos a negocios)
 - [ ] Notificaciones Push
-- [ ] Webhook Stripe (customer.subscription.deleted)
-- [ ] Optimizacion imagenes Cloudinary (thumbnails)
-- [ ] Aplicacion nativa
 
-## Refactorizacion Pendiente
-- [ ] Modularizar server.py en routers separados (auth.py, bookings.py, workers.py, etc.)
-
-## Esquema DB Clave
-- **businesses:** subscription_status, approval_status, logo_url, logo_public_id, photos[]
-- **workers:** service_ids[], photo_public_id
-- **appointments:** worker_id, end_time, duration_minutes, service_name
-- **blacklist:** id, business_id, email, phone, user_id, reason, created_at
-- **services:** duration_minutes
+## Esquema DB
+- **businesses:** subscription_status, approval_status, owner_pin_hash
+- **workers:** is_manager, manager_permissions{}, manager_pin_hash
+- **business_activity_logs:** business_id, actor_type, actor_name, worker_id, action, target_type, target_id, details, created_at
+- **bookings:** worker_id, end_time, status, cancelled_by
+- **reviews:** user_id, business_id, booking_id, rating, comment
 
 ## Notas Tecnicas
-- Stripe usa libreria nativa `stripe` (no emergentintegrations) para compatibilidad con Railway
-- Negocios legacy (sin subscription_status) siguen visibles via filtro $or
-- Email service (Resend) esta MOCKED, pendiente configuracion
+- Timezone: SIEMPRE usar new Date(dateString + 'T12:00:00') para parsear YYYY-MM-DD
+- TokenData extendido: worker_id e is_manager para sesiones de administradores
+- hasPermission(): true para duenos, checa permisos para admins
+- Activity logs: create_business_activity() inyectado en acciones sensibles

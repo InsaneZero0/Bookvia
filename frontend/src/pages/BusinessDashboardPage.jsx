@@ -11,7 +11,8 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+import { Switch } from '@/components/ui/switch';
 import { useAuth } from '@/lib/auth';
 import { useI18n } from '@/lib/i18n';
 import { businessesAPI, bookingsAPI, servicesAPI } from '@/lib/api';
@@ -23,12 +24,13 @@ import {
   Calendar as CalendarIcon, DollarSign, Star, Users, Clock, CheckCircle2,
   XCircle, AlertTriangle, TrendingUp, Settings, UserCog, Image, Upload,
   Trash2, Eye, Plus, Pencil, BarChart3, Briefcase, ArrowUpRight,
-  Ban, CalendarOff, CreditCard, Shield, RefreshCw, Mail, Phone
+  Ban, CalendarOff, CreditCard, Shield, RefreshCw, Mail, Phone, History,
+  ChevronLeft, ChevronRight, Filter
 } from 'lucide-react';
 
 export default function BusinessDashboardPage() {
   const { t, language } = useI18n();
-  const { business, user, isAuthenticated, isBusiness } = useAuth();
+  const { business, user, isAuthenticated, isBusiness, isManager, hasPermission } = useAuth();
   const navigate = useNavigate();
 
   const [loading, setLoading] = useState(true);
@@ -54,6 +56,18 @@ export default function BusinessDashboardPage() {
   const [rescheduleLoading, setRescheduleLoading] = useState(false);
   const [slotsLoading, setSlotsLoading] = useState(false);
   const [bookingDetail, setBookingDetail] = useState(null);
+  const [managerModal, setManagerModal] = useState({ open: false, worker: null });
+  const [managerPermissions, setManagerPermissions] = useState({});
+  const [pinModal, setPinModal] = useState({ open: false, type: null }); // type: 'owner_setup' | 'manager_pin'
+  const [pinValue, setPinValue] = useState('');
+  const [pinConfirm, setPinConfirm] = useState('');
+  const [ownerHasPin, setOwnerHasPin] = useState(false);
+  const [activityLogs, setActivityLogs] = useState([]);
+  const [activityPage, setActivityPage] = useState(1);
+  const [activityTotal, setActivityTotal] = useState(0);
+  const [activityPages, setActivityPages] = useState(1);
+  const [activityFilter, setActivityFilter] = useState('all');
+  const [activityLoading, setActivityLoading] = useState(false);
   useEffect(() => {
     if (!isAuthenticated || !isBusiness) {
       navigate('/business/login');
@@ -67,6 +81,12 @@ export default function BusinessDashboardPage() {
       loadDayBookings();
     }
   }, [selectedDate, dashboardData]);
+
+  useEffect(() => {
+    if (activeTab === 'activity' && !isManager) {
+      loadActivityLogs(1, activityFilter);
+    }
+  }, [activeTab]);
 
   const loadDashboard = async () => {
     try {
@@ -88,6 +108,11 @@ export default function BusinessDashboardPage() {
         const subRes = await businessesAPI.getSubscriptionStatus();
         setSubscriptionData(subRes.data);
       } catch { setSubscriptionData(null); }
+      // Load pin status
+      try {
+        const pinRes = await businessesAPI.getPinStatus();
+        setOwnerHasPin(pinRes.data?.has_pin || false);
+      } catch { setOwnerHasPin(false); }
     } catch (error) {
       console.error('Error loading dashboard:', error);
       const detail = error?.response?.data?.detail || error?.message || 'Error desconocido';
@@ -106,6 +131,25 @@ export default function BusinessDashboardPage() {
     } catch (error) {
       console.error('Error loading bookings:', error);
       setDayBookings([]);
+    }
+  };
+
+  const loadActivityLogs = async (page = 1, filter = 'all') => {
+    setActivityLoading(true);
+    try {
+      const params = { page, limit: 20 };
+      if (filter === 'admin') params.actor_type = 'admin';
+      if (filter === 'owner') params.actor_type = 'owner';
+      const res = await businessesAPI.getActivityLog(params);
+      setActivityLogs(res.data?.logs || []);
+      setActivityTotal(res.data?.total || 0);
+      setActivityPages(res.data?.pages || 1);
+      setActivityPage(page);
+    } catch (error) {
+      console.error('Error loading activity logs:', error);
+      setActivityLogs([]);
+    } finally {
+      setActivityLoading(false);
     }
   };
 
@@ -249,6 +293,104 @@ export default function BusinessDashboardPage() {
     }
   };
 
+  // ── Manager & PIN Functions ──
+  const PERMISSION_LABELS = {
+    complete_bookings: { es: 'Completar/confirmar citas', en: 'Complete/confirm bookings' },
+    reschedule_bookings: { es: 'Reagendar citas', en: 'Reschedule bookings' },
+    cancel_bookings: { es: 'Cancelar citas', en: 'Cancel bookings' },
+    block_clients: { es: 'Bloquear clientes', en: 'Block clients' },
+    view_client_data: { es: 'Ver datos de contacto del cliente', en: 'View client contact data' },
+    edit_services: { es: 'Editar servicios y precios', en: 'Edit services & prices' },
+    edit_profile: { es: 'Editar perfil del negocio', en: 'Edit business profile' },
+    view_reports: { es: 'Ver ingresos y reportes', en: 'View income & reports' },
+  };
+
+  const PERMISSION_GROUPS = {
+    es: { 'Citas': ['complete_bookings', 'reschedule_bookings', 'cancel_bookings'], 'Clientes': ['block_clients', 'view_client_data'], 'Negocio': ['edit_services', 'edit_profile', 'view_reports'] },
+    en: { 'Bookings': ['complete_bookings', 'reschedule_bookings', 'cancel_bookings'], 'Clients': ['block_clients', 'view_client_data'], 'Business': ['edit_services', 'edit_profile', 'view_reports'] },
+  };
+
+  const openManagerModal = (worker) => {
+    setManagerPermissions(worker.manager_permissions || {
+      complete_bookings: true, reschedule_bookings: true, cancel_bookings: false,
+      block_clients: false, view_client_data: false, edit_services: false, edit_profile: false, view_reports: false,
+    });
+    setManagerModal({ open: true, worker });
+  };
+
+  const handleDesignateManager = async () => {
+    try {
+      await businessesAPI.designateManager(managerModal.worker.id, managerPermissions);
+      toast.success(language === 'es' ? `${managerModal.worker.name} designado como administrador` : `${managerModal.worker.name} designated as administrator`);
+      setManagerModal({ open: false, worker: null });
+      loadDashboard();
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || 'Error');
+    }
+  };
+
+  const handleUpdatePermissions = async () => {
+    try {
+      await businessesAPI.updateManagerPermissions(managerModal.worker.id, managerPermissions);
+      toast.success(language === 'es' ? 'Permisos actualizados' : 'Permissions updated');
+      setManagerModal({ open: false, worker: null });
+      loadDashboard();
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || 'Error');
+    }
+  };
+
+  const handleRemoveManager = async (worker) => {
+    if (!window.confirm(language === 'es' ? `¿Quitar a ${worker.name} como administrador?` : `Remove ${worker.name} as administrator?`)) return;
+    try {
+      await businessesAPI.removeManager(worker.id);
+      toast.success(language === 'es' ? 'Rol de administrador removido' : 'Administrator role removed');
+      loadDashboard();
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || 'Error');
+    }
+  };
+
+  const handleSaveOwnerPin = async () => {
+    if (pinValue.length < 4 || pinValue.length > 6 || !/^\d+$/.test(pinValue)) {
+      toast.error(language === 'es' ? 'El PIN debe ser de 4-6 dígitos' : 'PIN must be 4-6 digits');
+      return;
+    }
+    if (pinValue !== pinConfirm) {
+      toast.error(language === 'es' ? 'Los PINs no coinciden' : 'PINs do not match');
+      return;
+    }
+    try {
+      await businessesAPI.setOwnerPin(pinValue);
+      toast.success(language === 'es' ? 'PIN de seguridad configurado' : 'Security PIN set');
+      setPinModal({ open: false, type: null });
+      setPinValue(''); setPinConfirm('');
+      setOwnerHasPin(true);
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || 'Error');
+    }
+  };
+
+  const handleSetManagerPin = async () => {
+    if (pinValue.length < 4 || pinValue.length > 6 || !/^\d+$/.test(pinValue)) {
+      toast.error(language === 'es' ? 'El PIN debe ser de 4-6 dígitos' : 'PIN must be 4-6 digits');
+      return;
+    }
+    if (pinValue !== pinConfirm) {
+      toast.error(language === 'es' ? 'Los PINs no coinciden' : 'PINs do not match');
+      return;
+    }
+    try {
+      await businessesAPI.setManagerPin(pinModal.workerId, pinValue);
+      toast.success(language === 'es' ? 'PIN del administrador configurado' : 'Administrator PIN set');
+      setPinModal({ open: false, type: null });
+      setPinValue(''); setPinConfirm('');
+      loadDashboard();
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || 'Error');
+    }
+  };
+
   const handleToggleClosure = async (date) => {
     const dateStr = format(date, 'yyyy-MM-dd');
     const isClosed = closedDates.includes(dateStr);
@@ -290,6 +432,19 @@ export default function BusinessDashboardPage() {
       <div className="container-app py-8">
 
         {/* ── Header ─────────────────────────────────── */}
+        {isManager && (
+          <div className="flex items-center gap-2 p-3 mb-4 rounded-xl border border-amber-200 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800/40" data-testid="manager-session-banner">
+            <UserCog className="h-5 w-5 text-amber-600 shrink-0" />
+            <div className="flex-1">
+              <p className="text-sm font-medium text-amber-800 dark:text-amber-200">
+                {language === 'es' ? `Sesión de administrador: ${user?.worker_name || ''}` : `Administrator session: ${user?.worker_name || ''}`}
+              </p>
+              <p className="text-xs text-amber-700 dark:text-amber-300">
+                {language === 'es' ? 'Acceso limitado según tus permisos asignados' : 'Limited access based on your assigned permissions'}
+              </p>
+            </div>
+          </div>
+        )}
         <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 mb-6">
           <div className="flex items-start gap-4">
             <Avatar className="h-16 w-16 border-2 border-background shadow-lg">
@@ -319,7 +474,6 @@ export default function BusinessDashboardPage() {
             <Button variant="outline" size="sm" onClick={async () => {
               let profileSlug = biz?.slug || biz?.id;
               if (!profileSlug) {
-                // Fallback: fetch business ID from user profile
                 try {
                   const meRes = await businessesAPI.getDashboard();
                   profileSlug = meRes.data?.business?.slug || meRes.data?.business?.id;
@@ -333,9 +487,11 @@ export default function BusinessDashboardPage() {
             }} data-testid="view-profile-button">
               <Eye className="h-4 w-4 mr-1.5" />{language === 'es' ? 'Ver perfil' : 'View profile'}
             </Button>
-            <Button variant="outline" size="sm" onClick={() => navigate('/business/settings')}>
-              <Settings className="h-4 w-4 mr-1.5" />{language === 'es' ? 'Config' : 'Settings'}
-            </Button>
+            {hasPermission('edit_profile') && (
+              <Button variant="outline" size="sm" onClick={() => navigate('/business/settings')}>
+                <Settings className="h-4 w-4 mr-1.5" />{language === 'es' ? 'Config' : 'Settings'}
+              </Button>
+            )}
           </div>
         </div>
 
@@ -375,11 +531,11 @@ export default function BusinessDashboardPage() {
         {/* ── Stats Cards ────────────────────────────── */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
           {[
-            { icon: CalendarIcon, label: language === 'es' ? 'Citas hoy' : "Today's bookings", value: stats?.today_appointments || 0, color: 'text-blue-500 bg-blue-50', type: 'today', title: language === 'es' ? 'Citas de hoy' : "Today's bookings" },
-            { icon: Clock, label: language === 'es' ? 'Confirmadas' : 'Confirmed', value: stats?.pending_appointments || 0, color: 'text-amber-500 bg-amber-50', type: 'pending', title: language === 'es' ? 'Citas confirmadas' : 'Confirmed bookings' },
-            { icon: DollarSign, label: language === 'es' ? 'Ingresos mes' : 'Monthly revenue', value: formatCurrency(stats?.month_revenue || 0), color: 'text-emerald-500 bg-emerald-50', type: 'revenue', title: language === 'es' ? 'Ingresos del mes' : 'Monthly revenue' },
-            { icon: TrendingUp, label: language === 'es' ? 'Total citas' : 'Total bookings', value: stats?.total_appointments || 0, color: 'text-violet-500 bg-violet-50', type: 'total', title: language === 'es' ? 'Total de citas' : 'Total bookings' },
-          ].map((stat, i) => (
+            { icon: CalendarIcon, label: language === 'es' ? 'Citas hoy' : "Today's bookings", value: stats?.today_appointments || 0, color: 'text-blue-500 bg-blue-50', type: 'today', title: language === 'es' ? 'Citas de hoy' : "Today's bookings", perm: null },
+            { icon: Clock, label: language === 'es' ? 'Confirmadas' : 'Confirmed', value: stats?.pending_appointments || 0, color: 'text-amber-500 bg-amber-50', type: 'pending', title: language === 'es' ? 'Citas confirmadas' : 'Confirmed bookings', perm: null },
+            { icon: DollarSign, label: language === 'es' ? 'Ingresos mes' : 'Monthly revenue', value: formatCurrency(stats?.month_revenue || 0), color: 'text-emerald-500 bg-emerald-50', type: 'revenue', title: language === 'es' ? 'Ingresos del mes' : 'Monthly revenue', perm: 'view_reports' },
+            { icon: TrendingUp, label: language === 'es' ? 'Total citas' : 'Total bookings', value: stats?.total_appointments || 0, color: 'text-violet-500 bg-violet-50', type: 'total', title: language === 'es' ? 'Total de citas' : 'Total bookings', perm: 'view_reports' },
+          ].filter(stat => !stat.perm || hasPermission(stat.perm)).map((stat, i) => (
             <Card 
               key={i} 
               className="border-border/60 cursor-pointer hover:border-[#F05D5E]/30 hover:shadow-sm transition-all"
@@ -402,32 +558,26 @@ export default function BusinessDashboardPage() {
         </div>
 
         {/* ── Tabs ────────────────────────────────────── */}
+        {(() => {
+          const visibleTabs = [
+            { value: 'overview', show: true, icon: BarChart3, label: language === 'es' ? 'Agenda' : 'Schedule' },
+            { value: 'services', show: hasPermission('edit_services'), icon: Briefcase, label: language === 'es' ? 'Servicios' : 'Services' },
+            { value: 'team', show: !isManager, icon: Users, label: language === 'es' ? 'Equipo' : 'Team' },
+            { value: 'closures', show: !isManager, icon: CalendarOff, label: language === 'es' ? 'Cierres' : 'Closures' },
+            { value: 'photos', show: hasPermission('edit_profile'), icon: Image, label: language === 'es' ? 'Fotos' : 'Photos' },
+            { value: 'subscription', show: !isManager, icon: CreditCard, label: language === 'es' ? 'Suscripcion' : 'Subscription' },
+            { value: 'activity', show: !isManager, icon: History, label: language === 'es' ? 'Actividad' : 'Activity' },
+          ].filter(tab => tab.show);
+          const colCount = visibleTabs.length;
+          return (
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-6 max-w-3xl">
-            <TabsTrigger value="overview" data-testid="tab-overview">
-              <BarChart3 className="h-4 w-4 mr-1.5 hidden sm:inline" />
-              {language === 'es' ? 'Agenda' : 'Schedule'}
-            </TabsTrigger>
-            <TabsTrigger value="services" data-testid="tab-services">
-              <Briefcase className="h-4 w-4 mr-1.5 hidden sm:inline" />
-              {language === 'es' ? 'Servicios' : 'Services'}
-            </TabsTrigger>
-            <TabsTrigger value="team" data-testid="tab-team">
-              <Users className="h-4 w-4 mr-1.5 hidden sm:inline" />
-              {language === 'es' ? 'Equipo' : 'Team'}
-            </TabsTrigger>
-            <TabsTrigger value="closures" data-testid="tab-closures">
-              <CalendarOff className="h-4 w-4 mr-1.5 hidden sm:inline" />
-              {language === 'es' ? 'Cierres' : 'Closures'}
-            </TabsTrigger>
-            <TabsTrigger value="photos" data-testid="tab-photos">
-              <Image className="h-4 w-4 mr-1.5 hidden sm:inline" />
-              {language === 'es' ? 'Fotos' : 'Photos'}
-            </TabsTrigger>
-            <TabsTrigger value="subscription" data-testid="tab-subscription">
-              <CreditCard className="h-4 w-4 mr-1.5 hidden sm:inline" />
-              {language === 'es' ? 'Suscripcion' : 'Subscription'}
-            </TabsTrigger>
+          <TabsList className={`grid w-full max-w-3xl`} style={{ gridTemplateColumns: `repeat(${colCount}, minmax(0, 1fr))` }}>
+            {visibleTabs.map(tab => (
+              <TabsTrigger key={tab.value} value={tab.value} data-testid={`tab-${tab.value}`}>
+                <tab.icon className="h-4 w-4 mr-1.5 hidden sm:inline" />
+                {tab.label}
+              </TabsTrigger>
+            ))}
           </TabsList>
 
           {/* ── Overview/Schedule Tab ────────────────── */}
@@ -474,8 +624,8 @@ export default function BusinessDashboardPage() {
                                 <Badge variant="secondary" className="text-[9px] mt-0.5 px-1 py-0">{durationMin}min</Badge>
                               </div>
                               <Separator orientation="vertical" className="h-10" />
-                              <div className="cursor-pointer" onClick={() => setBookingDetail(booking)}>
-                                <p className="font-medium text-sm hover:text-[#F05D5E] transition-colors">{booking.client_name || booking.user_name}</p>
+                              <div className={hasPermission('view_client_data') ? 'cursor-pointer' : ''} onClick={() => hasPermission('view_client_data') && setBookingDetail(booking)}>
+                                <p className={`font-medium text-sm ${hasPermission('view_client_data') ? 'hover:text-[#F05D5E] transition-colors' : ''}`}>{booking.client_name || booking.user_name}</p>
                                 <p className="text-xs text-muted-foreground">{booking.service_name}</p>
                                 {booking.worker_name && <p className="text-xs text-muted-foreground/70">{booking.worker_name}</p>}
                               </div>
@@ -494,28 +644,38 @@ export default function BusinessDashboardPage() {
                                 const isPast = now >= endDt;
                                 return (
                                   <>
-                                    <Button size="sm" variant="outline" className="h-7 text-xs" disabled={!isPast} title={!isPast ? (language === 'es' ? 'Disponible al terminar la cita' : 'Available after appointment ends') : ''} onClick={() => handleBookingAction(booking.id, 'complete')}>
-                                      {language === 'es' ? 'Completar' : 'Complete'}
-                                    </Button>
-                                    <Button size="sm" variant="outline" className="h-7 text-xs text-blue-600 border-blue-200 hover:bg-blue-50" onClick={() => openReschedule(booking)} data-testid={`reschedule-booking-${booking.id}`}>
-                                      <RefreshCw className="h-3 w-3 mr-1" />
-                                      {language === 'es' ? 'Reagendar' : 'Reschedule'}
-                                    </Button>
-                                    <Button size="sm" variant="outline" className="h-7 text-xs text-red-600 border-red-200 hover:bg-red-50" onClick={() => handleBookingAction(booking.id, 'cancel')} data-testid={`cancel-booking-${booking.id}`}>
-                                      {language === 'es' ? 'Cancelar' : 'Cancel'}
-                                    </Button>
+                                    {hasPermission('complete_bookings') && (
+                                      <Button size="sm" variant="outline" className="h-7 text-xs" disabled={!isPast} title={!isPast ? (language === 'es' ? 'Disponible al terminar la cita' : 'Available after appointment ends') : ''} onClick={() => handleBookingAction(booking.id, 'complete')}>
+                                        {language === 'es' ? 'Completar' : 'Complete'}
+                                      </Button>
+                                    )}
+                                    {hasPermission('reschedule_bookings') && (
+                                      <Button size="sm" variant="outline" className="h-7 text-xs text-blue-600 border-blue-200 hover:bg-blue-50" onClick={() => openReschedule(booking)} data-testid={`reschedule-booking-${booking.id}`}>
+                                        <RefreshCw className="h-3 w-3 mr-1" />
+                                        {language === 'es' ? 'Reagendar' : 'Reschedule'}
+                                      </Button>
+                                    )}
+                                    {hasPermission('cancel_bookings') && (
+                                      <Button size="sm" variant="outline" className="h-7 text-xs text-red-600 border-red-200 hover:bg-red-50" onClick={() => handleBookingAction(booking.id, 'cancel')} data-testid={`cancel-booking-${booking.id}`}>
+                                        {language === 'es' ? 'Cancelar' : 'Cancel'}
+                                      </Button>
+                                    )}
                                   </>
                                 );
                               })()}
                               {booking.status === 'hold' && (
                                 <>
-                                  <Button size="sm" variant="outline" className="h-7 text-xs text-blue-600 border-blue-200 hover:bg-blue-50" onClick={() => openReschedule(booking)} data-testid={`reschedule-hold-${booking.id}`}>
-                                    <RefreshCw className="h-3 w-3 mr-1" />
-                                    {language === 'es' ? 'Reagendar' : 'Reschedule'}
-                                  </Button>
-                                  <Button size="sm" variant="outline" className="h-7 text-xs text-red-600 border-red-200 hover:bg-red-50" onClick={() => handleBookingAction(booking.id, 'cancel')} data-testid={`cancel-hold-${booking.id}`}>
-                                    {language === 'es' ? 'Cancelar' : 'Cancel'}
-                                  </Button>
+                                  {hasPermission('reschedule_bookings') && (
+                                    <Button size="sm" variant="outline" className="h-7 text-xs text-blue-600 border-blue-200 hover:bg-blue-50" onClick={() => openReschedule(booking)} data-testid={`reschedule-hold-${booking.id}`}>
+                                      <RefreshCw className="h-3 w-3 mr-1" />
+                                      {language === 'es' ? 'Reagendar' : 'Reschedule'}
+                                    </Button>
+                                  )}
+                                  {hasPermission('cancel_bookings') && (
+                                    <Button size="sm" variant="outline" className="h-7 text-xs text-red-600 border-red-200 hover:bg-red-50" onClick={() => handleBookingAction(booking.id, 'cancel')} data-testid={`cancel-hold-${booking.id}`}>
+                                      {language === 'es' ? 'Cancelar' : 'Cancel'}
+                                    </Button>
+                                  )}
                                 </>
                               )}
                             </div>
@@ -575,7 +735,54 @@ export default function BusinessDashboardPage() {
           </TabsContent>
 
           {/* ── Team Tab ─────────────────────────────── */}
-          <TabsContent value="team" className="mt-6">
+          <TabsContent value="team" className="mt-6 space-y-6">
+            {/* Security PIN Section */}
+            <Card className="border-amber-200/60 dark:border-amber-800/40">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base font-heading flex items-center gap-2">
+                  <Shield className="h-4 w-4 text-amber-500" />
+                  {language === 'es' ? 'PIN de seguridad del dueño' : 'Owner security PIN'}
+                </CardTitle>
+                <p className="text-xs text-muted-foreground">
+                  {language === 'es'
+                    ? 'Configura un PIN numérico para proteger acciones sensibles. Los administradores usarán su propio PIN.'
+                    : 'Set a numeric PIN to protect sensitive actions. Administrators will use their own PIN.'}
+                </p>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center gap-3">
+                  <div className={`p-2 rounded-lg ${ownerHasPin ? 'bg-green-50 dark:bg-green-900/20' : 'bg-amber-50 dark:bg-amber-900/20'}`}>
+                    <Shield className={`h-5 w-5 ${ownerHasPin ? 'text-green-600' : 'text-amber-500'}`} />
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm font-medium">
+                      {ownerHasPin
+                        ? (language === 'es' ? 'PIN configurado' : 'PIN configured')
+                        : (language === 'es' ? 'Sin PIN configurado' : 'No PIN configured')}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {ownerHasPin
+                        ? (language === 'es' ? 'Tu PIN está activo y protege acciones sensibles' : 'Your PIN is active and protects sensitive actions')
+                        : (language === 'es' ? 'Configura un PIN para mayor seguridad' : 'Set a PIN for extra security')}
+                    </p>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant={ownerHasPin ? 'outline' : 'default'}
+                    className={!ownerHasPin ? 'btn-coral' : ''}
+                    onClick={() => { setPinModal({ open: true, type: 'owner_setup' }); setPinValue(''); setPinConfirm(''); }}
+                    data-testid="setup-owner-pin-btn"
+                  >
+                    <Shield className="h-3.5 w-3.5 mr-1.5" />
+                    {ownerHasPin
+                      ? (language === 'es' ? 'Cambiar PIN' : 'Change PIN')
+                      : (language === 'es' ? 'Configurar PIN' : 'Set PIN')}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Team Members Card */}
             <Card>
               <CardHeader className="flex flex-row items-center justify-between pb-3">
                 <CardTitle className="text-base font-heading">{language === 'es' ? 'Mi equipo' : 'My team'}</CardTitle>
@@ -587,21 +794,55 @@ export default function BusinessDashboardPage() {
                 {workers.length > 0 ? (
                   <div className="grid sm:grid-cols-2 gap-3">
                     {workers.map(worker => (
-                      <div key={worker.id} className="flex items-center gap-3 p-3 rounded-xl border border-border/60" data-testid={`worker-item-${worker.id}`}>
-                        <Avatar className="h-11 w-11">
-                          <AvatarImage src={worker.photo_url} />
-                          <AvatarFallback className="bg-[#F05D5E]/10 text-[#F05D5E] text-sm font-bold">
-                            {getInitials(worker.name)}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-medium text-sm truncate">{worker.name}</p>
-                          {worker.bio && <p className="text-xs text-muted-foreground truncate">{worker.bio}</p>}
-                          <p className="text-xs text-muted-foreground">{worker.service_ids?.length || 0} {language === 'es' ? 'servicios' : 'services'}</p>
+                      <div key={worker.id} className="p-3 rounded-xl border border-border/60 space-y-3" data-testid={`worker-item-${worker.id}`}>
+                        <div className="flex items-center gap-3">
+                          <Avatar className="h-11 w-11">
+                            <AvatarImage src={worker.photo_url} />
+                            <AvatarFallback className="bg-[#F05D5E]/10 text-[#F05D5E] text-sm font-bold">
+                              {getInitials(worker.name)}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              <p className="font-medium text-sm truncate">{worker.name}</p>
+                              {worker.is_manager && (
+                                <Badge className="bg-amber-100 text-amber-800 border-amber-200 text-[10px] shrink-0" data-testid={`manager-badge-${worker.id}`}>
+                                  <UserCog className="h-3 w-3 mr-0.5" />
+                                  {language === 'es' ? 'Administrador' : 'Administrator'}
+                                </Badge>
+                              )}
+                            </div>
+                            {worker.bio && <p className="text-xs text-muted-foreground truncate">{worker.bio}</p>}
+                            <p className="text-xs text-muted-foreground">{worker.service_ids?.length || 0} {language === 'es' ? 'servicios' : 'services'}</p>
+                          </div>
+                          <Badge variant={worker.active !== false ? 'default' : 'secondary'} className="text-[10px] shrink-0">
+                            {worker.active !== false ? (language === 'es' ? 'Activo' : 'Active') : (language === 'es' ? 'Inactivo' : 'Inactive')}
+                          </Badge>
                         </div>
-                        <Badge variant={worker.active !== false ? 'default' : 'secondary'} className="text-[10px]">
-                          {worker.active !== false ? (language === 'es' ? 'Activo' : 'Active') : (language === 'es' ? 'Inactivo' : 'Inactive')}
-                        </Badge>
+                        {/* Manager Actions */}
+                        <div className="flex items-center gap-1.5 pt-1 border-t border-border/40">
+                          {worker.is_manager ? (
+                            <>
+                              <Button size="sm" variant="outline" className="h-7 text-xs flex-1" onClick={() => openManagerModal(worker)} data-testid={`edit-permissions-${worker.id}`}>
+                                <Settings className="h-3 w-3 mr-1" />
+                                {language === 'es' ? 'Permisos' : 'Permissions'}
+                              </Button>
+                              <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => { setPinModal({ open: true, type: 'manager_pin', workerId: worker.id, workerName: worker.name }); setPinValue(''); setPinConfirm(''); }} data-testid={`set-pin-${worker.id}`}>
+                                <Shield className="h-3 w-3 mr-1" />
+                                {worker.has_manager_pin ? (language === 'es' ? 'Cambiar PIN' : 'Change PIN') : 'PIN'}
+                              </Button>
+                              <Button size="sm" variant="outline" className="h-7 text-xs text-red-600 border-red-200 hover:bg-red-50" onClick={() => handleRemoveManager(worker)} data-testid={`remove-manager-${worker.id}`}>
+                                <XCircle className="h-3 w-3 mr-1" />
+                                {language === 'es' ? 'Quitar' : 'Remove'}
+                              </Button>
+                            </>
+                          ) : (
+                            <Button size="sm" variant="outline" className="h-7 text-xs w-full text-amber-700 border-amber-200 hover:bg-amber-50" onClick={() => openManagerModal(worker)} data-testid={`designate-manager-${worker.id}`}>
+                              <UserCog className="h-3 w-3 mr-1" />
+                              {language === 'es' ? 'Designar como administrador' : 'Designate as administrator'}
+                            </Button>
+                          )}
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -873,7 +1114,118 @@ export default function BusinessDashboardPage() {
               </CardContent>
             </Card>
           </TabsContent>
+
+          {/* ── Activity Log Tab ────────────────────────── */}
+          <TabsContent value="activity" className="mt-6">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between pb-3">
+                <CardTitle className="text-base font-heading flex items-center gap-2">
+                  <History className="h-4 w-4 text-muted-foreground" />
+                  {language === 'es' ? 'Historial de actividad' : 'Activity log'}
+                </CardTitle>
+                <div className="flex items-center gap-2">
+                  <select
+                    className="text-xs border rounded-md px-2 py-1.5 bg-background"
+                    value={activityFilter}
+                    onChange={(e) => { setActivityFilter(e.target.value); loadActivityLogs(1, e.target.value); }}
+                    data-testid="activity-filter"
+                  >
+                    <option value="all">{language === 'es' ? 'Todos' : 'All'}</option>
+                    <option value="owner">{language === 'es' ? 'Dueño' : 'Owner'}</option>
+                    <option value="admin">{language === 'es' ? 'Administradores' : 'Administrators'}</option>
+                  </select>
+                  <Button size="sm" variant="outline" onClick={() => loadActivityLogs(1, activityFilter)} data-testid="refresh-activity-btn">
+                    <RefreshCw className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {activityLoading ? (
+                  <div className="space-y-3">
+                    {[1,2,3].map(i => <Skeleton key={i} className="h-16 w-full rounded-lg" />)}
+                  </div>
+                ) : activityLogs.length > 0 ? (
+                  <>
+                    <div className="space-y-2">
+                      {activityLogs.map(log => {
+                        const actionLabels = {
+                          complete_booking: { es: 'Completó cita', en: 'Completed booking', icon: CheckCircle2, color: 'text-green-600 bg-green-50' },
+                          cancel_booking: { es: 'Canceló cita', en: 'Cancelled booking', icon: XCircle, color: 'text-red-600 bg-red-50' },
+                          reschedule_booking: { es: 'Reagendó cita', en: 'Rescheduled booking', icon: RefreshCw, color: 'text-blue-600 bg-blue-50' },
+                          designate_admin: { es: 'Designó administrador', en: 'Designated administrator', icon: UserCog, color: 'text-amber-600 bg-amber-50' },
+                          remove_admin: { es: 'Removió administrador', en: 'Removed administrator', icon: XCircle, color: 'text-orange-600 bg-orange-50' },
+                          update_permissions: { es: 'Actualizó permisos', en: 'Updated permissions', icon: Shield, color: 'text-violet-600 bg-violet-50' },
+                        };
+                        const meta = actionLabels[log.action] || { es: log.action, en: log.action, icon: History, color: 'text-gray-600 bg-gray-50' };
+                        const IconComp = meta.icon;
+                        const dt = new Date(log.created_at);
+                        const timeStr = dt.toLocaleTimeString(language === 'es' ? 'es-MX' : 'en-US', { hour: '2-digit', minute: '2-digit' });
+                        const dateStr = dt.toLocaleDateString(language === 'es' ? 'es-MX' : 'en-US', { day: 'numeric', month: 'short' });
+
+                        return (
+                          <div key={log.id} className="flex items-start gap-3 p-3 rounded-lg border border-border/50 hover:bg-muted/20 transition-colors" data-testid={`activity-log-${log.id}`}>
+                            <div className={`p-2 rounded-lg shrink-0 ${meta.color}`}>
+                              <IconComp className="h-4 w-4" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-sm font-medium">{meta[language] || meta.es}</span>
+                                <Badge variant={log.actor_type === 'admin' ? 'outline' : 'secondary'} className="text-[10px]">
+                                  {log.actor_type === 'admin' ? (
+                                    <><UserCog className="h-2.5 w-2.5 mr-0.5" />{log.actor_name}</>
+                                  ) : (
+                                    <><Shield className="h-2.5 w-2.5 mr-0.5" />{language === 'es' ? 'Dueño' : 'Owner'}</>
+                                  )}
+                                </Badge>
+                              </div>
+                              {/* Details line */}
+                              <p className="text-xs text-muted-foreground mt-0.5">
+                                {log.details?.client_name && `${log.details.client_name} — `}
+                                {log.details?.service_name && `${log.details.service_name} `}
+                                {log.details?.date && `(${new Date(log.details.date + 'T12:00:00').toLocaleDateString(language === 'es' ? 'es-MX' : 'en-US', { day: 'numeric', month: 'short' })})`}
+                                {log.details?.worker_name && !log.details?.client_name && log.details.worker_name}
+                                {log.action === 'reschedule_booking' && log.details?.old_date && (
+                                  <> → {log.details.new_date} {log.details.new_time}</>
+                                )}
+                                {log.details?.reason && ` — ${log.details.reason}`}
+                              </p>
+                            </div>
+                            <div className="text-right shrink-0">
+                              <p className="text-xs text-muted-foreground">{dateStr}</p>
+                              <p className="text-[10px] text-muted-foreground/70">{timeStr}</p>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {/* Pagination */}
+                    {activityPages > 1 && (
+                      <div className="flex items-center justify-center gap-2 mt-4 pt-3 border-t">
+                        <Button size="sm" variant="outline" disabled={activityPage <= 1} onClick={() => loadActivityLogs(activityPage - 1, activityFilter)} data-testid="activity-prev-page">
+                          <ChevronLeft className="h-4 w-4" />
+                        </Button>
+                        <span className="text-xs text-muted-foreground">{activityPage} / {activityPages}</span>
+                        <Button size="sm" variant="outline" disabled={activityPage >= activityPages} onClick={() => loadActivityLogs(activityPage + 1, activityFilter)} data-testid="activity-next-page">
+                          <ChevronRight className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="text-center py-12">
+                    <History className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
+                    <p className="text-sm text-muted-foreground">{language === 'es' ? 'No hay actividad registrada aún' : 'No activity recorded yet'}</p>
+                    <p className="text-xs text-muted-foreground/60 mt-1">
+                      {language === 'es' ? 'Las acciones de dueños y administradores aparecerán aquí' : 'Owner and administrator actions will appear here'}
+                    </p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
         </Tabs>
+          );
+        })()}
 
         {/* ── Stats Detail Modal ─────────────────────── */}
         <Dialog open={statsModal.open} onOpenChange={(open) => { if (!open) closeStatsModal(); }}>
@@ -1124,6 +1476,135 @@ export default function BusinessDashboardPage() {
                 </div>
               );
             })()}
+          </DialogContent>
+        </Dialog>
+
+        {/* Manager Permissions Modal */}
+        <Dialog open={managerModal.open} onOpenChange={(open) => !open && setManagerModal({ open: false, worker: null })}>
+          <DialogContent className="max-w-md" data-testid="manager-permissions-modal">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <UserCog className="h-5 w-5 text-amber-500" />
+                {managerModal.worker?.is_manager
+                  ? (language === 'es' ? 'Editar permisos de administrador' : 'Edit administrator permissions')
+                  : (language === 'es' ? 'Designar como administrador' : 'Designate as administrator')}
+              </DialogTitle>
+              <DialogDescription>
+                {managerModal.worker?.name} — {language === 'es'
+                  ? 'Selecciona las acciones que este administrador puede realizar'
+                  : 'Select the actions this administrator can perform'}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-5 mt-2 max-h-[50vh] overflow-y-auto pr-1">
+              {Object.entries(PERMISSION_GROUPS[language] || PERMISSION_GROUPS.es).map(([groupName, permKeys]) => (
+                <div key={groupName}>
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">{groupName}</p>
+                  <div className="space-y-2">
+                    {permKeys.map(key => (
+                      <div key={key} className="flex items-center justify-between p-2.5 rounded-lg border border-border/50 hover:bg-muted/30 transition-colors" data-testid={`perm-${key}`}>
+                        <Label className="text-sm cursor-pointer flex-1" htmlFor={`perm-switch-${key}`}>
+                          {PERMISSION_LABELS[key]?.[language] || key}
+                        </Label>
+                        <Switch
+                          id={`perm-switch-${key}`}
+                          checked={!!managerPermissions[key]}
+                          onCheckedChange={(checked) => setManagerPermissions(prev => ({ ...prev, [key]: checked }))}
+                          data-testid={`switch-${key}`}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <DialogFooter className="gap-2 mt-2">
+              <Button variant="outline" onClick={() => setManagerModal({ open: false, worker: null })} data-testid="cancel-manager-modal">
+                {language === 'es' ? 'Cancelar' : 'Cancel'}
+              </Button>
+              <Button
+                className="btn-coral"
+                onClick={managerModal.worker?.is_manager ? handleUpdatePermissions : handleDesignateManager}
+                data-testid="save-manager-btn"
+              >
+                <CheckCircle2 className="h-4 w-4 mr-1.5" />
+                {managerModal.worker?.is_manager
+                  ? (language === 'es' ? 'Guardar permisos' : 'Save permissions')
+                  : (language === 'es' ? 'Designar administrador' : 'Designate administrator')}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* PIN Setup Modal */}
+        <Dialog open={pinModal.open} onOpenChange={(open) => { if (!open) { setPinModal({ open: false, type: null }); setPinValue(''); setPinConfirm(''); } }}>
+          <DialogContent className="max-w-sm" data-testid="pin-setup-modal">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Shield className="h-5 w-5 text-amber-500" />
+                {pinModal.type === 'owner_setup'
+                  ? (language === 'es' ? 'PIN de seguridad del dueño' : 'Owner security PIN')
+                  : (language === 'es' ? `PIN para ${pinModal.workerName || 'administrador'}` : `PIN for ${pinModal.workerName || 'administrator'}`)}
+              </DialogTitle>
+              <DialogDescription>
+                {language === 'es'
+                  ? 'Ingresa un PIN numérico de 4 a 6 dígitos'
+                  : 'Enter a numeric PIN of 4 to 6 digits'}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 mt-2">
+              <div>
+                <Label className="text-sm mb-1.5 block">{language === 'es' ? 'Nuevo PIN' : 'New PIN'}</Label>
+                <Input
+                  type="password"
+                  inputMode="numeric"
+                  maxLength={6}
+                  placeholder="••••"
+                  value={pinValue}
+                  onChange={(e) => setPinValue(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  data-testid="pin-input"
+                  data-no-capitalize="true"
+                />
+              </div>
+              <div>
+                <Label className="text-sm mb-1.5 block">{language === 'es' ? 'Confirmar PIN' : 'Confirm PIN'}</Label>
+                <Input
+                  type="password"
+                  inputMode="numeric"
+                  maxLength={6}
+                  placeholder="••••"
+                  value={pinConfirm}
+                  onChange={(e) => setPinConfirm(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                  data-testid="pin-confirm-input"
+                  data-no-capitalize="true"
+                />
+              </div>
+              {pinValue && pinConfirm && pinValue !== pinConfirm && (
+                <p className="text-xs text-red-500 flex items-center gap-1">
+                  <XCircle className="h-3 w-3" />
+                  {language === 'es' ? 'Los PINs no coinciden' : 'PINs do not match'}
+                </p>
+              )}
+              {pinValue && pinValue.length >= 4 && pinValue === pinConfirm && (
+                <p className="text-xs text-green-600 flex items-center gap-1">
+                  <CheckCircle2 className="h-3 w-3" />
+                  {language === 'es' ? 'PINs coinciden' : 'PINs match'}
+                </p>
+              )}
+            </div>
+            <DialogFooter className="gap-2 mt-2">
+              <Button variant="outline" onClick={() => { setPinModal({ open: false, type: null }); setPinValue(''); setPinConfirm(''); }} data-testid="cancel-pin-modal">
+                {language === 'es' ? 'Cancelar' : 'Cancel'}
+              </Button>
+              <Button
+                className="btn-coral"
+                disabled={pinValue.length < 4 || pinValue !== pinConfirm}
+                onClick={pinModal.type === 'owner_setup' ? handleSaveOwnerPin : handleSetManagerPin}
+                data-testid="save-pin-btn"
+              >
+                <Shield className="h-4 w-4 mr-1.5" />
+                {language === 'es' ? 'Guardar PIN' : 'Save PIN'}
+              </Button>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
       </div>

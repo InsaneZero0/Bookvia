@@ -212,6 +212,8 @@ class TokenData(BaseModel):
     user_id: str
     role: UserRole
     email: str
+    worker_id: Optional[str] = None
+    is_manager: bool = False
 
 # User Models
 class UserCreate(BaseModel):
@@ -412,8 +414,42 @@ class WorkerResponse(BaseModel):
     schedule: Dict[str, Any] = {}  # {"0": {"is_available": true, "blocks": [{"start_time": "09:00", "end_time": "18:00"}]}}
     exceptions: List[Dict[str, Any]] = []  # WorkerException as dict
     active: bool = True
+    is_manager: bool = False
+    manager_permissions: Optional[Dict[str, bool]] = None
+    manager_designated_at: Optional[str] = None
+    has_manager_pin: bool = False
     created_at: Optional[str] = None
     deactivated_at: Optional[str] = None
+
+# ============================== Manager / PIN Models ==============================
+
+DEFAULT_MANAGER_PERMISSIONS = {
+    "complete_bookings": True,
+    "reschedule_bookings": True,
+    "cancel_bookings": False,
+    "block_clients": False,
+    "view_client_data": False,
+    "edit_services": False,
+    "edit_profile": False,
+    "view_reports": False,
+}
+
+class PinCreate(BaseModel):
+    pin: str  # 4-6 digits
+
+class PinVerify(BaseModel):
+    pin: str
+
+class ManagerLogin(BaseModel):
+    business_email: EmailStr
+    worker_id: str
+    pin: str
+
+class ManagerDesignate(BaseModel):
+    permissions: Dict[str, bool] = {}
+
+class ManagerPermissionsUpdate(BaseModel):
+    permissions: Dict[str, bool]
 
 class WorkerScheduleUpdate(BaseModel):
     """Update schedule for multiple days"""
@@ -752,13 +788,16 @@ def hash_password(password: str) -> str:
 def verify_password(password: str, hashed: str) -> bool:
     return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
 
-def create_token(user_id: str, role: str, email: str) -> str:
+def create_token(user_id: str, role: str, email: str, worker_id: str = None, is_manager: bool = False) -> str:
     payload = {
         "user_id": user_id,
         "role": role,
         "email": email,
         "exp": datetime.now(timezone.utc) + timedelta(hours=JWT_EXPIRATION_HOURS)
     }
+    if worker_id:
+        payload["worker_id"] = worker_id
+        payload["is_manager"] = True
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 def decode_token(token: str) -> Optional[TokenData]:
@@ -902,6 +941,40 @@ async def create_audit_log(
     await db.audit_logs.insert_one(audit_log)
     logger.info(f"[AUDIT] {admin_email} - {action} - {target_type}:{target_id}")
     return audit_log
+
+# ── Business Activity Log Helper ──
+async def create_business_activity(
+    business_id: str,
+    token_data: TokenData,
+    action: str,
+    target_type: str,
+    target_id: str,
+    details: dict = None,
+):
+    """Log business actions by owner or administrator for audit trail"""
+    if token_data.is_manager and token_data.worker_id:
+        worker = await db.workers.find_one({"id": token_data.worker_id}, {"_id": 0, "name": 1})
+        actor_type = "admin"
+        actor_name = worker["name"] if worker else "Administrador"
+    else:
+        actor_type = "owner"
+        actor_name = "Dueño"
+
+    log_entry = {
+        "id": generate_id(),
+        "business_id": business_id,
+        "actor_type": actor_type,
+        "actor_name": actor_name,
+        "worker_id": token_data.worker_id,
+        "action": action,
+        "target_type": target_type,
+        "target_id": target_id,
+        "details": details or {},
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    await db.business_activity_logs.insert_one(log_entry)
+    logger.info(f"[BIZ-ACTIVITY] {actor_name} ({actor_type}) - {action} - {target_type}:{target_id}")
+    return log_entry
 
 # ========================== LEDGER HELPERS ==========================
 
@@ -1073,6 +1146,13 @@ async def register_user(user: UserCreate):
     await db.users.insert_one(user_doc)
     token = create_token(user_doc["id"], UserRole.USER, user.email)
     
+    # Send welcome email (non-blocking)
+    try:
+        from services.email import send_welcome_email
+        await send_welcome_email(user.email, user.full_name)
+    except Exception as e:
+        logger.warning(f"Failed to send welcome email: {e}")
+    
     return {"token": token, "user": UserResponse(**user_doc).model_dump()}
 
 @auth_router.post("/login", response_model=dict)
@@ -1229,6 +1309,13 @@ async def register_business(business: BusinessCreate):
     
     token = create_token(user_id, UserRole.BUSINESS, business.email)
     
+    # Send welcome email (non-blocking)
+    try:
+        from services.email import send_welcome_business
+        await send_welcome_business(business.email, business.name)
+    except Exception as e:
+        logger.warning(f"Failed to send welcome business email: {e}")
+    
     return {"token": token, "business": BusinessResponse(**business_doc).model_dump()}
 
 @auth_router.post("/business/login", response_model=dict)
@@ -1259,6 +1346,73 @@ async def login_business(credentials: UserLogin):
     
     token = create_token(user["id"], UserRole.BUSINESS, business["email"])
     return {"token": token, "business": BusinessResponse(**business).model_dump()}
+
+@auth_router.post("/business/manager-login", response_model=dict)
+async def login_manager(credentials: ManagerLogin):
+    """Login as a manager/administrator of a business using PIN"""
+    business = await db.businesses.find_one({"email": credentials.business_email})
+    if not business:
+        raise HTTPException(status_code=401, detail="Credenciales inválidas")
+    
+    worker = await db.workers.find_one({
+        "id": credentials.worker_id,
+        "business_id": business["id"],
+        "is_manager": True
+    })
+    if not worker:
+        raise HTTPException(status_code=401, detail="Credenciales inválidas")
+    
+    pin_hash = worker.get("manager_pin_hash")
+    if not pin_hash:
+        raise HTTPException(status_code=401, detail="Este administrador no tiene PIN configurado")
+    
+    if not verify_password(credentials.pin, pin_hash):
+        raise HTTPException(status_code=401, detail="PIN incorrecto")
+    
+    user = await db.users.find_one({"business_id": business["id"]})
+    if not user:
+        raise HTTPException(status_code=500, detail="Cuenta de usuario no encontrada")
+    
+    business.setdefault("description", "")
+    business.setdefault("category_id", "")
+    business.setdefault("address", "")
+    business.setdefault("city", "")
+    business.setdefault("state", "")
+    business.setdefault("country", "MX")
+    business.setdefault("zip_code", "")
+    business.setdefault("subscription_status", "none")
+    business.pop("_id", None)
+    
+    token = create_token(user["id"], UserRole.BUSINESS, business["email"], worker_id=worker["id"], is_manager=True)
+    
+    permissions = worker.get("manager_permissions", {})
+    return {
+        "token": token,
+        "business": BusinessResponse(**business).model_dump(),
+        "manager": {
+            "worker_id": worker["id"],
+            "worker_name": worker["name"],
+            "permissions": permissions,
+            "is_manager": True
+        }
+    }
+
+@auth_router.get("/business/managers")
+async def get_business_managers(email: str):
+    """Get list of manager workers for a business (used in login flow)"""
+    business = await db.businesses.find_one({"email": email})
+    if not business:
+        return []
+    workers = await db.workers.find(
+        {"business_id": business["id"], "is_manager": True},
+        {"_id": 0, "id": 1, "name": 1, "has_manager_pin": 1}
+    ).to_list(100)
+    # Compute has_manager_pin from manager_pin_hash
+    result = []
+    for w in workers:
+        w_full = await db.workers.find_one({"id": w["id"]}, {"_id": 0, "manager_pin_hash": 1})
+        result.append({"id": w["id"], "name": w["name"], "has_pin": bool(w_full.get("manager_pin_hash"))})
+    return result
 
 # ========================== ADMIN AUTH ROUTES ==========================
 
@@ -1957,6 +2111,8 @@ async def get_business_workers(
         filters["active"] = True
     
     workers = await db.workers.find(filters, {"_id": 0}).to_list(100)
+    for w in workers:
+        w["has_manager_pin"] = bool(w.get("manager_pin_hash"))
     return [WorkerResponse(**w) for w in workers]
 
 @businesses_router.get("/{business_id}/workers", response_model=List[WorkerResponse])
@@ -1969,6 +2125,8 @@ async def get_workers_by_business(business_id: str, service_id: Optional[str] = 
     # Filter by service_id: include workers who have the service in their service_ids or have no service_ids set (legacy)
     if service_id:
         workers = [w for w in workers if not w.get("service_ids") or service_id in w.get("service_ids", [])]
+    for w in workers:
+        w["has_manager_pin"] = bool(w.get("manager_pin_hash"))
     return [WorkerResponse(**w) for w in workers]
 
 @businesses_router.get("/my/workers/{worker_id}", response_model=WorkerResponse)
@@ -1978,6 +2136,7 @@ async def get_worker(worker_id: str, token_data: TokenData = Depends(require_bus
     worker = await db.workers.find_one({"id": worker_id, "business_id": user.get("business_id")}, {"_id": 0})
     if not worker:
         raise HTTPException(status_code=404, detail="Worker not found")
+    worker["has_manager_pin"] = bool(worker.get("manager_pin_hash"))
     return WorkerResponse(**worker)
 
 @businesses_router.put("/my/workers/{worker_id}/services")
@@ -2198,6 +2357,167 @@ async def remove_worker_exception(
     )
     
     return {"message": "Exception removed"}
+
+
+# ========================== OWNER PIN & MANAGER ROUTES ==========================
+
+@businesses_router.post("/me/pin")
+async def set_owner_pin(data: PinCreate, token_data: TokenData = Depends(require_business)):
+    """Set or update the owner's security PIN (4-6 digits)"""
+    if not data.pin.isdigit() or not (4 <= len(data.pin) <= 6):
+        raise HTTPException(status_code=400, detail="PIN must be 4-6 digits")
+    
+    user = await db.users.find_one({"id": token_data.user_id})
+    pin_hash = hash_password(data.pin)
+    await db.businesses.update_one(
+        {"id": user["business_id"]},
+        {"$set": {"owner_pin_hash": pin_hash}}
+    )
+    return {"message": "PIN created successfully"}
+
+@businesses_router.post("/me/pin/verify")
+async def verify_owner_pin(data: PinVerify, token_data: TokenData = Depends(require_business)):
+    """Verify the owner's PIN"""
+    user = await db.users.find_one({"id": token_data.user_id})
+    business = await db.businesses.find_one({"id": user["business_id"]})
+    pin_hash = business.get("owner_pin_hash")
+    if not pin_hash:
+        raise HTTPException(status_code=400, detail="No PIN configured")
+    if not verify_password(data.pin, pin_hash):
+        raise HTTPException(status_code=401, detail="Incorrect PIN")
+    return {"verified": True}
+
+@businesses_router.get("/me/pin/status")
+async def get_pin_status(token_data: TokenData = Depends(require_business)):
+    """Check if owner has a PIN configured"""
+    user = await db.users.find_one({"id": token_data.user_id})
+    business = await db.businesses.find_one({"id": user["business_id"]})
+    return {"has_pin": bool(business.get("owner_pin_hash"))}
+
+@businesses_router.put("/my/workers/{worker_id}/manager")
+async def designate_manager(worker_id: str, data: ManagerDesignate, token_data: TokenData = Depends(require_business)):
+    """Designate a worker as manager with custom permissions"""
+    user = await db.users.find_one({"id": token_data.user_id})
+    business_id = user.get("business_id")
+    
+    worker = await db.workers.find_one({"id": worker_id, "business_id": business_id})
+    if not worker:
+        raise HTTPException(status_code=404, detail="Worker not found")
+    
+    # Check max managers (limit 2)
+    current_managers = await db.workers.count_documents({"business_id": business_id, "is_manager": True, "id": {"$ne": worker_id}})
+    if current_managers >= 2:
+        raise HTTPException(status_code=400, detail="Maximum 2 managers allowed")
+    
+    # Merge provided permissions with defaults
+    permissions = {**DEFAULT_MANAGER_PERMISSIONS, **data.permissions}
+    
+    await db.workers.update_one(
+        {"id": worker_id},
+        {"$set": {
+            "is_manager": True,
+            "manager_permissions": permissions,
+            "manager_designated_at": datetime.now(timezone.utc).isoformat(),
+            "manager_designated_by": token_data.user_id,
+        }}
+    )
+    
+    updated = await db.workers.find_one({"id": worker_id}, {"_id": 0})
+    updated["has_manager_pin"] = bool(updated.get("manager_pin_hash"))
+    
+    # Log activity
+    await create_business_activity(
+        business_id, token_data, "designate_admin", "worker", worker_id,
+        {"worker_name": worker.get("name", ""), "permissions": permissions}
+    )
+    
+    return WorkerResponse(**updated)
+
+@businesses_router.put("/my/workers/{worker_id}/manager/permissions")
+async def update_manager_permissions(worker_id: str, data: ManagerPermissionsUpdate, token_data: TokenData = Depends(require_business)):
+    """Update a manager's permissions"""
+    user = await db.users.find_one({"id": token_data.user_id})
+    worker = await db.workers.find_one({"id": worker_id, "business_id": user.get("business_id"), "is_manager": True})
+    if not worker:
+        raise HTTPException(status_code=404, detail="Manager not found")
+    
+    permissions = {**worker.get("manager_permissions", DEFAULT_MANAGER_PERMISSIONS), **data.permissions}
+    await db.workers.update_one({"id": worker_id}, {"$set": {"manager_permissions": permissions}})
+    
+    # Log activity
+    await create_business_activity(
+        user.get("business_id"), token_data, "update_permissions", "worker", worker_id,
+        {"worker_name": worker.get("name", ""), "permissions": permissions}
+    )
+    
+    return {"message": "Permissions updated"}
+
+@businesses_router.delete("/my/workers/{worker_id}/manager")
+async def remove_manager(worker_id: str, token_data: TokenData = Depends(require_business)):
+    """Remove manager role from a worker"""
+    user = await db.users.find_one({"id": token_data.user_id})
+    worker = await db.workers.find_one({"id": worker_id, "business_id": user.get("business_id")})
+    if not worker:
+        raise HTTPException(status_code=404, detail="Worker not found")
+    
+    await db.workers.update_one(
+        {"id": worker_id},
+        {"$set": {"is_manager": False}, "$unset": {"manager_pin_hash": "", "manager_permissions": "", "manager_designated_at": "", "manager_designated_by": ""}}
+    )
+    
+    # Log activity
+    await create_business_activity(
+        user.get("business_id"), token_data, "remove_admin", "worker", worker_id,
+        {"worker_name": worker.get("name", "")}
+    )
+    
+    return {"message": "Manager role removed"}
+
+@businesses_router.post("/my/workers/{worker_id}/manager/pin")
+async def set_manager_pin(worker_id: str, data: PinCreate, token_data: TokenData = Depends(require_business)):
+    """Set or reset a manager's PIN (can be called by owner or manager themselves)"""
+    if not data.pin.isdigit() or not (4 <= len(data.pin) <= 6):
+        raise HTTPException(status_code=400, detail="PIN must be 4-6 digits")
+    
+    user = await db.users.find_one({"id": token_data.user_id})
+    worker = await db.workers.find_one({"id": worker_id, "business_id": user.get("business_id"), "is_manager": True})
+    if not worker:
+        raise HTTPException(status_code=404, detail="Manager not found")
+    
+    pin_hash = hash_password(data.pin)
+    await db.workers.update_one({"id": worker_id}, {"$set": {"manager_pin_hash": pin_hash}})
+    return {"message": "Manager PIN set successfully"}
+
+@businesses_router.get("/my/activity-log")
+async def get_business_activity_log(
+    page: int = 1,
+    limit: int = 30,
+    actor_type: Optional[str] = None,
+    action: Optional[str] = None,
+    token_data: TokenData = Depends(require_business)
+):
+    """Get business activity log (owner only)"""
+    if token_data.is_manager:
+        raise HTTPException(status_code=403, detail="Solo el dueño puede ver el historial de actividad")
+    
+    user = await db.users.find_one({"id": token_data.user_id})
+    business_id = user.get("business_id")
+    
+    query = {"business_id": business_id}
+    if actor_type:
+        query["actor_type"] = actor_type
+    if action:
+        query["action"] = action
+    
+    total = await db.business_activity_logs.count_documents(query)
+    skip = (page - 1) * limit
+    
+    logs = await db.business_activity_logs.find(
+        query, {"_id": 0}
+    ).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
+    
+    return {"logs": logs, "total": total, "page": page, "pages": (total + limit - 1) // limit if total > 0 else 1}
+
 
 # ========================== SERVICE ROUTES ==========================
 
@@ -2999,6 +3319,12 @@ async def reschedule_booking_by_business(
     
     logger.info(f"Business rescheduled booking {booking_id}: {old_date} {old_time} -> {req.new_date} {req.new_time}")
     
+    # Log activity
+    await create_business_activity(
+        booking["business_id"], token_data, "reschedule_booking", "booking", booking_id,
+        {"client_name": booking.get("client_name", ""), "service_name": booking.get("service_name", ""), "old_date": old_date, "old_time": old_time, "new_date": req.new_date, "new_time": req.new_time}
+    )
+    
     return {
         "message": "Cita reagendada exitosamente",
         "new_date": req.new_date,
@@ -3061,6 +3387,12 @@ async def complete_booking(booking_id: str, token_data: TokenData = Depends(requ
         "Tu cita ha sido completada. Dejanos tu opinion!",
         "review",
         {"booking_id": booking_id, "business_id": booking["business_id"]}
+    )
+    
+    # Log activity
+    await create_business_activity(
+        booking["business_id"], token_data, "complete_booking", "booking", booking_id,
+        {"client_name": booking.get("client_name", ""), "service_name": booking.get("service_name", ""), "date": booking.get("date", ""), "time": booking.get("time", "")}
     )
     
     return {"message": "Booking completed"}
@@ -3746,6 +4078,12 @@ async def cancel_booking_by_business(
         f"Tu cita del {booking['date']} a las {booking['time']} fue cancelada. Se procesará un reembolso completo.",
         "system",
         {"booking_id": booking_id}
+    )
+    
+    # Log activity
+    await create_business_activity(
+        booking["business_id"], token_data, "cancel_booking", "booking", booking_id,
+        {"client_name": booking.get("client_name", ""), "service_name": booking.get("service_name", ""), "date": booking.get("date", ""), "time": booking.get("time", ""), "reason": cancel_req.reason}
     )
     
     return {

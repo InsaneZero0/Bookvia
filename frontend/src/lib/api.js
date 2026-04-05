@@ -52,7 +52,8 @@ api.interceptors.response.use(
       const requestUrl = error.config?.url || '';
       const isAuthEndpoint = requestUrl.includes('/auth/login') || 
                             requestUrl.includes('/auth/admin/login') ||
-                            requestUrl.includes('/auth/business/login');
+                            requestUrl.includes('/auth/business/login') ||
+                            requestUrl.includes('/auth/business/manager-login');
       
       if (!isAuthEndpoint) {
         localStorage.removeItem('bookvia-token');
@@ -70,6 +71,8 @@ export const authAPI = {
   login: (data) => api.post('/auth/login', data),
   businessRegister: (data) => api.post('/auth/business/register', data),
   businessLogin: (data) => api.post('/auth/business/login', data),
+  managerLogin: (data) => api.post('/auth/business/manager-login', data),
+  getBusinessManagers: (email) => api.get(`/auth/business/managers?email=${encodeURIComponent(email)}`),
   adminLogin: (data) => api.post('/auth/admin/login', data),
   getMe: () => api.get('/auth/me'),
   sendPhoneCode: (phone) => api.post('/auth/phone/send-code', { phone }),
@@ -161,6 +164,16 @@ export const businessesAPI = {
   getBlacklist: () => api.get('/businesses/me/blacklist'),
   addToBlacklist: (data) => api.post('/businesses/me/blacklist', data),
   removeFromBlacklist: (entryId) => api.delete(`/businesses/me/blacklist/${entryId}`),
+  // Owner PIN
+  setOwnerPin: (pin) => api.post('/businesses/me/pin', { pin }),
+  verifyOwnerPin: (pin) => api.post('/businesses/me/pin/verify', { pin }),
+  getPinStatus: () => api.get('/businesses/me/pin/status'),
+  // Manager
+  designateManager: (workerId, permissions) => api.put(`/businesses/my/workers/${workerId}/manager`, { permissions }),
+  removeManager: (workerId) => api.delete(`/businesses/my/workers/${workerId}/manager`),
+  updateManagerPermissions: (workerId, permissions) => api.put(`/businesses/my/workers/${workerId}/manager/permissions`, { permissions }),
+  setManagerPin: (workerId, pin) => api.post(`/businesses/my/workers/${workerId}/manager/pin`, { pin }),
+  getActivityLog: (params = {}) => api.get('/businesses/my/activity-log', { params }),
 };
 
 // Services API

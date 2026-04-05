@@ -92,10 +92,9 @@ async def send_email(
     Returns:
         Email ID or provider message ID
     """
-    if IS_DEVELOPMENT or not is_resend_configured():
+    if not is_resend_configured():
         # Mock mode - log and store
         logger.info(f"[EMAIL MOCK] To: {to} | Subject: {subject}")
-        logger.debug(f"[EMAIL MOCK] Body: {body[:200]}...")
         
         email_id = await store_email(
             to=to,
@@ -106,9 +105,6 @@ async def send_email(
             status="sent",
             provider="mock"
         )
-        
-        if IS_PRODUCTION and not is_resend_configured():
-            logger.warning("[EMAIL] Resend not configured. Email stored but not sent.")
         
         return email_id
     
@@ -162,7 +158,65 @@ async def send_email(
         raise EmailServiceError(f"Failed to send email: {str(e)}")
 
 
+# ========================== HTML EMAIL WRAPPER ==========================
+
+def email_html(title: str, content: str) -> str:
+    """Wrap email content in a professional HTML template"""
+    return f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f4f4f5;font-family:Arial,Helvetica,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f5;padding:32px 0;">
+<tr><td align="center">
+<table width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.08);">
+<tr><td style="background:#1e293b;padding:24px 32px;text-align:center;">
+<span style="color:#ffffff;font-size:22px;font-weight:bold;">Book</span><span style="color:#F05D5E;font-size:22px;font-weight:bold;">via</span>
+</td></tr>
+<tr><td style="padding:32px;">
+<h2 style="margin:0 0 16px;color:#1e293b;font-size:20px;">{title}</h2>
+{content}
+</td></tr>
+<tr><td style="background:#f8fafc;padding:20px 32px;text-align:center;border-top:1px solid #e2e8f0;">
+<p style="margin:0;color:#94a3b8;font-size:12px;">Este es un correo automatico de Bookvia. No responder a este mensaje.</p>
+<p style="margin:4px 0 0;color:#94a3b8;font-size:12px;">bookvia.app</p>
+</td></tr>
+</table>
+</td></tr>
+</table>
+</body></html>"""
+
+
 # ========================== EMAIL TEMPLATES ==========================
+
+async def send_welcome_email(user_email: str, user_name: str) -> str:
+    """Send welcome email to new user"""
+    subject = "Bienvenido a Bookvia"
+    content = f"""<p style="color:#334155;font-size:15px;line-height:1.6;">Hola <strong>{user_name}</strong>,</p>
+<p style="color:#334155;font-size:15px;line-height:1.6;">Tu cuenta ha sido creada exitosamente. Ya puedes explorar negocios, reservar citas y gestionar tus servicios favoritos.</p>
+<table cellpadding="0" cellspacing="0" style="margin:24px 0;"><tr><td style="background:#F05D5E;border-radius:8px;padding:12px 28px;">
+<a href="https://bookvia.app" style="color:#ffffff;text-decoration:none;font-weight:bold;font-size:15px;">Explorar servicios</a>
+</td></tr></table>
+<p style="color:#64748b;font-size:14px;">Gracias por unirte a Bookvia.</p>"""
+    
+    return await send_email(
+        to=user_email, subject=subject, body=f"Hola {user_name}, bienvenido a Bookvia.",
+        html=email_html(subject, content), template="welcome", data={"user_name": user_name}
+    )
+
+
+async def send_welcome_business(email: str, business_name: str) -> str:
+    """Send welcome email to new business"""
+    subject = f"Bienvenido a Bookvia, {business_name}"
+    content = f"""<p style="color:#334155;font-size:15px;line-height:1.6;">Hola <strong>{business_name}</strong>,</p>
+<p style="color:#334155;font-size:15px;line-height:1.6;">Tu negocio ha sido registrado exitosamente. Para comenzar a recibir reservas, activa tu suscripcion y completa tu perfil.</p>
+<table cellpadding="0" cellspacing="0" style="margin:24px 0;"><tr><td style="background:#F05D5E;border-radius:8px;padding:12px 28px;">
+<a href="https://bookvia.app/business/login" style="color:#ffffff;text-decoration:none;font-weight:bold;font-size:15px;">Ir a mi panel</a>
+</td></tr></table>
+<p style="color:#64748b;font-size:14px;">Estamos aqui para ayudarte a crecer.</p>"""
+    
+    return await send_email(
+        to=email, subject=subject, body=f"Bienvenido a Bookvia, {business_name}.",
+        html=email_html(subject, content), template="welcome_business", data={"business_name": business_name}
+    )
 
 async def send_booking_confirmation(
     user_email: str,
@@ -174,36 +228,23 @@ async def send_booking_confirmation(
     worker_name: str
 ) -> str:
     """Send booking confirmation to user"""
-    subject = f"Confirmación de cita - {business_name}"
-    body = f"""Hola {user_name},
-
-Tu cita ha sido confirmada:
-
-Negocio: {business_name}
-Servicio: {service_name}
-Fecha: {date}
-Hora: {time}
-Profesional: {worker_name}
-
-Gracias por usar Bookvia.
-
----
-Este es un correo automático, no responder.
-"""
+    subject = f"Cita confirmada - {business_name}"
+    content = f"""<p style="color:#334155;font-size:15px;line-height:1.6;">Hola <strong>{user_name}</strong>,</p>
+<p style="color:#334155;font-size:15px;line-height:1.6;">Tu cita ha sido confirmada:</p>
+<table width="100%" style="margin:16px 0;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;" cellpadding="0" cellspacing="0">
+<tr><td style="padding:12px 16px;background:#f8fafc;font-size:13px;color:#64748b;width:120px;">Negocio</td><td style="padding:12px 16px;font-size:14px;color:#1e293b;font-weight:600;">{business_name}</td></tr>
+<tr><td style="padding:12px 16px;background:#f8fafc;font-size:13px;color:#64748b;border-top:1px solid #e2e8f0;">Servicio</td><td style="padding:12px 16px;font-size:14px;color:#1e293b;border-top:1px solid #e2e8f0;">{service_name}</td></tr>
+<tr><td style="padding:12px 16px;background:#f8fafc;font-size:13px;color:#64748b;border-top:1px solid #e2e8f0;">Fecha</td><td style="padding:12px 16px;font-size:14px;color:#1e293b;border-top:1px solid #e2e8f0;">{date}</td></tr>
+<tr><td style="padding:12px 16px;background:#f8fafc;font-size:13px;color:#64748b;border-top:1px solid #e2e8f0;">Hora</td><td style="padding:12px 16px;font-size:14px;color:#1e293b;border-top:1px solid #e2e8f0;">{time}</td></tr>
+<tr><td style="padding:12px 16px;background:#f8fafc;font-size:13px;color:#64748b;border-top:1px solid #e2e8f0;">Profesional</td><td style="padding:12px 16px;font-size:14px;color:#1e293b;border-top:1px solid #e2e8f0;">{worker_name}</td></tr>
+</table>
+<p style="color:#64748b;font-size:14px;">Gracias por reservar con Bookvia.</p>"""
     
     return await send_email(
-        to=user_email,
-        subject=subject,
-        body=body,
-        template="booking_confirmation",
-        data={
-            "user_name": user_name,
-            "business_name": business_name,
-            "service_name": service_name,
-            "date": date,
-            "time": time,
-            "worker_name": worker_name
-        }
+        to=user_email, subject=subject,
+        body=f"Hola {user_name}, tu cita en {business_name} esta confirmada para el {date} a las {time}.",
+        html=email_html("Cita Confirmada", content), template="booking_confirmation",
+        data={"user_name": user_name, "business_name": business_name, "service_name": service_name, "date": date, "time": time, "worker_name": worker_name}
     )
 
 
@@ -267,39 +308,26 @@ async def send_booking_cancelled(
 ) -> str:
     """Send cancellation notification to user"""
     subject = f"Cita cancelada - {business_name}"
+    reason_row = f'<tr><td style="padding:12px 16px;background:#f8fafc;font-size:13px;color:#64748b;border-top:1px solid #e2e8f0;">Motivo</td><td style="padding:12px 16px;font-size:14px;color:#1e293b;border-top:1px solid #e2e8f0;">{reason}</td></tr>' if reason else ""
+    refund_text = f'<p style="color:#334155;font-size:14px;margin-top:16px;padding:12px;background:#fef3c7;border-radius:8px;">{refund_info}</p>' if refund_info else ""
     
-    reason_section = f"\nMotivo: {reason}" if reason else ""
-    refund_section = f"\n{refund_info}" if refund_info else ""
-    
-    body = f"""Hola {user_name},
+    content = f"""<p style="color:#334155;font-size:15px;line-height:1.6;">Hola <strong>{user_name}</strong>,</p>
+<p style="color:#334155;font-size:15px;line-height:1.6;">Tu cita ha sido cancelada:</p>
+<table width="100%" style="margin:16px 0;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;" cellpadding="0" cellspacing="0">
+<tr><td style="padding:12px 16px;background:#f8fafc;font-size:13px;color:#64748b;width:120px;">Negocio</td><td style="padding:12px 16px;font-size:14px;color:#1e293b;">{business_name}</td></tr>
+<tr><td style="padding:12px 16px;background:#f8fafc;font-size:13px;color:#64748b;border-top:1px solid #e2e8f0;">Servicio</td><td style="padding:12px 16px;font-size:14px;color:#1e293b;border-top:1px solid #e2e8f0;">{service_name}</td></tr>
+<tr><td style="padding:12px 16px;background:#f8fafc;font-size:13px;color:#64748b;border-top:1px solid #e2e8f0;">Fecha</td><td style="padding:12px 16px;font-size:14px;color:#1e293b;border-top:1px solid #e2e8f0;">{date}</td></tr>
+<tr><td style="padding:12px 16px;background:#f8fafc;font-size:13px;color:#64748b;border-top:1px solid #e2e8f0;">Hora</td><td style="padding:12px 16px;font-size:14px;color:#1e293b;border-top:1px solid #e2e8f0;">{time}</td></tr>
+{reason_row}
+</table>
+{refund_text}
+<p style="color:#64748b;font-size:14px;">Puedes reservar otra cita en cualquier momento en bookvia.app</p>"""
 
-Tu cita ha sido cancelada:
-
-Negocio: {business_name}
-Servicio: {service_name}
-Fecha: {date}
-Hora: {time}{reason_section}{refund_section}
-
-Puedes reservar otra cita en cualquier momento.
-
----
-Este es un correo automático, no responder.
-"""
-    
     return await send_email(
-        to=user_email,
-        subject=subject,
-        body=body,
-        template="booking_cancelled",
-        data={
-            "user_name": user_name,
-            "business_name": business_name,
-            "service_name": service_name,
-            "date": date,
-            "time": time,
-            "reason": reason,
-            "refund_info": refund_info
-        }
+        to=user_email, subject=subject,
+        body=f"Hola {user_name}, tu cita en {business_name} del {date} a las {time} ha sido cancelada.",
+        html=email_html("Cita Cancelada", content), template="booking_cancelled",
+        data={"user_name": user_name, "business_name": business_name, "date": date, "time": time, "reason": reason}
     )
 
 
