@@ -80,8 +80,18 @@ export default function LoginPage() {
       }
       toast.success(language === 'es' ? '¡Bienvenido!' : 'Welcome!');
     } catch (error) {
-      const message = error.response?.data?.detail || (language === 'es' ? 'Credenciales inválidas' : 'Invalid credentials');
-      toast.error(message);
+      const detail = error.response?.data?.detail;
+      if (detail === 'email_not_verified') {
+        toast.error(language === 'es' ? 'Debes verificar tu correo electrónico primero. Revisa tu bandeja de entrada.' : 'You must verify your email first. Check your inbox.');
+        // Offer to resend
+        try {
+          await authAPI.resendVerification({ email });
+          toast.info(language === 'es' ? 'Te hemos reenviado el correo de verificación' : 'We resent the verification email');
+        } catch {}
+      } else {
+        const message = detail || (language === 'es' ? 'Credenciales inválidas' : 'Invalid credentials');
+        toast.error(message);
+      }
     } finally {
       setLoading(false);
     }

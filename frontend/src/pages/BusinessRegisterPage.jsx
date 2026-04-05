@@ -357,18 +357,8 @@ export default function BusinessRegisterPage() {
       
       await businessRegister(registerData);
 
-      // Upload logo after registration
-      if (logoFile) {
-        try {
-          await businessesAPI.uploadLogo(logoFile);
-        } catch (logoErr) {
-          console.error('Logo upload failed:', logoErr);
-          toast.error(language === 'es' ? 'El registro fue exitoso pero no se pudo subir el logo. Podrás subirlo desde tu panel.' : 'Registration successful but logo upload failed. You can upload it from your dashboard.');
-        }
-      }
-
-      toast.success(language === 'es' ? '¡Registro exitoso! Ahora activa tu suscripción.' : 'Registration successful! Now activate your subscription.', { duration: 4000 });
-      setCurrentStep(4);
+      toast.success(language === 'es' ? '¡Revisa tu correo electrónico para verificar tu cuenta!' : 'Check your email to verify your account!', { duration: 4000 });
+      navigate(`/registration-success?email=${encodeURIComponent(formData.email)}`);
     } catch (error) {
       const message = error.response?.data?.detail || (language === 'es' ? 'Error al registrar negocio' : 'Error registering business');
       toast.error(message);

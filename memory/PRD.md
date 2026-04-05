@@ -49,8 +49,14 @@ Bookvia es una plataforma marketplace de reservas profesionales que conecta nego
 - [x] Acceso restringido solo al dueno (403 para admins)
 - [x] Pestana "Actividad" en dashboard con filtros, iconos por tipo, badges de actor, paginacion
 
-### Email
+### Email y Verificacion
 - [x] Resend integrado con dominio verificado (bookvia.app)
+- [x] Verificacion de email obligatoria al registrarse
+- [x] Pagina de exito post-registro (/registration-success)
+- [x] Pagina de verificacion (/verify-email?token=xxx)
+- [x] Reenvio de correo de verificacion
+- [x] Login bloqueado hasta verificar email (backwards compatible con usuarios antiguos)
+- [x] Logo con estrella en emails, boton "Comenzar ahora" para negocios
 
 ### Internacionalizacion
 - [x] Auto-capitalizacion, logo con estrella, deteccion de pais por IP
@@ -64,6 +70,7 @@ Bookvia es una plataforma marketplace de reservas profesionales que conecta nego
 ### P1
 - [ ] Recuperar contrasena (flujo completo con Resend)
 - [ ] Completar emails transaccionales (recordatorios, confirmaciones)
+- [ ] Agregar 6 permisos faltantes del administrador (Citas hoy, Confirmadas, Agenda, Equipo, Cierres, Suscripcion)
 
 ### P2
 - [ ] Recordatorios de citas (email 24h antes)

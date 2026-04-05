@@ -31,6 +31,8 @@ import TermsPage from '@/pages/TermsPage';
 import PrivacyPage from '@/pages/PrivacyPage';
 import AboutPage from '@/pages/AboutPage';
 import NotFoundPage from '@/pages/NotFoundPage';
+import RegistrationSuccessPage from '@/pages/RegistrationSuccessPage';
+import VerifyEmailPage from '@/pages/VerifyEmailPage';
 
 // SEO Pages
 import CountryPage from '@/pages/seo/CountryPage';
@@ -65,6 +67,8 @@ function App() {
               {/* Auth Pages */}
               <Route path="/login" element={<LoginPage />} />
               <Route path="/register" element={<RegisterPage />} />
+              <Route path="/registration-success" element={<RegistrationSuccessPage />} />
+              <Route path="/verify-email" element={<VerifyEmailPage />} />
               
               {/* User Pages */}
               <Route path="/dashboard" element={<Layout><UserDashboardPage /></Layout>} />

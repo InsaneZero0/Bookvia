@@ -105,8 +105,8 @@ export default function RegisterPage() {
     try {
       const { confirmPassword, ...registerData } = formData;
       await register(registerData);
-      toast.success(language === 'es' ? '¡Cuenta creada exitosamente!' : 'Account created successfully!');
-      navigate('/');
+      toast.success(language === 'es' ? '¡Revisa tu correo electrónico!' : 'Check your email!');
+      navigate(`/registration-success?email=${encodeURIComponent(formData.email)}`);
     } catch (error) {
       const message = error.response?.data?.detail || (language === 'es' ? 'Error al crear cuenta' : 'Error creating account');
       toast.error(message);
