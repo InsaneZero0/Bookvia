@@ -239,6 +239,7 @@ class UserResponse(BaseModel):
     full_name: str
     phone: str
     phone_verified: bool = False
+    email_verified: bool = False
     birth_date: Optional[str] = None
     gender: Optional[str] = None
     photo_url: Optional[str] = None
@@ -1129,6 +1130,8 @@ async def register_user(user: UserCreate):
         "country": user.country,
         "city": user.city,
         "phone_verified": False,
+        "email_verified": False,
+        "email_verification_token": generate_id(),
         "birth_date": user.birth_date,
         "gender": user.gender,
         "photo_url": user.photo_url,
@@ -1144,16 +1147,15 @@ async def register_user(user: UserCreate):
     }
     
     await db.users.insert_one(user_doc)
-    token = create_token(user_doc["id"], UserRole.USER, user.email)
     
-    # Send welcome email (non-blocking)
+    # Send verification email (non-blocking)
     try:
-        from services.email import send_welcome_email
-        await send_welcome_email(user.email, user.full_name)
+        from services.email import send_verification_email
+        await send_verification_email(user.email, user.full_name, user_doc["email_verification_token"])
     except Exception as e:
-        logger.warning(f"Failed to send welcome email: {e}")
+        logger.warning(f"Failed to send verification email: {e}")
     
-    return {"token": token, "user": UserResponse(**user_doc).model_dump()}
+    return {"message": "Registro exitoso. Revisa tu correo para verificar tu cuenta.", "email": user.email}
 
 @auth_router.post("/login", response_model=dict)
 async def login_user(credentials: UserLogin):
@@ -1164,6 +1166,10 @@ async def login_user(credentials: UserLogin):
     if not verify_password(credentials.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid credentials")
     
+    # Check email verification
+    if not user.get("email_verified", True):
+        raise HTTPException(status_code=403, detail="email_not_verified")
+    
     # Check suspension
     if user.get("suspended_until"):
         suspended_until = datetime.fromisoformat(user["suspended_until"])
@@ -1172,6 +1178,48 @@ async def login_user(credentials: UserLogin):
     
     token = create_token(user["id"], user["role"], user["email"])
     return {"token": token, "user": UserResponse(**user).model_dump()}
+
+@auth_router.get("/verify-email")
+async def verify_email(token: str):
+    """Verify user email address using token from email"""
+    user = await db.users.find_one({"email_verification_token": token})
+    if not user:
+        raise HTTPException(status_code=400, detail="Token de verificación inválido o expirado")
+    
+    if user.get("email_verified"):
+        return {"message": "Email ya verificado", "already_verified": True}
+    
+    await db.users.update_one(
+        {"id": user["id"]},
+        {"$set": {"email_verified": True}, "$unset": {"email_verification_token": ""}}
+    )
+    
+    return {"message": "Email verificado exitosamente", "already_verified": False}
+
+@auth_router.post("/resend-verification")
+async def resend_verification_email(data: dict):
+    """Resend verification email"""
+    email = data.get("email")
+    if not email:
+        raise HTTPException(status_code=400, detail="Email requerido")
+    
+    user = await db.users.find_one({"email": email})
+    if not user:
+        return {"message": "Si el correo existe, recibirás un email de verificación"}
+    
+    if user.get("email_verified"):
+        return {"message": "Email ya verificado"}
+    
+    new_token = generate_id()
+    await db.users.update_one({"id": user["id"]}, {"$set": {"email_verification_token": new_token}})
+    
+    try:
+        from services.email import send_verification_email
+        await send_verification_email(email, user.get("full_name", ""), new_token)
+    except Exception as e:
+        logger.warning(f"Failed to resend verification email: {e}")
+    
+    return {"message": "Si el correo existe, recibirás un email de verificación"}
 
 @auth_router.post("/phone/send-code")
 async def send_phone_code(request: PhoneVerifyRequest):

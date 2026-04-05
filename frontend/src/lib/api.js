@@ -53,7 +53,9 @@ api.interceptors.response.use(
       const isAuthEndpoint = requestUrl.includes('/auth/login') || 
                             requestUrl.includes('/auth/admin/login') ||
                             requestUrl.includes('/auth/business/login') ||
-                            requestUrl.includes('/auth/business/manager-login');
+                            requestUrl.includes('/auth/business/manager-login') ||
+                            requestUrl.includes('/auth/verify-email') ||
+                            requestUrl.includes('/auth/resend-verification');
       
       if (!isAuthEndpoint) {
         localStorage.removeItem('bookvia-token');
@@ -73,6 +75,8 @@ export const authAPI = {
   businessLogin: (data) => api.post('/auth/business/login', data),
   managerLogin: (data) => api.post('/auth/business/manager-login', data),
   getBusinessManagers: (email) => api.get(`/auth/business/managers?email=${encodeURIComponent(email)}`),
+  verifyEmail: (token) => api.get(`/auth/verify-email?token=${token}`),
+  resendVerification: (data) => api.post('/auth/resend-verification', data),
   adminLogin: (data) => api.post('/auth/admin/login', data),
   getMe: () => api.get('/auth/me'),
   sendPhoneCode: (phone) => api.post('/auth/phone/send-code', { phone }),
