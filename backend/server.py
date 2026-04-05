@@ -412,8 +412,37 @@ class WorkerResponse(BaseModel):
     schedule: Dict[str, Any] = {}  # {"0": {"is_available": true, "blocks": [{"start_time": "09:00", "end_time": "18:00"}]}}
     exceptions: List[Dict[str, Any]] = []  # WorkerException as dict
     active: bool = True
+    is_manager: bool = False
+    manager_permissions: Optional[Dict[str, bool]] = None
+    manager_designated_at: Optional[str] = None
+    has_manager_pin: bool = False
     created_at: Optional[str] = None
     deactivated_at: Optional[str] = None
+
+# ============================== Manager / PIN Models ==============================
+
+DEFAULT_MANAGER_PERMISSIONS = {
+    "complete_bookings": True,
+    "reschedule_bookings": True,
+    "cancel_bookings": False,
+    "block_clients": False,
+    "view_client_data": False,
+    "edit_services": False,
+    "edit_profile": False,
+    "view_reports": False,
+}
+
+class PinCreate(BaseModel):
+    pin: str  # 4-6 digits
+
+class PinVerify(BaseModel):
+    pin: str
+
+class ManagerDesignate(BaseModel):
+    permissions: Dict[str, bool] = {}
+
+class ManagerPermissionsUpdate(BaseModel):
+    permissions: Dict[str, bool]
 
 class WorkerScheduleUpdate(BaseModel):
     """Update schedule for multiple days"""
@@ -1983,6 +2012,8 @@ async def get_workers_by_business(business_id: str, service_id: Optional[str] = 
     # Filter by service_id: include workers who have the service in their service_ids or have no service_ids set (legacy)
     if service_id:
         workers = [w for w in workers if not w.get("service_ids") or service_id in w.get("service_ids", [])]
+    for w in workers:
+        w["has_manager_pin"] = bool(w.get("manager_pin_hash"))
     return [WorkerResponse(**w) for w in workers]
 
 @businesses_router.get("/my/workers/{worker_id}", response_model=WorkerResponse)
@@ -1992,6 +2023,7 @@ async def get_worker(worker_id: str, token_data: TokenData = Depends(require_bus
     worker = await db.workers.find_one({"id": worker_id, "business_id": user.get("business_id")}, {"_id": 0})
     if not worker:
         raise HTTPException(status_code=404, detail="Worker not found")
+    worker["has_manager_pin"] = bool(worker.get("manager_pin_hash"))
     return WorkerResponse(**worker)
 
 @businesses_router.put("/my/workers/{worker_id}/services")
@@ -2212,6 +2244,116 @@ async def remove_worker_exception(
     )
     
     return {"message": "Exception removed"}
+
+
+# ========================== OWNER PIN & MANAGER ROUTES ==========================
+
+@businesses_router.post("/me/pin")
+async def set_owner_pin(data: PinCreate, token_data: TokenData = Depends(require_business)):
+    """Set or update the owner's security PIN (4-6 digits)"""
+    if not data.pin.isdigit() or not (4 <= len(data.pin) <= 6):
+        raise HTTPException(status_code=400, detail="PIN must be 4-6 digits")
+    
+    user = await db.users.find_one({"id": token_data.user_id})
+    pin_hash = hash_password(data.pin)
+    await db.businesses.update_one(
+        {"id": user["business_id"]},
+        {"$set": {"owner_pin_hash": pin_hash}}
+    )
+    return {"message": "PIN created successfully"}
+
+@businesses_router.post("/me/pin/verify")
+async def verify_owner_pin(data: PinVerify, token_data: TokenData = Depends(require_business)):
+    """Verify the owner's PIN"""
+    user = await db.users.find_one({"id": token_data.user_id})
+    business = await db.businesses.find_one({"id": user["business_id"]})
+    pin_hash = business.get("owner_pin_hash")
+    if not pin_hash:
+        raise HTTPException(status_code=400, detail="No PIN configured")
+    if not verify_password(data.pin, pin_hash):
+        raise HTTPException(status_code=401, detail="Incorrect PIN")
+    return {"verified": True}
+
+@businesses_router.get("/me/pin/status")
+async def get_pin_status(token_data: TokenData = Depends(require_business)):
+    """Check if owner has a PIN configured"""
+    user = await db.users.find_one({"id": token_data.user_id})
+    business = await db.businesses.find_one({"id": user["business_id"]})
+    return {"has_pin": bool(business.get("owner_pin_hash"))}
+
+@businesses_router.put("/my/workers/{worker_id}/manager")
+async def designate_manager(worker_id: str, data: ManagerDesignate, token_data: TokenData = Depends(require_business)):
+    """Designate a worker as manager with custom permissions"""
+    user = await db.users.find_one({"id": token_data.user_id})
+    business_id = user.get("business_id")
+    
+    worker = await db.workers.find_one({"id": worker_id, "business_id": business_id})
+    if not worker:
+        raise HTTPException(status_code=404, detail="Worker not found")
+    
+    # Check max managers (limit 2)
+    current_managers = await db.workers.count_documents({"business_id": business_id, "is_manager": True, "id": {"$ne": worker_id}})
+    if current_managers >= 2:
+        raise HTTPException(status_code=400, detail="Maximum 2 managers allowed")
+    
+    # Merge provided permissions with defaults
+    permissions = {**DEFAULT_MANAGER_PERMISSIONS, **data.permissions}
+    
+    await db.workers.update_one(
+        {"id": worker_id},
+        {"$set": {
+            "is_manager": True,
+            "manager_permissions": permissions,
+            "manager_designated_at": datetime.now(timezone.utc).isoformat(),
+            "manager_designated_by": token_data.user_id,
+        }}
+    )
+    
+    updated = await db.workers.find_one({"id": worker_id}, {"_id": 0})
+    updated["has_manager_pin"] = bool(updated.get("manager_pin_hash"))
+    return WorkerResponse(**updated)
+
+@businesses_router.put("/my/workers/{worker_id}/manager/permissions")
+async def update_manager_permissions(worker_id: str, data: ManagerPermissionsUpdate, token_data: TokenData = Depends(require_business)):
+    """Update a manager's permissions"""
+    user = await db.users.find_one({"id": token_data.user_id})
+    worker = await db.workers.find_one({"id": worker_id, "business_id": user.get("business_id"), "is_manager": True})
+    if not worker:
+        raise HTTPException(status_code=404, detail="Manager not found")
+    
+    permissions = {**worker.get("manager_permissions", DEFAULT_MANAGER_PERMISSIONS), **data.permissions}
+    await db.workers.update_one({"id": worker_id}, {"$set": {"manager_permissions": permissions}})
+    return {"message": "Permissions updated"}
+
+@businesses_router.delete("/my/workers/{worker_id}/manager")
+async def remove_manager(worker_id: str, token_data: TokenData = Depends(require_business)):
+    """Remove manager role from a worker"""
+    user = await db.users.find_one({"id": token_data.user_id})
+    worker = await db.workers.find_one({"id": worker_id, "business_id": user.get("business_id")})
+    if not worker:
+        raise HTTPException(status_code=404, detail="Worker not found")
+    
+    await db.workers.update_one(
+        {"id": worker_id},
+        {"$set": {"is_manager": False}, "$unset": {"manager_pin_hash": "", "manager_permissions": "", "manager_designated_at": "", "manager_designated_by": ""}}
+    )
+    return {"message": "Manager role removed"}
+
+@businesses_router.post("/my/workers/{worker_id}/manager/pin")
+async def set_manager_pin(worker_id: str, data: PinCreate, token_data: TokenData = Depends(require_business)):
+    """Set or reset a manager's PIN (can be called by owner or manager themselves)"""
+    if not data.pin.isdigit() or not (4 <= len(data.pin) <= 6):
+        raise HTTPException(status_code=400, detail="PIN must be 4-6 digits")
+    
+    user = await db.users.find_one({"id": token_data.user_id})
+    worker = await db.workers.find_one({"id": worker_id, "business_id": user.get("business_id"), "is_manager": True})
+    if not worker:
+        raise HTTPException(status_code=404, detail="Manager not found")
+    
+    pin_hash = hash_password(data.pin)
+    await db.workers.update_one({"id": worker_id}, {"$set": {"manager_pin_hash": pin_hash}})
+    return {"message": "Manager PIN set successfully"}
+
 
 # ========================== SERVICE ROUTES ==========================
 

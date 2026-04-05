@@ -54,6 +54,12 @@ export default function BusinessDashboardPage() {
   const [rescheduleLoading, setRescheduleLoading] = useState(false);
   const [slotsLoading, setSlotsLoading] = useState(false);
   const [bookingDetail, setBookingDetail] = useState(null);
+  const [managerModal, setManagerModal] = useState({ open: false, worker: null });
+  const [managerPermissions, setManagerPermissions] = useState({});
+  const [pinModal, setPinModal] = useState({ open: false, type: null }); // type: 'owner_setup' | 'manager_pin'
+  const [pinValue, setPinValue] = useState('');
+  const [pinConfirm, setPinConfirm] = useState('');
+  const [ownerHasPin, setOwnerHasPin] = useState(false);
   useEffect(() => {
     if (!isAuthenticated || !isBusiness) {
       navigate('/business/login');
@@ -88,6 +94,11 @@ export default function BusinessDashboardPage() {
         const subRes = await businessesAPI.getSubscriptionStatus();
         setSubscriptionData(subRes.data);
       } catch { setSubscriptionData(null); }
+      // Load pin status
+      try {
+        const pinRes = await businessesAPI.getPinStatus();
+        setOwnerHasPin(pinRes.data?.has_pin || false);
+      } catch { setOwnerHasPin(false); }
     } catch (error) {
       console.error('Error loading dashboard:', error);
       const detail = error?.response?.data?.detail || error?.message || 'Error desconocido';
@@ -247,6 +258,105 @@ export default function BusinessDashboardPage() {
     } finally {
       setCancelingSubscription(false);
     }
+
+  // ── Manager & PIN Functions ──
+  const PERMISSION_LABELS = {
+    complete_bookings: { es: 'Completar/confirmar citas', en: 'Complete/confirm bookings' },
+    reschedule_bookings: { es: 'Reagendar citas', en: 'Reschedule bookings' },
+    cancel_bookings: { es: 'Cancelar citas', en: 'Cancel bookings' },
+    block_clients: { es: 'Bloquear clientes', en: 'Block clients' },
+    view_client_data: { es: 'Ver datos de contacto del cliente', en: 'View client contact data' },
+    edit_services: { es: 'Editar servicios y precios', en: 'Edit services & prices' },
+    edit_profile: { es: 'Editar perfil del negocio', en: 'Edit business profile' },
+    view_reports: { es: 'Ver ingresos y reportes', en: 'View income & reports' },
+  };
+
+  const PERMISSION_GROUPS = {
+    es: { 'Citas': ['complete_bookings', 'reschedule_bookings', 'cancel_bookings'], 'Clientes': ['block_clients', 'view_client_data'], 'Negocio': ['edit_services', 'edit_profile', 'view_reports'] },
+    en: { 'Bookings': ['complete_bookings', 'reschedule_bookings', 'cancel_bookings'], 'Clients': ['block_clients', 'view_client_data'], 'Business': ['edit_services', 'edit_profile', 'view_reports'] },
+  };
+
+  const openManagerModal = (worker) => {
+    setManagerPermissions(worker.manager_permissions || {
+      complete_bookings: true, reschedule_bookings: true, cancel_bookings: false,
+      block_clients: false, view_client_data: false, edit_services: false, edit_profile: false, view_reports: false,
+    });
+    setManagerModal({ open: true, worker });
+  };
+
+  const handleDesignateManager = async () => {
+    try {
+      await businessesAPI.designateManager(managerModal.worker.id, managerPermissions);
+      toast.success(language === 'es' ? `${managerModal.worker.name} designado como gerente` : `${managerModal.worker.name} designated as manager`);
+      setManagerModal({ open: false, worker: null });
+      loadDashboard();
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || 'Error');
+    }
+  };
+
+  const handleUpdatePermissions = async () => {
+    try {
+      await businessesAPI.updateManagerPermissions(managerModal.worker.id, managerPermissions);
+      toast.success(language === 'es' ? 'Permisos actualizados' : 'Permissions updated');
+      setManagerModal({ open: false, worker: null });
+      loadDashboard();
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || 'Error');
+    }
+  };
+
+  const handleRemoveManager = async (worker) => {
+    if (!window.confirm(language === 'es' ? `¿Quitar a ${worker.name} como gerente?` : `Remove ${worker.name} as manager?`)) return;
+    try {
+      await businessesAPI.removeManager(worker.id);
+      toast.success(language === 'es' ? 'Rol de gerente removido' : 'Manager role removed');
+      loadDashboard();
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || 'Error');
+    }
+  };
+
+  const handleSaveOwnerPin = async () => {
+    if (pinValue.length < 4 || pinValue.length > 6 || !/^\d+$/.test(pinValue)) {
+      toast.error(language === 'es' ? 'El PIN debe ser de 4-6 dígitos' : 'PIN must be 4-6 digits');
+      return;
+    }
+    if (pinValue !== pinConfirm) {
+      toast.error(language === 'es' ? 'Los PINs no coinciden' : 'PINs do not match');
+      return;
+    }
+    try {
+      await businessesAPI.setOwnerPin(pinValue);
+      toast.success(language === 'es' ? 'PIN de seguridad configurado' : 'Security PIN set');
+      setPinModal({ open: false, type: null });
+      setPinValue(''); setPinConfirm('');
+      setOwnerHasPin(true);
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || 'Error');
+    }
+  };
+
+  const handleSetManagerPin = async () => {
+    if (pinValue.length < 4 || pinValue.length > 6 || !/^\d+$/.test(pinValue)) {
+      toast.error(language === 'es' ? 'El PIN debe ser de 4-6 dígitos' : 'PIN must be 4-6 digits');
+      return;
+    }
+    if (pinValue !== pinConfirm) {
+      toast.error(language === 'es' ? 'Los PINs no coinciden' : 'PINs do not match');
+      return;
+    }
+    try {
+      await businessesAPI.setManagerPin(pinModal.workerId, pinValue);
+      toast.success(language === 'es' ? 'PIN del gerente configurado' : 'Manager PIN set');
+      setPinModal({ open: false, type: null });
+      setPinValue(''); setPinConfirm('');
+      loadDashboard();
+    } catch (err) {
+      toast.error(err?.response?.data?.detail || 'Error');
+    }
+  };
+
   };
 
   const handleToggleClosure = async (date) => {

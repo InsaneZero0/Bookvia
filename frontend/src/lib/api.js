@@ -161,6 +161,15 @@ export const businessesAPI = {
   getBlacklist: () => api.get('/businesses/me/blacklist'),
   addToBlacklist: (data) => api.post('/businesses/me/blacklist', data),
   removeFromBlacklist: (entryId) => api.delete(`/businesses/me/blacklist/${entryId}`),
+  // Owner PIN
+  setOwnerPin: (pin) => api.post('/businesses/me/pin', { pin }),
+  verifyOwnerPin: (pin) => api.post('/businesses/me/pin/verify', { pin }),
+  getPinStatus: () => api.get('/businesses/me/pin/status'),
+  // Manager
+  designateManager: (workerId, permissions) => api.put(`/businesses/my/workers/${workerId}/manager`, { permissions }),
+  removeManager: (workerId) => api.delete(`/businesses/my/workers/${workerId}/manager`),
+  updateManagerPermissions: (workerId, permissions) => api.put(`/businesses/my/workers/${workerId}/manager/permissions`, { permissions }),
+  setManagerPin: (workerId, pin) => api.post(`/businesses/my/workers/${workerId}/manager/pin`, { pin }),
 };
 
 // Services API
