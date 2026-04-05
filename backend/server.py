@@ -942,6 +942,40 @@ async def create_audit_log(
     logger.info(f"[AUDIT] {admin_email} - {action} - {target_type}:{target_id}")
     return audit_log
 
+# ── Business Activity Log Helper ──
+async def create_business_activity(
+    business_id: str,
+    token_data: TokenData,
+    action: str,
+    target_type: str,
+    target_id: str,
+    details: dict = None,
+):
+    """Log business actions by owner or administrator for audit trail"""
+    if token_data.is_manager and token_data.worker_id:
+        worker = await db.workers.find_one({"id": token_data.worker_id}, {"_id": 0, "name": 1})
+        actor_type = "admin"
+        actor_name = worker["name"] if worker else "Administrador"
+    else:
+        actor_type = "owner"
+        actor_name = "Dueño"
+
+    log_entry = {
+        "id": generate_id(),
+        "business_id": business_id,
+        "actor_type": actor_type,
+        "actor_name": actor_name,
+        "worker_id": token_data.worker_id,
+        "action": action,
+        "target_type": target_type,
+        "target_id": target_id,
+        "details": details or {},
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    await db.business_activity_logs.insert_one(log_entry)
+    logger.info(f"[BIZ-ACTIVITY] {actor_name} ({actor_type}) - {action} - {target_type}:{target_id}")
+    return log_entry
+
 # ========================== LEDGER HELPERS ==========================
 
 def amount_to_cents(amount: float) -> int:
@@ -2390,6 +2424,13 @@ async def designate_manager(worker_id: str, data: ManagerDesignate, token_data: 
     
     updated = await db.workers.find_one({"id": worker_id}, {"_id": 0})
     updated["has_manager_pin"] = bool(updated.get("manager_pin_hash"))
+    
+    # Log activity
+    await create_business_activity(
+        business_id, token_data, "designate_admin", "worker", worker_id,
+        {"worker_name": worker.get("name", ""), "permissions": permissions}
+    )
+    
     return WorkerResponse(**updated)
 
 @businesses_router.put("/my/workers/{worker_id}/manager/permissions")
@@ -2402,6 +2443,13 @@ async def update_manager_permissions(worker_id: str, data: ManagerPermissionsUpd
     
     permissions = {**worker.get("manager_permissions", DEFAULT_MANAGER_PERMISSIONS), **data.permissions}
     await db.workers.update_one({"id": worker_id}, {"$set": {"manager_permissions": permissions}})
+    
+    # Log activity
+    await create_business_activity(
+        user.get("business_id"), token_data, "update_permissions", "worker", worker_id,
+        {"worker_name": worker.get("name", ""), "permissions": permissions}
+    )
+    
     return {"message": "Permissions updated"}
 
 @businesses_router.delete("/my/workers/{worker_id}/manager")
@@ -2416,6 +2464,13 @@ async def remove_manager(worker_id: str, token_data: TokenData = Depends(require
         {"id": worker_id},
         {"$set": {"is_manager": False}, "$unset": {"manager_pin_hash": "", "manager_permissions": "", "manager_designated_at": "", "manager_designated_by": ""}}
     )
+    
+    # Log activity
+    await create_business_activity(
+        user.get("business_id"), token_data, "remove_admin", "worker", worker_id,
+        {"worker_name": worker.get("name", "")}
+    )
+    
     return {"message": "Manager role removed"}
 
 @businesses_router.post("/my/workers/{worker_id}/manager/pin")
@@ -2432,6 +2487,36 @@ async def set_manager_pin(worker_id: str, data: PinCreate, token_data: TokenData
     pin_hash = hash_password(data.pin)
     await db.workers.update_one({"id": worker_id}, {"$set": {"manager_pin_hash": pin_hash}})
     return {"message": "Manager PIN set successfully"}
+
+@businesses_router.get("/my/activity-log")
+async def get_business_activity_log(
+    page: int = 1,
+    limit: int = 30,
+    actor_type: Optional[str] = None,
+    action: Optional[str] = None,
+    token_data: TokenData = Depends(require_business)
+):
+    """Get business activity log (owner only)"""
+    if token_data.is_manager:
+        raise HTTPException(status_code=403, detail="Solo el dueño puede ver el historial de actividad")
+    
+    user = await db.users.find_one({"id": token_data.user_id})
+    business_id = user.get("business_id")
+    
+    query = {"business_id": business_id}
+    if actor_type:
+        query["actor_type"] = actor_type
+    if action:
+        query["action"] = action
+    
+    total = await db.business_activity_logs.count_documents(query)
+    skip = (page - 1) * limit
+    
+    logs = await db.business_activity_logs.find(
+        query, {"_id": 0}
+    ).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
+    
+    return {"logs": logs, "total": total, "page": page, "pages": (total + limit - 1) // limit if total > 0 else 1}
 
 
 # ========================== SERVICE ROUTES ==========================
@@ -3234,6 +3319,12 @@ async def reschedule_booking_by_business(
     
     logger.info(f"Business rescheduled booking {booking_id}: {old_date} {old_time} -> {req.new_date} {req.new_time}")
     
+    # Log activity
+    await create_business_activity(
+        booking["business_id"], token_data, "reschedule_booking", "booking", booking_id,
+        {"client_name": booking.get("client_name", ""), "service_name": booking.get("service_name", ""), "old_date": old_date, "old_time": old_time, "new_date": req.new_date, "new_time": req.new_time}
+    )
+    
     return {
         "message": "Cita reagendada exitosamente",
         "new_date": req.new_date,
@@ -3296,6 +3387,12 @@ async def complete_booking(booking_id: str, token_data: TokenData = Depends(requ
         "Tu cita ha sido completada. Dejanos tu opinion!",
         "review",
         {"booking_id": booking_id, "business_id": booking["business_id"]}
+    )
+    
+    # Log activity
+    await create_business_activity(
+        booking["business_id"], token_data, "complete_booking", "booking", booking_id,
+        {"client_name": booking.get("client_name", ""), "service_name": booking.get("service_name", ""), "date": booking.get("date", ""), "time": booking.get("time", "")}
     )
     
     return {"message": "Booking completed"}
@@ -3981,6 +4078,12 @@ async def cancel_booking_by_business(
         f"Tu cita del {booking['date']} a las {booking['time']} fue cancelada. Se procesará un reembolso completo.",
         "system",
         {"booking_id": booking_id}
+    )
+    
+    # Log activity
+    await create_business_activity(
+        booking["business_id"], token_data, "cancel_booking", "booking", booking_id,
+        {"client_name": booking.get("client_name", ""), "service_name": booking.get("service_name", ""), "date": booking.get("date", ""), "time": booking.get("time", ""), "reason": cancel_req.reason}
     )
     
     return {

@@ -24,7 +24,8 @@ import {
   Calendar as CalendarIcon, DollarSign, Star, Users, Clock, CheckCircle2,
   XCircle, AlertTriangle, TrendingUp, Settings, UserCog, Image, Upload,
   Trash2, Eye, Plus, Pencil, BarChart3, Briefcase, ArrowUpRight,
-  Ban, CalendarOff, CreditCard, Shield, RefreshCw, Mail, Phone
+  Ban, CalendarOff, CreditCard, Shield, RefreshCw, Mail, Phone, History,
+  ChevronLeft, ChevronRight, Filter
 } from 'lucide-react';
 
 export default function BusinessDashboardPage() {
@@ -61,6 +62,12 @@ export default function BusinessDashboardPage() {
   const [pinValue, setPinValue] = useState('');
   const [pinConfirm, setPinConfirm] = useState('');
   const [ownerHasPin, setOwnerHasPin] = useState(false);
+  const [activityLogs, setActivityLogs] = useState([]);
+  const [activityPage, setActivityPage] = useState(1);
+  const [activityTotal, setActivityTotal] = useState(0);
+  const [activityPages, setActivityPages] = useState(1);
+  const [activityFilter, setActivityFilter] = useState('all');
+  const [activityLoading, setActivityLoading] = useState(false);
   useEffect(() => {
     if (!isAuthenticated || !isBusiness) {
       navigate('/business/login');
@@ -74,6 +81,12 @@ export default function BusinessDashboardPage() {
       loadDayBookings();
     }
   }, [selectedDate, dashboardData]);
+
+  useEffect(() => {
+    if (activeTab === 'activity' && !isManager) {
+      loadActivityLogs(1, activityFilter);
+    }
+  }, [activeTab]);
 
   const loadDashboard = async () => {
     try {
@@ -118,6 +131,25 @@ export default function BusinessDashboardPage() {
     } catch (error) {
       console.error('Error loading bookings:', error);
       setDayBookings([]);
+    }
+  };
+
+  const loadActivityLogs = async (page = 1, filter = 'all') => {
+    setActivityLoading(true);
+    try {
+      const params = { page, limit: 20 };
+      if (filter === 'admin') params.actor_type = 'admin';
+      if (filter === 'owner') params.actor_type = 'owner';
+      const res = await businessesAPI.getActivityLog(params);
+      setActivityLogs(res.data?.logs || []);
+      setActivityTotal(res.data?.total || 0);
+      setActivityPages(res.data?.pages || 1);
+      setActivityPage(page);
+    } catch (error) {
+      console.error('Error loading activity logs:', error);
+      setActivityLogs([]);
+    } finally {
+      setActivityLoading(false);
     }
   };
 
@@ -534,6 +566,7 @@ export default function BusinessDashboardPage() {
             { value: 'closures', show: !isManager, icon: CalendarOff, label: language === 'es' ? 'Cierres' : 'Closures' },
             { value: 'photos', show: hasPermission('edit_profile'), icon: Image, label: language === 'es' ? 'Fotos' : 'Photos' },
             { value: 'subscription', show: !isManager, icon: CreditCard, label: language === 'es' ? 'Suscripcion' : 'Subscription' },
+            { value: 'activity', show: !isManager, icon: History, label: language === 'es' ? 'Actividad' : 'Activity' },
           ].filter(tab => tab.show);
           const colCount = visibleTabs.length;
           return (
@@ -1076,6 +1109,115 @@ export default function BusinessDashboardPage() {
                       <CreditCard className="h-4 w-4 mr-2" />
                       {language === 'es' ? 'Activar suscripcion' : 'Activate subscription'}
                     </Button>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* ── Activity Log Tab ────────────────────────── */}
+          <TabsContent value="activity" className="mt-6">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between pb-3">
+                <CardTitle className="text-base font-heading flex items-center gap-2">
+                  <History className="h-4 w-4 text-muted-foreground" />
+                  {language === 'es' ? 'Historial de actividad' : 'Activity log'}
+                </CardTitle>
+                <div className="flex items-center gap-2">
+                  <select
+                    className="text-xs border rounded-md px-2 py-1.5 bg-background"
+                    value={activityFilter}
+                    onChange={(e) => { setActivityFilter(e.target.value); loadActivityLogs(1, e.target.value); }}
+                    data-testid="activity-filter"
+                  >
+                    <option value="all">{language === 'es' ? 'Todos' : 'All'}</option>
+                    <option value="owner">{language === 'es' ? 'Dueño' : 'Owner'}</option>
+                    <option value="admin">{language === 'es' ? 'Administradores' : 'Administrators'}</option>
+                  </select>
+                  <Button size="sm" variant="outline" onClick={() => loadActivityLogs(1, activityFilter)} data-testid="refresh-activity-btn">
+                    <RefreshCw className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {activityLoading ? (
+                  <div className="space-y-3">
+                    {[1,2,3].map(i => <Skeleton key={i} className="h-16 w-full rounded-lg" />)}
+                  </div>
+                ) : activityLogs.length > 0 ? (
+                  <>
+                    <div className="space-y-2">
+                      {activityLogs.map(log => {
+                        const actionLabels = {
+                          complete_booking: { es: 'Completó cita', en: 'Completed booking', icon: CheckCircle2, color: 'text-green-600 bg-green-50' },
+                          cancel_booking: { es: 'Canceló cita', en: 'Cancelled booking', icon: XCircle, color: 'text-red-600 bg-red-50' },
+                          reschedule_booking: { es: 'Reagendó cita', en: 'Rescheduled booking', icon: RefreshCw, color: 'text-blue-600 bg-blue-50' },
+                          designate_admin: { es: 'Designó administrador', en: 'Designated administrator', icon: UserCog, color: 'text-amber-600 bg-amber-50' },
+                          remove_admin: { es: 'Removió administrador', en: 'Removed administrator', icon: XCircle, color: 'text-orange-600 bg-orange-50' },
+                          update_permissions: { es: 'Actualizó permisos', en: 'Updated permissions', icon: Shield, color: 'text-violet-600 bg-violet-50' },
+                        };
+                        const meta = actionLabels[log.action] || { es: log.action, en: log.action, icon: History, color: 'text-gray-600 bg-gray-50' };
+                        const IconComp = meta.icon;
+                        const dt = new Date(log.created_at);
+                        const timeStr = dt.toLocaleTimeString(language === 'es' ? 'es-MX' : 'en-US', { hour: '2-digit', minute: '2-digit' });
+                        const dateStr = dt.toLocaleDateString(language === 'es' ? 'es-MX' : 'en-US', { day: 'numeric', month: 'short' });
+
+                        return (
+                          <div key={log.id} className="flex items-start gap-3 p-3 rounded-lg border border-border/50 hover:bg-muted/20 transition-colors" data-testid={`activity-log-${log.id}`}>
+                            <div className={`p-2 rounded-lg shrink-0 ${meta.color}`}>
+                              <IconComp className="h-4 w-4" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-sm font-medium">{meta[language] || meta.es}</span>
+                                <Badge variant={log.actor_type === 'admin' ? 'outline' : 'secondary'} className="text-[10px]">
+                                  {log.actor_type === 'admin' ? (
+                                    <><UserCog className="h-2.5 w-2.5 mr-0.5" />{log.actor_name}</>
+                                  ) : (
+                                    <><Shield className="h-2.5 w-2.5 mr-0.5" />{language === 'es' ? 'Dueño' : 'Owner'}</>
+                                  )}
+                                </Badge>
+                              </div>
+                              {/* Details line */}
+                              <p className="text-xs text-muted-foreground mt-0.5">
+                                {log.details?.client_name && `${log.details.client_name} — `}
+                                {log.details?.service_name && `${log.details.service_name} `}
+                                {log.details?.date && `(${new Date(log.details.date + 'T12:00:00').toLocaleDateString(language === 'es' ? 'es-MX' : 'en-US', { day: 'numeric', month: 'short' })})`}
+                                {log.details?.worker_name && !log.details?.client_name && log.details.worker_name}
+                                {log.action === 'reschedule_booking' && log.details?.old_date && (
+                                  <> → {log.details.new_date} {log.details.new_time}</>
+                                )}
+                                {log.details?.reason && ` — ${log.details.reason}`}
+                              </p>
+                            </div>
+                            <div className="text-right shrink-0">
+                              <p className="text-xs text-muted-foreground">{dateStr}</p>
+                              <p className="text-[10px] text-muted-foreground/70">{timeStr}</p>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {/* Pagination */}
+                    {activityPages > 1 && (
+                      <div className="flex items-center justify-center gap-2 mt-4 pt-3 border-t">
+                        <Button size="sm" variant="outline" disabled={activityPage <= 1} onClick={() => loadActivityLogs(activityPage - 1, activityFilter)} data-testid="activity-prev-page">
+                          <ChevronLeft className="h-4 w-4" />
+                        </Button>
+                        <span className="text-xs text-muted-foreground">{activityPage} / {activityPages}</span>
+                        <Button size="sm" variant="outline" disabled={activityPage >= activityPages} onClick={() => loadActivityLogs(activityPage + 1, activityFilter)} data-testid="activity-next-page">
+                          <ChevronRight className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="text-center py-12">
+                    <History className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
+                    <p className="text-sm text-muted-foreground">{language === 'es' ? 'No hay actividad registrada aún' : 'No activity recorded yet'}</p>
+                    <p className="text-xs text-muted-foreground/60 mt-1">
+                      {language === 'es' ? 'Las acciones de dueños y administradores aparecerán aquí' : 'Owner and administrator actions will appear here'}
+                    </p>
                   </div>
                 )}
               </CardContent>

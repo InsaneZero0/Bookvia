@@ -173,6 +173,7 @@ export const businessesAPI = {
   removeManager: (workerId) => api.delete(`/businesses/my/workers/${workerId}/manager`),
   updateManagerPermissions: (workerId, permissions) => api.put(`/businesses/my/workers/${workerId}/manager/permissions`, { permissions }),
   setManagerPin: (workerId, pin) => api.post(`/businesses/my/workers/${workerId}/manager/pin`, { pin }),
+  getActivityLog: (params = {}) => api.get('/businesses/my/activity-log', { params }),
 };
 
 // Services API
