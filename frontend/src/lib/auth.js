@@ -13,10 +13,12 @@ export function AuthProvider({ children }) {
     const token = localStorage.getItem('bookvia-token');
     const savedUser = localStorage.getItem('bookvia-user');
     const savedBusiness = localStorage.getItem('bookvia-business');
+    const savedManager = localStorage.getItem('bookvia-manager');
     
     if (token && savedUser) {
       try {
-        setUser(JSON.parse(savedUser));
+        const parsedUser = JSON.parse(savedUser);
+        setUser(parsedUser);
         if (savedBusiness) {
           setBusiness(JSON.parse(savedBusiness));
         }
@@ -60,8 +62,33 @@ export function AuthProvider({ children }) {
     
     localStorage.setItem('bookvia-token', token);
     localStorage.setItem('bookvia-business', JSON.stringify(businessData));
-    // Include business_id in user so ServiceManagementPage can use user.business_id
-    const userData = { role: 'business', email, business_id: businessData.id };
+    localStorage.removeItem('bookvia-manager');
+    const userData = { role: 'business', email, business_id: businessData.id, is_manager: false };
+    localStorage.setItem('bookvia-user', JSON.stringify(userData));
+    
+    setBusiness(businessData);
+    setUser(userData);
+    setIsAuthenticated(true);
+    
+    return businessData;
+  };
+
+  const managerLogin = async (businessEmail, workerId, pin) => {
+    const response = await authAPI.managerLogin({ business_email: businessEmail, worker_id: workerId, pin });
+    const { token, business: businessData, manager } = response.data;
+    
+    localStorage.setItem('bookvia-token', token);
+    localStorage.setItem('bookvia-business', JSON.stringify(businessData));
+    localStorage.setItem('bookvia-manager', JSON.stringify(manager));
+    const userData = {
+      role: 'business',
+      email: businessEmail,
+      business_id: businessData.id,
+      is_manager: true,
+      manager_permissions: manager.permissions,
+      worker_id: manager.worker_id,
+      worker_name: manager.worker_name,
+    };
     localStorage.setItem('bookvia-user', JSON.stringify(userData));
     
     setBusiness(businessData);
@@ -111,6 +138,7 @@ export function AuthProvider({ children }) {
     localStorage.removeItem('bookvia-token');
     localStorage.removeItem('bookvia-user');
     localStorage.removeItem('bookvia-business');
+    localStorage.removeItem('bookvia-manager');
     setUser(null);
     setBusiness(null);
     setIsAuthenticated(false);
@@ -137,6 +165,13 @@ export function AuthProvider({ children }) {
   const isAdmin = user?.role === 'admin';
   const isBusiness = user?.role === 'business';
   const isUser = user?.role === 'user';
+  const isManager = !!user?.is_manager;
+  const managerPermissions = user?.manager_permissions || {};
+
+  const hasPermission = (permission) => {
+    if (!isManager) return true; // Owner has all permissions
+    return !!managerPermissions[permission];
+  };
 
   return (
     <AuthContext.Provider value={{
@@ -147,9 +182,13 @@ export function AuthProvider({ children }) {
       isAdmin,
       isBusiness,
       isUser,
+      isManager,
+      managerPermissions,
+      hasPermission,
       login,
       register,
       businessLogin,
+      managerLogin,
       businessRegister,
       adminLogin,
       logout,

@@ -212,6 +212,8 @@ class TokenData(BaseModel):
     user_id: str
     role: UserRole
     email: str
+    worker_id: Optional[str] = None
+    is_manager: bool = False
 
 # User Models
 class UserCreate(BaseModel):
@@ -436,6 +438,11 @@ class PinCreate(BaseModel):
     pin: str  # 4-6 digits
 
 class PinVerify(BaseModel):
+    pin: str
+
+class ManagerLogin(BaseModel):
+    business_email: EmailStr
+    worker_id: str
     pin: str
 
 class ManagerDesignate(BaseModel):
@@ -781,13 +788,16 @@ def hash_password(password: str) -> str:
 def verify_password(password: str, hashed: str) -> bool:
     return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
 
-def create_token(user_id: str, role: str, email: str) -> str:
+def create_token(user_id: str, role: str, email: str, worker_id: str = None, is_manager: bool = False) -> str:
     payload = {
         "user_id": user_id,
         "role": role,
         "email": email,
         "exp": datetime.now(timezone.utc) + timedelta(hours=JWT_EXPIRATION_HOURS)
     }
+    if worker_id:
+        payload["worker_id"] = worker_id
+        payload["is_manager"] = True
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 def decode_token(token: str) -> Optional[TokenData]:
@@ -1302,6 +1312,73 @@ async def login_business(credentials: UserLogin):
     
     token = create_token(user["id"], UserRole.BUSINESS, business["email"])
     return {"token": token, "business": BusinessResponse(**business).model_dump()}
+
+@auth_router.post("/business/manager-login", response_model=dict)
+async def login_manager(credentials: ManagerLogin):
+    """Login as a manager/administrator of a business using PIN"""
+    business = await db.businesses.find_one({"email": credentials.business_email})
+    if not business:
+        raise HTTPException(status_code=401, detail="Credenciales inválidas")
+    
+    worker = await db.workers.find_one({
+        "id": credentials.worker_id,
+        "business_id": business["id"],
+        "is_manager": True
+    })
+    if not worker:
+        raise HTTPException(status_code=401, detail="Credenciales inválidas")
+    
+    pin_hash = worker.get("manager_pin_hash")
+    if not pin_hash:
+        raise HTTPException(status_code=401, detail="Este administrador no tiene PIN configurado")
+    
+    if not verify_password(credentials.pin, pin_hash):
+        raise HTTPException(status_code=401, detail="PIN incorrecto")
+    
+    user = await db.users.find_one({"business_id": business["id"]})
+    if not user:
+        raise HTTPException(status_code=500, detail="Cuenta de usuario no encontrada")
+    
+    business.setdefault("description", "")
+    business.setdefault("category_id", "")
+    business.setdefault("address", "")
+    business.setdefault("city", "")
+    business.setdefault("state", "")
+    business.setdefault("country", "MX")
+    business.setdefault("zip_code", "")
+    business.setdefault("subscription_status", "none")
+    business.pop("_id", None)
+    
+    token = create_token(user["id"], UserRole.BUSINESS, business["email"], worker_id=worker["id"], is_manager=True)
+    
+    permissions = worker.get("manager_permissions", {})
+    return {
+        "token": token,
+        "business": BusinessResponse(**business).model_dump(),
+        "manager": {
+            "worker_id": worker["id"],
+            "worker_name": worker["name"],
+            "permissions": permissions,
+            "is_manager": True
+        }
+    }
+
+@auth_router.get("/business/managers")
+async def get_business_managers(email: str):
+    """Get list of manager workers for a business (used in login flow)"""
+    business = await db.businesses.find_one({"email": email})
+    if not business:
+        return []
+    workers = await db.workers.find(
+        {"business_id": business["id"], "is_manager": True},
+        {"_id": 0, "id": 1, "name": 1, "has_manager_pin": 1}
+    ).to_list(100)
+    # Compute has_manager_pin from manager_pin_hash
+    result = []
+    for w in workers:
+        w_full = await db.workers.find_one({"id": w["id"]}, {"_id": 0, "manager_pin_hash": 1})
+        result.append({"id": w["id"], "name": w["name"], "has_pin": bool(w_full.get("manager_pin_hash"))})
+    return result
 
 # ========================== ADMIN AUTH ROUTES ==========================
 

@@ -29,7 +29,7 @@ import {
 
 export default function BusinessDashboardPage() {
   const { t, language } = useI18n();
-  const { business, user, isAuthenticated, isBusiness } = useAuth();
+  const { business, user, isAuthenticated, isBusiness, isManager, hasPermission } = useAuth();
   const navigate = useNavigate();
 
   const [loading, setLoading] = useState(true);
@@ -289,7 +289,7 @@ export default function BusinessDashboardPage() {
   const handleDesignateManager = async () => {
     try {
       await businessesAPI.designateManager(managerModal.worker.id, managerPermissions);
-      toast.success(language === 'es' ? `${managerModal.worker.name} designado como gerente` : `${managerModal.worker.name} designated as manager`);
+      toast.success(language === 'es' ? `${managerModal.worker.name} designado como administrador` : `${managerModal.worker.name} designated as administrator`);
       setManagerModal({ open: false, worker: null });
       loadDashboard();
     } catch (err) {
@@ -309,10 +309,10 @@ export default function BusinessDashboardPage() {
   };
 
   const handleRemoveManager = async (worker) => {
-    if (!window.confirm(language === 'es' ? `¿Quitar a ${worker.name} como gerente?` : `Remove ${worker.name} as manager?`)) return;
+    if (!window.confirm(language === 'es' ? `¿Quitar a ${worker.name} como administrador?` : `Remove ${worker.name} as administrator?`)) return;
     try {
       await businessesAPI.removeManager(worker.id);
-      toast.success(language === 'es' ? 'Rol de gerente removido' : 'Manager role removed');
+      toast.success(language === 'es' ? 'Rol de administrador removido' : 'Administrator role removed');
       loadDashboard();
     } catch (err) {
       toast.error(err?.response?.data?.detail || 'Error');
@@ -350,7 +350,7 @@ export default function BusinessDashboardPage() {
     }
     try {
       await businessesAPI.setManagerPin(pinModal.workerId, pinValue);
-      toast.success(language === 'es' ? 'PIN del gerente configurado' : 'Manager PIN set');
+      toast.success(language === 'es' ? 'PIN del administrador configurado' : 'Administrator PIN set');
       setPinModal({ open: false, type: null });
       setPinValue(''); setPinConfirm('');
       loadDashboard();
@@ -400,6 +400,19 @@ export default function BusinessDashboardPage() {
       <div className="container-app py-8">
 
         {/* ── Header ─────────────────────────────────── */}
+        {isManager && (
+          <div className="flex items-center gap-2 p-3 mb-4 rounded-xl border border-amber-200 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800/40" data-testid="manager-session-banner">
+            <UserCog className="h-5 w-5 text-amber-600 shrink-0" />
+            <div className="flex-1">
+              <p className="text-sm font-medium text-amber-800 dark:text-amber-200">
+                {language === 'es' ? `Sesión de administrador: ${user?.worker_name || ''}` : `Administrator session: ${user?.worker_name || ''}`}
+              </p>
+              <p className="text-xs text-amber-700 dark:text-amber-300">
+                {language === 'es' ? 'Acceso limitado según tus permisos asignados' : 'Limited access based on your assigned permissions'}
+              </p>
+            </div>
+          </div>
+        )}
         <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 mb-6">
           <div className="flex items-start gap-4">
             <Avatar className="h-16 w-16 border-2 border-background shadow-lg">
@@ -429,7 +442,6 @@ export default function BusinessDashboardPage() {
             <Button variant="outline" size="sm" onClick={async () => {
               let profileSlug = biz?.slug || biz?.id;
               if (!profileSlug) {
-                // Fallback: fetch business ID from user profile
                 try {
                   const meRes = await businessesAPI.getDashboard();
                   profileSlug = meRes.data?.business?.slug || meRes.data?.business?.id;
@@ -443,9 +455,11 @@ export default function BusinessDashboardPage() {
             }} data-testid="view-profile-button">
               <Eye className="h-4 w-4 mr-1.5" />{language === 'es' ? 'Ver perfil' : 'View profile'}
             </Button>
-            <Button variant="outline" size="sm" onClick={() => navigate('/business/settings')}>
-              <Settings className="h-4 w-4 mr-1.5" />{language === 'es' ? 'Config' : 'Settings'}
-            </Button>
+            {hasPermission('edit_profile') && (
+              <Button variant="outline" size="sm" onClick={() => navigate('/business/settings')}>
+                <Settings className="h-4 w-4 mr-1.5" />{language === 'es' ? 'Config' : 'Settings'}
+              </Button>
+            )}
           </div>
         </div>
 
@@ -485,11 +499,11 @@ export default function BusinessDashboardPage() {
         {/* ── Stats Cards ────────────────────────────── */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
           {[
-            { icon: CalendarIcon, label: language === 'es' ? 'Citas hoy' : "Today's bookings", value: stats?.today_appointments || 0, color: 'text-blue-500 bg-blue-50', type: 'today', title: language === 'es' ? 'Citas de hoy' : "Today's bookings" },
-            { icon: Clock, label: language === 'es' ? 'Confirmadas' : 'Confirmed', value: stats?.pending_appointments || 0, color: 'text-amber-500 bg-amber-50', type: 'pending', title: language === 'es' ? 'Citas confirmadas' : 'Confirmed bookings' },
-            { icon: DollarSign, label: language === 'es' ? 'Ingresos mes' : 'Monthly revenue', value: formatCurrency(stats?.month_revenue || 0), color: 'text-emerald-500 bg-emerald-50', type: 'revenue', title: language === 'es' ? 'Ingresos del mes' : 'Monthly revenue' },
-            { icon: TrendingUp, label: language === 'es' ? 'Total citas' : 'Total bookings', value: stats?.total_appointments || 0, color: 'text-violet-500 bg-violet-50', type: 'total', title: language === 'es' ? 'Total de citas' : 'Total bookings' },
-          ].map((stat, i) => (
+            { icon: CalendarIcon, label: language === 'es' ? 'Citas hoy' : "Today's bookings", value: stats?.today_appointments || 0, color: 'text-blue-500 bg-blue-50', type: 'today', title: language === 'es' ? 'Citas de hoy' : "Today's bookings", perm: null },
+            { icon: Clock, label: language === 'es' ? 'Confirmadas' : 'Confirmed', value: stats?.pending_appointments || 0, color: 'text-amber-500 bg-amber-50', type: 'pending', title: language === 'es' ? 'Citas confirmadas' : 'Confirmed bookings', perm: null },
+            { icon: DollarSign, label: language === 'es' ? 'Ingresos mes' : 'Monthly revenue', value: formatCurrency(stats?.month_revenue || 0), color: 'text-emerald-500 bg-emerald-50', type: 'revenue', title: language === 'es' ? 'Ingresos del mes' : 'Monthly revenue', perm: 'view_reports' },
+            { icon: TrendingUp, label: language === 'es' ? 'Total citas' : 'Total bookings', value: stats?.total_appointments || 0, color: 'text-violet-500 bg-violet-50', type: 'total', title: language === 'es' ? 'Total de citas' : 'Total bookings', perm: 'view_reports' },
+          ].filter(stat => !stat.perm || hasPermission(stat.perm)).map((stat, i) => (
             <Card 
               key={i} 
               className="border-border/60 cursor-pointer hover:border-[#F05D5E]/30 hover:shadow-sm transition-all"
@@ -512,32 +526,25 @@ export default function BusinessDashboardPage() {
         </div>
 
         {/* ── Tabs ────────────────────────────────────── */}
+        {(() => {
+          const visibleTabs = [
+            { value: 'overview', show: true, icon: BarChart3, label: language === 'es' ? 'Agenda' : 'Schedule' },
+            { value: 'services', show: hasPermission('edit_services'), icon: Briefcase, label: language === 'es' ? 'Servicios' : 'Services' },
+            { value: 'team', show: !isManager, icon: Users, label: language === 'es' ? 'Equipo' : 'Team' },
+            { value: 'closures', show: !isManager, icon: CalendarOff, label: language === 'es' ? 'Cierres' : 'Closures' },
+            { value: 'photos', show: hasPermission('edit_profile'), icon: Image, label: language === 'es' ? 'Fotos' : 'Photos' },
+            { value: 'subscription', show: !isManager, icon: CreditCard, label: language === 'es' ? 'Suscripcion' : 'Subscription' },
+          ].filter(tab => tab.show);
+          const colCount = visibleTabs.length;
+          return (
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-6 max-w-3xl">
-            <TabsTrigger value="overview" data-testid="tab-overview">
-              <BarChart3 className="h-4 w-4 mr-1.5 hidden sm:inline" />
-              {language === 'es' ? 'Agenda' : 'Schedule'}
-            </TabsTrigger>
-            <TabsTrigger value="services" data-testid="tab-services">
-              <Briefcase className="h-4 w-4 mr-1.5 hidden sm:inline" />
-              {language === 'es' ? 'Servicios' : 'Services'}
-            </TabsTrigger>
-            <TabsTrigger value="team" data-testid="tab-team">
-              <Users className="h-4 w-4 mr-1.5 hidden sm:inline" />
-              {language === 'es' ? 'Equipo' : 'Team'}
-            </TabsTrigger>
-            <TabsTrigger value="closures" data-testid="tab-closures">
-              <CalendarOff className="h-4 w-4 mr-1.5 hidden sm:inline" />
-              {language === 'es' ? 'Cierres' : 'Closures'}
-            </TabsTrigger>
-            <TabsTrigger value="photos" data-testid="tab-photos">
-              <Image className="h-4 w-4 mr-1.5 hidden sm:inline" />
-              {language === 'es' ? 'Fotos' : 'Photos'}
-            </TabsTrigger>
-            <TabsTrigger value="subscription" data-testid="tab-subscription">
-              <CreditCard className="h-4 w-4 mr-1.5 hidden sm:inline" />
-              {language === 'es' ? 'Suscripcion' : 'Subscription'}
-            </TabsTrigger>
+          <TabsList className={`grid w-full max-w-3xl`} style={{ gridTemplateColumns: `repeat(${colCount}, minmax(0, 1fr))` }}>
+            {visibleTabs.map(tab => (
+              <TabsTrigger key={tab.value} value={tab.value} data-testid={`tab-${tab.value}`}>
+                <tab.icon className="h-4 w-4 mr-1.5 hidden sm:inline" />
+                {tab.label}
+              </TabsTrigger>
+            ))}
           </TabsList>
 
           {/* ── Overview/Schedule Tab ────────────────── */}
@@ -584,8 +591,8 @@ export default function BusinessDashboardPage() {
                                 <Badge variant="secondary" className="text-[9px] mt-0.5 px-1 py-0">{durationMin}min</Badge>
                               </div>
                               <Separator orientation="vertical" className="h-10" />
-                              <div className="cursor-pointer" onClick={() => setBookingDetail(booking)}>
-                                <p className="font-medium text-sm hover:text-[#F05D5E] transition-colors">{booking.client_name || booking.user_name}</p>
+                              <div className={hasPermission('view_client_data') ? 'cursor-pointer' : ''} onClick={() => hasPermission('view_client_data') && setBookingDetail(booking)}>
+                                <p className={`font-medium text-sm ${hasPermission('view_client_data') ? 'hover:text-[#F05D5E] transition-colors' : ''}`}>{booking.client_name || booking.user_name}</p>
                                 <p className="text-xs text-muted-foreground">{booking.service_name}</p>
                                 {booking.worker_name && <p className="text-xs text-muted-foreground/70">{booking.worker_name}</p>}
                               </div>
@@ -604,28 +611,38 @@ export default function BusinessDashboardPage() {
                                 const isPast = now >= endDt;
                                 return (
                                   <>
-                                    <Button size="sm" variant="outline" className="h-7 text-xs" disabled={!isPast} title={!isPast ? (language === 'es' ? 'Disponible al terminar la cita' : 'Available after appointment ends') : ''} onClick={() => handleBookingAction(booking.id, 'complete')}>
-                                      {language === 'es' ? 'Completar' : 'Complete'}
-                                    </Button>
-                                    <Button size="sm" variant="outline" className="h-7 text-xs text-blue-600 border-blue-200 hover:bg-blue-50" onClick={() => openReschedule(booking)} data-testid={`reschedule-booking-${booking.id}`}>
-                                      <RefreshCw className="h-3 w-3 mr-1" />
-                                      {language === 'es' ? 'Reagendar' : 'Reschedule'}
-                                    </Button>
-                                    <Button size="sm" variant="outline" className="h-7 text-xs text-red-600 border-red-200 hover:bg-red-50" onClick={() => handleBookingAction(booking.id, 'cancel')} data-testid={`cancel-booking-${booking.id}`}>
-                                      {language === 'es' ? 'Cancelar' : 'Cancel'}
-                                    </Button>
+                                    {hasPermission('complete_bookings') && (
+                                      <Button size="sm" variant="outline" className="h-7 text-xs" disabled={!isPast} title={!isPast ? (language === 'es' ? 'Disponible al terminar la cita' : 'Available after appointment ends') : ''} onClick={() => handleBookingAction(booking.id, 'complete')}>
+                                        {language === 'es' ? 'Completar' : 'Complete'}
+                                      </Button>
+                                    )}
+                                    {hasPermission('reschedule_bookings') && (
+                                      <Button size="sm" variant="outline" className="h-7 text-xs text-blue-600 border-blue-200 hover:bg-blue-50" onClick={() => openReschedule(booking)} data-testid={`reschedule-booking-${booking.id}`}>
+                                        <RefreshCw className="h-3 w-3 mr-1" />
+                                        {language === 'es' ? 'Reagendar' : 'Reschedule'}
+                                      </Button>
+                                    )}
+                                    {hasPermission('cancel_bookings') && (
+                                      <Button size="sm" variant="outline" className="h-7 text-xs text-red-600 border-red-200 hover:bg-red-50" onClick={() => handleBookingAction(booking.id, 'cancel')} data-testid={`cancel-booking-${booking.id}`}>
+                                        {language === 'es' ? 'Cancelar' : 'Cancel'}
+                                      </Button>
+                                    )}
                                   </>
                                 );
                               })()}
                               {booking.status === 'hold' && (
                                 <>
-                                  <Button size="sm" variant="outline" className="h-7 text-xs text-blue-600 border-blue-200 hover:bg-blue-50" onClick={() => openReschedule(booking)} data-testid={`reschedule-hold-${booking.id}`}>
-                                    <RefreshCw className="h-3 w-3 mr-1" />
-                                    {language === 'es' ? 'Reagendar' : 'Reschedule'}
-                                  </Button>
-                                  <Button size="sm" variant="outline" className="h-7 text-xs text-red-600 border-red-200 hover:bg-red-50" onClick={() => handleBookingAction(booking.id, 'cancel')} data-testid={`cancel-hold-${booking.id}`}>
-                                    {language === 'es' ? 'Cancelar' : 'Cancel'}
-                                  </Button>
+                                  {hasPermission('reschedule_bookings') && (
+                                    <Button size="sm" variant="outline" className="h-7 text-xs text-blue-600 border-blue-200 hover:bg-blue-50" onClick={() => openReschedule(booking)} data-testid={`reschedule-hold-${booking.id}`}>
+                                      <RefreshCw className="h-3 w-3 mr-1" />
+                                      {language === 'es' ? 'Reagendar' : 'Reschedule'}
+                                    </Button>
+                                  )}
+                                  {hasPermission('cancel_bookings') && (
+                                    <Button size="sm" variant="outline" className="h-7 text-xs text-red-600 border-red-200 hover:bg-red-50" onClick={() => handleBookingAction(booking.id, 'cancel')} data-testid={`cancel-hold-${booking.id}`}>
+                                      {language === 'es' ? 'Cancelar' : 'Cancel'}
+                                    </Button>
+                                  )}
                                 </>
                               )}
                             </div>
@@ -695,8 +712,8 @@ export default function BusinessDashboardPage() {
                 </CardTitle>
                 <p className="text-xs text-muted-foreground">
                   {language === 'es'
-                    ? 'Configura un PIN numérico para proteger acciones sensibles. Los gerentes usarán su propio PIN.'
-                    : 'Set a numeric PIN to protect sensitive actions. Managers will use their own PIN.'}
+                    ? 'Configura un PIN numérico para proteger acciones sensibles. Los administradores usarán su propio PIN.'
+                    : 'Set a numeric PIN to protect sensitive actions. Administrators will use their own PIN.'}
                 </p>
               </CardHeader>
               <CardContent>
@@ -758,7 +775,7 @@ export default function BusinessDashboardPage() {
                               {worker.is_manager && (
                                 <Badge className="bg-amber-100 text-amber-800 border-amber-200 text-[10px] shrink-0" data-testid={`manager-badge-${worker.id}`}>
                                   <UserCog className="h-3 w-3 mr-0.5" />
-                                  {language === 'es' ? 'Gerente' : 'Manager'}
+                                  {language === 'es' ? 'Administrador' : 'Administrator'}
                                 </Badge>
                               )}
                             </div>
@@ -789,7 +806,7 @@ export default function BusinessDashboardPage() {
                           ) : (
                             <Button size="sm" variant="outline" className="h-7 text-xs w-full text-amber-700 border-amber-200 hover:bg-amber-50" onClick={() => openManagerModal(worker)} data-testid={`designate-manager-${worker.id}`}>
                               <UserCog className="h-3 w-3 mr-1" />
-                              {language === 'es' ? 'Designar como gerente' : 'Designate as manager'}
+                              {language === 'es' ? 'Designar como administrador' : 'Designate as administrator'}
                             </Button>
                           )}
                         </div>
@@ -1065,6 +1082,8 @@ export default function BusinessDashboardPage() {
             </Card>
           </TabsContent>
         </Tabs>
+          );
+        })()}
 
         {/* ── Stats Detail Modal ─────────────────────── */}
         <Dialog open={statsModal.open} onOpenChange={(open) => { if (!open) closeStatsModal(); }}>
@@ -1325,13 +1344,13 @@ export default function BusinessDashboardPage() {
               <DialogTitle className="flex items-center gap-2">
                 <UserCog className="h-5 w-5 text-amber-500" />
                 {managerModal.worker?.is_manager
-                  ? (language === 'es' ? 'Editar permisos de gerente' : 'Edit manager permissions')
-                  : (language === 'es' ? 'Designar como gerente' : 'Designate as manager')}
+                  ? (language === 'es' ? 'Editar permisos de administrador' : 'Edit administrator permissions')
+                  : (language === 'es' ? 'Designar como administrador' : 'Designate as administrator')}
               </DialogTitle>
               <DialogDescription>
                 {managerModal.worker?.name} — {language === 'es'
-                  ? 'Selecciona las acciones que este gerente puede realizar'
-                  : 'Select the actions this manager can perform'}
+                  ? 'Selecciona las acciones que este administrador puede realizar'
+                  : 'Select the actions this administrator can perform'}
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-5 mt-2 max-h-[50vh] overflow-y-auto pr-1">
@@ -1368,7 +1387,7 @@ export default function BusinessDashboardPage() {
                 <CheckCircle2 className="h-4 w-4 mr-1.5" />
                 {managerModal.worker?.is_manager
                   ? (language === 'es' ? 'Guardar permisos' : 'Save permissions')
-                  : (language === 'es' ? 'Designar gerente' : 'Designate manager')}
+                  : (language === 'es' ? 'Designar administrador' : 'Designate administrator')}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -1382,7 +1401,7 @@ export default function BusinessDashboardPage() {
                 <Shield className="h-5 w-5 text-amber-500" />
                 {pinModal.type === 'owner_setup'
                   ? (language === 'es' ? 'PIN de seguridad del dueño' : 'Owner security PIN')
-                  : (language === 'es' ? `PIN para ${pinModal.workerName || 'gerente'}` : `PIN for ${pinModal.workerName || 'manager'}`)}
+                  : (language === 'es' ? `PIN para ${pinModal.workerName || 'administrador'}` : `PIN for ${pinModal.workerName || 'administrator'}`)}
               </DialogTitle>
               <DialogDescription>
                 {language === 'es'
