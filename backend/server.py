@@ -4859,11 +4859,19 @@ async def get_admin_stats(token_data: TokenData = Depends(require_admin)):
 
 @admin_router.get("/businesses/pending", response_model=List[BusinessResponse])
 async def get_pending_businesses(token_data: TokenData = Depends(require_admin)):
+    # Only show businesses whose owner has verified their email
     businesses = await db.businesses.find(
         {"status": BusinessStatus.PENDING},
         {"_id": 0, "password_hash": 0}
     ).to_list(100)
-    return [BusinessResponse(**b) for b in businesses]
+    
+    verified_businesses = []
+    for b in businesses:
+        user = await db.users.find_one({"business_id": b["id"]}, {"_id": 0, "email_verified": 1})
+        if user and user.get("email_verified", False):
+            verified_businesses.append(b)
+    
+    return [BusinessResponse(**b) for b in verified_businesses]
 
 @admin_router.put("/businesses/{business_id}/approve")
 async def approve_business(business_id: str, request: Request, token_data: TokenData = Depends(require_admin)):
