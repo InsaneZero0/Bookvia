@@ -169,7 +169,7 @@ def email_html(title: str, content: str) -> str:
 <tr><td align="center">
 <table width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.08);">
 <tr><td style="background:#1e293b;padding:24px 32px;text-align:center;">
-<span style="color:#ffffff;font-size:22px;font-weight:bold;">Book</span><span style="color:#F05D5E;font-size:22px;font-weight:bold;">via</span>
+<span style="color:#ffffff;font-size:22px;font-weight:bold;">Book</span><span style="color:#F05D5E;font-size:22px;font-weight:bold;">via</span><span style="color:#F05D5E;font-size:11px;font-weight:bold;position:relative;top:-8px;margin-left:1px;">&#10022;</span>
 </td></tr>
 <tr><td style="padding:32px;">
 <h2 style="margin:0 0 16px;color:#1e293b;font-size:20px;">{title}</h2>
@@ -177,7 +177,7 @@ def email_html(title: str, content: str) -> str:
 </td></tr>
 <tr><td style="background:#f8fafc;padding:20px 32px;text-align:center;border-top:1px solid #e2e8f0;">
 <p style="margin:0;color:#94a3b8;font-size:12px;">Este es un correo automatico de Bookvia. No responder a este mensaje.</p>
-<p style="margin:4px 0 0;color:#94a3b8;font-size:12px;">bookvia.app</p>
+<p style="margin:4px 0 0;color:#94a3b8;font-size:12px;">bookvia.vercel.app</p>
 </td></tr>
 </table>
 </td></tr>
@@ -193,7 +193,7 @@ async def send_welcome_email(user_email: str, user_name: str) -> str:
     content = f"""<p style="color:#334155;font-size:15px;line-height:1.6;">Hola <strong>{user_name}</strong>,</p>
 <p style="color:#334155;font-size:15px;line-height:1.6;">Tu cuenta ha sido creada exitosamente. Ya puedes explorar negocios, reservar citas y gestionar tus servicios favoritos.</p>
 <table cellpadding="0" cellspacing="0" style="margin:24px 0;"><tr><td style="background:#F05D5E;border-radius:8px;padding:12px 28px;">
-<a href="https://bookvia.app" style="color:#ffffff;text-decoration:none;font-weight:bold;font-size:15px;">Explorar servicios</a>
+<a href="https://bookvia.vercel.app" style="color:#ffffff;text-decoration:none;font-weight:bold;font-size:15px;">Explorar servicios</a>
 </td></tr></table>
 <p style="color:#64748b;font-size:14px;">Gracias por unirte a Bookvia.</p>"""
     
@@ -209,7 +209,7 @@ async def send_welcome_business(email: str, business_name: str) -> str:
     content = f"""<p style="color:#334155;font-size:15px;line-height:1.6;">Hola <strong>{business_name}</strong>,</p>
 <p style="color:#334155;font-size:15px;line-height:1.6;">Tu negocio ha sido registrado exitosamente. Para comenzar a recibir reservas, activa tu suscripcion y completa tu perfil.</p>
 <table cellpadding="0" cellspacing="0" style="margin:24px 0;"><tr><td style="background:#F05D5E;border-radius:8px;padding:12px 28px;">
-<a href="https://bookvia.app/business/login" style="color:#ffffff;text-decoration:none;font-weight:bold;font-size:15px;">Ir a mi panel</a>
+<a href="https://bookvia.vercel.app/business/login" style="color:#ffffff;text-decoration:none;font-weight:bold;font-size:15px;">Ir a mi panel</a>
 </td></tr></table>
 <p style="color:#64748b;font-size:14px;">Estamos aqui para ayudarte a crecer.</p>"""
     
@@ -321,7 +321,7 @@ async def send_booking_cancelled(
 {reason_row}
 </table>
 {refund_text}
-<p style="color:#64748b;font-size:14px;">Puedes reservar otra cita en cualquier momento en bookvia.app</p>"""
+<p style="color:#64748b;font-size:14px;">Puedes reservar otra cita en cualquier momento en bookvia.vercel.app</p>"""
 
     return await send_email(
         to=user_email, subject=subject,
