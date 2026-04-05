@@ -1073,6 +1073,13 @@ async def register_user(user: UserCreate):
     await db.users.insert_one(user_doc)
     token = create_token(user_doc["id"], UserRole.USER, user.email)
     
+    # Send welcome email (non-blocking)
+    try:
+        from services.email import send_welcome_email
+        await send_welcome_email(user.email, user.full_name)
+    except Exception as e:
+        logger.warning(f"Failed to send welcome email: {e}")
+    
     return {"token": token, "user": UserResponse(**user_doc).model_dump()}
 
 @auth_router.post("/login", response_model=dict)
@@ -1228,6 +1235,13 @@ async def register_business(business: BusinessCreate):
     await db.users.insert_one(user_doc)
     
     token = create_token(user_id, UserRole.BUSINESS, business.email)
+    
+    # Send welcome email (non-blocking)
+    try:
+        from services.email import send_welcome_business
+        await send_welcome_business(business.email, business.name)
+    except Exception as e:
+        logger.warning(f"Failed to send welcome business email: {e}")
     
     return {"token": token, "business": BusinessResponse(**business_doc).model_dump()}
 
