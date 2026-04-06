@@ -33,6 +33,8 @@ import AboutPage from '@/pages/AboutPage';
 import NotFoundPage from '@/pages/NotFoundPage';
 import RegistrationSuccessPage from '@/pages/RegistrationSuccessPage';
 import VerifyEmailPage from '@/pages/VerifyEmailPage';
+import ForgotPasswordPage from '@/pages/ForgotPasswordPage';
+import ResetPasswordPage from '@/pages/ResetPasswordPage';
 
 // SEO Pages
 import CountryPage from '@/pages/seo/CountryPage';
@@ -69,6 +71,8 @@ function App() {
               <Route path="/register" element={<RegisterPage />} />
               <Route path="/registration-success" element={<RegistrationSuccessPage />} />
               <Route path="/verify-email" element={<VerifyEmailPage />} />
+              <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+              <Route path="/reset-password" element={<ResetPasswordPage />} />
               
               {/* User Pages */}
               <Route path="/dashboard" element={<Layout><UserDashboardPage /></Layout>} />

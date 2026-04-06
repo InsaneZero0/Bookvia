@@ -77,6 +77,8 @@ export const authAPI = {
   getBusinessManagers: (email) => api.get(`/auth/business/managers?email=${encodeURIComponent(email)}`),
   verifyEmail: (token) => api.get(`/auth/verify-email?token=${token}`),
   resendVerification: (data) => api.post('/auth/resend-verification', data),
+  forgotPassword: (data) => api.post('/auth/forgot-password', data),
+  resetPassword: (data) => api.post('/auth/reset-password', data),
   adminLogin: (data) => api.post('/auth/admin/login', data),
   getMe: () => api.get('/auth/me'),
   sendPhoneCode: (phone) => api.post('/auth/phone/send-code', { phone }),

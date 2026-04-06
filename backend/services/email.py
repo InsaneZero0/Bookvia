@@ -76,7 +76,8 @@ async def send_email(
     body: str,
     html: Optional[str] = None,
     template: Optional[str] = None,
-    data: Optional[Dict[str, Any]] = None
+    data: Optional[Dict[str, Any]] = None,
+    from_email: Optional[str] = None
 ) -> str:
     """
     Send an email.
@@ -88,12 +89,14 @@ async def send_email(
         html: Optional HTML body
         template: Optional template name (for logging)
         data: Optional template data (for logging)
+        from_email: Optional custom sender (defaults to FROM_EMAIL)
     
     Returns:
         Email ID or provider message ID
     """
+    sender = from_email or FROM_EMAIL
+    
     if not is_resend_configured():
-        # Mock mode - log and store
         logger.info(f"[EMAIL MOCK] To: {to} | Subject: {subject}")
         
         email_id = await store_email(
@@ -109,13 +112,12 @@ async def send_email(
         return email_id
     
     try:
-        # Import Resend only when needed
         import resend
         
         resend.api_key = RESEND_API_KEY
         
         email_params = {
-            "from": FROM_EMAIL,
+            "from": sender,
             "to": [to],
             "subject": subject,
             "text": body,
@@ -203,6 +205,9 @@ async def send_welcome_email(user_email: str, user_name: str) -> str:
     )
 
 
+NOREPLY_EMAIL = "Bookvia <noreply@bookvia.app>"
+
+
 async def send_verification_email(user_email: str, user_name: str, token: str) -> str:
     """Send email verification link to new user"""
     verify_url = f"https://bookvia.vercel.app/verify-email?token={token}"
@@ -217,7 +222,27 @@ async def send_verification_email(user_email: str, user_name: str, token: str) -
     
     return await send_email(
         to=user_email, subject=subject, body=f"Hola {user_name}, verifica tu cuenta en Bookvia: {verify_url}",
-        html=email_html(subject, content), template="verification", data={"user_name": user_name}
+        html=email_html(subject, content), template="verification", data={"user_name": user_name},
+        from_email=NOREPLY_EMAIL
+    )
+
+
+async def send_password_reset_email(user_email: str, user_name: str, token: str) -> str:
+    """Send password reset link"""
+    reset_url = f"https://bookvia.vercel.app/reset-password?token={token}"
+    subject = "Restablecer contraseña - Bookvia"
+    content = f"""<p style="color:#334155;font-size:15px;line-height:1.6;">Hola <strong>{user_name}</strong>,</p>
+<p style="color:#334155;font-size:15px;line-height:1.6;">Recibimos una solicitud para restablecer la contraseña de tu cuenta en Bookvia. Haz clic en el siguiente boton para crear una nueva contraseña:</p>
+<table cellpadding="0" cellspacing="0" style="margin:24px 0;"><tr><td style="background:#F05D5E;border-radius:8px;padding:14px 32px;">
+<a href="{reset_url}" style="color:#ffffff;text-decoration:none;font-weight:bold;font-size:15px;">Restablecer mi contraseña</a>
+</td></tr></table>
+<p style="color:#64748b;font-size:13px;">Este enlace expira en 1 hora. Si no solicitaste este cambio, puedes ignorar este correo y tu contraseña seguira siendo la misma.</p>
+<p style="color:#94a3b8;font-size:12px;margin-top:16px;">Si el boton no funciona, copia y pega este enlace en tu navegador:<br><a href="{reset_url}" style="color:#F05D5E;font-size:12px;word-break:break-all;">{reset_url}</a></p>"""
+    
+    return await send_email(
+        to=user_email, subject=subject, body=f"Hola {user_name}, restablece tu contraseña: {reset_url}",
+        html=email_html(subject, content), template="password_reset", data={"user_name": user_name},
+        from_email=NOREPLY_EMAIL
     )
 
 
