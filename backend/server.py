@@ -431,8 +431,15 @@ DEFAULT_MANAGER_PERMISSIONS = {
     "block_clients": False,
     "view_client_data": False,
     "edit_services": False,
-    "edit_profile": False,
     "view_reports": False,
+    "view_today_bookings": True,
+    "view_confirmed_bookings": True,
+    "view_agenda": True,
+    "view_team": False,
+    "edit_photos": False,
+    "edit_description": False,
+    "edit_schedule": False,
+    "edit_contact": False,
 }
 
 class PinCreate(BaseModel):

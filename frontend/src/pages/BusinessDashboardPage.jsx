@@ -77,6 +77,15 @@ export default function BusinessDashboardPage() {
   }, [isAuthenticated, isBusiness]);
 
   useEffect(() => {
+    if (isManager && activeTab === 'overview' && !hasPermission('view_agenda')) {
+      const fallbackTabs = ['services', 'team', 'photos'];
+      const fallbackPerms = { services: 'edit_services', team: 'view_team', photos: 'edit_photos' };
+      const first = fallbackTabs.find(t => hasPermission(fallbackPerms[t]));
+      if (first) setActiveTab(first);
+    }
+  }, [isManager]);
+
+  useEffect(() => {
     if (dashboardData?.business?.id) {
       loadDayBookings();
     }
@@ -301,19 +310,40 @@ export default function BusinessDashboardPage() {
     block_clients: { es: 'Bloquear clientes', en: 'Block clients' },
     view_client_data: { es: 'Ver datos de contacto del cliente', en: 'View client contact data' },
     edit_services: { es: 'Editar servicios y precios', en: 'Edit services & prices' },
-    edit_profile: { es: 'Editar perfil del negocio', en: 'Edit business profile' },
     view_reports: { es: 'Ver ingresos y reportes', en: 'View income & reports' },
+    view_today_bookings: { es: 'Ver citas de hoy', en: "View today's bookings" },
+    view_confirmed_bookings: { es: 'Ver citas confirmadas', en: 'View confirmed bookings' },
+    view_agenda: { es: 'Ver agenda', en: 'View schedule' },
+    view_team: { es: 'Ver equipo', en: 'View team' },
+    edit_photos: { es: 'Editar fotos del negocio', en: 'Edit business photos' },
+    edit_description: { es: 'Editar descripcion del negocio', en: 'Edit business description' },
+    edit_schedule: { es: 'Editar horarios de atencion', en: 'Edit business hours' },
+    edit_contact: { es: 'Editar contacto y direccion', en: 'Edit contact & address' },
   };
 
   const PERMISSION_GROUPS = {
-    es: { 'Citas': ['complete_bookings', 'reschedule_bookings', 'cancel_bookings'], 'Clientes': ['block_clients', 'view_client_data'], 'Negocio': ['edit_services', 'edit_profile', 'view_reports'] },
-    en: { 'Bookings': ['complete_bookings', 'reschedule_bookings', 'cancel_bookings'], 'Clients': ['block_clients', 'view_client_data'], 'Business': ['edit_services', 'edit_profile', 'view_reports'] },
+    es: {
+      'Secciones visibles': ['view_today_bookings', 'view_confirmed_bookings', 'view_agenda', 'view_team'],
+      'Acciones en citas': ['complete_bookings', 'reschedule_bookings', 'cancel_bookings'],
+      'Clientes': ['block_clients', 'view_client_data'],
+      'Perfil del negocio': ['edit_photos', 'edit_description', 'edit_schedule', 'edit_contact'],
+      'Negocio': ['edit_services', 'view_reports'],
+    },
+    en: {
+      'Visible sections': ['view_today_bookings', 'view_confirmed_bookings', 'view_agenda', 'view_team'],
+      'Booking actions': ['complete_bookings', 'reschedule_bookings', 'cancel_bookings'],
+      'Clients': ['block_clients', 'view_client_data'],
+      'Business profile': ['edit_photos', 'edit_description', 'edit_schedule', 'edit_contact'],
+      'Business': ['edit_services', 'view_reports'],
+    },
   };
 
   const openManagerModal = (worker) => {
     setManagerPermissions(worker.manager_permissions || {
       complete_bookings: true, reschedule_bookings: true, cancel_bookings: false,
-      block_clients: false, view_client_data: false, edit_services: false, edit_profile: false, view_reports: false,
+      block_clients: false, view_client_data: false, edit_services: false, view_reports: false,
+      view_today_bookings: true, view_confirmed_bookings: true, view_agenda: true, view_team: false,
+      edit_photos: false, edit_description: false, edit_schedule: false, edit_contact: false,
     });
     setManagerModal({ open: true, worker });
   };
@@ -487,7 +517,7 @@ export default function BusinessDashboardPage() {
             }} data-testid="view-profile-button">
               <Eye className="h-4 w-4 mr-1.5" />{language === 'es' ? 'Ver perfil' : 'View profile'}
             </Button>
-            {hasPermission('edit_profile') && (
+            {(hasPermission('edit_description') || hasPermission('edit_schedule') || hasPermission('edit_contact') || hasPermission('edit_photos') || hasPermission('block_clients')) && (
               <Button variant="outline" size="sm" onClick={() => navigate('/business/settings')}>
                 <Settings className="h-4 w-4 mr-1.5" />{language === 'es' ? 'Config' : 'Settings'}
               </Button>
@@ -531,11 +561,11 @@ export default function BusinessDashboardPage() {
         {/* ── Stats Cards ────────────────────────────── */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
           {[
-            { icon: CalendarIcon, label: language === 'es' ? 'Citas hoy' : "Today's bookings", value: stats?.today_appointments || 0, color: 'text-blue-500 bg-blue-50', type: 'today', title: language === 'es' ? 'Citas de hoy' : "Today's bookings", perm: null },
-            { icon: Clock, label: language === 'es' ? 'Confirmadas' : 'Confirmed', value: stats?.pending_appointments || 0, color: 'text-amber-500 bg-amber-50', type: 'pending', title: language === 'es' ? 'Citas confirmadas' : 'Confirmed bookings', perm: null },
+            { icon: CalendarIcon, label: language === 'es' ? 'Citas hoy' : "Today's bookings", value: stats?.today_appointments || 0, color: 'text-blue-500 bg-blue-50', type: 'today', title: language === 'es' ? 'Citas de hoy' : "Today's bookings", perm: 'view_today_bookings' },
+            { icon: Clock, label: language === 'es' ? 'Confirmadas' : 'Confirmed', value: stats?.pending_appointments || 0, color: 'text-amber-500 bg-amber-50', type: 'pending', title: language === 'es' ? 'Citas confirmadas' : 'Confirmed bookings', perm: 'view_confirmed_bookings' },
             { icon: DollarSign, label: language === 'es' ? 'Ingresos mes' : 'Monthly revenue', value: formatCurrency(stats?.month_revenue || 0), color: 'text-emerald-500 bg-emerald-50', type: 'revenue', title: language === 'es' ? 'Ingresos del mes' : 'Monthly revenue', perm: 'view_reports' },
             { icon: TrendingUp, label: language === 'es' ? 'Total citas' : 'Total bookings', value: stats?.total_appointments || 0, color: 'text-violet-500 bg-violet-50', type: 'total', title: language === 'es' ? 'Total de citas' : 'Total bookings', perm: 'view_reports' },
-          ].filter(stat => !stat.perm || hasPermission(stat.perm)).map((stat, i) => (
+          ].filter(stat => hasPermission(stat.perm)).map((stat, i) => (
             <Card 
               key={i} 
               className="border-border/60 cursor-pointer hover:border-[#F05D5E]/30 hover:shadow-sm transition-all"
@@ -560,11 +590,11 @@ export default function BusinessDashboardPage() {
         {/* ── Tabs ────────────────────────────────────── */}
         {(() => {
           const visibleTabs = [
-            { value: 'overview', show: true, icon: BarChart3, label: language === 'es' ? 'Agenda' : 'Schedule' },
+            { value: 'overview', show: hasPermission('view_agenda'), icon: BarChart3, label: language === 'es' ? 'Agenda' : 'Schedule' },
             { value: 'services', show: hasPermission('edit_services'), icon: Briefcase, label: language === 'es' ? 'Servicios' : 'Services' },
-            { value: 'team', show: !isManager, icon: Users, label: language === 'es' ? 'Equipo' : 'Team' },
+            { value: 'team', show: hasPermission('view_team'), icon: Users, label: language === 'es' ? 'Equipo' : 'Team' },
             { value: 'closures', show: !isManager, icon: CalendarOff, label: language === 'es' ? 'Cierres' : 'Closures' },
-            { value: 'photos', show: hasPermission('edit_profile'), icon: Image, label: language === 'es' ? 'Fotos' : 'Photos' },
+            { value: 'photos', show: hasPermission('edit_photos'), icon: Image, label: language === 'es' ? 'Fotos' : 'Photos' },
             { value: 'subscription', show: !isManager, icon: CreditCard, label: language === 'es' ? 'Suscripcion' : 'Subscription' },
             { value: 'activity', show: !isManager, icon: History, label: language === 'es' ? 'Actividad' : 'Activity' },
           ].filter(tab => tab.show);
