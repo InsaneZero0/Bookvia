@@ -15,7 +15,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Switch } from '@/components/ui/switch';
 import { useAuth } from '@/lib/auth';
 import { useI18n } from '@/lib/i18n';
-import { businessesAPI, bookingsAPI, servicesAPI } from '@/lib/api';
+import { businessesAPI, bookingsAPI, servicesAPI, notificationsAPI } from '@/lib/api';
 import { formatDate, formatTime, formatCurrency, getStatusColor, getInitials } from '@/lib/utils';
 import { format } from 'date-fns';
 import { es, enUS } from 'date-fns/locale';
@@ -25,7 +25,7 @@ import {
   XCircle, AlertTriangle, TrendingUp, Settings, UserCog, Image, Upload,
   Trash2, Eye, Plus, Pencil, BarChart3, Briefcase, ArrowUpRight,
   Ban, CalendarOff, CreditCard, Shield, RefreshCw, Mail, Phone, History,
-  ChevronLeft, ChevronRight, Filter
+  ChevronLeft, ChevronRight, Filter, Bell
 } from 'lucide-react';
 
 export default function BusinessDashboardPage() {
@@ -68,13 +68,65 @@ export default function BusinessDashboardPage() {
   const [activityPages, setActivityPages] = useState(1);
   const [activityFilter, setActivityFilter] = useState('all');
   const [activityLoading, setActivityLoading] = useState(false);
+  const [notifications, setNotifications] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [notifOpen, setNotifOpen] = useState(false);
   useEffect(() => {
     if (!isAuthenticated || !isBusiness) {
       navigate('/business/login');
       return;
     }
     loadDashboard();
+    loadNotifications();
+    const notifInterval = setInterval(loadUnreadCount, 30000);
+    return () => clearInterval(notifInterval);
   }, [isAuthenticated, isBusiness]);
+
+  const loadNotifications = async () => {
+    try {
+      const [res, countRes] = await Promise.all([
+        notificationsAPI.getAll(),
+        notificationsAPI.getUnreadCount()
+      ]);
+      setNotifications(Array.isArray(res.data) ? res.data : []);
+      setUnreadCount(countRes.data?.count || 0);
+    } catch { }
+  };
+
+  const loadUnreadCount = async () => {
+    try {
+      const res = await notificationsAPI.getUnreadCount();
+      setUnreadCount(res.data?.count || 0);
+    } catch { }
+  };
+
+  const handleMarkAllRead = async () => {
+    try {
+      await notificationsAPI.markAllRead();
+      setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+      setUnreadCount(0);
+    } catch { }
+  };
+
+  const handleMarkRead = async (id) => {
+    try {
+      await notificationsAPI.markRead(id);
+      setNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+      setUnreadCount(prev => Math.max(0, prev - 1));
+    } catch { }
+  };
+
+  // Close notification panel on outside click
+  useEffect(() => {
+    if (!notifOpen) return;
+    const handler = (e) => {
+      if (!e.target.closest('[data-testid="notification-bell"]') && !e.target.closest('[data-testid="notification-panel"]')) {
+        setNotifOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [notifOpen]);
 
   useEffect(() => {
     if (isManager && activeTab === 'overview' && !hasPermission('view_agenda')) {
@@ -500,7 +552,54 @@ export default function BusinessDashboardPage() {
               </div>
             </div>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 items-center">
+            {/* Notification Bell */}
+            <div className="relative">
+              <Button variant="outline" size="icon" className="h-9 w-9 relative" onClick={() => { setNotifOpen(!notifOpen); if (!notifOpen) loadNotifications(); }} data-testid="notification-bell">
+                <Bell className="h-4 w-4" />
+                {unreadCount > 0 && (
+                  <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-[#F05D5E] text-white text-[10px] font-bold flex items-center justify-center" data-testid="unread-count">{unreadCount > 9 ? '9+' : unreadCount}</span>
+                )}
+              </Button>
+              {notifOpen && (
+                <div className="absolute right-0 top-11 w-80 sm:w-96 bg-background border border-border rounded-xl shadow-xl z-50 overflow-hidden" data-testid="notification-panel">
+                  <div className="flex items-center justify-between px-4 py-3 border-b border-border/60">
+                    <h3 className="text-sm font-semibold">{language === 'es' ? 'Notificaciones' : 'Notifications'}</h3>
+                    {unreadCount > 0 && (
+                      <button className="text-xs text-[#F05D5E] hover:underline" onClick={handleMarkAllRead} data-testid="mark-all-read">
+                        {language === 'es' ? 'Marcar todo como leido' : 'Mark all as read'}
+                      </button>
+                    )}
+                  </div>
+                  <div className="max-h-80 overflow-y-auto divide-y divide-border/40">
+                    {notifications.length === 0 ? (
+                      <div className="py-10 text-center">
+                        <Bell className="h-8 w-8 text-muted-foreground/30 mx-auto mb-2" />
+                        <p className="text-sm text-muted-foreground">{language === 'es' ? 'Sin notificaciones' : 'No notifications'}</p>
+                      </div>
+                    ) : notifications.map(n => (
+                      <div
+                        key={n.id}
+                        className={`px-4 py-3 cursor-pointer transition-colors hover:bg-muted/40 ${!n.read ? 'bg-blue-50/60 dark:bg-blue-900/10' : ''}`}
+                        onClick={() => { if (!n.read) handleMarkRead(n.id); }}
+                        data-testid={`notif-item-${n.id}`}
+                      >
+                        <div className="flex items-start gap-2">
+                          {!n.read && <span className="mt-1.5 h-2 w-2 rounded-full bg-[#F05D5E] shrink-0" />}
+                          <div className="flex-1 min-w-0">
+                            <p className={`text-sm ${!n.read ? 'font-semibold' : 'font-medium'}`}>{n.title}</p>
+                            <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{n.message}</p>
+                            <p className="text-[10px] text-muted-foreground mt-1">
+                              {new Date(n.created_at).toLocaleDateString(language === 'es' ? 'es-MX' : 'en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
             <Button variant="outline" size="sm" onClick={async () => {
               let profileSlug = biz?.slug || biz?.id;
               if (!profileSlug) {
