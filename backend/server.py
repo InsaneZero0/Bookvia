@@ -431,8 +431,15 @@ DEFAULT_MANAGER_PERMISSIONS = {
     "block_clients": False,
     "view_client_data": False,
     "edit_services": False,
-    "edit_profile": False,
     "view_reports": False,
+    "view_today_bookings": True,
+    "view_confirmed_bookings": True,
+    "view_agenda": True,
+    "view_team": False,
+    "edit_photos": False,
+    "edit_description": False,
+    "edit_schedule": False,
+    "edit_contact": False,
 }
 
 class PinCreate(BaseModel):
@@ -3795,6 +3802,25 @@ async def get_checkout_status(session_id: str, request: Request):
                     "booking",
                     {"booking_id": transaction["booking_id"]}
                 )
+            # Send confirmation email to client (fallback)
+            if user and booking and service:
+                from services.email import send_booking_confirmation
+                try:
+                    worker_name = ""
+                    if booking.get("worker_id"):
+                        w = await db.workers.find_one({"id": booking["worker_id"]}, {"_id": 0, "name": 1})
+                        worker_name = w["name"] if w else ""
+                    await send_booking_confirmation(
+                        user_email=user["email"],
+                        user_name=user.get("full_name", "Cliente"),
+                        business_name=business["name"] if business else "Negocio",
+                        service_name=service["name"],
+                        date=booking["date"],
+                        time=booking["time"],
+                        worker_name=worker_name
+                    )
+                except Exception as e:
+                    logger.error(f"Fallback confirmation email error: {e}")
         except Exception as e:
             logger.error(f"Fallback notification error: {e}")
         
@@ -3947,6 +3973,27 @@ async def stripe_webhook(request: Request):
                             except Exception as e:
                                 logger.error(f"Error sending worker notification: {e}")
                 
+                # Send confirmation email to client
+                if user and booking and service:
+                    from services.email import send_booking_confirmation
+                    try:
+                        worker_name = ""
+                        if booking.get("worker_id"):
+                            w = await db.workers.find_one({"id": booking["worker_id"]}, {"_id": 0, "name": 1})
+                            worker_name = w["name"] if w else ""
+                        await send_booking_confirmation(
+                            user_email=user["email"],
+                            user_name=user.get("full_name", "Cliente"),
+                            business_name=business["name"] if business else "Negocio",
+                            service_name=service["name"],
+                            date=booking["date"],
+                            time=booking["time"],
+                            worker_name=worker_name
+                        )
+                        logger.info(f"Confirmation email sent to {user['email']} for booking {booking['id']}")
+                    except Exception as e:
+                        logger.error(f"Error sending confirmation email: {e}")
+                
                 # Update business balance (pending payout)
                 await db.businesses.update_one(
                     {"id": transaction["business_id"]},
@@ -4071,6 +4118,23 @@ async def cancel_booking_by_user(
             {"booking_id": booking_id}
         )
     
+    # Send cancellation email to business owner
+    try:
+        if business:
+            service = await db.services.find_one({"id": booking.get("service_id")})
+            from services.email import send_booking_cancelled
+            await send_booking_cancelled(
+                user_email=business["email"],
+                user_name=business["name"],
+                business_name=business["name"],
+                service_name=service["name"] if service else "Servicio",
+                date=booking["date"],
+                time=booking["time"],
+                reason=f"Cancelada por el cliente. Motivo: {cancel_req.reason or 'No especificado'}"
+            )
+    except Exception as e:
+        logger.error(f"Error sending cancellation email to business: {e}")
+    
     return {
         "message": "Booking cancelled",
         "status": AppointmentStatus.CANCELLED,
@@ -4194,6 +4258,27 @@ async def cancel_booking_by_business(
         "system",
         {"booking_id": booking_id}
     )
+    
+    # Send cancellation email to client
+    try:
+        client_user = await db.users.find_one({"id": booking["user_id"]})
+        business = await db.businesses.find_one({"id": booking["business_id"]})
+        service = await db.services.find_one({"id": booking.get("service_id")})
+        if client_user and business:
+            from services.email import send_booking_cancelled
+            refund_msg = "Se procesará un reembolso completo a tu método de pago." if refund_result else None
+            await send_booking_cancelled(
+                user_email=client_user["email"],
+                user_name=client_user.get("full_name", "Cliente"),
+                business_name=business["name"],
+                service_name=service["name"] if service else "Servicio",
+                date=booking["date"],
+                time=booking["time"],
+                reason=f"Cancelada por el negocio. Motivo: {cancel_req.reason or 'No especificado'}",
+                refund_info=refund_msg
+            )
+    except Exception as e:
+        logger.error(f"Error sending cancellation email to client: {e}")
     
     # Log activity
     await create_business_activity(
@@ -4408,6 +4493,12 @@ async def mark_all_read(token_data: TokenData = Depends(require_auth)):
         {"$set": {"read": True}}
     )
     return {"message": "All marked as read"}
+
+@notifications_router.get("/unread-count")
+async def get_unread_count(token_data: TokenData = Depends(require_auth)):
+    count = await db.notifications.count_documents({"user_id": token_data.user_id, "read": False})
+    return {"count": count}
+
 
 # ========================== BUSINESS FINANCE ROUTES ==========================
 

@@ -70,11 +70,15 @@ Bookvia es una plataforma marketplace de reservas profesionales que conecta nego
 - [ ] Refactorizar server.py (~6000 lineas) en routers modulares
 
 ### P1
-- [ ] Completar emails transaccionales (recordatorios, confirmaciones)
-- [ ] Agregar 6 permisos faltantes del administrador (Citas hoy, Confirmadas, Agenda, Equipo, Cierres, Suscripcion)
+- [x] Emails transaccionales: confirmacion de cita y cancelacion (enviados automaticamente via Resend)
+- [x] Agregar permisos de visibilidad del administrador (Citas hoy, Confirmadas, Agenda, Equipo) — 4 nuevos permisos
+- [x] Agregar permisos granulares de edicion de perfil (Fotos, Descripcion, Horarios, Contacto) — 4 nuevos permisos que reemplazan edit_profile
+- [x] Sistema de notificaciones: campana en dashboard del negocio con panel dropdown, contador, marcar como leido
+- [x] Sistema de notificaciones: campana en Navbar para usuarios regulares (clientes) con panel dropdown
+- [ ] Permisos faltantes: Cierres y Suscripcion (tabs aun bloqueados para admins)
 
 ### P2
-- [ ] Recordatorios de citas (email 24h antes)
+- [ ] Recordatorios de citas (email 24h antes, requiere cronjob)
 - [ ] Login con Google (Emergent-managed)
 
 ### P3
@@ -84,7 +88,7 @@ Bookvia es una plataforma marketplace de reservas profesionales que conecta nego
 
 ## Esquema DB
 - **businesses:** subscription_status, approval_status, owner_pin_hash
-- **workers:** is_manager, manager_permissions{}, manager_pin_hash
+- **workers:** is_manager, manager_permissions{15 permisos: complete/reschedule/cancel_bookings, block_clients, view_client_data, edit_services, view_reports, view_today/confirmed_bookings, view_agenda, view_team, edit_photos/description/schedule/contact}, manager_pin_hash
 - **business_activity_logs:** business_id, actor_type, actor_name, worker_id, action, target_type, target_id, details, created_at
 - **bookings:** worker_id, end_time, status, cancelled_by
 - **reviews:** user_id, business_id, booking_id, rating, comment

@@ -22,12 +22,16 @@ import {
 } from 'lucide-react';
 import { getInitials } from '@/lib/utils';
 import { countries } from '@/lib/countries';
+import { notificationsAPI } from '@/lib/api';
 
 export function Navbar() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [countryOpen, setCountryOpen] = useState(false);
   const [countrySearch, setCountrySearch] = useState('');
+  const [navNotifications, setNavNotifications] = useState([]);
+  const [navUnreadCount, setNavUnreadCount] = useState(0);
+  const [navNotifOpen, setNavNotifOpen] = useState(false);
   const { user, isAuthenticated, isAdmin, isBusiness, logout } = useAuth();
   const { t, language, toggleLanguage } = useI18n();
   const { country, setCountry } = useCountry();
@@ -59,6 +63,57 @@ export function Navbar() {
     window.addEventListener('scroll', onScroll, { passive: true });
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
+
+  // Load notifications for non-business users
+  useEffect(() => {
+    if (!isAuthenticated || isBusiness || isAdmin) return;
+    const loadNavNotifs = async () => {
+      try {
+        const [res, countRes] = await Promise.all([
+          notificationsAPI.getAll(),
+          notificationsAPI.getUnreadCount()
+        ]);
+        setNavNotifications(Array.isArray(res.data) ? res.data : []);
+        setNavUnreadCount(countRes.data?.count || 0);
+      } catch {}
+    };
+    loadNavNotifs();
+    const interval = setInterval(async () => {
+      try {
+        const res = await notificationsAPI.getUnreadCount();
+        setNavUnreadCount(res.data?.count || 0);
+      } catch {}
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [isAuthenticated, isBusiness, isAdmin]);
+
+  // Close notification panel on outside click
+  useEffect(() => {
+    if (!navNotifOpen) return;
+    const handler = (e) => {
+      if (!e.target.closest('[data-testid="nav-notification-bell"]') && !e.target.closest('[data-testid="nav-notification-panel"]')) {
+        setNavNotifOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [navNotifOpen]);
+
+  const handleNavMarkAllRead = async () => {
+    try {
+      await notificationsAPI.markAllRead();
+      setNavNotifications(prev => prev.map(n => ({ ...n, read: true })));
+      setNavUnreadCount(0);
+    } catch {}
+  };
+
+  const handleNavMarkRead = async (id) => {
+    try {
+      await notificationsAPI.markRead(id);
+      setNavNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
+      setNavUnreadCount(prev => Math.max(0, prev - 1));
+    } catch {}
+  };
 
   return (
     <nav 
@@ -198,6 +253,73 @@ export function Navbar() {
             </Button>
 
             {isAuthenticated ? (
+              <>
+                {/* Notification Bell for regular users */}
+                {!isBusiness && !isAdmin && (
+                  <div className="relative">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className={`relative ${isTransparent ? 'text-white hover:bg-white/10' : ''}`}
+                      onClick={async () => {
+                        if (!navNotifOpen) {
+                          try {
+                            const [res, countRes] = await Promise.all([notificationsAPI.getAll(), notificationsAPI.getUnreadCount()]);
+                            setNavNotifications(Array.isArray(res.data) ? res.data : []);
+                            setNavUnreadCount(countRes.data?.count || 0);
+                          } catch {}
+                        }
+                        setNavNotifOpen(!navNotifOpen);
+                      }}
+                      data-testid="nav-notification-bell"
+                    >
+                      <Bell className="h-5 w-5" />
+                      {navUnreadCount > 0 && (
+                        <span className="absolute -top-0.5 -right-0.5 h-4.5 w-4.5 min-w-[18px] rounded-full bg-[#F05D5E] text-white text-[10px] font-bold flex items-center justify-center px-1" data-testid="nav-unread-count">
+                          {navUnreadCount > 9 ? '9+' : navUnreadCount}
+                        </span>
+                      )}
+                    </Button>
+                    {navNotifOpen && (
+                      <div className="absolute right-0 top-11 w-80 sm:w-96 bg-background border border-border rounded-xl shadow-xl z-50 overflow-hidden" data-testid="nav-notification-panel">
+                        <div className="flex items-center justify-between px-4 py-3 border-b border-border/60">
+                          <h3 className="text-sm font-semibold">{language === 'es' ? 'Notificaciones' : 'Notifications'}</h3>
+                          {navUnreadCount > 0 && (
+                            <button className="text-xs text-[#F05D5E] hover:underline" onClick={handleNavMarkAllRead} data-testid="nav-mark-all-read">
+                              {language === 'es' ? 'Marcar todo como leido' : 'Mark all as read'}
+                            </button>
+                          )}
+                        </div>
+                        <div className="max-h-80 overflow-y-auto divide-y divide-border/40">
+                          {navNotifications.length === 0 ? (
+                            <div className="py-10 text-center">
+                              <Bell className="h-8 w-8 text-muted-foreground/30 mx-auto mb-2" />
+                              <p className="text-sm text-muted-foreground">{language === 'es' ? 'Sin notificaciones' : 'No notifications'}</p>
+                            </div>
+                          ) : navNotifications.map(n => (
+                            <div
+                              key={n.id}
+                              className={`px-4 py-3 cursor-pointer transition-colors hover:bg-muted/40 ${!n.read ? 'bg-blue-50/60 dark:bg-blue-900/10' : ''}`}
+                              onClick={() => { if (!n.read) handleNavMarkRead(n.id); }}
+                              data-testid={`nav-notif-item-${n.id}`}
+                            >
+                              <div className="flex items-start gap-2">
+                                {!n.read && <span className="mt-1.5 h-2 w-2 rounded-full bg-[#F05D5E] shrink-0" />}
+                                <div className="flex-1 min-w-0">
+                                  <p className={`text-sm ${!n.read ? 'font-semibold' : 'font-medium'}`}>{n.title}</p>
+                                  <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{n.message}</p>
+                                  <p className="text-[10px] text-muted-foreground mt-1">
+                                    {new Date(n.created_at).toLocaleDateString(language === 'es' ? 'es-MX' : 'en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button 
@@ -252,11 +374,6 @@ export function Navbar() {
                     </>
                   )}
                   
-                  <DropdownMenuItem onClick={() => navigate('/notifications')} data-testid="menu-notifications">
-                    <Bell className="mr-2 h-4 w-4" />
-                    {t('nav.notifications')}
-                  </DropdownMenuItem>
-                  
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={handleLogout} className="text-red-600" data-testid="menu-logout">
                     <LogOut className="mr-2 h-4 w-4" />
@@ -264,6 +381,7 @@ export function Navbar() {
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
+              </>
             ) : (
               <div className="flex items-center gap-2">
                 <Button
