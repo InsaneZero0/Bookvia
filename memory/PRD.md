@@ -57,6 +57,8 @@ Bookvia es una plataforma marketplace de reservas profesionales que conecta nego
 - [x] Reenvio de correo de verificacion
 - [x] Login bloqueado hasta verificar email (backwards compatible con usuarios antiguos)
 - [x] Logo con estrella en emails, boton "Comenzar ahora" para negocios
+- [x] Correos automaticos desde noreply@bookvia.app, bienvenida desde hola@bookvia.app
+- [x] Recuperar contraseña: flujo completo (olvidé → email con link → nueva contraseña → login)
 
 ### Internacionalizacion
 - [x] Auto-capitalizacion, logo con estrella, deteccion de pais por IP
@@ -68,7 +70,6 @@ Bookvia es una plataforma marketplace de reservas profesionales que conecta nego
 - [ ] Refactorizar server.py (~6000 lineas) en routers modulares
 
 ### P1
-- [ ] Recuperar contrasena (flujo completo con Resend)
 - [ ] Completar emails transaccionales (recordatorios, confirmaciones)
 - [ ] Agregar 6 permisos faltantes del administrador (Citas hoy, Confirmadas, Agenda, Equipo, Cierres, Suscripcion)
 

@@ -1221,6 +1221,69 @@ async def resend_verification_email(data: dict):
     
     return {"message": "Si el correo existe, recibirás un email de verificación"}
 
+@auth_router.post("/forgot-password")
+async def forgot_password(data: dict):
+    """Send password reset email"""
+    email = data.get("email", "").strip().lower()
+    if not email:
+        raise HTTPException(status_code=400, detail="Email requerido")
+    
+    user = await db.users.find_one({"email": email})
+    if not user:
+        return {"message": "Si el correo existe, recibirás instrucciones para restablecer tu contraseña"}
+    
+    reset_token = generate_id()
+    reset_expires = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+    
+    await db.users.update_one(
+        {"id": user["id"]},
+        {"$set": {"password_reset_token": reset_token, "password_reset_expires": reset_expires}}
+    )
+    
+    try:
+        from services.email import send_password_reset_email
+        await send_password_reset_email(email, user.get("full_name", ""), reset_token)
+    except Exception as e:
+        logger.warning(f"Failed to send password reset email: {e}")
+    
+    return {"message": "Si el correo existe, recibirás instrucciones para restablecer tu contraseña"}
+
+@auth_router.post("/reset-password")
+async def reset_password(data: dict):
+    """Reset password using token from email"""
+    token = data.get("token", "")
+    new_password = data.get("password", "")
+    
+    if not token or not new_password:
+        raise HTTPException(status_code=400, detail="Token y contraseña requeridos")
+    
+    if len(new_password) < 6:
+        raise HTTPException(status_code=400, detail="La contraseña debe tener al menos 6 caracteres")
+    
+    user = await db.users.find_one({"password_reset_token": token})
+    if not user:
+        raise HTTPException(status_code=400, detail="El enlace es inválido o ha expirado")
+    
+    expires = user.get("password_reset_expires", "")
+    if expires:
+        expires_dt = datetime.fromisoformat(expires)
+        if datetime.now(timezone.utc) > expires_dt:
+            raise HTTPException(status_code=400, detail="El enlace ha expirado. Solicita uno nuevo")
+    
+    new_hash = hash_password(new_password)
+    await db.users.update_one(
+        {"id": user["id"]},
+        {"$set": {"password_hash": new_hash}, "$unset": {"password_reset_token": "", "password_reset_expires": ""}}
+    )
+    
+    if user.get("role") == "business" and user.get("business_id"):
+        await db.businesses.update_one(
+            {"id": user["business_id"]},
+            {"$set": {"password_hash": new_hash}}
+        )
+    
+    return {"message": "Contraseña actualizada exitosamente"}
+
 @auth_router.post("/phone/send-code")
 async def send_phone_code(request: PhoneVerifyRequest):
     """Send phone verification code with rate limiting"""
