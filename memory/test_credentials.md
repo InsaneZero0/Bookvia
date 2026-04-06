@@ -31,8 +31,9 @@
   - edit_contact=false
 
 ## Regular User Account
-- Email: testuser_234504@bookvia.com
+- Email: cliente@bookvia.com
 - Password: Test1234!
+- Email Verified: Yes
 
 ## Admin Account (System Admin)
 - Email: zamorachapa50@gmail.com

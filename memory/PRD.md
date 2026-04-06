@@ -74,6 +74,7 @@ Bookvia es una plataforma marketplace de reservas profesionales que conecta nego
 - [x] Agregar permisos de visibilidad del administrador (Citas hoy, Confirmadas, Agenda, Equipo) — 4 nuevos permisos
 - [x] Agregar permisos granulares de edicion de perfil (Fotos, Descripcion, Horarios, Contacto) — 4 nuevos permisos que reemplazan edit_profile
 - [x] Sistema de notificaciones: campana en dashboard del negocio con panel dropdown, contador, marcar como leido
+- [x] Sistema de notificaciones: campana en Navbar para usuarios regulares (clientes) con panel dropdown
 - [ ] Permisos faltantes: Cierres y Suscripcion (tabs aun bloqueados para admins)
 
 ### P2
