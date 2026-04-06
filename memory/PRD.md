@@ -70,13 +70,14 @@ Bookvia es una plataforma marketplace de reservas profesionales que conecta nego
 - [ ] Refactorizar server.py (~6000 lineas) en routers modulares
 
 ### P1
-- [ ] Completar emails transaccionales (recordatorios, confirmaciones)
+- [x] Emails transaccionales: confirmacion de cita y cancelacion (enviados automaticamente via Resend)
 - [x] Agregar permisos de visibilidad del administrador (Citas hoy, Confirmadas, Agenda, Equipo) — 4 nuevos permisos
 - [x] Agregar permisos granulares de edicion de perfil (Fotos, Descripcion, Horarios, Contacto) — 4 nuevos permisos que reemplazan edit_profile
+- [x] Sistema de notificaciones: campana en dashboard del negocio con panel dropdown, contador, marcar como leido
 - [ ] Permisos faltantes: Cierres y Suscripcion (tabs aun bloqueados para admins)
 
 ### P2
-- [ ] Recordatorios de citas (email 24h antes)
+- [ ] Recordatorios de citas (email 24h antes, requiere cronjob)
 - [ ] Login con Google (Emergent-managed)
 
 ### P3
