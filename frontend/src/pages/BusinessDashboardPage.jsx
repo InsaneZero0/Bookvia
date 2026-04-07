@@ -57,6 +57,8 @@ export default function BusinessDashboardPage() {
   const [rescheduleLoading, setRescheduleLoading] = useState(false);
   const [slotsLoading, setSlotsLoading] = useState(false);
   const [bookingDetail, setBookingDetail] = useState(null);
+  const [clientHistory, setClientHistory] = useState(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [managerModal, setManagerModal] = useState({ open: false, worker: null });
   const [managerPermissions, setManagerPermissions] = useState({});
   const [pinModal, setPinModal] = useState({ open: false, type: null }); // type: 'owner_setup' | 'manager_pin'
@@ -755,7 +757,19 @@ export default function BusinessDashboardPage() {
                                 <Badge variant="secondary" className="text-[9px] mt-0.5 px-1 py-0">{durationMin}min</Badge>
                               </div>
                               <Separator orientation="vertical" className="h-10" />
-                              <div className={hasPermission('view_client_data') ? 'cursor-pointer' : ''} onClick={() => hasPermission('view_client_data') && setBookingDetail(booking)}>
+                              <div className={hasPermission('view_client_data') ? 'cursor-pointer' : ''} onClick={async () => {
+                                if (!hasPermission('view_client_data')) return;
+                                setBookingDetail(booking);
+                                setClientHistory(null);
+                                if (booking.user_id) {
+                                  setHistoryLoading(true);
+                                  try {
+                                    const res = await businessesAPI.getClientHistory(booking.user_id);
+                                    setClientHistory(res.data);
+                                  } catch {}
+                                  setHistoryLoading(false);
+                                }
+                              }}>
                                 <p className={`font-medium text-sm ${hasPermission('view_client_data') ? 'hover:text-[#F05D5E] transition-colors' : ''}`}>{booking.client_name || booking.user_name}</p>
                                 <p className="text-xs text-muted-foreground">{booking.service_name}</p>
                                 {booking.worker_name && <p className="text-xs text-muted-foreground/70">{booking.worker_name}</p>}
@@ -1526,12 +1540,12 @@ export default function BusinessDashboardPage() {
         </Dialog>
 
         {/* Booking Detail Modal */}
-        <Dialog open={!!bookingDetail} onOpenChange={(open) => !open && setBookingDetail(null)}>
-          <DialogContent className="max-w-sm" data-testid="booking-detail-modal">
+        <Dialog open={!!bookingDetail} onOpenChange={(open) => { if (!open) { setBookingDetail(null); setClientHistory(null); } }}>
+          <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto" data-testid="booking-detail-modal">
             <DialogHeader>
-              <DialogTitle>{language === 'es' ? 'Detalle de la cita' : 'Booking detail'}</DialogTitle>
+              <DialogTitle>{language === 'es' ? 'Detalle del cliente' : 'Client detail'}</DialogTitle>
               <DialogDescription>
-                {language === 'es' ? 'Información del cliente y la cita' : 'Client and booking information'}
+                {language === 'es' ? 'Información del cliente y su historial' : 'Client information and history'}
               </DialogDescription>
             </DialogHeader>
             {bookingDetail && (() => {
@@ -1607,6 +1621,56 @@ export default function BusinessDashboardPage() {
                         <p className="text-muted-foreground text-xs mb-1">{language === 'es' ? 'Notas' : 'Notes'}</p>
                         <p className="text-sm bg-muted/50 p-2 rounded">{b.notes}</p>
                       </div>
+                    )}
+                  </div>
+                  {/* Client History */}
+                  <Separator />
+                  <div>
+                    <p className="text-sm font-semibold mb-3">{language === 'es' ? 'Historial del cliente' : 'Client history'}</p>
+                    {historyLoading ? (
+                      <div className="flex items-center justify-center py-4">
+                        <div className="h-5 w-5 border-2 border-[#F05D5E] border-t-transparent rounded-full animate-spin" />
+                      </div>
+                    ) : clientHistory ? (
+                      <div className="space-y-3">
+                        <div className="grid grid-cols-3 gap-2">
+                          <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-2.5 text-center">
+                            <p className="text-lg font-bold text-emerald-700 dark:text-emerald-400">{clientHistory.total_visits}</p>
+                            <p className="text-[10px] text-muted-foreground">{language === 'es' ? 'Visitas' : 'Visits'}</p>
+                          </div>
+                          <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-2.5 text-center">
+                            <p className="text-lg font-bold text-blue-700 dark:text-blue-400">${clientHistory.total_spent}</p>
+                            <p className="text-[10px] text-muted-foreground">{language === 'es' ? 'Gastado' : 'Spent'}</p>
+                          </div>
+                          <div className="bg-red-50 dark:bg-red-900/20 rounded-lg p-2.5 text-center">
+                            <p className="text-lg font-bold text-red-600 dark:text-red-400">{clientHistory.total_cancelled}</p>
+                            <p className="text-[10px] text-muted-foreground">{language === 'es' ? 'Canceladas' : 'Cancelled'}</p>
+                          </div>
+                        </div>
+                        {clientHistory.history.length > 0 && (
+                          <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                            {clientHistory.history.map((h, i) => (
+                              <div key={i} className="flex items-center justify-between py-1.5 px-2 rounded-md bg-muted/30 text-xs" data-testid={`history-item-${i}`}>
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${h.status === 'completed' ? 'bg-emerald-500' : h.status === 'confirmed' ? 'bg-blue-500' : h.status === 'cancelled' ? 'bg-red-500' : 'bg-gray-400'}`} />
+                                  <span className="truncate">{h.service_name}</span>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0 ml-2">
+                                  <span className="text-muted-foreground">{new Date(h.date + 'T12:00:00').toLocaleDateString(language === 'es' ? 'es-MX' : 'en-US', { day: 'numeric', month: 'short' })}</span>
+                                  {h.amount > 0 && <span className="font-medium">${h.amount}</span>}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {clientHistory.first_visit && (
+                          <p className="text-[10px] text-muted-foreground text-center">
+                            {language === 'es' ? 'Cliente desde' : 'Client since'} {new Date(clientHistory.first_visit + 'T12:00:00').toLocaleDateString(language === 'es' ? 'es-MX' : 'en-US', { month: 'long', year: 'numeric' })}
+                          </p>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-muted-foreground text-center py-2">{language === 'es' ? 'Sin historial disponible' : 'No history available'}</p>
                     )}
                   </div>
                 </div>

@@ -1295,6 +1295,51 @@ async def get_business_reports(
     }
 
 
+
+@businesses_router.get("/my/client-history/{user_id}")
+async def get_client_history(user_id: str, token_data: TokenData = Depends(require_business)):
+    """Get client history within this business"""
+    business = await db.businesses.find_one({"user_id": token_data.user_id}, {"_id": 0, "id": 1})
+    if not business:
+        raise HTTPException(status_code=404, detail="Business not found")
+    
+    bookings = await db.bookings.find(
+        {"business_id": business["id"], "user_id": user_id},
+        {"_id": 0, "id": 1, "date": 1, "time": 1, "status": 1, "service_id": 1, "total_amount": 1, "deposit_amount": 1, "cancelled_by": 1}
+    ).sort("date", -1).to_list(50)
+    
+    # Get service names
+    service_ids = list(set(b.get("service_id") for b in bookings if b.get("service_id")))
+    services_map = {}
+    if service_ids:
+        for s in await db.services.find({"id": {"$in": service_ids}}, {"_id": 0, "id": 1, "name": 1}).to_list(100):
+            services_map[s["id"]] = s["name"]
+    
+    completed = [b for b in bookings if b.get("status") in ("completed", "confirmed")]
+    cancelled = [b for b in bookings if b.get("status") == "cancelled"]
+    total_spent = sum(b.get("total_amount") or b.get("deposit_amount") or 0 for b in completed)
+    
+    history = []
+    for b in bookings[:15]:
+        history.append({
+            "date": b.get("date", ""),
+            "time": b.get("time", ""),
+            "service_name": services_map.get(b.get("service_id"), ""),
+            "status": b.get("status", ""),
+            "amount": b.get("total_amount") or b.get("deposit_amount") or 0,
+            "cancelled_by": b.get("cancelled_by"),
+        })
+    
+    return {
+        "total_visits": len(completed),
+        "total_cancelled": len(cancelled),
+        "total_spent": round(total_spent, 2),
+        "first_visit": bookings[-1]["date"] if bookings else None,
+        "last_visit": bookings[0]["date"] if bookings else None,
+        "history": history,
+    }
+
+
 @businesses_router.get("/my/reports/export")
 async def export_business_reports(
     period: str = "month",

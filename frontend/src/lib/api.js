@@ -182,6 +182,7 @@ export const businessesAPI = {
   getActivityLog: (params = {}) => api.get('/businesses/my/activity-log', { params }),
   getReports: (period = 'month') => api.get('/businesses/my/reports', { params: { period } }),
   exportReports: (period = 'month') => api.get('/businesses/my/reports/export', { params: { period }, responseType: 'blob' }),
+  getClientHistory: (userId) => api.get(`/businesses/my/client-history/${userId}`),
 };
 
 // Services API
