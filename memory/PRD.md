@@ -79,6 +79,7 @@ Bookvia es una plataforma marketplace de reservas profesionales que conecta nego
 - [x] Exportar reportes a Excel (XLSX) con 4 hojas: Resumen, Citas, Servicios, Clientes
 - [x] Historial del cliente: al hacer clic en nombre del cliente se ve resumen (visitas, gastado, canceladas) y lista de citas anteriores
 - [x] Calendario visual: vista de agenda timeline con bloques de citas posicionados en horarios reales, lineas de hora y botones de accion
+- [x] Mapa de ubicacion del negocio: busqueda de direccion con Nominatim/OpenStreetMap, mapa interactivo en configuracion y perfil publico
 - [ ] Permisos faltantes: Cierres y Suscripcion (tabs aun bloqueados para admins)
 
 ### P2

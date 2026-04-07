@@ -11,7 +11,7 @@ import { useAuth } from '@/lib/auth';
 import { useI18n } from '@/lib/i18n';
 import { businessesAPI } from '@/lib/api';
 import { toast } from 'sonner';
-import { Ban, Trash2, Plus, ArrowLeft, Mail, Phone, User, ShieldX } from 'lucide-react';
+import { Ban, Trash2, Plus, ArrowLeft, Mail, Phone, User, ShieldX, MapPin, Search, Loader2 } from 'lucide-react';
 
 export default function BusinessSettingsPage() {
   const { language } = useI18n();
@@ -23,10 +23,68 @@ export default function BusinessSettingsPage() {
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState({ email: '', phone: '', user_id: '', reason: '' });
 
+  // Location state
+  const [locationSearch, setLocationSearch] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const [currentLocation, setCurrentLocation] = useState(null);
+  const [savingLocation, setSavingLocation] = useState(false);
+
   useEffect(() => {
     if (!isAuthenticated || !isBusiness) { navigate('/business/login'); return; }
     loadBlacklist();
+    loadCurrentLocation();
   }, [isAuthenticated, isBusiness]);
+
+  const loadCurrentLocation = async () => {
+    try {
+      const res = await businessesAPI.getMyBusiness();
+      const biz = res.data;
+      if (biz.latitude && biz.longitude) {
+        setCurrentLocation({ lat: biz.latitude, lng: biz.longitude, address: biz.address, city: biz.city, state: biz.state });
+      }
+    } catch {}
+  };
+
+  const searchAddress = async () => {
+    if (!locationSearch.trim()) return;
+    setSearching(true);
+    setSearchResults([]);
+    try {
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(locationSearch)}&limit=5&countrycodes=mx&addressdetails=1`, {
+        headers: { 'Accept-Language': language === 'es' ? 'es' : 'en' }
+      });
+      const data = await res.json();
+      setSearchResults(data.map(r => ({
+        display: r.display_name,
+        lat: parseFloat(r.lat),
+        lng: parseFloat(r.lon),
+        city: r.address?.city || r.address?.town || r.address?.municipality || '',
+        state: r.address?.state || '',
+      })));
+    } catch { setSearchResults([]); }
+    setSearching(false);
+  };
+
+  const selectLocation = async (loc) => {
+    setSavingLocation(true);
+    try {
+      await businessesAPI.updateBusiness({
+        latitude: loc.lat,
+        longitude: loc.lng,
+        address: loc.display.split(',')[0],
+        city: loc.city,
+        state: loc.state,
+      });
+      setCurrentLocation({ lat: loc.lat, lng: loc.lng, address: loc.display.split(',')[0], city: loc.city, state: loc.state });
+      setSearchResults([]);
+      setLocationSearch('');
+      toast.success(language === 'es' ? 'Ubicacion guardada' : 'Location saved');
+    } catch {
+      toast.error(language === 'es' ? 'Error al guardar' : 'Save error');
+    }
+    setSavingLocation(false);
+  };
 
   const loadBlacklist = async () => {
     try {
@@ -231,6 +289,79 @@ export default function BusinessSettingsPage() {
                 </div>
               )}
             </div>
+          </CardContent>
+        </Card>
+
+        {/* Location Section */}
+        <Card className="mt-6" data-testid="location-section">
+          <CardHeader>
+            <CardTitle className="text-base font-heading flex items-center gap-2">
+              <MapPin className="h-5 w-5 text-[#F05D5E]" />
+              {language === 'es' ? 'Ubicacion del negocio' : 'Business location'}
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">
+              {language === 'es'
+                ? 'Busca tu direccion para mostrar el mapa en tu perfil publico.'
+                : 'Search your address to show the map on your public profile.'}
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Search */}
+            <div className="flex gap-2">
+              <Input
+                placeholder={language === 'es' ? 'Buscar direccion...' : 'Search address...'}
+                value={locationSearch}
+                onChange={e => setLocationSearch(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && searchAddress()}
+                data-testid="location-search-input"
+              />
+              <Button variant="outline" onClick={searchAddress} disabled={searching || !locationSearch.trim()} data-testid="location-search-btn">
+                {searching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+              </Button>
+            </div>
+
+            {/* Search Results */}
+            {searchResults.length > 0 && (
+              <div className="border rounded-lg divide-y max-h-48 overflow-y-auto" data-testid="location-results">
+                {searchResults.map((r, i) => (
+                  <button
+                    key={i}
+                    className="w-full text-left px-3 py-2.5 hover:bg-muted/50 transition-colors text-sm flex items-start gap-2"
+                    onClick={() => selectLocation(r)}
+                    disabled={savingLocation}
+                    data-testid={`location-result-${i}`}
+                  >
+                    <MapPin className="h-4 w-4 text-[#F05D5E] mt-0.5 shrink-0" />
+                    <span className="line-clamp-2">{r.display}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Current Location Preview */}
+            {currentLocation ? (
+              <div className="rounded-xl border overflow-hidden" data-testid="current-location-map">
+                <iframe
+                  title="map"
+                  width="100%"
+                  height="200"
+                  style={{ border: 0 }}
+                  loading="lazy"
+                  src={`https://www.openstreetmap.org/export/embed.html?bbox=${currentLocation.lng - 0.008}%2C${currentLocation.lat - 0.005}%2C${currentLocation.lng + 0.008}%2C${currentLocation.lat + 0.005}&layer=mapnik&marker=${currentLocation.lat}%2C${currentLocation.lng}`}
+                />
+                <div className="px-3 py-2 bg-muted/30 flex items-center gap-2">
+                  <MapPin className="h-4 w-4 text-[#F05D5E] shrink-0" />
+                  <span className="text-sm truncate">{currentLocation.address}, {currentLocation.city}, {currentLocation.state}</span>
+                </div>
+              </div>
+            ) : (
+              <div className="h-[160px] border-2 border-dashed rounded-xl flex flex-col items-center justify-center">
+                <MapPin className="h-8 w-8 text-muted-foreground/30 mb-2" />
+                <p className="text-sm text-muted-foreground">
+                  {language === 'es' ? 'Busca tu direccion para ver el mapa' : 'Search your address to see the map'}
+                </p>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
