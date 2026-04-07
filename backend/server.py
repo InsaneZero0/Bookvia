@@ -1320,7 +1320,7 @@ async def get_client_history(user_id: str, token_data: TokenData = Depends(requi
     total_spent = sum(b.get("total_amount") or b.get("deposit_amount") or 0 for b in completed)
     
     history = []
-    for b in bookings[:15]:
+    for b in bookings[:5]:
         history.append({
             "date": b.get("date", ""),
             "time": b.get("time", ""),
