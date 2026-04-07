@@ -1119,6 +1119,182 @@ async def calculate_business_ledger_summary(business_id: str, period_start: str 
         "pending_payout": round(net_earnings - total_payouts, 2)
     }
 
+
+# ========================== REPORTS ROUTES ==========================
+
+@businesses_router.get("/my/reports")
+async def get_business_reports(
+    period: str = "month",
+    token_data: TokenData = Depends(require_business)
+):
+    """Get business reports/analytics. period: week, month, quarter, year"""
+    business = await db.businesses.find_one({"user_id": token_data.user_id}, {"_id": 0})
+    if not business:
+        raise HTTPException(status_code=404, detail="Business not found")
+    
+    business_id = business["id"]
+    now = datetime.now(timezone.utc)
+    
+    period_days = {"week": 7, "month": 30, "quarter": 90, "year": 365}
+    days = period_days.get(period, 30)
+    start_date = now - timedelta(days=days)
+    prev_start = start_date - timedelta(days=days)
+    
+    # Current period bookings
+    current_bookings = await db.bookings.find(
+        {"business_id": business_id, "created_at": {"$gte": start_date.isoformat()}},
+        {"_id": 0}
+    ).to_list(10000)
+    
+    # Previous period bookings (for comparison)
+    prev_bookings = await db.bookings.find(
+        {"business_id": business_id, "created_at": {"$gte": prev_start.isoformat(), "$lt": start_date.isoformat()}},
+        {"_id": 0}
+    ).to_list(10000)
+    
+    # Current period transactions (paid only)
+    current_transactions = await db.transactions.find(
+        {"business_id": business_id, "status": "paid", "created_at": {"$gte": start_date.isoformat()}},
+        {"_id": 0}
+    ).to_list(10000)
+    
+    prev_transactions = await db.transactions.find(
+        {"business_id": business_id, "status": "paid", "created_at": {"$gte": prev_start.isoformat(), "$lt": start_date.isoformat()}},
+        {"_id": 0}
+    ).to_list(10000)
+    
+    # === BOOKING STATS ===
+    completed = len([b for b in current_bookings if b.get("status") == "completed"])
+    confirmed = len([b for b in current_bookings if b.get("status") == "confirmed"])
+    cancelled = len([b for b in current_bookings if b.get("status") == "cancelled"])
+    total_bookings = len(current_bookings)
+    prev_total = len(prev_bookings)
+    cancel_rate = round((cancelled / total_bookings * 100) if total_bookings > 0 else 0, 1)
+    
+    # === REVENUE ===
+    current_revenue = sum(t.get("amount_total", 0) for t in current_transactions)
+    prev_revenue = sum(t.get("amount_total", 0) for t in prev_transactions)
+    revenue_change = round(((current_revenue - prev_revenue) / prev_revenue * 100) if prev_revenue > 0 else 0, 1)
+    bookings_change = round(((total_bookings - prev_total) / prev_total * 100) if prev_total > 0 else 0, 1)
+    
+    # === REVENUE BY DAY (for chart) ===
+    revenue_by_day = {}
+    for t in current_transactions:
+        day = t.get("created_at", "")[:10]
+        if day:
+            revenue_by_day[day] = revenue_by_day.get(day, 0) + t.get("amount_total", 0)
+    
+    bookings_by_day = {}
+    for b in current_bookings:
+        day = b.get("date", b.get("created_at", "")[:10])
+        if day:
+            bookings_by_day[day] = bookings_by_day.get(day, 0) + 1
+    
+    # Build daily chart data
+    daily_chart = []
+    for i in range(min(days, 30)):
+        d = (now - timedelta(days=days - 1 - i)).strftime("%Y-%m-%d")
+        daily_chart.append({
+            "date": d,
+            "revenue": round(revenue_by_day.get(d, 0), 2),
+            "bookings": bookings_by_day.get(d, 0)
+        })
+    
+    # === TOP SERVICES ===
+    service_counts = {}
+    service_revenue = {}
+    for b in current_bookings:
+        sid = b.get("service_id")
+        if sid:
+            service_counts[sid] = service_counts.get(sid, 0) + 1
+            if b.get("status") in ("completed", "confirmed"):
+                service_revenue[sid] = service_revenue.get(sid, 0) + (b.get("total_amount") or b.get("deposit_amount") or 0)
+    
+    service_ids = list(set(list(service_counts.keys()) + list(service_revenue.keys())))
+    services_map = {}
+    if service_ids:
+        svcs = await db.services.find({"id": {"$in": service_ids}}, {"_id": 0, "id": 1, "name": 1}).to_list(100)
+        services_map = {s["id"]: s["name"] for s in svcs}
+    
+    top_services = sorted(
+        [{"name": services_map.get(sid, "Servicio"), "bookings": service_counts.get(sid, 0), "revenue": round(service_revenue.get(sid, 0), 2)}
+         for sid in service_ids],
+        key=lambda x: x["bookings"], reverse=True
+    )[:5]
+    
+    # === TOP CLIENTS ===
+    client_visits = {}
+    client_spent = {}
+    for b in current_bookings:
+        uid = b.get("user_id")
+        if uid and b.get("status") in ("completed", "confirmed"):
+            client_visits[uid] = client_visits.get(uid, 0) + 1
+            client_spent[uid] = client_spent.get(uid, 0) + (b.get("total_amount") or b.get("deposit_amount") or 0)
+    
+    top_client_ids = sorted(client_visits.keys(), key=lambda x: client_visits[x], reverse=True)[:5]
+    top_clients = []
+    for uid in top_client_ids:
+        u = await db.users.find_one({"id": uid}, {"_id": 0, "full_name": 1, "email": 1})
+        top_clients.append({
+            "name": u.get("full_name", "Cliente") if u else "Cliente",
+            "email": u.get("email", "") if u else "",
+            "visits": client_visits[uid],
+            "total_spent": round(client_spent.get(uid, 0), 2)
+        })
+    
+    # === PEAK HOURS ===
+    hour_counts = {}
+    for b in current_bookings:
+        t = b.get("time", "")
+        if t:
+            hour = t.split(":")[0]
+            hour_counts[hour] = hour_counts.get(hour, 0) + 1
+    
+    peak_hours = sorted(
+        [{"hour": f"{h}:00", "bookings": c} for h, c in hour_counts.items()],
+        key=lambda x: x["bookings"], reverse=True
+    )[:6]
+    
+    # === PEAK DAYS ===
+    day_names_es = ["Lun", "Mar", "Mie", "Jue", "Vie", "Sab", "Dom"]
+    day_counts = {i: 0 for i in range(7)}
+    for b in current_bookings:
+        d = b.get("date", "")
+        if d:
+            try:
+                weekday = datetime.strptime(d, "%Y-%m-%d").weekday()
+                day_counts[weekday] += 1
+            except ValueError:
+                pass
+    
+    peak_days = [{"day": day_names_es[i], "bookings": day_counts[i]} for i in range(7)]
+    
+    # === CANCELLATION BREAKDOWN ===
+    cancelled_by_user = len([b for b in current_bookings if b.get("status") == "cancelled" and b.get("cancelled_by") == "user"])
+    cancelled_by_business = len([b for b in current_bookings if b.get("status") == "cancelled" and b.get("cancelled_by") == "business"])
+    
+    return {
+        "period": period,
+        "summary": {
+            "total_bookings": total_bookings,
+            "completed": completed,
+            "confirmed": confirmed,
+            "cancelled": cancelled,
+            "cancel_rate": cancel_rate,
+            "revenue": round(current_revenue, 2),
+            "revenue_change": revenue_change,
+            "bookings_change": bookings_change,
+            "cancelled_by_user": cancelled_by_user,
+            "cancelled_by_business": cancelled_by_business,
+        },
+        "daily_chart": daily_chart,
+        "top_services": top_services,
+        "top_clients": top_clients,
+        "peak_hours": peak_hours,
+        "peak_days": peak_days,
+    }
+
+
 # ========================== AUTH ROUTES ==========================
 
 @auth_router.post("/register", response_model=dict)

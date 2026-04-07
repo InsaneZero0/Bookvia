@@ -20,6 +20,7 @@ import { formatDate, formatTime, formatCurrency, getStatusColor, getInitials } f
 import { format } from 'date-fns';
 import { es, enUS } from 'date-fns/locale';
 import { toast } from 'sonner';
+import ReportsTab from '@/components/ReportsTab';
 import {
   Calendar as CalendarIcon, DollarSign, Star, Users, Clock, CheckCircle2,
   XCircle, AlertTriangle, TrendingUp, Settings, UserCog, Image, Upload,
@@ -690,6 +691,7 @@ export default function BusinessDashboardPage() {
         {(() => {
           const visibleTabs = [
             { value: 'overview', show: hasPermission('view_agenda'), icon: BarChart3, label: language === 'es' ? 'Agenda' : 'Schedule' },
+            { value: 'reports', show: hasPermission('view_reports'), icon: TrendingUp, label: language === 'es' ? 'Reportes' : 'Reports' },
             { value: 'services', show: hasPermission('edit_services'), icon: Briefcase, label: language === 'es' ? 'Servicios' : 'Services' },
             { value: 'team', show: hasPermission('view_team'), icon: Users, label: language === 'es' ? 'Equipo' : 'Team' },
             { value: 'closures', show: !isManager, icon: CalendarOff, label: language === 'es' ? 'Cierres' : 'Closures' },
@@ -823,6 +825,11 @@ export default function BusinessDashboardPage() {
                 </CardContent>
               </Card>
             </div>
+          </TabsContent>
+
+          {/* ── Reports Tab ─────────────────────────── */}
+          <TabsContent value="reports" className="mt-6">
+            <ReportsTab language={language} />
           </TabsContent>
 
           {/* ── Services Tab ─────────────────────────── */}
