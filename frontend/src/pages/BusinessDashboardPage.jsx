@@ -21,6 +21,7 @@ import { format } from 'date-fns';
 import { es, enUS } from 'date-fns/locale';
 import { toast } from 'sonner';
 import ReportsTab from '@/components/ReportsTab';
+import AgendaTimeline from '@/components/AgendaTimeline';
 import {
   Calendar as CalendarIcon, DollarSign, Star, Users, Clock, CheckCircle2,
   XCircle, AlertTriangle, TrendingUp, Settings, UserCog, Image, Upload,
@@ -740,102 +741,28 @@ export default function BusinessDashboardPage() {
                   <Badge variant="outline">{dayBookings.length}</Badge>
                 </CardHeader>
                 <CardContent>
-                  {dayBookings.length > 0 ? (
-                    <div className="space-y-3 max-h-[400px] overflow-y-auto pr-1">
-                      {dayBookings.map(booking => {
-                        const durationMin = booking.duration_minutes || 60;
-                        const blockHeight = Math.max(48, Math.min(durationMin * 0.8, 120));
-                        return (
-                        <div key={booking.id} className="flex items-stretch gap-0 rounded-xl border border-border/60 hover:border-[#F05D5E]/20 transition-colors overflow-hidden" data-testid={`booking-${booking.id}`} style={{minHeight: `${blockHeight}px`}}>
-                          {/* Time block indicator */}
-                          <div className="w-1.5 shrink-0 bg-[#F05D5E]/70 rounded-l-xl" />
-                          <div className="flex items-center justify-between p-3 flex-1">
-                            <div className="flex items-center gap-3">
-                              <div className="w-16 text-center shrink-0">
-                                <p className="text-sm font-bold">{formatTime(booking.time)}</p>
-                                <p className="text-[10px] text-muted-foreground">{formatTime(booking.end_time)}</p>
-                                <Badge variant="secondary" className="text-[9px] mt-0.5 px-1 py-0">{durationMin}min</Badge>
-                              </div>
-                              <Separator orientation="vertical" className="h-10" />
-                              <div className={hasPermission('view_client_data') ? 'cursor-pointer' : ''} onClick={async () => {
-                                if (!hasPermission('view_client_data')) return;
-                                setBookingDetail(booking);
-                                setClientHistory(null);
-                                if (booking.user_id) {
-                                  setHistoryLoading(true);
-                                  try {
-                                    const res = await businessesAPI.getClientHistory(booking.user_id);
-                                    setClientHistory(res.data);
-                                  } catch {}
-                                  setHistoryLoading(false);
-                                }
-                              }}>
-                                <p className={`font-medium text-sm ${hasPermission('view_client_data') ? 'hover:text-[#F05D5E] transition-colors' : ''}`}>{booking.client_name || booking.user_name}</p>
-                                <p className="text-xs text-muted-foreground">{booking.service_name}</p>
-                                {booking.worker_name && <p className="text-xs text-muted-foreground/70">{booking.worker_name}</p>}
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-1.5">
-                              <Badge className={`text-[10px] ${getStatusColor(booking.status)}`}>
-                                {booking.status === 'cancelled' && booking.cancelled_by
-                                  ? (language === 'es' 
-                                    ? `Cancelada por ${booking.cancelled_by === 'business' ? 'negocio' : 'cliente'}`
-                                    : `Cancelled by ${booking.cancelled_by}`)
-                                  : t(`status.${booking.status}`)}
-                              </Badge>
-                              {booking.status === 'confirmed' && (() => {
-                                const now = new Date();
-                                const endDt = new Date(`${booking.date}T${booking.end_time}:00`);
-                                const isPast = now >= endDt;
-                                return (
-                                  <>
-                                    {hasPermission('complete_bookings') && (
-                                      <Button size="sm" variant="outline" className="h-7 text-xs" disabled={!isPast} title={!isPast ? (language === 'es' ? 'Disponible al terminar la cita' : 'Available after appointment ends') : ''} onClick={() => handleBookingAction(booking.id, 'complete')}>
-                                        {language === 'es' ? 'Completar' : 'Complete'}
-                                      </Button>
-                                    )}
-                                    {hasPermission('reschedule_bookings') && (
-                                      <Button size="sm" variant="outline" className="h-7 text-xs text-blue-600 border-blue-200 hover:bg-blue-50" onClick={() => openReschedule(booking)} data-testid={`reschedule-booking-${booking.id}`}>
-                                        <RefreshCw className="h-3 w-3 mr-1" />
-                                        {language === 'es' ? 'Reagendar' : 'Reschedule'}
-                                      </Button>
-                                    )}
-                                    {hasPermission('cancel_bookings') && (
-                                      <Button size="sm" variant="outline" className="h-7 text-xs text-red-600 border-red-200 hover:bg-red-50" onClick={() => handleBookingAction(booking.id, 'cancel')} data-testid={`cancel-booking-${booking.id}`}>
-                                        {language === 'es' ? 'Cancelar' : 'Cancel'}
-                                      </Button>
-                                    )}
-                                  </>
-                                );
-                              })()}
-                              {booking.status === 'hold' && (
-                                <>
-                                  {hasPermission('reschedule_bookings') && (
-                                    <Button size="sm" variant="outline" className="h-7 text-xs text-blue-600 border-blue-200 hover:bg-blue-50" onClick={() => openReschedule(booking)} data-testid={`reschedule-hold-${booking.id}`}>
-                                      <RefreshCw className="h-3 w-3 mr-1" />
-                                      {language === 'es' ? 'Reagendar' : 'Reschedule'}
-                                    </Button>
-                                  )}
-                                  {hasPermission('cancel_bookings') && (
-                                    <Button size="sm" variant="outline" className="h-7 text-xs text-red-600 border-red-200 hover:bg-red-50" onClick={() => handleBookingAction(booking.id, 'cancel')} data-testid={`cancel-hold-${booking.id}`}>
-                                      {language === 'es' ? 'Cancelar' : 'Cancel'}
-                                    </Button>
-                                  )}
-                                </>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      );})}
-                    </div>
-                  ) : (
-                    <div className="text-center py-12">
-                      <CalendarIcon className="h-10 w-10 text-muted-foreground/40 mx-auto mb-3" />
-                      <p className="text-sm text-muted-foreground">
-                        {language === 'es' ? 'No hay citas para este día' : 'No bookings for this day'}
-                      </p>
-                    </div>
-                  )}
+                  <AgendaTimeline
+                    bookings={dayBookings}
+                    language={language}
+                    hasPermission={hasPermission}
+                    getStatusColor={getStatusColor}
+                    t={t}
+                    onClientClick={async (booking) => {
+                      setBookingDetail(booking);
+                      setClientHistory(null);
+                      if (booking.user_id) {
+                        setHistoryLoading(true);
+                        try {
+                          const res = await businessesAPI.getClientHistory(booking.user_id);
+                          setClientHistory(res.data);
+                        } catch {}
+                        setHistoryLoading(false);
+                      }
+                    }}
+                    onComplete={(id) => handleBookingAction(id, 'complete')}
+                    onReschedule={openReschedule}
+                    onCancel={(id) => handleBookingAction(id, 'cancel')}
+                  />
                 </CardContent>
               </Card>
             </div>
