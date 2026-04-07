@@ -20,6 +20,8 @@ import { formatDate, formatTime, formatCurrency, getStatusColor, getInitials } f
 import { format } from 'date-fns';
 import { es, enUS } from 'date-fns/locale';
 import { toast } from 'sonner';
+import ReportsTab from '@/components/ReportsTab';
+import AgendaTimeline from '@/components/AgendaTimeline';
 import {
   Calendar as CalendarIcon, DollarSign, Star, Users, Clock, CheckCircle2,
   XCircle, AlertTriangle, TrendingUp, Settings, UserCog, Image, Upload,
@@ -56,6 +58,8 @@ export default function BusinessDashboardPage() {
   const [rescheduleLoading, setRescheduleLoading] = useState(false);
   const [slotsLoading, setSlotsLoading] = useState(false);
   const [bookingDetail, setBookingDetail] = useState(null);
+  const [clientHistory, setClientHistory] = useState(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
   const [managerModal, setManagerModal] = useState({ open: false, worker: null });
   const [managerPermissions, setManagerPermissions] = useState({});
   const [pinModal, setPinModal] = useState({ open: false, type: null }); // type: 'owner_setup' | 'manager_pin'
@@ -690,6 +694,7 @@ export default function BusinessDashboardPage() {
         {(() => {
           const visibleTabs = [
             { value: 'overview', show: hasPermission('view_agenda'), icon: BarChart3, label: language === 'es' ? 'Agenda' : 'Schedule' },
+            { value: 'reports', show: hasPermission('view_reports'), icon: TrendingUp, label: language === 'es' ? 'Reportes' : 'Reports' },
             { value: 'services', show: hasPermission('edit_services'), icon: Briefcase, label: language === 'es' ? 'Servicios' : 'Services' },
             { value: 'team', show: hasPermission('view_team'), icon: Users, label: language === 'es' ? 'Equipo' : 'Team' },
             { value: 'closures', show: !isManager, icon: CalendarOff, label: language === 'es' ? 'Cierres' : 'Closures' },
@@ -736,93 +741,43 @@ export default function BusinessDashboardPage() {
                   <Badge variant="outline">{dayBookings.length}</Badge>
                 </CardHeader>
                 <CardContent>
-                  {dayBookings.length > 0 ? (
-                    <div className="space-y-3 max-h-[400px] overflow-y-auto pr-1">
-                      {dayBookings.map(booking => {
-                        const durationMin = booking.duration_minutes || 60;
-                        const blockHeight = Math.max(48, Math.min(durationMin * 0.8, 120));
-                        return (
-                        <div key={booking.id} className="flex items-stretch gap-0 rounded-xl border border-border/60 hover:border-[#F05D5E]/20 transition-colors overflow-hidden" data-testid={`booking-${booking.id}`} style={{minHeight: `${blockHeight}px`}}>
-                          {/* Time block indicator */}
-                          <div className="w-1.5 shrink-0 bg-[#F05D5E]/70 rounded-l-xl" />
-                          <div className="flex items-center justify-between p-3 flex-1">
-                            <div className="flex items-center gap-3">
-                              <div className="w-16 text-center shrink-0">
-                                <p className="text-sm font-bold">{formatTime(booking.time)}</p>
-                                <p className="text-[10px] text-muted-foreground">{formatTime(booking.end_time)}</p>
-                                <Badge variant="secondary" className="text-[9px] mt-0.5 px-1 py-0">{durationMin}min</Badge>
-                              </div>
-                              <Separator orientation="vertical" className="h-10" />
-                              <div className={hasPermission('view_client_data') ? 'cursor-pointer' : ''} onClick={() => hasPermission('view_client_data') && setBookingDetail(booking)}>
-                                <p className={`font-medium text-sm ${hasPermission('view_client_data') ? 'hover:text-[#F05D5E] transition-colors' : ''}`}>{booking.client_name || booking.user_name}</p>
-                                <p className="text-xs text-muted-foreground">{booking.service_name}</p>
-                                {booking.worker_name && <p className="text-xs text-muted-foreground/70">{booking.worker_name}</p>}
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-1.5">
-                              <Badge className={`text-[10px] ${getStatusColor(booking.status)}`}>
-                                {booking.status === 'cancelled' && booking.cancelled_by
-                                  ? (language === 'es' 
-                                    ? `Cancelada por ${booking.cancelled_by === 'business' ? 'negocio' : 'cliente'}`
-                                    : `Cancelled by ${booking.cancelled_by}`)
-                                  : t(`status.${booking.status}`)}
-                              </Badge>
-                              {booking.status === 'confirmed' && (() => {
-                                const now = new Date();
-                                const endDt = new Date(`${booking.date}T${booking.end_time}:00`);
-                                const isPast = now >= endDt;
-                                return (
-                                  <>
-                                    {hasPermission('complete_bookings') && (
-                                      <Button size="sm" variant="outline" className="h-7 text-xs" disabled={!isPast} title={!isPast ? (language === 'es' ? 'Disponible al terminar la cita' : 'Available after appointment ends') : ''} onClick={() => handleBookingAction(booking.id, 'complete')}>
-                                        {language === 'es' ? 'Completar' : 'Complete'}
-                                      </Button>
-                                    )}
-                                    {hasPermission('reschedule_bookings') && (
-                                      <Button size="sm" variant="outline" className="h-7 text-xs text-blue-600 border-blue-200 hover:bg-blue-50" onClick={() => openReschedule(booking)} data-testid={`reschedule-booking-${booking.id}`}>
-                                        <RefreshCw className="h-3 w-3 mr-1" />
-                                        {language === 'es' ? 'Reagendar' : 'Reschedule'}
-                                      </Button>
-                                    )}
-                                    {hasPermission('cancel_bookings') && (
-                                      <Button size="sm" variant="outline" className="h-7 text-xs text-red-600 border-red-200 hover:bg-red-50" onClick={() => handleBookingAction(booking.id, 'cancel')} data-testid={`cancel-booking-${booking.id}`}>
-                                        {language === 'es' ? 'Cancelar' : 'Cancel'}
-                                      </Button>
-                                    )}
-                                  </>
-                                );
-                              })()}
-                              {booking.status === 'hold' && (
-                                <>
-                                  {hasPermission('reschedule_bookings') && (
-                                    <Button size="sm" variant="outline" className="h-7 text-xs text-blue-600 border-blue-200 hover:bg-blue-50" onClick={() => openReschedule(booking)} data-testid={`reschedule-hold-${booking.id}`}>
-                                      <RefreshCw className="h-3 w-3 mr-1" />
-                                      {language === 'es' ? 'Reagendar' : 'Reschedule'}
-                                    </Button>
-                                  )}
-                                  {hasPermission('cancel_bookings') && (
-                                    <Button size="sm" variant="outline" className="h-7 text-xs text-red-600 border-red-200 hover:bg-red-50" onClick={() => handleBookingAction(booking.id, 'cancel')} data-testid={`cancel-hold-${booking.id}`}>
-                                      {language === 'es' ? 'Cancelar' : 'Cancel'}
-                                    </Button>
-                                  )}
-                                </>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      );})}
-                    </div>
-                  ) : (
-                    <div className="text-center py-12">
-                      <CalendarIcon className="h-10 w-10 text-muted-foreground/40 mx-auto mb-3" />
-                      <p className="text-sm text-muted-foreground">
-                        {language === 'es' ? 'No hay citas para este día' : 'No bookings for this day'}
-                      </p>
-                    </div>
-                  )}
+                  {/* Leyenda de colores */}
+                  <div className="flex flex-wrap gap-x-4 gap-y-1 mb-4 text-xs text-muted-foreground">
+                    <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-blue-500" />{language === 'es' ? 'Confirmada' : 'Confirmed'}</span>
+                    <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />{language === 'es' ? 'Completada' : 'Completed'}</span>
+                    <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-amber-500" />{language === 'es' ? 'Pendiente de pago' : 'Pending payment'}</span>
+                    <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-red-500" />{language === 'es' ? 'Cancelada' : 'Cancelled'}</span>
+                  </div>
+                  <AgendaTimeline
+                    bookings={dayBookings}
+                    language={language}
+                    hasPermission={hasPermission}
+                    getStatusColor={getStatusColor}
+                    t={t}
+                    onClientClick={async (booking) => {
+                      setBookingDetail(booking);
+                      setClientHistory(null);
+                      if (booking.user_id) {
+                        setHistoryLoading(true);
+                        try {
+                          const res = await businessesAPI.getClientHistory(booking.user_id);
+                          setClientHistory(res.data);
+                        } catch {}
+                        setHistoryLoading(false);
+                      }
+                    }}
+                    onComplete={(id) => handleBookingAction(id, 'complete')}
+                    onReschedule={openReschedule}
+                    onCancel={(id) => handleBookingAction(id, 'cancel')}
+                  />
                 </CardContent>
               </Card>
             </div>
+          </TabsContent>
+
+          {/* ── Reports Tab ─────────────────────────── */}
+          <TabsContent value="reports" className="mt-6">
+            <ReportsTab language={language} />
           </TabsContent>
 
           {/* ── Services Tab ─────────────────────────── */}
@@ -1519,12 +1474,12 @@ export default function BusinessDashboardPage() {
         </Dialog>
 
         {/* Booking Detail Modal */}
-        <Dialog open={!!bookingDetail} onOpenChange={(open) => !open && setBookingDetail(null)}>
-          <DialogContent className="max-w-sm" data-testid="booking-detail-modal">
+        <Dialog open={!!bookingDetail} onOpenChange={(open) => { if (!open) { setBookingDetail(null); setClientHistory(null); } }}>
+          <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto" data-testid="booking-detail-modal">
             <DialogHeader>
-              <DialogTitle>{language === 'es' ? 'Detalle de la cita' : 'Booking detail'}</DialogTitle>
+              <DialogTitle>{language === 'es' ? 'Detalle del cliente' : 'Client detail'}</DialogTitle>
               <DialogDescription>
-                {language === 'es' ? 'Información del cliente y la cita' : 'Client and booking information'}
+                {language === 'es' ? 'Información del cliente y su historial' : 'Client information and history'}
               </DialogDescription>
             </DialogHeader>
             {bookingDetail && (() => {
@@ -1600,6 +1555,56 @@ export default function BusinessDashboardPage() {
                         <p className="text-muted-foreground text-xs mb-1">{language === 'es' ? 'Notas' : 'Notes'}</p>
                         <p className="text-sm bg-muted/50 p-2 rounded">{b.notes}</p>
                       </div>
+                    )}
+                  </div>
+                  {/* Client History */}
+                  <Separator />
+                  <div>
+                    <p className="text-sm font-semibold mb-3">{language === 'es' ? 'Historial del cliente' : 'Client history'}</p>
+                    {historyLoading ? (
+                      <div className="flex items-center justify-center py-4">
+                        <div className="h-5 w-5 border-2 border-[#F05D5E] border-t-transparent rounded-full animate-spin" />
+                      </div>
+                    ) : clientHistory ? (
+                      <div className="space-y-3">
+                        <div className="grid grid-cols-3 gap-2">
+                          <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-lg p-2.5 text-center">
+                            <p className="text-lg font-bold text-emerald-700 dark:text-emerald-400">{clientHistory.total_visits}</p>
+                            <p className="text-[10px] text-muted-foreground">{language === 'es' ? 'Visitas' : 'Visits'}</p>
+                          </div>
+                          <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-2.5 text-center">
+                            <p className="text-lg font-bold text-blue-700 dark:text-blue-400">${clientHistory.total_spent}</p>
+                            <p className="text-[10px] text-muted-foreground">{language === 'es' ? 'Gastado' : 'Spent'}</p>
+                          </div>
+                          <div className="bg-red-50 dark:bg-red-900/20 rounded-lg p-2.5 text-center">
+                            <p className="text-lg font-bold text-red-600 dark:text-red-400">{clientHistory.total_cancelled}</p>
+                            <p className="text-[10px] text-muted-foreground">{language === 'es' ? 'Canceladas' : 'Cancelled'}</p>
+                          </div>
+                        </div>
+                        {clientHistory.history.length > 0 && (
+                          <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                            {clientHistory.history.map((h, i) => (
+                              <div key={i} className="flex items-center justify-between py-1.5 px-2 rounded-md bg-muted/30 text-xs" data-testid={`history-item-${i}`}>
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className={`h-1.5 w-1.5 rounded-full shrink-0 ${h.status === 'completed' ? 'bg-emerald-500' : h.status === 'confirmed' ? 'bg-blue-500' : h.status === 'cancelled' ? 'bg-red-500' : 'bg-gray-400'}`} />
+                                  <span className="truncate">{h.service_name}</span>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0 ml-2">
+                                  <span className="text-muted-foreground">{new Date(h.date + 'T12:00:00').toLocaleDateString(language === 'es' ? 'es-MX' : 'en-US', { day: 'numeric', month: 'short' })}</span>
+                                  {h.amount > 0 && <span className="font-medium">${h.amount}</span>}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {clientHistory.first_visit && (
+                          <p className="text-[10px] text-muted-foreground text-center">
+                            {language === 'es' ? 'Cliente desde' : 'Client since'} {new Date(clientHistory.first_visit + 'T12:00:00').toLocaleDateString(language === 'es' ? 'es-MX' : 'en-US', { month: 'long', year: 'numeric' })}
+                          </p>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-muted-foreground text-center py-2">{language === 'es' ? 'Sin historial disponible' : 'No history available'}</p>
                     )}
                   </div>
                 </div>

@@ -1119,6 +1119,389 @@ async def calculate_business_ledger_summary(business_id: str, period_start: str 
         "pending_payout": round(net_earnings - total_payouts, 2)
     }
 
+
+# ========================== REPORTS ROUTES ==========================
+
+@businesses_router.get("/my/reports")
+async def get_business_reports(
+    period: str = "month",
+    token_data: TokenData = Depends(require_business)
+):
+    """Get business reports/analytics. period: week, month, quarter, year"""
+    business = await db.businesses.find_one({"user_id": token_data.user_id}, {"_id": 0})
+    if not business:
+        raise HTTPException(status_code=404, detail="Business not found")
+    
+    business_id = business["id"]
+    now = datetime.now(timezone.utc)
+    
+    period_days = {"week": 7, "month": 30, "quarter": 90, "year": 365}
+    days = period_days.get(period, 30)
+    start_date = now - timedelta(days=days)
+    prev_start = start_date - timedelta(days=days)
+    
+    # Current period bookings
+    current_bookings = await db.bookings.find(
+        {"business_id": business_id, "created_at": {"$gte": start_date.isoformat()}},
+        {"_id": 0}
+    ).to_list(10000)
+    
+    # Previous period bookings (for comparison)
+    prev_bookings = await db.bookings.find(
+        {"business_id": business_id, "created_at": {"$gte": prev_start.isoformat(), "$lt": start_date.isoformat()}},
+        {"_id": 0}
+    ).to_list(10000)
+    
+    # Current period transactions (paid only)
+    current_transactions = await db.transactions.find(
+        {"business_id": business_id, "status": "paid", "created_at": {"$gte": start_date.isoformat()}},
+        {"_id": 0}
+    ).to_list(10000)
+    
+    prev_transactions = await db.transactions.find(
+        {"business_id": business_id, "status": "paid", "created_at": {"$gte": prev_start.isoformat(), "$lt": start_date.isoformat()}},
+        {"_id": 0}
+    ).to_list(10000)
+    
+    # === BOOKING STATS ===
+    completed = len([b for b in current_bookings if b.get("status") == "completed"])
+    confirmed = len([b for b in current_bookings if b.get("status") == "confirmed"])
+    cancelled = len([b for b in current_bookings if b.get("status") == "cancelled"])
+    total_bookings = len(current_bookings)
+    prev_total = len(prev_bookings)
+    cancel_rate = round((cancelled / total_bookings * 100) if total_bookings > 0 else 0, 1)
+    
+    # === REVENUE ===
+    current_revenue = sum(t.get("amount_total", 0) for t in current_transactions)
+    prev_revenue = sum(t.get("amount_total", 0) for t in prev_transactions)
+    revenue_change = round(((current_revenue - prev_revenue) / prev_revenue * 100) if prev_revenue > 0 else 0, 1)
+    bookings_change = round(((total_bookings - prev_total) / prev_total * 100) if prev_total > 0 else 0, 1)
+    
+    # === REVENUE BY DAY (for chart) ===
+    revenue_by_day = {}
+    for t in current_transactions:
+        day = t.get("created_at", "")[:10]
+        if day:
+            revenue_by_day[day] = revenue_by_day.get(day, 0) + t.get("amount_total", 0)
+    
+    bookings_by_day = {}
+    for b in current_bookings:
+        day = b.get("date", b.get("created_at", "")[:10])
+        if day:
+            bookings_by_day[day] = bookings_by_day.get(day, 0) + 1
+    
+    # Build daily chart data
+    daily_chart = []
+    for i in range(min(days, 30)):
+        d = (now - timedelta(days=days - 1 - i)).strftime("%Y-%m-%d")
+        daily_chart.append({
+            "date": d,
+            "revenue": round(revenue_by_day.get(d, 0), 2),
+            "bookings": bookings_by_day.get(d, 0)
+        })
+    
+    # === TOP SERVICES ===
+    service_counts = {}
+    service_revenue = {}
+    for b in current_bookings:
+        sid = b.get("service_id")
+        if sid:
+            service_counts[sid] = service_counts.get(sid, 0) + 1
+            if b.get("status") in ("completed", "confirmed"):
+                service_revenue[sid] = service_revenue.get(sid, 0) + (b.get("total_amount") or b.get("deposit_amount") or 0)
+    
+    service_ids = list(set(list(service_counts.keys()) + list(service_revenue.keys())))
+    services_map = {}
+    if service_ids:
+        svcs = await db.services.find({"id": {"$in": service_ids}}, {"_id": 0, "id": 1, "name": 1}).to_list(100)
+        services_map = {s["id"]: s["name"] for s in svcs}
+    
+    top_services = sorted(
+        [{"name": services_map.get(sid, "Servicio"), "bookings": service_counts.get(sid, 0), "revenue": round(service_revenue.get(sid, 0), 2)}
+         for sid in service_ids],
+        key=lambda x: x["bookings"], reverse=True
+    )[:5]
+    
+    # === TOP CLIENTS ===
+    client_visits = {}
+    client_spent = {}
+    for b in current_bookings:
+        uid = b.get("user_id")
+        if uid and b.get("status") in ("completed", "confirmed"):
+            client_visits[uid] = client_visits.get(uid, 0) + 1
+            client_spent[uid] = client_spent.get(uid, 0) + (b.get("total_amount") or b.get("deposit_amount") or 0)
+    
+    top_client_ids = sorted(client_visits.keys(), key=lambda x: client_visits[x], reverse=True)[:5]
+    top_clients = []
+    for uid in top_client_ids:
+        u = await db.users.find_one({"id": uid}, {"_id": 0, "full_name": 1, "email": 1})
+        top_clients.append({
+            "name": u.get("full_name", "Cliente") if u else "Cliente",
+            "email": u.get("email", "") if u else "",
+            "visits": client_visits[uid],
+            "total_spent": round(client_spent.get(uid, 0), 2)
+        })
+    
+    # === PEAK HOURS ===
+    hour_counts = {}
+    for b in current_bookings:
+        t = b.get("time", "")
+        if t:
+            hour = t.split(":")[0]
+            hour_counts[hour] = hour_counts.get(hour, 0) + 1
+    
+    peak_hours = sorted(
+        [{"hour": f"{h}:00", "bookings": c} for h, c in hour_counts.items()],
+        key=lambda x: x["bookings"], reverse=True
+    )[:6]
+    
+    # === PEAK DAYS ===
+    day_names_es = ["Lun", "Mar", "Mie", "Jue", "Vie", "Sab", "Dom"]
+    day_counts = {i: 0 for i in range(7)}
+    for b in current_bookings:
+        d = b.get("date", "")
+        if d:
+            try:
+                weekday = datetime.strptime(d, "%Y-%m-%d").weekday()
+                day_counts[weekday] += 1
+            except ValueError:
+                pass
+    
+    peak_days = [{"day": day_names_es[i], "bookings": day_counts[i]} for i in range(7)]
+    
+    # === CANCELLATION BREAKDOWN ===
+    cancelled_by_user = len([b for b in current_bookings if b.get("status") == "cancelled" and b.get("cancelled_by") == "user"])
+    cancelled_by_business = len([b for b in current_bookings if b.get("status") == "cancelled" and b.get("cancelled_by") == "business"])
+    
+    return {
+        "period": period,
+        "summary": {
+            "total_bookings": total_bookings,
+            "completed": completed,
+            "confirmed": confirmed,
+            "cancelled": cancelled,
+            "cancel_rate": cancel_rate,
+            "revenue": round(current_revenue, 2),
+            "revenue_change": revenue_change,
+            "bookings_change": bookings_change,
+            "cancelled_by_user": cancelled_by_user,
+            "cancelled_by_business": cancelled_by_business,
+        },
+        "daily_chart": daily_chart,
+        "top_services": top_services,
+        "top_clients": top_clients,
+        "peak_hours": peak_hours,
+        "peak_days": peak_days,
+    }
+
+
+
+@businesses_router.get("/my/client-history/{user_id}")
+async def get_client_history(user_id: str, token_data: TokenData = Depends(require_business)):
+    """Get client history within this business"""
+    business = await db.businesses.find_one({"user_id": token_data.user_id}, {"_id": 0, "id": 1})
+    if not business:
+        raise HTTPException(status_code=404, detail="Business not found")
+    
+    bookings = await db.bookings.find(
+        {"business_id": business["id"], "user_id": user_id},
+        {"_id": 0, "id": 1, "date": 1, "time": 1, "status": 1, "service_id": 1, "total_amount": 1, "deposit_amount": 1, "cancelled_by": 1}
+    ).sort("date", -1).to_list(50)
+    
+    # Get service names
+    service_ids = list(set(b.get("service_id") for b in bookings if b.get("service_id")))
+    services_map = {}
+    if service_ids:
+        for s in await db.services.find({"id": {"$in": service_ids}}, {"_id": 0, "id": 1, "name": 1}).to_list(100):
+            services_map[s["id"]] = s["name"]
+    
+    completed = [b for b in bookings if b.get("status") in ("completed", "confirmed")]
+    cancelled = [b for b in bookings if b.get("status") == "cancelled"]
+    total_spent = sum(b.get("total_amount") or b.get("deposit_amount") or 0 for b in completed)
+    
+    history = []
+    for b in bookings[:5]:
+        history.append({
+            "date": b.get("date", ""),
+            "time": b.get("time", ""),
+            "service_name": services_map.get(b.get("service_id"), ""),
+            "status": b.get("status", ""),
+            "amount": b.get("total_amount") or b.get("deposit_amount") or 0,
+            "cancelled_by": b.get("cancelled_by"),
+        })
+    
+    return {
+        "total_visits": len(completed),
+        "total_cancelled": len(cancelled),
+        "total_spent": round(total_spent, 2),
+        "first_visit": bookings[-1]["date"] if bookings else None,
+        "last_visit": bookings[0]["date"] if bookings else None,
+        "history": history,
+    }
+
+
+@businesses_router.get("/my/reports/export")
+async def export_business_reports(
+    period: str = "month",
+    token_data: TokenData = Depends(require_business)
+):
+    """Export business reports as Excel file"""
+    from fastapi.responses import StreamingResponse
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    import io
+    
+    business = await db.businesses.find_one({"user_id": token_data.user_id}, {"_id": 0})
+    if not business:
+        raise HTTPException(status_code=404, detail="Business not found")
+    
+    business_id = business["id"]
+    now = datetime.now(timezone.utc)
+    period_days = {"week": 7, "month": 30, "quarter": 90, "year": 365}
+    days = period_days.get(period, 30)
+    start_date = now - timedelta(days=days)
+    period_labels = {"week": "7 dias", "month": "30 dias", "quarter": "90 dias", "year": "1 ano"}
+    
+    bookings = await db.bookings.find(
+        {"business_id": business_id, "created_at": {"$gte": start_date.isoformat()}},
+        {"_id": 0}
+    ).to_list(10000)
+    
+    transactions = await db.transactions.find(
+        {"business_id": business_id, "status": "paid", "created_at": {"$gte": start_date.isoformat()}},
+        {"_id": 0}
+    ).to_list(10000)
+    
+    # Build lookup maps
+    service_ids = list(set(b.get("service_id") for b in bookings if b.get("service_id")))
+    user_ids = list(set(b.get("user_id") for b in bookings if b.get("user_id")))
+    worker_ids = list(set(b.get("worker_id") for b in bookings if b.get("worker_id")))
+    
+    services_map, users_map, workers_map = {}, {}, {}
+    if service_ids:
+        for s in await db.services.find({"id": {"$in": service_ids}}, {"_id": 0, "id": 1, "name": 1}).to_list(100):
+            services_map[s["id"]] = s["name"]
+    if user_ids:
+        for u in await db.users.find({"id": {"$in": user_ids}}, {"_id": 0, "id": 1, "full_name": 1, "email": 1}).to_list(500):
+            users_map[u["id"]] = u
+    if worker_ids:
+        for w in await db.workers.find({"id": {"$in": worker_ids}}, {"_id": 0, "id": 1, "name": 1}).to_list(100):
+            workers_map[w["id"]] = w["name"]
+    
+    # Create workbook
+    wb = Workbook()
+    header_font = Font(bold=True, color="FFFFFF", size=11)
+    header_fill = PatternFill(start_color="1a1a2e", end_color="1a1a2e", fill_type="solid")
+    thin_border = Border(
+        left=Side(style='thin', color='D0D0D0'), right=Side(style='thin', color='D0D0D0'),
+        top=Side(style='thin', color='D0D0D0'), bottom=Side(style='thin', color='D0D0D0')
+    )
+    
+    def style_header(ws, cols):
+        for col_idx, title in enumerate(cols, 1):
+            cell = ws.cell(row=1, column=col_idx, value=title)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = Alignment(horizontal='center')
+            cell.border = thin_border
+    
+    # === Sheet 1: Resumen ===
+    ws1 = wb.active
+    ws1.title = "Resumen"
+    completed = len([b for b in bookings if b.get("status") == "completed"])
+    confirmed = len([b for b in bookings if b.get("status") == "confirmed"])
+    cancelled = len([b for b in bookings if b.get("status") == "cancelled"])
+    total_rev = sum(t.get("amount_total", 0) for t in transactions)
+    
+    summary_data = [
+        ("Negocio", business["name"]),
+        ("Periodo", period_labels.get(period, period)),
+        ("Fecha del reporte", now.strftime("%Y-%m-%d %H:%M")),
+        ("", ""),
+        ("Total de citas", len(bookings)),
+        ("Completadas", completed),
+        ("Confirmadas", confirmed),
+        ("Canceladas", cancelled),
+        ("Tasa de cancelacion", f"{round((cancelled / len(bookings) * 100) if bookings else 0, 1)}%"),
+        ("Ingresos totales", f"${round(total_rev, 2)}"),
+    ]
+    for row_idx, (label, value) in enumerate(summary_data, 1):
+        ws1.cell(row=row_idx, column=1, value=label).font = Font(bold=True) if label else Font()
+        ws1.cell(row=row_idx, column=2, value=value)
+    ws1.column_dimensions['A'].width = 25
+    ws1.column_dimensions['B'].width = 30
+    
+    # === Sheet 2: Citas ===
+    ws2 = wb.create_sheet("Citas")
+    cols = ["Fecha", "Hora", "Cliente", "Email", "Servicio", "Trabajador", "Estado", "Monto", "Cancelado por"]
+    style_header(ws2, cols)
+    
+    status_map = {"confirmed": "Confirmada", "completed": "Completada", "cancelled": "Cancelada", "pending": "Pendiente"}
+    for row_idx, b in enumerate(sorted(bookings, key=lambda x: x.get("date", ""), reverse=True), 2):
+        u = users_map.get(b.get("user_id"), {})
+        ws2.cell(row=row_idx, column=1, value=b.get("date", "")).border = thin_border
+        ws2.cell(row=row_idx, column=2, value=b.get("time", "")).border = thin_border
+        ws2.cell(row=row_idx, column=3, value=u.get("full_name", b.get("client_name", ""))).border = thin_border
+        ws2.cell(row=row_idx, column=4, value=u.get("email", b.get("client_email", ""))).border = thin_border
+        ws2.cell(row=row_idx, column=5, value=services_map.get(b.get("service_id"), "")).border = thin_border
+        ws2.cell(row=row_idx, column=6, value=workers_map.get(b.get("worker_id"), "")).border = thin_border
+        ws2.cell(row=row_idx, column=7, value=status_map.get(b.get("status"), b.get("status", ""))).border = thin_border
+        ws2.cell(row=row_idx, column=8, value=b.get("total_amount") or b.get("deposit_amount") or 0).border = thin_border
+        ws2.cell(row=row_idx, column=9, value=b.get("cancelled_by", "")).border = thin_border
+    
+    for col in ['A','B','C','D','E','F','G','H','I']:
+        ws2.column_dimensions[col].width = 18
+    
+    # === Sheet 3: Servicios ===
+    ws3 = wb.create_sheet("Servicios")
+    style_header(ws3, ["Servicio", "Total citas", "Ingresos"])
+    svc_counts, svc_rev = {}, {}
+    for b in bookings:
+        sid = b.get("service_id")
+        if sid:
+            svc_counts[sid] = svc_counts.get(sid, 0) + 1
+            if b.get("status") in ("completed", "confirmed"):
+                svc_rev[sid] = svc_rev.get(sid, 0) + (b.get("total_amount") or b.get("deposit_amount") or 0)
+    for row_idx, sid in enumerate(sorted(svc_counts.keys(), key=lambda x: svc_counts[x], reverse=True), 2):
+        ws3.cell(row=row_idx, column=1, value=services_map.get(sid, "Servicio")).border = thin_border
+        ws3.cell(row=row_idx, column=2, value=svc_counts[sid]).border = thin_border
+        ws3.cell(row=row_idx, column=3, value=round(svc_rev.get(sid, 0), 2)).border = thin_border
+    for col in ['A','B','C']:
+        ws3.column_dimensions[col].width = 25
+    
+    # === Sheet 4: Clientes ===
+    ws4 = wb.create_sheet("Clientes")
+    style_header(ws4, ["Cliente", "Email", "Visitas", "Total gastado"])
+    client_visits, client_spent = {}, {}
+    for b in bookings:
+        uid = b.get("user_id")
+        if uid and b.get("status") in ("completed", "confirmed"):
+            client_visits[uid] = client_visits.get(uid, 0) + 1
+            client_spent[uid] = client_spent.get(uid, 0) + (b.get("total_amount") or b.get("deposit_amount") or 0)
+    for row_idx, uid in enumerate(sorted(client_visits.keys(), key=lambda x: client_visits[x], reverse=True), 2):
+        u = users_map.get(uid, {})
+        ws4.cell(row=row_idx, column=1, value=u.get("full_name", "Cliente")).border = thin_border
+        ws4.cell(row=row_idx, column=2, value=u.get("email", "")).border = thin_border
+        ws4.cell(row=row_idx, column=3, value=client_visits[uid]).border = thin_border
+        ws4.cell(row=row_idx, column=4, value=round(client_spent.get(uid, 0), 2)).border = thin_border
+    for col in ['A','B','C','D']:
+        ws4.column_dimensions[col].width = 25
+    
+    # Save to buffer
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+    
+    filename = f"Reporte_{business['name'].replace(' ', '_')}_{period}_{now.strftime('%Y%m%d')}.xlsx"
+    
+    return StreamingResponse(
+        buffer,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
+
+
+
 # ========================== AUTH ROUTES ==========================
 
 @auth_router.post("/register", response_model=dict)
