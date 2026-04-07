@@ -741,6 +741,13 @@ export default function BusinessDashboardPage() {
                   <Badge variant="outline">{dayBookings.length}</Badge>
                 </CardHeader>
                 <CardContent>
+                  {/* Leyenda de colores */}
+                  <div className="flex flex-wrap gap-x-4 gap-y-1 mb-4 text-xs text-muted-foreground">
+                    <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-blue-500" />{language === 'es' ? 'Confirmada' : 'Confirmed'}</span>
+                    <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />{language === 'es' ? 'Completada' : 'Completed'}</span>
+                    <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-amber-500" />{language === 'es' ? 'Pendiente de pago' : 'Pending payment'}</span>
+                    <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-red-500" />{language === 'es' ? 'Cancelada' : 'Cancelled'}</span>
+                  </div>
                   <AgendaTimeline
                     bookings={dayBookings}
                     language={language}
