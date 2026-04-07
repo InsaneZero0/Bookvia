@@ -181,6 +181,7 @@ export const businessesAPI = {
   setManagerPin: (workerId, pin) => api.post(`/businesses/my/workers/${workerId}/manager/pin`, { pin }),
   getActivityLog: (params = {}) => api.get('/businesses/my/activity-log', { params }),
   getReports: (period = 'month') => api.get('/businesses/my/reports', { params: { period } }),
+  exportReports: (period = 'month') => api.get('/businesses/my/reports/export', { params: { period }, responseType: 'blob' }),
 };
 
 // Services API

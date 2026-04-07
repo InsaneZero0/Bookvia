@@ -8,8 +8,9 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line
 } from 'recharts';
 import {
-  TrendingUp, TrendingDown, DollarSign, Calendar, Users, XCircle, Clock, Star, Minus
+  TrendingUp, TrendingDown, DollarSign, Calendar, Users, XCircle, Clock, Star, Minus, Download
 } from 'lucide-react';
+import { toast } from 'sonner';
 
 const COLORS = ['#F05D5E', '#3B82F6', '#10B981', '#F59E0B', '#8B5CF6'];
 
@@ -17,6 +18,7 @@ export default function ReportsTab({ language }) {
   const [period, setPeriod] = useState('month');
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     loadReports();
@@ -31,6 +33,28 @@ export default function ReportsTab({ language }) {
       setData(null);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleExport = async () => {
+    setExporting(true);
+    try {
+      const res = await businessesAPI.exportReports(period);
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      const disposition = res.headers?.['content-disposition'] || '';
+      const filename = disposition.match(/filename=(.+)/)?.[1] || `Reporte_${period}.xlsx`;
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success(t('Reporte descargado', 'Report downloaded'));
+    } catch {
+      toast.error(t('Error al descargar', 'Download error'));
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -103,19 +127,32 @@ export default function ReportsTab({ language }) {
       {/* Period Selector */}
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold">{t('Reportes', 'Reports')}</h2>
-        <div className="flex gap-1 bg-muted/50 rounded-lg p-1">
-          {Object.entries(periodLabels).map(([key, label]) => (
-            <Button
-              key={key}
-              variant={period === key ? 'default' : 'ghost'}
-              size="sm"
-              className={`text-xs h-8 ${period === key ? 'bg-[#1a1a2e] text-white hover:bg-[#1a1a2e]/90' : ''}`}
-              onClick={() => setPeriod(key)}
-              data-testid={`period-${key}`}
-            >
-              {label}
-            </Button>
-          ))}
+        <div className="flex items-center gap-2">
+          <div className="flex gap-1 bg-muted/50 rounded-lg p-1">
+            {Object.entries(periodLabels).map(([key, label]) => (
+              <Button
+                key={key}
+                variant={period === key ? 'default' : 'ghost'}
+                size="sm"
+                className={`text-xs h-8 ${period === key ? 'bg-[#1a1a2e] text-white hover:bg-[#1a1a2e]/90' : ''}`}
+                onClick={() => setPeriod(key)}
+                data-testid={`period-${key}`}
+              >
+                {label}
+              </Button>
+            ))}
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 gap-1.5"
+            onClick={handleExport}
+            disabled={exporting}
+            data-testid="export-excel-btn"
+          >
+            <Download className="h-3.5 w-3.5" />
+            {exporting ? t('Descargando...', 'Downloading...') : 'Excel'}
+          </Button>
         </div>
       </div>
 

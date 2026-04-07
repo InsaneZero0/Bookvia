@@ -1295,6 +1295,168 @@ async def get_business_reports(
     }
 
 
+@businesses_router.get("/my/reports/export")
+async def export_business_reports(
+    period: str = "month",
+    token_data: TokenData = Depends(require_business)
+):
+    """Export business reports as Excel file"""
+    from fastapi.responses import StreamingResponse
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    import io
+    
+    business = await db.businesses.find_one({"user_id": token_data.user_id}, {"_id": 0})
+    if not business:
+        raise HTTPException(status_code=404, detail="Business not found")
+    
+    business_id = business["id"]
+    now = datetime.now(timezone.utc)
+    period_days = {"week": 7, "month": 30, "quarter": 90, "year": 365}
+    days = period_days.get(period, 30)
+    start_date = now - timedelta(days=days)
+    period_labels = {"week": "7 dias", "month": "30 dias", "quarter": "90 dias", "year": "1 ano"}
+    
+    bookings = await db.bookings.find(
+        {"business_id": business_id, "created_at": {"$gte": start_date.isoformat()}},
+        {"_id": 0}
+    ).to_list(10000)
+    
+    transactions = await db.transactions.find(
+        {"business_id": business_id, "status": "paid", "created_at": {"$gte": start_date.isoformat()}},
+        {"_id": 0}
+    ).to_list(10000)
+    
+    # Build lookup maps
+    service_ids = list(set(b.get("service_id") for b in bookings if b.get("service_id")))
+    user_ids = list(set(b.get("user_id") for b in bookings if b.get("user_id")))
+    worker_ids = list(set(b.get("worker_id") for b in bookings if b.get("worker_id")))
+    
+    services_map, users_map, workers_map = {}, {}, {}
+    if service_ids:
+        for s in await db.services.find({"id": {"$in": service_ids}}, {"_id": 0, "id": 1, "name": 1}).to_list(100):
+            services_map[s["id"]] = s["name"]
+    if user_ids:
+        for u in await db.users.find({"id": {"$in": user_ids}}, {"_id": 0, "id": 1, "full_name": 1, "email": 1}).to_list(500):
+            users_map[u["id"]] = u
+    if worker_ids:
+        for w in await db.workers.find({"id": {"$in": worker_ids}}, {"_id": 0, "id": 1, "name": 1}).to_list(100):
+            workers_map[w["id"]] = w["name"]
+    
+    # Create workbook
+    wb = Workbook()
+    header_font = Font(bold=True, color="FFFFFF", size=11)
+    header_fill = PatternFill(start_color="1a1a2e", end_color="1a1a2e", fill_type="solid")
+    thin_border = Border(
+        left=Side(style='thin', color='D0D0D0'), right=Side(style='thin', color='D0D0D0'),
+        top=Side(style='thin', color='D0D0D0'), bottom=Side(style='thin', color='D0D0D0')
+    )
+    
+    def style_header(ws, cols):
+        for col_idx, title in enumerate(cols, 1):
+            cell = ws.cell(row=1, column=col_idx, value=title)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = Alignment(horizontal='center')
+            cell.border = thin_border
+    
+    # === Sheet 1: Resumen ===
+    ws1 = wb.active
+    ws1.title = "Resumen"
+    completed = len([b for b in bookings if b.get("status") == "completed"])
+    confirmed = len([b for b in bookings if b.get("status") == "confirmed"])
+    cancelled = len([b for b in bookings if b.get("status") == "cancelled"])
+    total_rev = sum(t.get("amount_total", 0) for t in transactions)
+    
+    summary_data = [
+        ("Negocio", business["name"]),
+        ("Periodo", period_labels.get(period, period)),
+        ("Fecha del reporte", now.strftime("%Y-%m-%d %H:%M")),
+        ("", ""),
+        ("Total de citas", len(bookings)),
+        ("Completadas", completed),
+        ("Confirmadas", confirmed),
+        ("Canceladas", cancelled),
+        ("Tasa de cancelacion", f"{round((cancelled / len(bookings) * 100) if bookings else 0, 1)}%"),
+        ("Ingresos totales", f"${round(total_rev, 2)}"),
+    ]
+    for row_idx, (label, value) in enumerate(summary_data, 1):
+        ws1.cell(row=row_idx, column=1, value=label).font = Font(bold=True) if label else Font()
+        ws1.cell(row=row_idx, column=2, value=value)
+    ws1.column_dimensions['A'].width = 25
+    ws1.column_dimensions['B'].width = 30
+    
+    # === Sheet 2: Citas ===
+    ws2 = wb.create_sheet("Citas")
+    cols = ["Fecha", "Hora", "Cliente", "Email", "Servicio", "Trabajador", "Estado", "Monto", "Cancelado por"]
+    style_header(ws2, cols)
+    
+    status_map = {"confirmed": "Confirmada", "completed": "Completada", "cancelled": "Cancelada", "pending": "Pendiente"}
+    for row_idx, b in enumerate(sorted(bookings, key=lambda x: x.get("date", ""), reverse=True), 2):
+        u = users_map.get(b.get("user_id"), {})
+        ws2.cell(row=row_idx, column=1, value=b.get("date", "")).border = thin_border
+        ws2.cell(row=row_idx, column=2, value=b.get("time", "")).border = thin_border
+        ws2.cell(row=row_idx, column=3, value=u.get("full_name", b.get("client_name", ""))).border = thin_border
+        ws2.cell(row=row_idx, column=4, value=u.get("email", b.get("client_email", ""))).border = thin_border
+        ws2.cell(row=row_idx, column=5, value=services_map.get(b.get("service_id"), "")).border = thin_border
+        ws2.cell(row=row_idx, column=6, value=workers_map.get(b.get("worker_id"), "")).border = thin_border
+        ws2.cell(row=row_idx, column=7, value=status_map.get(b.get("status"), b.get("status", ""))).border = thin_border
+        ws2.cell(row=row_idx, column=8, value=b.get("total_amount") or b.get("deposit_amount") or 0).border = thin_border
+        ws2.cell(row=row_idx, column=9, value=b.get("cancelled_by", "")).border = thin_border
+    
+    for col in ['A','B','C','D','E','F','G','H','I']:
+        ws2.column_dimensions[col].width = 18
+    
+    # === Sheet 3: Servicios ===
+    ws3 = wb.create_sheet("Servicios")
+    style_header(ws3, ["Servicio", "Total citas", "Ingresos"])
+    svc_counts, svc_rev = {}, {}
+    for b in bookings:
+        sid = b.get("service_id")
+        if sid:
+            svc_counts[sid] = svc_counts.get(sid, 0) + 1
+            if b.get("status") in ("completed", "confirmed"):
+                svc_rev[sid] = svc_rev.get(sid, 0) + (b.get("total_amount") or b.get("deposit_amount") or 0)
+    for row_idx, sid in enumerate(sorted(svc_counts.keys(), key=lambda x: svc_counts[x], reverse=True), 2):
+        ws3.cell(row=row_idx, column=1, value=services_map.get(sid, "Servicio")).border = thin_border
+        ws3.cell(row=row_idx, column=2, value=svc_counts[sid]).border = thin_border
+        ws3.cell(row=row_idx, column=3, value=round(svc_rev.get(sid, 0), 2)).border = thin_border
+    for col in ['A','B','C']:
+        ws3.column_dimensions[col].width = 25
+    
+    # === Sheet 4: Clientes ===
+    ws4 = wb.create_sheet("Clientes")
+    style_header(ws4, ["Cliente", "Email", "Visitas", "Total gastado"])
+    client_visits, client_spent = {}, {}
+    for b in bookings:
+        uid = b.get("user_id")
+        if uid and b.get("status") in ("completed", "confirmed"):
+            client_visits[uid] = client_visits.get(uid, 0) + 1
+            client_spent[uid] = client_spent.get(uid, 0) + (b.get("total_amount") or b.get("deposit_amount") or 0)
+    for row_idx, uid in enumerate(sorted(client_visits.keys(), key=lambda x: client_visits[x], reverse=True), 2):
+        u = users_map.get(uid, {})
+        ws4.cell(row=row_idx, column=1, value=u.get("full_name", "Cliente")).border = thin_border
+        ws4.cell(row=row_idx, column=2, value=u.get("email", "")).border = thin_border
+        ws4.cell(row=row_idx, column=3, value=client_visits[uid]).border = thin_border
+        ws4.cell(row=row_idx, column=4, value=round(client_spent.get(uid, 0), 2)).border = thin_border
+    for col in ['A','B','C','D']:
+        ws4.column_dimensions[col].width = 25
+    
+    # Save to buffer
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+    
+    filename = f"Reporte_{business['name'].replace(' ', '_')}_{period}_{now.strftime('%Y%m%d')}.xlsx"
+    
+    return StreamingResponse(
+        buffer,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
+
+
+
 # ========================== AUTH ROUTES ==========================
 
 @auth_router.post("/register", response_model=dict)
