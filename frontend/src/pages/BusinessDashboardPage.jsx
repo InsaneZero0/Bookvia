@@ -27,7 +27,7 @@ import {
   XCircle, AlertTriangle, TrendingUp, Settings, UserCog, Image, Upload,
   Trash2, Eye, Plus, Pencil, BarChart3, Briefcase, ArrowUpRight,
   Ban, CalendarOff, CreditCard, Shield, RefreshCw, Mail, Phone, History,
-  ChevronLeft, ChevronRight, Filter, Bell
+  ChevronLeft, ChevronRight, Filter, Bell, ClipboardList
 } from 'lucide-react';
 
 export default function BusinessDashboardPage() {
@@ -613,12 +613,15 @@ export default function BusinessDashboardPage() {
                 } catch {}
               }
               if (profileSlug) {
-                window.open(`/business/${profileSlug}`, '_blank');
+                navigate(`/business/${profileSlug}`);
               } else {
                 toast.error(language === 'es' ? 'Perfil no disponible. Intenta recargar la pagina.' : 'Profile not available. Try reloading the page.');
               }
             }} data-testid="view-profile-button">
-              <Eye className="h-4 w-4 mr-1.5" />{language === 'es' ? 'Ver como cliente' : 'View as client'}
+              <Eye className="h-4 w-4 mr-1.5" />{language === 'es' ? 'Ver perfil' : 'View profile'}
+            </Button>
+            <Button size="sm" className="btn-coral" onClick={() => navigate('/business/reception')} data-testid="reception-button">
+              <ClipboardList className="h-4 w-4 mr-1.5" />{language === 'es' ? 'Recepcion' : 'Reception'}
             </Button>
             {(hasPermission('edit_description') || hasPermission('edit_schedule') || hasPermission('edit_contact') || hasPermission('edit_photos') || hasPermission('block_clients')) && (
               <Button variant="outline" size="sm" onClick={() => navigate('/business/settings')}>
@@ -1375,6 +1378,16 @@ export default function BusinessDashboardPage() {
                           <span>{formatTime(b.time)} - {formatTime(b.end_time)}</span>
                           {b.worker_name && <span>| {b.worker_name}</span>}
                         </div>
+                        {(b.booked_by === 'business' || (b.skip_payment && b.client_name)) && (
+                          <div className="flex gap-1 mt-1">
+                            <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-700 font-medium">
+                              {language === 'es' ? 'Recepcion' : 'Reception'}
+                            </span>
+                            <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-700 font-medium">
+                              {language === 'es' ? 'Pago en negocio' : 'Pay at business'}
+                            </span>
+                          </div>
+                        )}
                       </div>
                       <div className="flex flex-col items-end gap-1 shrink-0">
                         <Badge className={`text-[10px] ${getStatusColor(b.status)}`}>
@@ -1542,6 +1555,19 @@ export default function BusinessDashboardPage() {
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">{language === 'es' ? 'Anticipo' : 'Deposit'}</span>
                         <span className="font-medium">{b.deposit_paid ? '✓' : '✗'} ${b.deposit_amount} MXN</span>
+                      </div>
+                    )}
+                    {(b.booked_by === 'business' || (b.skip_payment && b.client_name)) && (
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">{language === 'es' ? 'Origen' : 'Source'}</span>
+                        <div className="flex gap-1">
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-700 font-medium">
+                            {language === 'es' ? 'Recepcion' : 'Reception'}
+                          </span>
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-700 font-medium">
+                            {language === 'es' ? 'Pago en negocio' : 'Pay at business'}
+                          </span>
+                        </div>
                       </div>
                     )}
                     {b.total_amount > 0 && (

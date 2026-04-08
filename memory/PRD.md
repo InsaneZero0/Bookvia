@@ -64,9 +64,15 @@ Auth Social: Emergent-managed Google Auth (solo clientes)
 - [x] Carrusel de fotos en perfil publico
 - [x] Dashboard de negocio con modales de reagendar, detalles cliente
 - [x] Panel admin con 2FA, aprobaciones, estadisticas
+- [x] Pagina de Recepcion: crear citas walk-in, panel de citas del dia
+- [x] Busqueda de clientes existentes en Recepcion (por nombre/telefono)
+- [x] Badges "Recepcion" + "Pago en negocio" en citas creadas por el negocio
+- [x] Pagina de Configuracion (Settings): 5 tabs - Info, Documentos legales, Suscripcion, Ubicacion, Vetos
+- [x] Buscador de direccion con mapa en registro de negocio (Nominatim + OpenStreetMap, auto-rellena campos, guarda lat/lng)
 
 ### Tecnico
 - [x] Refactorizacion backend: server.py ~7000 lineas -> 235 lineas + 12 routers modulares
+- [x] Fix scheduler recordatorios: parametros corregidos (date, time, worker_name)
 
 ## Tareas Pendientes
 

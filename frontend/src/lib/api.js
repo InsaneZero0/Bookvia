@@ -119,6 +119,7 @@ export const businessesAPI = {
   getById: (id) => api.get(`/businesses/${id}`),
   updateMe: (data) => api.put('/businesses/me', data),
   getDashboard: () => api.get('/businesses/me/dashboard'),
+  getPrivateInfo: () => api.get('/businesses/me/private-info'),
   // Workers (for specific business - public)
   getWorkers: (businessId, includeInactive = false, serviceId = null) => 
     api.get(`/businesses/${businessId}/workers`, { params: { include_inactive: includeInactive, ...(serviceId ? { service_id: serviceId } : {}) } }),
@@ -225,6 +226,7 @@ export const bookingsAPI = {
   getStatsDetail: (statType, dateFrom, dateTo) => api.get('/bookings/business/stats-detail', { 
     params: { stat_type: statType, date_from: dateFrom, date_to: dateTo } 
   }),
+  searchClients: (q) => api.get('/bookings/search-clients', { params: { q } }),
 };
 
 // Reviews API

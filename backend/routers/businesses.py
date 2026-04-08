@@ -782,6 +782,69 @@ async def update_my_business(update: BusinessUpdate, token_data: TokenData = Dep
 
 
 
+@router.get("/me/private-info")
+async def get_my_private_info(token_data: TokenData = Depends(require_business)):
+    """Get private/legal information only visible to the business owner."""
+    if token_data.is_manager:
+        raise HTTPException(status_code=403, detail="Solo el dueno puede ver esta informacion")
+    
+    user = await db.users.find_one({"id": token_data.user_id}, {"_id": 0, "business_id": 1})
+    if not user or not user.get("business_id"):
+        raise HTTPException(status_code=404, detail="Business not found")
+    
+    business = await db.businesses.find_one(
+        {"id": user["business_id"]},
+        {"_id": 0, "ine_url": 1, "rfc": 1, "legal_name": 1, "clabe": 1, 
+         "proof_of_address_url": 1, "owner_birth_date": 1,
+         "stripe_customer_id": 1, "subscription_status": 1,
+         "stripe_subscription_id": 1, "subscription_started_at": 1,
+         "name": 1, "email": 1, "phone": 1, "description": 1}
+    )
+    if not business:
+        raise HTTPException(status_code=404, detail="Business not found")
+    
+    # Get subscription info from Stripe if available
+    subscription_info = None
+    if business.get("stripe_subscription_id"):
+        try:
+            sub = stripe_lib.Subscription.retrieve(business["stripe_subscription_id"])
+            subscription_info = {
+                "status": sub.status,
+                "current_period_end": datetime.fromtimestamp(sub.current_period_end, tz=timezone.utc).isoformat() if sub.current_period_end else None,
+                "cancel_at_period_end": sub.cancel_at_period_end,
+                "trial_end": datetime.fromtimestamp(sub.trial_end, tz=timezone.utc).isoformat() if sub.trial_end else None,
+            }
+            # Get payment method info (last 4 digits)
+            if sub.default_payment_method:
+                pm = stripe_lib.PaymentMethod.retrieve(sub.default_payment_method)
+                subscription_info["card_brand"] = pm.card.brand if pm.card else None
+                subscription_info["card_last4"] = pm.card.last4 if pm.card else None
+            elif business.get("stripe_customer_id"):
+                pms = stripe_lib.PaymentMethod.list(customer=business["stripe_customer_id"], type="card", limit=1)
+                if pms.data:
+                    subscription_info["card_brand"] = pms.data[0].card.brand
+                    subscription_info["card_last4"] = pms.data[0].card.last4
+        except Exception as e:
+            logger.warning(f"Failed to fetch subscription info: {e}")
+    
+    return {
+        "name": business.get("name", ""),
+        "email": business.get("email", ""),
+        "phone": business.get("phone", ""),
+        "description": business.get("description", ""),
+        "rfc": business.get("rfc", ""),
+        "legal_name": business.get("legal_name", ""),
+        "clabe": business.get("clabe", ""),
+        "ine_url": business.get("ine_url", ""),
+        "proof_of_address_url": business.get("proof_of_address_url", ""),
+        "owner_birth_date": business.get("owner_birth_date", ""),
+        "subscription_status": business.get("subscription_status", "none"),
+        "subscription_started_at": business.get("subscription_started_at"),
+        "subscription_info": subscription_info,
+    }
+
+
+
 @router.get("/me/dashboard")
 async def get_business_dashboard(token_data: TokenData = Depends(require_business)):
     user = await db.users.find_one({"id": token_data.user_id})
