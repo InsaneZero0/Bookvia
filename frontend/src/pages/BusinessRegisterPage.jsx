@@ -11,7 +11,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Progress } from '@/components/ui/progress';
 import { useAuth } from '@/lib/auth';
 import { useI18n } from '@/lib/i18n';
-import { categoriesAPI, businessesAPI } from '@/lib/api';
+import { categoriesAPI, businessesAPI, authAPI } from '@/lib/api';
 import apiInstance from '@/lib/api';
 import { countries, getCountryByCode } from '@/lib/countries';
 import { getDetectedCountry } from '@/lib/detectCountry';
@@ -56,6 +56,7 @@ export default function BusinessRegisterPage() {
   const [logoPreview, setLogoPreview] = useState(null);
   const [coverFile, setCoverFile] = useState(null);
   const [coverPreview, setCoverPreview] = useState(null);
+  const [registeredEmail, setRegisteredEmail] = useState('');
   
   const ineInputRef = useRef(null);
   const proofInputRef = useRef(null);
@@ -336,9 +337,9 @@ export default function BusinessRegisterPage() {
       };
       
       await businessRegister(registerData);
-
-      toast.success(language === 'es' ? '¡Revisa tu correo electrónico para verificar tu cuenta!' : 'Check your email to verify your account!', { duration: 4000 });
-      navigate(`/registration-success?email=${encodeURIComponent(formData.email)}`);
+      setRegisteredEmail(formData.email);
+      toast.success(language === 'es' ? '¡Datos guardados! Ahora completa tu suscripción.' : 'Data saved! Now complete your subscription.');
+      setCurrentStep(4);
     } catch (error) {
       const message = error.response?.data?.detail || (language === 'es' ? 'Error al registrar negocio' : 'Error registering business');
       toast.error(message);
@@ -351,7 +352,8 @@ export default function BusinessRegisterPage() {
     setLoading(true);
     try {
       const originUrl = window.location.origin;
-      const res = await businessesAPI.createSubscription(originUrl);
+      const emailToUse = registeredEmail || formData.email;
+      const res = await authAPI.createRegistrationSubscription({ email: emailToUse, origin_url: originUrl });
       if (res.data?.url) {
         window.location.href = res.data.url;
       } else {

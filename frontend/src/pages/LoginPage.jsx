@@ -10,7 +10,7 @@ import { useI18n } from '@/lib/i18n';
 import { authAPI } from '@/lib/api';
 import { BookviaLogo } from '@/components/BookviaLogo';
 import { toast } from 'sonner';
-import { Eye, EyeOff, ArrowLeft, Mail, Lock, Building2, UserCog, Shield, User, Loader2 } from 'lucide-react';
+import { Eye, EyeOff, ArrowLeft, Mail, Lock, Building2, UserCog, Shield, User, Loader2, CreditCard } from 'lucide-react';
 
 export default function LoginPage() {
   const { t, language } = useI18n();
@@ -24,6 +24,8 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [loginMode, setLoginMode] = useState('user'); // 'user' | 'business_owner' | 'business_admin'
+  const [subscriptionRequired, setSubscriptionRequired] = useState(false);
+  const [subscriptionLoading, setSubscriptionLoading] = useState(false);
 
   // Manager login state
   const [managers, setManagers] = useState([]);
@@ -53,6 +55,23 @@ export default function LoginPage() {
     }
   };
 
+  const handlePaySubscription = async () => {
+    setSubscriptionLoading(true);
+    try {
+      const originUrl = window.location.origin;
+      const res = await authAPI.createRegistrationSubscription({ email, origin_url: originUrl });
+      if (res.data?.url) {
+        window.location.href = res.data.url;
+      } else {
+        throw new Error('No checkout URL');
+      }
+    } catch (error) {
+      toast.error(language === 'es' ? 'Error al conectar con el procesador de pagos.' : 'Error connecting to payment processor.');
+      setSubscriptionLoading(false);
+    }
+  };
+
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -81,7 +100,12 @@ export default function LoginPage() {
       toast.success(language === 'es' ? '¡Bienvenido!' : 'Welcome!');
     } catch (error) {
       const detail = error.response?.data?.detail;
-      if (detail === 'email_not_verified') {
+      if (detail === 'subscription_required') {
+        setSubscriptionRequired(true);
+        toast.error(language === 'es' 
+          ? 'Debes completar el pago de tu suscripción para activar tu cuenta.' 
+          : 'You must complete your subscription payment to activate your account.');
+      } else if (detail === 'email_not_verified') {
         toast.error(language === 'es' ? 'Debes verificar tu correo electrónico primero. Revisa tu bandeja de entrada.' : 'You must verify your email first. Check your inbox.');
         // Offer to resend
         try {
@@ -179,6 +203,29 @@ export default function LoginPage() {
                   <UserCog className="h-3.5 w-3.5" />
                   {language === 'es' ? 'Soy administrador' : "I'm an administrator"}
                 </button>
+              </div>
+            )}
+
+            {/* Subscription required banner */}
+            {subscriptionRequired && loginMode === 'business_owner' && (
+              <div className="rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 p-4 space-y-3" data-testid="subscription-required-banner">
+                <p className="text-sm text-amber-800 dark:text-amber-200 font-medium leading-relaxed">
+                  {language === 'es'
+                    ? 'Tu registro está casi listo. Solo falta completar el pago de tu suscripción para activar tu cuenta.'
+                    : 'Your registration is almost complete. Just complete your subscription payment to activate your account.'}
+                </p>
+                <Button
+                  type="button"
+                  className="w-full btn-coral h-11 gap-2"
+                  onClick={handlePaySubscription}
+                  disabled={subscriptionLoading}
+                  data-testid="pay-subscription-btn"
+                >
+                  <CreditCard className="h-4 w-4" />
+                  {subscriptionLoading
+                    ? (language === 'es' ? 'Redirigiendo a Stripe...' : 'Redirecting to Stripe...')
+                    : (language === 'es' ? 'Completar pago de suscripción' : 'Complete subscription payment')}
+                </Button>
               </div>
             )}
 

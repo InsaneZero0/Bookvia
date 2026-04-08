@@ -1919,14 +1919,134 @@ async def register_business(business: BusinessCreate):
     await db.businesses.insert_one(business_doc)
     await db.users.insert_one(user_doc)
     
-    # Send verification email (non-blocking)
-    try:
-        from services.email import send_verification_email
-        await send_verification_email(business.email, business.name, user_doc["email_verification_token"])
-    except Exception as e:
-        logger.warning(f"Failed to send verification email: {e}")
+    # NOTE: Verification email is NOT sent here. It will be sent after subscription payment.
     
-    return {"message": "Registro exitoso. Revisa tu correo para verificar tu cuenta.", "email": business.email}
+    return {"message": "Registro exitoso. Completa tu suscripción para activar tu cuenta.", "email": business.email, "business_id": business_id}
+
+
+@auth_router.post("/business/create-subscription")
+async def create_registration_subscription(data: dict):
+    """Create Stripe subscription checkout for a newly registered business (no auth required)."""
+    email = data.get("email", "").strip().lower()
+    origin_url = data.get("origin_url", os.environ.get("BASE_URL", ""))
+    
+    if not email:
+        raise HTTPException(status_code=400, detail="Email requerido")
+    
+    business = await db.businesses.find_one({"email": email}, {"_id": 0})
+    if not business:
+        raise HTTPException(status_code=404, detail="Negocio no encontrado")
+    
+    if business.get("subscription_status") not in ("none", None):
+        raise HTTPException(status_code=400, detail="Ya tiene una suscripción activa")
+    
+    price_id = await get_or_create_stripe_price()
+    if not price_id:
+        raise HTTPException(status_code=500, detail="Error de configuración de pagos")
+    
+    success_url = f"{origin_url}/business/subscription/success?session_id={{CHECKOUT_SESSION_ID}}&from=register"
+    cancel_url = f"{origin_url}/login"
+    
+    try:
+        customer_id = business.get("stripe_customer_id")
+        if not customer_id:
+            customer = stripe_lib.Customer.create(
+                email=business.get("email"),
+                name=business.get("name"),
+                metadata={"business_id": business["id"]}
+            )
+            customer_id = customer.id
+            await db.businesses.update_one(
+                {"id": business["id"]},
+                {"$set": {"stripe_customer_id": customer_id}}
+            )
+        
+        session = stripe_lib.checkout.Session.create(
+            customer=customer_id,
+            payment_method_types=["card"],
+            mode="subscription",
+            line_items=[{"price": price_id, "quantity": 1}],
+            subscription_data={"trial_period_days": SUBSCRIPTION_TRIAL_DAYS},
+            success_url=success_url,
+            cancel_url=cancel_url,
+            metadata={"business_id": business["id"], "registration_flow": "true"}
+        )
+        
+        await db.payment_transactions.insert_one({
+            "id": generate_id(),
+            "business_id": business["id"],
+            "session_id": session.id,
+            "type": "subscription",
+            "amount": SUBSCRIPTION_PRICE_MXN,
+            "currency": "mxn",
+            "payment_status": "pending",
+            "created_at": datetime.now(timezone.utc).isoformat()
+        })
+        
+        return {"url": session.url, "session_id": session.id}
+    except Exception as e:
+        logger.error(f"Stripe registration subscription error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@auth_router.post("/business/verify-subscription")
+async def verify_registration_subscription(data: dict):
+    """Verify subscription payment and send verification email (no auth required)."""
+    session_id = data.get("session_id")
+    if not session_id:
+        raise HTTPException(status_code=400, detail="session_id requerido")
+    
+    try:
+        session = stripe_lib.checkout.Session.retrieve(session_id)
+    except Exception as e:
+        logger.error(f"Stripe session retrieve error: {e}")
+        raise HTTPException(status_code=400, detail="Sesión de pago inválida")
+    
+    business_id = session.metadata.get("business_id") if session.metadata else None
+    if not business_id:
+        raise HTTPException(status_code=400, detail="Sesión no asociada a un negocio")
+    
+    business = await db.businesses.find_one({"id": business_id}, {"_id": 0})
+    if not business:
+        raise HTTPException(status_code=404, detail="Negocio no encontrado")
+    
+    if session.payment_status in ("paid", "no_payment_required") or session.status == "complete":
+        subscription_id = session.subscription
+        await db.businesses.update_one(
+            {"id": business_id},
+            {"$set": {
+                "stripe_subscription_id": subscription_id,
+                "stripe_customer_id": session.customer,
+                "subscription_status": "trialing",
+                "subscription_started_at": datetime.now(timezone.utc).isoformat()
+            }}
+        )
+        await db.payment_transactions.update_one(
+            {"session_id": session_id},
+            {"$set": {"payment_status": "completed", "subscription_id": subscription_id}}
+        )
+        
+        # NOW send verification email since payment is confirmed
+        user = await db.users.find_one({"business_id": business_id}, {"_id": 0})
+        if user and user.get("email_verification_token"):
+            try:
+                from services.email import send_verification_email
+                await send_verification_email(business["email"], business["name"], user["email_verification_token"])
+            except Exception as e:
+                logger.warning(f"Failed to send verification email after subscription: {e}")
+        
+        return {
+            "status": "active",
+            "subscription_status": "trialing",
+            "email": business["email"],
+            "message": "Suscripción activada. Revisa tu correo para verificar tu cuenta."
+        }
+    else:
+        return {
+            "status": "pending",
+            "message": "El pago aún no se ha confirmado. Intenta de nuevo."
+        }
+
 
 @auth_router.post("/business/login", response_model=dict)
 async def login_business(credentials: UserLogin):
@@ -1940,6 +2060,11 @@ async def login_business(credentials: UserLogin):
     user = await db.users.find_one({"business_id": business["id"]})
     if not user:
         raise HTTPException(status_code=500, detail="User account not found")
+    
+    # Check subscription payment - must pay before accessing account
+    sub_status = business.get("subscription_status", "none")
+    if sub_status == "none":
+        raise HTTPException(status_code=403, detail="subscription_required")
     
     # Check email verification
     if not user.get("email_verified", True):
