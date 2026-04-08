@@ -347,6 +347,7 @@ class BusinessResponse(BaseModel):
     logo_public_id: Optional[str] = None
     distance_km: Optional[float] = None
     next_available_text: Optional[str] = None
+    is_open_now: Optional[bool] = None
 
 class BusinessUpdate(BaseModel):
     name: Optional[str] = None
@@ -2282,6 +2283,20 @@ async def search_businesses(
             workers_list = biz_workers_map.get(b["id"], [])
             if not workers_list:
                 continue
+            # Check if open right now
+            is_open = False
+            for worker in workers_list:
+                ds = worker.get("schedule", {}).get(str(current_weekday), {})
+                if ds.get("is_available") and ds.get("blocks"):
+                    for block in ds["blocks"]:
+                        if block["start_time"] <= current_time < block["end_time"]:
+                            is_open = True
+                            break
+                if is_open:
+                    break
+            b["is_open_now"] = is_open
+            
+            # Find next available text
             found = False
             for day_offset in range(7):
                 check_day = (current_weekday + day_offset) % 7
@@ -2364,6 +2379,19 @@ async def get_featured_businesses(limit: int = 8, country_code: Optional[str] = 
             wl = biz_workers_map.get(b["id"], [])
             if not wl:
                 continue
+            # Check if open right now
+            is_open_ft = False
+            for wk in wl:
+                ds_now = wk.get("schedule", {}).get(str(current_wd), {})
+                if ds_now.get("is_available") and ds_now.get("blocks"):
+                    for blk in ds_now["blocks"]:
+                        if blk["start_time"] <= current_tm < blk["end_time"]:
+                            is_open_ft = True
+                            break
+                if is_open_ft:
+                    break
+            b["is_open_now"] = is_open_ft
+            
             found = False
             for doff in range(7):
                 cd = (current_wd + doff) % 7

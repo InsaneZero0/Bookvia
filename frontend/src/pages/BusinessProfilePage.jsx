@@ -203,6 +203,69 @@ function RatingSummary({ rating, reviewCount, reviews }) {
 }
 
 // ─── Business Hours ───────────────────────────────────
+function getOpenStatus(workers, language) {
+  const now = new Date();
+  const today = (now.getDay() + 6) % 7; // JS Sunday=0 -> Monday=0
+  const currentTime = now.toTimeString().slice(0, 5); // "HH:MM"
+
+  let isOpen = false;
+  let nextOpenText = '';
+
+  // Check if open right now
+  workers.forEach(w => {
+    const daySchedule = w.schedule?.[String(today)];
+    if (daySchedule?.is_available && daySchedule.blocks?.length > 0) {
+      daySchedule.blocks.forEach(block => {
+        if (currentTime >= block.start_time && currentTime < block.end_time) {
+          isOpen = true;
+        }
+      });
+    }
+  });
+
+  if (isOpen) {
+    // Find closing time today
+    let latestClose = '00:00';
+    workers.forEach(w => {
+      const ds = w.schedule?.[String(today)];
+      if (ds?.is_available) {
+        ds.blocks?.forEach(b => {
+          if (currentTime >= b.start_time && currentTime < b.end_time && b.end_time > latestClose) {
+            latestClose = b.end_time;
+          }
+        });
+      }
+    });
+    nextOpenText = language === 'es' ? `Cierra a las ${latestClose}` : `Closes at ${latestClose}`;
+  } else {
+    // Find next opening
+    const dayNames = language === 'es'
+      ? ['Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab', 'Dom']
+      : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    for (let offset = 0; offset < 7; offset++) {
+      const checkDay = (today + offset) % 7;
+      for (const w of workers) {
+        const ds = w.schedule?.[String(checkDay)];
+        if (ds?.is_available && ds.blocks?.length > 0) {
+          const firstBlock = ds.blocks[0];
+          if (offset === 0 && firstBlock.start_time > currentTime) {
+            nextOpenText = language === 'es' ? `Abre hoy a las ${firstBlock.start_time}` : `Opens today at ${firstBlock.start_time}`;
+            return { isOpen, nextOpenText };
+          } else if (offset === 1) {
+            nextOpenText = language === 'es' ? `Abre manana a las ${firstBlock.start_time}` : `Opens tomorrow at ${firstBlock.start_time}`;
+            return { isOpen, nextOpenText };
+          } else if (offset > 1) {
+            nextOpenText = language === 'es' ? `Abre ${dayNames[checkDay]} a las ${firstBlock.start_time}` : `Opens ${dayNames[checkDay]} at ${firstBlock.start_time}`;
+            return { isOpen, nextOpenText };
+          }
+        }
+      }
+    }
+  }
+
+  return { isOpen, nextOpenText };
+}
+
 function BusinessHours({ workers, language }) {
   const dayNames = language === 'es' ? DAY_NAMES_ES : DAY_NAMES_EN;
 
@@ -227,18 +290,53 @@ function BusinessHours({ workers, language }) {
     mergedHours[day] = isOpen ? { open: earliest, close: latest } : null;
   }
 
-  const today = (new Date().getDay() + 6) % 7; // JS Sunday=0, we need Monday=0
+  // Group consecutive days with same hours
+  const groups = [];
+  let i = 0;
+  while (i < 7) {
+    const current = mergedHours[i];
+    const currentKey = current ? `${current.open}-${current.close}` : 'closed';
+    let j = i + 1;
+    while (j < 7) {
+      const next = mergedHours[j];
+      const nextKey = next ? `${next.open}-${next.close}` : 'closed';
+      if (nextKey !== currentKey) break;
+      j++;
+    }
+    groups.push({ startDay: i, endDay: j - 1, hours: current });
+    i = j;
+  }
+
+  const today = (new Date().getDay() + 6) % 7;
+  const { isOpen, nextOpenText } = getOpenStatus(workers, language);
 
   return (
-    <div className="space-y-2">
-      {dayNames.map((name, i) => (
-        <div key={i} className={`flex justify-between items-center py-2 px-3 rounded-lg text-sm ${i === today ? 'bg-[#F05D5E]/5 font-medium' : ''}`}>
-          <span className={i === today ? 'text-[#F05D5E] font-semibold' : ''}>{name}</span>
-          <span className={mergedHours[i] ? '' : 'text-muted-foreground'}>
-            {mergedHours[i] ? `${mergedHours[i].open} - ${mergedHours[i].close}` : (language === 'es' ? 'Cerrado' : 'Closed')}
-          </span>
-        </div>
-      ))}
+    <div className="space-y-1">
+      {/* Open/Closed status */}
+      <div className="flex items-center gap-2 mb-3 pb-3 border-b">
+        <span className={`inline-flex items-center gap-1.5 text-sm font-semibold ${isOpen ? 'text-emerald-600' : 'text-red-500'}`}>
+          <span className={`w-2 h-2 rounded-full ${isOpen ? 'bg-emerald-500 animate-pulse' : 'bg-red-400'}`} />
+          {isOpen ? (language === 'es' ? 'Abierto ahora' : 'Open now') : (language === 'es' ? 'Cerrado' : 'Closed')}
+        </span>
+        {nextOpenText && <span className="text-xs text-muted-foreground">&mdash; {nextOpenText}</span>}
+      </div>
+
+      {/* Grouped hours */}
+      {groups.map((g, idx) => {
+        const isToday = today >= g.startDay && today <= g.endDay;
+        const label = g.startDay === g.endDay
+          ? dayNames[g.startDay]
+          : `${dayNames[g.startDay]} - ${dayNames[g.endDay]}`;
+
+        return (
+          <div key={idx} className={`flex justify-between items-center py-2 px-3 rounded-lg text-sm ${isToday ? 'bg-[#F05D5E]/5 font-medium' : ''}`}>
+            <span className={isToday ? 'text-[#F05D5E] font-semibold' : ''}>{label}</span>
+            <span className={g.hours ? '' : 'text-muted-foreground'}>
+              {g.hours ? `${g.hours.open} - ${g.hours.close}` : (language === 'es' ? 'Cerrado' : 'Closed')}
+            </span>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -282,6 +380,7 @@ export default function BusinessProfilePage() {
   const teamRef = useRef(null);
   const reviewsRef = useRef(null);
   const locationRef = useRef(null);
+  const hoursRef = useRef(null);
 
   // Check if the logged-in user is a business
   const isBizUser = isAuthenticated && user?.role === 'business';
@@ -547,6 +646,18 @@ export default function BusinessProfilePage() {
                   <span>({business.review_count})</span>
                 </button>
               )}
+              {workers.length > 0 && (() => {
+                const { isOpen, nextOpenText } = getOpenStatus(workers, language);
+                return (
+                  <button onClick={() => scrollTo(hoursRef)} className="flex items-center gap-1.5 hover:text-foreground transition-colors" data-testid="open-status-badge">
+                    <span className={`w-2 h-2 rounded-full ${isOpen ? 'bg-emerald-500 animate-pulse' : 'bg-red-400'}`} />
+                    <span className={`font-medium ${isOpen ? 'text-emerald-600' : 'text-red-500'}`}>
+                      {isOpen ? (language === 'es' ? 'Abierto' : 'Open') : (language === 'es' ? 'Cerrado' : 'Closed')}
+                    </span>
+                    {nextOpenText && <span className="text-xs hidden sm:inline">{nextOpenText}</span>}
+                  </button>
+                );
+              })()}
               <span className="flex items-center gap-1">
                 <MapPin className="h-4 w-4" />
                 {business.address}, {business.city}, {business.state}
@@ -584,6 +695,7 @@ export default function BusinessProfilePage() {
             {[
               { label: language === 'es' ? 'Servicios' : 'Services', ref: servicesRef },
               { label: language === 'es' ? 'Equipo' : 'Team', ref: teamRef },
+              { label: language === 'es' ? 'Horarios' : 'Hours', ref: hoursRef },
               { label: language === 'es' ? 'Reseñas' : 'Reviews', ref: reviewsRef },
               { label: language === 'es' ? 'Ubicación' : 'Location', ref: locationRef },
             ].map(item => (
@@ -723,7 +835,7 @@ export default function BusinessProfilePage() {
 
             {/* ── Business Hours ────────────────────── */}
             {workers.length > 0 && (
-              <section data-testid="hours-section">
+              <section ref={hoursRef} className="scroll-mt-32" data-testid="hours-section">
                 <h2 className="text-lg font-heading font-bold mb-4 flex items-center gap-2">
                   <Clock className="h-5 w-5 text-[#F05D5E]" />
                   {language === 'es' ? 'Horarios de apertura' : 'Opening hours'}

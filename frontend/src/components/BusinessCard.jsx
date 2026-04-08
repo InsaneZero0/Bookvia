@@ -102,12 +102,18 @@ export function BusinessCard({ business, onFavorite, isFavorite = false }) {
             <MapPin className="h-3.5 w-3.5" />
             <span className="line-clamp-1 text-xs">{business.city}</span>
           </div>
+          {business.is_open_now != null && (
+            <span className={`flex items-center gap-1 text-xs font-medium ${business.is_open_now ? 'text-emerald-600' : 'text-red-400'}`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${business.is_open_now ? 'bg-emerald-500' : 'bg-red-400'}`} />
+              {business.is_open_now ? (language === 'es' ? 'Abierto' : 'Open') : (language === 'es' ? 'Cerrado' : 'Closed')}
+            </span>
+          )}
           {business.distance_km != null && (
             <span className="text-xs font-medium text-[#F05D5E]">
               {business.distance_km < 1 ? `${Math.round(business.distance_km * 1000)}m` : `${business.distance_km} km`}
             </span>
           )}
-          {business.next_available_text && (
+          {business.next_available_text && !business.is_open_now && (
             <div className="flex items-center gap-1 text-xs font-medium text-emerald-600">
               <Clock className="h-3 w-3" />
               <span>{business.next_available_text}</span>
