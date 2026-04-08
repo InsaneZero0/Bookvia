@@ -301,6 +301,9 @@ class BusinessCreate(BaseModel):
     min_time_between_appointments: int = 0  # minutes (buffer between appointments)
     service_radius_km: Optional[float] = None  # for home service
     plan_type: str = "basic"  # basic, premium
+    # Images
+    logo_url: Optional[str] = None
+    cover_photo: Optional[str] = None
 
 class BusinessResponse(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -334,6 +337,7 @@ class BusinessResponse(BaseModel):
     min_time_between_appointments: int = 0
     photos: List[str] = []
     logo_url: Optional[str] = None
+    cover_photo: Optional[str] = None
     slug: Optional[str] = None
     created_at: str
     is_featured: bool = False
@@ -1782,7 +1786,8 @@ async def register_business(business: BusinessCreate):
         "service_radius_km": business.service_radius_km,
         "timezone": business.timezone,
         "photos": [],
-        "logo_url": None,
+        "logo_url": business.logo_url,
+        "cover_photo": business.cover_photo,
         "slug": slug,
         "plan_type": business.plan_type,
         "stripe_account_id": None,
@@ -6478,6 +6483,32 @@ from services.storage import init_storage, put_object, get_object, generate_uplo
 
 
 # ── Generic upload endpoint ──────────────────────────
+@api_router.post("/upload/public")
+async def upload_public_image(file: UploadFile = File(...)):
+    """Public upload endpoint for registration (no auth needed)."""
+    data = await file.read()
+    if len(data) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="File too large. Maximum 5MB")
+    
+    ext = file.filename.split(".")[-1].lower() if "." in file.filename else ""
+    if ext not in ("jpg", "jpeg", "png", "webp", "jfif"):
+        raise HTTPException(status_code=400, detail="Only JPG, PNG, WebP allowed")
+    
+    content_type = file.content_type or "image/jpeg"
+    if ext in ("jfif", "jpg", "jpeg", "pjpeg"):
+        content_type = "image/jpeg"
+    
+    path = generate_upload_path("registration", file.filename)
+    try:
+        result = put_object(path, data, content_type)
+        base_url = os.environ.get("BASE_URL", "")
+        photo_url = f"{base_url}/api/files/{result['path']}"
+        return {"url": photo_url}
+    except Exception as e:
+        logger.error(f"Public upload failed: {e}")
+        raise HTTPException(status_code=500, detail="Failed to upload image")
+
+
 @api_router.post("/upload/image")
 async def upload_image_endpoint(
     file: UploadFile = File(...),

@@ -683,8 +683,8 @@ export default function BusinessProfilePage() {
         <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
           <div className="space-y-2 flex-1">
             <div className="flex items-start gap-4">
-              {business.logo_url && (
-                <img src={business.logo_url} alt={business.name} className="h-16 w-16 rounded-xl object-cover border shadow-sm shrink-0" data-testid="business-logo" />
+              {(business.logo_url || business.cover_photo) && (
+                <img src={business.logo_url || business.cover_photo} alt={business.name} className="h-16 w-16 rounded-full object-cover border-2 border-white shadow-sm shrink-0" data-testid="business-logo" />
               )}
               <div className="space-y-2">
                 <div className="flex flex-wrap items-center gap-2">

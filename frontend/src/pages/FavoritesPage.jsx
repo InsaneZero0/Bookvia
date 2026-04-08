@@ -136,9 +136,9 @@ export default function FavoritesPage() {
               >
                 {/* Photo */}
                 <Link to={`/business/${biz.slug}`} className="block relative h-40 overflow-hidden bg-muted">
-                  {biz.photos?.[0] ? (
+                  {(biz.cover_photo || biz.photos?.[0]) ? (
                     <img
-                      src={biz.photos[0]}
+                      src={biz.cover_photo || biz.photos[0]}
                       alt={biz.name}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                       onError={(e) => { e.target.style.display = 'none'; }}

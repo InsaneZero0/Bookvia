@@ -31,7 +31,7 @@ export function BusinessCard({ business, onFavorite, isFavorite = false }) {
     >
       <div className="relative aspect-[4/3] overflow-hidden">
         <img
-          src={business.photos?.[0] || business.logo_url || 'https://images.unsplash.com/photo-1560066984-138dadb4c035?w=400'}
+          src={business.cover_photo || business.photos?.[0] || business.logo_url || 'https://images.unsplash.com/photo-1560066984-138dadb4c035?w=400'}
           alt={business.name}
           className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
         />
