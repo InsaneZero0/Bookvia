@@ -18,32 +18,33 @@ class TokenData(BaseModel):
     user_id: str
     role: str
     email: str
+    worker_id: Optional[str] = None
+    is_manager: bool = False
     exp: Optional[datetime] = None
 
 
 def hash_password(password: str) -> str:
-    """Hash a password using bcrypt"""
-    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
 
 
 def verify_password(password: str, hashed: str) -> bool:
-    """Verify a password against its hash"""
-    return bcrypt.checkpw(password.encode(), hashed.encode())
+    return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
 
 
-def create_token(user_id: str, role: str, email: str) -> str:
-    """Create a JWT token"""
+def create_token(user_id: str, role: str, email: str, worker_id: str = None, is_manager: bool = False) -> str:
     payload = {
         "user_id": user_id,
         "role": role,
         "email": email,
         "exp": datetime.now(timezone.utc) + timedelta(hours=JWT_EXPIRATION_HOURS)
     }
+    if worker_id:
+        payload["worker_id"] = worker_id
+        payload["is_manager"] = True
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 
 def decode_token(token: str) -> Optional[TokenData]:
-    """Decode and validate a JWT token"""
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         return TokenData(**payload)
@@ -54,28 +55,22 @@ def decode_token(token: str) -> Optional[TokenData]:
 
 
 def generate_totp_secret() -> str:
-    """Generate a new TOTP secret"""
     return pyotp.random_base32()
 
 
 def verify_totp(secret: str, code: str) -> bool:
-    """Verify a TOTP code"""
     totp = pyotp.TOTP(secret)
     return totp.verify(code)
 
 
 def generate_totp_qr(secret: str, email: str, issuer: str = "Bookvia Admin") -> str:
-    """Generate a QR code for TOTP setup"""
     totp = pyotp.TOTP(secret)
     provisioning_uri = totp.provisioning_uri(name=email, issuer_name=issuer)
-    
     qr = qrcode.QRCode(version=1, box_size=10, border=5)
     qr.add_data(provisioning_uri)
     qr.make(fit=True)
-    
     img = qr.make_image(fill_color="black", back_color="white")
     buffer = io.BytesIO()
     img.save(buffer, format='PNG')
     qr_base64 = base64.b64encode(buffer.getvalue()).decode()
-    
     return f"data:image/png;base64,{qr_base64}"

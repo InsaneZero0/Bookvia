@@ -1,5 +1,6 @@
 """
-Enum definitions for the application.
+Enum definitions and constants for the application.
+These are the canonical versions used throughout the codebase.
 """
 from enum import Enum
 
@@ -11,75 +12,112 @@ class UserRole(str, Enum):
 
 
 class AppointmentStatus(str, Enum):
-    HOLD = "HOLD"  # Waiting for payment (30 min)
-    CONFIRMED = "CONFIRMED"  # Paid and confirmed
-    CANCELLED = "CANCELLED"
-    COMPLETED = "COMPLETED"
-    NO_SHOW = "NO_SHOW"
-    EXPIRED = "EXPIRED"  # Hold expired without payment
+    HOLD = "hold"
+    CONFIRMED = "confirmed"
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
+    NO_SHOW = "no_show"
+    EXPIRED = "expired"
 
 
 class BusinessStatus(str, Enum):
-    PENDING_REVIEW = "PENDING_REVIEW"
-    APPROVED = "APPROVED"
-    REJECTED = "REJECTED"
-    SUSPENDED = "SUSPENDED"
+    PENDING = "pending"
+    APPROVED = "approved"
+    SUSPENDED = "suspended"
+    REJECTED = "rejected"
 
 
 class PaymentStatus(str, Enum):
-    PENDING = "PENDING"
-    COMPLETED = "COMPLETED"
-    FAILED = "FAILED"
-    REFUNDED = "REFUNDED"
+    PENDING = "pending"
+    COMPLETED = "completed"
+    REFUNDED = "refunded"
+    FAILED = "failed"
 
 
 class TransactionStatus(str, Enum):
-    PENDING = "PENDING"
-    COMPLETED = "COMPLETED"
-    FAILED = "FAILED"
-    REFUNDED = "REFUNDED"
-    CANCELLED = "CANCELLED"
+    CREATED = "created"
+    PAID = "paid"
+    REFUND_PARTIAL = "refund_partial"
+    REFUND_FULL = "refund_full"
+    NO_SHOW_PAYOUT = "no_show_payout"
+    BUSINESS_CANCEL_FEE = "business_cancel_fee"
+    EXPIRED = "expired"
 
 
 class LedgerDirection(str, Enum):
-    DEBIT = "DEBIT"
-    CREDIT = "CREDIT"
+    DEBIT = "debit"
+    CREDIT = "credit"
 
 
 class LedgerAccount(str, Enum):
-    BUSINESS_RECEIVABLE = "BUSINESS_RECEIVABLE"  # What we owe the business
-    PLATFORM_REVENUE = "PLATFORM_REVENUE"  # Our commission
-    BUSINESS_PAYOUT = "BUSINESS_PAYOUT"  # Paid to business
+    BUSINESS_REVENUE = "business_revenue"
+    PLATFORM_FEE = "platform_fee"
+    REFUND = "refund"
+    PENALTY = "penalty"
+    PAYOUT = "payout"
 
 
 class LedgerEntryStatus(str, Enum):
-    PENDING = "PENDING"
-    SETTLED = "SETTLED"
+    POSTED = "posted"
+    REVERSED = "reversed"
 
 
 class SettlementStatus(str, Enum):
-    PENDING = "PENDING"
-    PAID = "PAID"
-    HELD = "HELD"
+    PENDING = "pending"
+    PAID = "paid"
+    HELD = "held"
+    FAILED = "failed"
 
 
 class AuditAction(str, Enum):
-    BUSINESS_APPROVED = "BUSINESS_APPROVED"
-    BUSINESS_REJECTED = "BUSINESS_REJECTED"
-    BUSINESS_SUSPENDED = "BUSINESS_SUSPENDED"
-    SETTLEMENT_CREATED = "SETTLEMENT_CREATED"
-    SETTLEMENT_PAID = "SETTLEMENT_PAID"
-    SETTLEMENT_HELD = "SETTLEMENT_HELD"
-    PAYOUT_HELD = "PAYOUT_HELD"
-    PAYOUT_RELEASED = "PAYOUT_RELEASED"
-    USER_SUSPENDED = "USER_SUSPENDED"
+    BUSINESS_APPROVE = "business_approve"
+    BUSINESS_REJECT = "business_reject"
+    BUSINESS_SUSPEND = "business_suspend"
+    USER_SUSPEND = "user_suspend"
+    REVIEW_DELETE = "review_delete"
+    BUSINESS_FEATURE = "business_feature"
+    PAYMENT_HOLD = "payment_hold"
+    PAYMENT_RELEASE = "payment_release"
+    ADMIN_LOGIN = "admin_login"
+    ADMIN_2FA_SETUP = "admin_2fa_setup"
+    PAYOUT_HOLD = "payout_hold"
+    PAYOUT_RELEASE = "payout_release"
+    SETTLEMENT_GENERATE = "settlement_generate"
+    SETTLEMENT_MARK_PAID = "settlement_mark_paid"
 
 
-class NotificationType(str, Enum):
-    BOOKING_CONFIRMED = "BOOKING_CONFIRMED"
-    BOOKING_CANCELLED = "BOOKING_CANCELLED"
-    BOOKING_REMINDER = "BOOKING_REMINDER"
-    PAYMENT_RECEIVED = "PAYMENT_RECEIVED"
-    WORKER_ASSIGNED = "WORKER_ASSIGNED"
-    SETTLEMENT_READY = "SETTLEMENT_READY"
-    GENERAL = "GENERAL"
+# ========================== CONSTANTS ==========================
+
+PLATFORM_FEE_PERCENT = 0.08
+HOLD_EXPIRATION_MINUTES = 30
+MIN_DEPOSIT_AMOUNT = 50.0
+SUBSCRIPTION_PRICE_MXN = 39.00
+SUBSCRIPTION_TRIAL_DAYS = 30
+
+VISIBLE_BUSINESS_FILTER = {
+    "status": BusinessStatus.APPROVED,
+    "$or": [
+        {"subscription_status": {"$in": ["active", "trialing"]}},
+        {"subscription_status": {"$exists": False}},
+        {"subscription_status": None},
+        {"subscription_status": "none"},
+    ]
+}
+
+DEFAULT_MANAGER_PERMISSIONS = {
+    "complete_bookings": True,
+    "reschedule_bookings": True,
+    "cancel_bookings": False,
+    "block_clients": False,
+    "view_client_data": False,
+    "edit_services": False,
+    "view_reports": False,
+    "view_today_bookings": True,
+    "view_confirmed_bookings": True,
+    "view_agenda": True,
+    "view_team": False,
+    "edit_photos": False,
+    "edit_description": False,
+    "edit_schedule": False,
+    "edit_contact": False,
+}

@@ -1,61 +1,88 @@
-# Bookvia - PRD (Product Requirements Document)
+# Bookvia - PRD
 
 ## Descripcion General
-Bookvia es una plataforma marketplace de reservas profesionales que conecta negocios de servicios con clientes.
+Marketplace de reservas profesionales (Belleza, Salud, Fitness, etc.) en Mexico.
+Frontend: React 18, TailwindCSS, Shadcn/UI
+Backend: FastAPI, Motor (MongoDB async), Stripe, Resend
+Pagos: Stripe Native (anticipos + suscripciones)
+Almacenamiento: Emergent Object Storage (fallback para Cloudinary)
+Auth Social: Emergent-managed Google Auth (solo clientes)
 
-## Arquitectura
-- **Frontend:** React + Shadcn/UI + React Router + lucide-react + Recharts + React-Leaflet
-- **Backend:** FastAPI + MongoDB (Motor async)
-- **Integraciones:** Stripe (pagos), Emergent Object Storage (imagenes), Resend (email)
+## Arquitectura del Backend (Post-Refactorizacion)
+```
+/app/backend/
+  server.py                 # App entry (~235 lineas) - lifecycle, middleware, schedulers
+  core/
+    config.py               # Env vars, constants
+    database.py             # MongoDB connection
+    security.py             # JWT, bcrypt, TOTP
+    dependencies.py         # Auth dependencies (require_auth, require_business, etc.)
+    helpers.py              # Shared utilities (generate_id, notifications, ledger, etc.)
+    stripe_config.py        # Stripe initialization
+  models/
+    enums.py                # All enums + constants (UserRole, AppointmentStatus, etc.)
+    schemas.py              # All Pydantic models (request/response)
+  routers/
+    auth.py                 # Login, register, Google Auth, business auth, verification
+    users.py                # User profile, favorites
+    businesses.py           # Business CRUD, workers, blacklist, subscriptions, photos, closures
+    bookings.py             # Availability engine, booking CRUD, reschedule, cancel
+    services.py             # Service CRUD
+    reviews.py              # Review CRUD
+    categories.py           # Category CRUD
+    payments.py             # Stripe payments, deposit checkout
+    admin.py                # Admin dashboard, approvals, suspensions
+    notifications.py        # Notification CRUD
+    finance.py              # Finance, settlements
+    system.py               # Health, seed, contact, cities, upload, webhook
+    seo.py                  # Sitemap, robots.txt
+  services/
+    email.py                # Resend email templates
+    sms.py                  # Twilio SMS
+    storage.py              # Emergent Object Storage
+    cloudinary_service.py   # Cloudinary fallback
+```
 
-## Funcionalidades Implementadas
+## Features Implementadas
 
 ### Core
 - [x] Autenticacion JWT, registro negocio multi-paso, 2FA admin
 - [x] Login con Google (Emergent Auth) para usuarios/clientes
 - [x] 2 campos de imagen en registro: Logo + Foto del negocio
-- [x] Upload publico POST /api/upload/public
 
 ### Reservas y Pagos
 - [x] Flujo multi-paso con anticipo Stripe Checkout
 - [x] Cancelacion con politicas, sistema de resenas
 - [x] Reagendar citas (negocio y cliente, solo 24h antes)
-- [x] **Recordatorios por email 24h antes** (scheduler cada 30 min + Resend)
-- [x] **Registro de negocio: pago de suscripcion como ultimo paso obligatorio** (sin pagar no pueden hacer login, correo de verificacion se envia despues del pago)
-- [x] **Recordatorio automatico de suscripcion** (email 24h despues si no pagaron, scheduler cada 6h)
+- [x] Recordatorios por email 24h antes (scheduler cada 30 min + Resend)
+- [x] Registro de negocio: pago de suscripcion como ultimo paso obligatorio
+- [x] Recordatorio automatico de suscripcion (email 24h despues si no pagaron)
 
-### Busqueda y Perfil Publico
-- [x] Filtros + geolocalizacion, horarios agrupados, Abierto/Cerrado
-- [x] cover_photo en tarjetas, logo_url en avatar circular
-- [x] Compartir negocio (WhatsApp + Copiar enlace)
+### Frontend
+- [x] Busqueda "Cerca de ti" con OpenStreetMap, horarios apertura, badge Abierto/Cerrado
+- [x] Pagina de favoritos, historial de transacciones
+- [x] Carrusel de fotos en perfil publico
+- [x] Dashboard de negocio con modales de reagendar, detalles cliente
+- [x] Panel admin con 2FA, aprobaciones, estadisticas
 
-### Area del Cliente
-- [x] Favoritos dedicada /favorites
-- [x] Historial de pagos /payments
-- [x] Dashboard con 5 acciones rapidas
+### Tecnico
+- [x] Refactorizacion backend: server.py ~7000 lineas -> 235 lineas + 12 routers modulares
 
-### Gestion de Negocio
-- [x] CRUD servicios, equipo, cierres, suscripcion
-- [x] Reportes graficos + Excel, Calendario/Agenda Timeline
-- [x] Mapa ubicacion, Notificaciones (campana)
-
-## Backlog
-
-### P0 (Tecnica)
-- [ ] Refactorizar server.py (~7000 lineas) en routers modulares
+## Tareas Pendientes
 
 ### P2
-- [x] Login con Google (Emergent-managed) - Solo para clientes/usuarios
 - [ ] Optimizacion UX mobile avanzada
 
 ### P3
-- [ ] PWA, Stripe Connect, Notificaciones Push, Chat, Cupones
+- [ ] PWA (Progressive Web App)
+- [ ] Stripe Connect (payouts automaticos)
+- [ ] Chat / Preguntas al negocio
+- [ ] Cupones o codigos de descuento
+- [ ] Notificaciones Push
 
 ## Notas Tecnicas
-- Google Login: Usa Emergent Auth (auth.emergentagent.com). Solo para clientes. Callback en /auth/google/callback. Backend valida session_id con Emergent API.
-- Registro Negocio: Pasos 1-4 guardan datos, Paso 5 redirige a Stripe. Sin pago, login bloqueado (403 subscription_required). Tras pago, se envia email de verificacion.
-- Endpoints sin auth para registro: POST /api/auth/business/create-subscription, POST /api/auth/business/verify-subscription
-- Recordatorio de suscripcion: Scheduler asyncio cada 6h, busca negocios con subscription_status='none' creados hace +24h. Campo subscription_reminder_sent evita duplicados.
-- Recordatorios de citas: Scheduler asyncio cada 30 min, busca citas confirmadas para manana (timezone Mexico)
-- reminder_sent: Campo bool en bookings para evitar duplicados
-- Endpoint admin: POST /api/bookings/send-reminders para disparar manualmente
+- Google Login: Usa Emergent Auth (auth.emergentagent.com). Solo para clientes.
+- Registro Negocio: Pasos 1-4 datos, Paso 5 pago Stripe. Sin pago login bloqueado (403).
+- Recordatorio suscripcion: Scheduler cada 6h, negocios con subscription_status='none' +24h.
+- Recordatorios citas: Scheduler cada 30 min, timezone Mexico.
+- TIMEZONE PARSING: Siempre usar new Date(dateString + 'T12:00:00') en frontend.
