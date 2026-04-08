@@ -1,0 +1,666 @@
+"""
+Auto-extracted router from server.py refactoring.
+"""
+from fastapi import APIRouter, HTTPException, Depends, Request, BackgroundTasks, status, File, UploadFile
+from fastapi.security import HTTPAuthorizationCredentials
+from fastapi.responses import Response
+from typing import List, Optional, Dict, Any
+from datetime import datetime, timezone, timedelta
+from pydantic import BaseModel, ConfigDict, EmailStr
+import logging
+import os
+import re
+import random
+import uuid
+import json
+import math
+import pytz
+from bson import ObjectId
+
+from core.database import db
+from core.security import (
+    TokenData, create_token, decode_token,
+    hash_password, verify_password,
+    generate_totp_secret, verify_totp, generate_totp_qr
+)
+from core.dependencies import (
+    security, get_current_user, require_auth, require_business, require_admin
+)
+from core.helpers import (
+    generate_id, generate_slug, calculate_bayesian_rating,
+    is_user_blacklisted, send_sms, create_notification,
+    create_audit_log, create_business_activity,
+    amount_to_cents, cents_to_amount,
+    create_ledger_entry, create_transaction_ledger_entries,
+    calculate_business_ledger_summary
+)
+from models.enums import (
+    UserRole, AppointmentStatus, BusinessStatus, PaymentStatus,
+    TransactionStatus, LedgerDirection, LedgerAccount, LedgerEntryStatus,
+    SettlementStatus, AuditAction,
+    PLATFORM_FEE_PERCENT, HOLD_EXPIRATION_MINUTES, MIN_DEPOSIT_AMOUNT,
+    SUBSCRIPTION_PRICE_MXN, SUBSCRIPTION_TRIAL_DAYS,
+    VISIBLE_BUSINESS_FILTER, DEFAULT_MANAGER_PERMISSIONS
+)
+from models.schemas import *
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/admin", tags=["Admin"])
+
+@router.post("/settlements/generate")
+async def admin_generate_settlements(
+    request: Request,
+    year: int,
+    month: int,
+    token_data: TokenData = Depends(require_admin)
+):
+    """Admin endpoint to generate monthly settlements"""
+    # Generate idempotency key based on job run
+    idempotency_key = f"job-{year}-{month}-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M')}"
+    
+    results = await generate_monthly_settlements(
+        year, month, idempotency_key,
+        admin_id=token_data.user_id,
+        request=request
+    )
+    
+    return results
+
+
+
+@router.get("/settlements", response_model=List[SettlementResponse])
+async def admin_get_settlements(
+    status: Optional[str] = None,
+    period_key: Optional[str] = None,
+    business_id: Optional[str] = None,
+    page: int = 1,
+    limit: int = 50,
+    token_data: TokenData = Depends(require_admin)
+):
+    """Admin: Get all settlements with filters"""
+    filters = {}
+    if status:
+        filters["status"] = status
+    if period_key:
+        filters["period_key"] = period_key
+    if business_id:
+        filters["business_id"] = business_id
+    
+    skip = (page - 1) * limit
+    settlements = await db.settlements.find(filters, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
+    
+    # Add business names
+    for s in settlements:
+        business = await db.businesses.find_one({"id": s["business_id"]})
+        s["business_name"] = business["name"] if business else None
+    
+    return [SettlementResponse(**s) for s in settlements]
+
+
+
+@router.put("/settlements/{settlement_id}/pay")
+async def admin_mark_settlement_paid(
+    settlement_id: str,
+    request: Request,
+    pay_req: SettlementMarkPaidRequest,
+    token_data: TokenData = Depends(require_admin)
+):
+    """Admin: Mark settlement as paid (manual)"""
+    settlement = await db.settlements.find_one({"id": settlement_id})
+    if not settlement:
+        raise HTTPException(status_code=404, detail="Settlement not found")
+    
+    if settlement["status"] not in [SettlementStatus.PENDING, SettlementStatus.HELD]:
+        raise HTTPException(status_code=400, detail=f"Cannot mark settlement with status {settlement['status']} as paid")
+    
+    now = datetime.now(timezone.utc)
+    
+    await db.settlements.update_one(
+        {"id": settlement_id},
+        {"$set": {
+            "status": SettlementStatus.PAID,
+            "payout_reference": pay_req.payout_reference,
+            "paid_at": now.isoformat(),
+            "updated_at": now.isoformat()
+        }}
+    )
+    
+    # Create payout ledger entry
+    await create_ledger_entry(
+        transaction_id=settlement_id,
+        business_id=settlement["business_id"],
+        direction=LedgerDirection.CREDIT,
+        account=LedgerAccount.PAYOUT,
+        amount=settlement["net_payout"],
+        description=f"Payout {settlement['period_key']} - {pay_req.payout_reference}",
+        created_by="admin"
+    )
+    
+    # Create audit log
+    await create_audit_log(
+        admin_id=token_data.user_id,
+        admin_email=token_data.email,
+        action=AuditAction.SETTLEMENT_MARK_PAID,
+        target_type="settlement",
+        target_id=settlement_id,
+        details={
+            "business_id": settlement["business_id"],
+            "net_payout": settlement["net_payout"],
+            "payout_reference": pay_req.payout_reference
+        },
+        request=request
+    )
+    
+    return {"message": "Settlement marked as paid", "payout_reference": pay_req.payout_reference}
+
+
+
+@router.put("/businesses/{business_id}/payout-hold")
+async def admin_toggle_payout_hold(
+    business_id: str,
+    request: Request,
+    hold_req: PayoutHoldRequest,
+    token_data: TokenData = Depends(require_admin)
+):
+    """Admin: Toggle payout hold for a business"""
+    business = await db.businesses.find_one({"id": business_id})
+    if not business:
+        raise HTTPException(status_code=404, detail="Business not found")
+    
+    await db.businesses.update_one(
+        {"id": business_id},
+        {"$set": {
+            "payout_hold": hold_req.hold,
+            "payout_hold_reason": hold_req.reason if hold_req.hold else None
+        }}
+    )
+    
+    # If releasing hold, update any HELD settlements to PENDING
+    if not hold_req.hold:
+        await db.settlements.update_many(
+            {"business_id": business_id, "status": SettlementStatus.HELD},
+            {"$set": {"status": SettlementStatus.PENDING, "held_reason": None}}
+        )
+    
+    # Create audit log
+    await create_audit_log(
+        admin_id=token_data.user_id,
+        admin_email=token_data.email,
+        action=AuditAction.PAYOUT_HOLD if hold_req.hold else AuditAction.PAYOUT_RELEASE,
+        target_type="business",
+        target_id=business_id,
+        details={"hold": hold_req.hold, "reason": hold_req.reason},
+        request=request
+    )
+    
+    return {"message": f"Payout {'held' if hold_req.hold else 'released'} for business {business_id}"}
+
+
+
+@router.get("/export/transactions")
+async def admin_export_transactions(
+    year: int,
+    month: int,
+    token_data: TokenData = Depends(require_admin)
+):
+    """Admin: Export transactions as CSV"""
+    import csv
+    import io
+    from fastapi.responses import StreamingResponse
+    
+    period_start = datetime(year, month, 1, tzinfo=timezone.utc)
+    if month == 12:
+        period_end = datetime(year + 1, 1, 1, tzinfo=timezone.utc)
+    else:
+        period_end = datetime(year, month + 1, 1, tzinfo=timezone.utc)
+    
+    transactions = await db.transactions.find({
+        "created_at": {"$gte": period_start.isoformat(), "$lt": period_end.isoformat()}
+    }, {"_id": 0}).to_list(10000)
+    
+    # Create CSV
+    output = io.StringIO()
+    writer = csv.writer(output)
+    
+    # Header
+    writer.writerow([
+        "ID", "Booking ID", "User ID", "Business ID",
+        "Amount Total", "Fee Amount", "Payout Amount", "Currency",
+        "Status", "Refund Amount", "Refund Reason", "Cancelled By",
+        "Created At", "Paid At"
+    ])
+    
+    # Data
+    for t in transactions:
+        writer.writerow([
+            t.get("id"), t.get("booking_id"), t.get("user_id"), t.get("business_id"),
+            t.get("amount_total"), t.get("fee_amount"), t.get("payout_amount"), t.get("currency"),
+            t.get("status"), t.get("refund_amount"), t.get("refund_reason"), t.get("cancelled_by"),
+            t.get("created_at"), t.get("paid_at")
+        ])
+    
+    output.seek(0)
+    
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=transactions_{year}_{month:02d}.csv"}
+    )
+
+
+
+@router.get("/export/settlements")
+async def admin_export_settlements(
+    year: int,
+    month: int,
+    token_data: TokenData = Depends(require_admin)
+):
+    """Admin: Export settlements as CSV"""
+    import csv
+    import io
+    from fastapi.responses import StreamingResponse
+    
+    period_key = f"MX-{year}-{str(month).zfill(2)}"
+    
+    settlements = await db.settlements.find({
+        "period_key": period_key
+    }, {"_id": 0}).to_list(10000)
+    
+    # Add business names
+    for s in settlements:
+        business = await db.businesses.find_one({"id": s["business_id"]})
+        s["business_name"] = business["name"] if business else "Unknown"
+    
+    # Create CSV
+    output = io.StringIO()
+    writer = csv.writer(output)
+    
+    # Header
+    writer.writerow([
+        "ID", "Business ID", "Business Name", "Period Key",
+        "Gross Paid", "Total Fees", "Total Refunds", "Total Penalties", "Net Payout",
+        "Currency", "Status", "Held Reason", "Payout Reference", "Paid At", "Created At"
+    ])
+    
+    # Data
+    for s in settlements:
+        writer.writerow([
+            s.get("id"), s.get("business_id"), s.get("business_name"), s.get("period_key"),
+            s.get("gross_paid"), s.get("total_fees"), s.get("total_refunds"), s.get("total_penalties"), s.get("net_payout"),
+            s.get("currency"), s.get("status"), s.get("held_reason"), s.get("payout_reference"), s.get("paid_at"), s.get("created_at")
+        ])
+    
+    output.seek(0)
+    
+    return StreamingResponse(
+        iter([output.getvalue()]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=settlements_{year}_{month:02d}.csv"}
+    )
+
+
+
+@router.get("/stats")
+async def get_admin_stats(token_data: TokenData = Depends(require_admin)):
+    total_users = await db.users.count_documents({"role": UserRole.USER})
+    total_businesses = await db.businesses.count_documents({})
+    approved_businesses = await db.businesses.count_documents({"status": BusinessStatus.APPROVED})
+    pending_businesses = await db.businesses.count_documents({"status": BusinessStatus.PENDING})
+    
+    total_bookings = await db.bookings.count_documents({})
+    completed_bookings = await db.bookings.count_documents({"status": AppointmentStatus.COMPLETED})
+    
+    # This month stats
+    first_of_month = datetime.now(timezone.utc).replace(day=1).strftime("%Y-%m-%d")
+    month_bookings = await db.bookings.count_documents({"date": {"$gte": first_of_month}})
+    month_revenue = 0
+    
+    payments = await db.payment_transactions.find({
+        "status": PaymentStatus.COMPLETED,
+        "created_at": {"$gte": first_of_month}
+    }).to_list(10000)
+    month_revenue = sum(p.get("amount", 0) for p in payments)
+    
+    return {
+        "users": {
+            "total": total_users
+        },
+        "businesses": {
+            "total": total_businesses,
+            "approved": approved_businesses,
+            "pending": pending_businesses
+        },
+        "bookings": {
+            "total": total_bookings,
+            "completed": completed_bookings,
+            "this_month": month_bookings
+        },
+        "revenue": {
+            "this_month": month_revenue
+        }
+    }
+
+
+
+@router.get("/businesses/pending", response_model=List[BusinessResponse])
+async def get_pending_businesses(token_data: TokenData = Depends(require_admin)):
+    # Only show businesses whose owner has verified their email
+    businesses = await db.businesses.find(
+        {"status": BusinessStatus.PENDING},
+        {"_id": 0, "password_hash": 0}
+    ).to_list(100)
+    
+    verified_businesses = []
+    for b in businesses:
+        user = await db.users.find_one({"business_id": b["id"]}, {"_id": 0, "email_verified": 1})
+        if user and user.get("email_verified", False):
+            verified_businesses.append(b)
+    
+    return [BusinessResponse(**b) for b in verified_businesses]
+
+
+
+@router.put("/businesses/{business_id}/approve")
+async def approve_business(business_id: str, request: Request, token_data: TokenData = Depends(require_admin)):
+    business = await db.businesses.find_one({"id": business_id})
+    if not business:
+        raise HTTPException(status_code=404, detail="Business not found")
+    
+    result = await db.businesses.update_one(
+        {"id": business_id},
+        {"$set": {"status": BusinessStatus.APPROVED}}
+    )
+    
+    # Create audit log
+    await create_audit_log(
+        admin_id=token_data.user_id,
+        admin_email=token_data.email,
+        action=AuditAction.BUSINESS_APPROVE,
+        target_type="business",
+        target_id=business_id,
+        details={"business_name": business.get("name")},
+        request=request
+    )
+    
+    # Notify business owner
+    if business.get("user_id"):
+        await create_notification(
+            business["user_id"],
+            "Negocio Aprobado",
+            f"¡Tu negocio {business['name']} ha sido aprobado! Ya puedes recibir reservas.",
+            "system",
+            {"business_id": business_id}
+        )
+    
+    return {"message": "Business approved"}
+
+
+
+@router.put("/businesses/{business_id}/reject")
+async def reject_business(business_id: str, request: Request, reason: str = "", token_data: TokenData = Depends(require_admin)):
+    business = await db.businesses.find_one({"id": business_id})
+    if not business:
+        raise HTTPException(status_code=404, detail="Business not found")
+    
+    result = await db.businesses.update_one(
+        {"id": business_id},
+        {"$set": {"status": BusinessStatus.REJECTED, "rejection_reason": reason}}
+    )
+    
+    # Create audit log
+    await create_audit_log(
+        admin_id=token_data.user_id,
+        admin_email=token_data.email,
+        action=AuditAction.BUSINESS_REJECT,
+        target_type="business",
+        target_id=business_id,
+        details={"business_name": business.get("name"), "reason": reason},
+        request=request
+    )
+    
+    # Notify business owner
+    if business.get("user_id"):
+        await create_notification(
+            business["user_id"],
+            "Negocio Rechazado",
+            f"Tu solicitud de negocio ha sido rechazada. Razón: {reason or 'No especificada'}",
+            "system",
+            {"business_id": business_id}
+        )
+    
+    return {"message": "Business rejected"}
+
+
+
+@router.put("/businesses/{business_id}/suspend")
+async def suspend_business(business_id: str, request: Request, reason: str = "", token_data: TokenData = Depends(require_admin)):
+    business = await db.businesses.find_one({"id": business_id})
+    if not business:
+        raise HTTPException(status_code=404, detail="Business not found")
+    
+    result = await db.businesses.update_one(
+        {"id": business_id},
+        {"$set": {"status": BusinessStatus.SUSPENDED, "suspension_reason": reason}}
+    )
+    
+    # Create audit log
+    await create_audit_log(
+        admin_id=token_data.user_id,
+        admin_email=token_data.email,
+        action=AuditAction.BUSINESS_SUSPEND,
+        target_type="business",
+        target_id=business_id,
+        details={"business_name": business.get("name"), "reason": reason},
+        request=request
+    )
+    
+    # Notify business owner
+    if business.get("user_id"):
+        await create_notification(
+            business["user_id"],
+            "Negocio Suspendido",
+            f"Tu negocio ha sido suspendido. Razón: {reason or 'No especificada'}",
+            "system",
+            {"business_id": business_id}
+        )
+    
+    return {"message": "Business suspended"}
+
+
+
+@router.put("/users/{user_id}/suspend")
+async def suspend_user(user_id: str, request: Request, days: int = 15, reason: str = "", token_data: TokenData = Depends(require_admin)):
+    user = await db.users.find_one({"id": user_id})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    suspended_until = (datetime.now(timezone.utc) + timedelta(days=days)).isoformat()
+    
+    result = await db.users.update_one(
+        {"id": user_id},
+        {"$set": {"suspended_until": suspended_until, "suspension_reason": reason}}
+    )
+    
+    # Create audit log
+    await create_audit_log(
+        admin_id=token_data.user_id,
+        admin_email=token_data.email,
+        action=AuditAction.USER_SUSPEND,
+        target_type="user",
+        target_id=user_id,
+        details={"user_email": user.get("email"), "days": days, "reason": reason},
+        request=request
+    )
+    
+    return {"message": f"User suspended for {days} days"}
+
+
+
+@router.delete("/reviews/{review_id}")
+async def delete_review(review_id: str, request: Request, reason: str = "", token_data: TokenData = Depends(require_admin)):
+    review = await db.reviews.find_one({"id": review_id})
+    if not review:
+        raise HTTPException(status_code=404, detail="Review not found")
+    
+    # Update business rating
+    business = await db.businesses.find_one({"id": review["business_id"]})
+    if business:
+        new_rating_sum = business.get("rating_sum", 0) - review["rating"]
+        new_review_count = max(business.get("review_count", 0) - 1, 0)
+        new_rating = calculate_bayesian_rating(new_rating_sum, new_review_count) if new_review_count > 0 else 0
+        
+        await db.businesses.update_one(
+            {"id": review["business_id"]},
+            {"$set": {"rating": round(new_rating, 2), "rating_sum": new_rating_sum, "review_count": new_review_count}}
+        )
+    
+    await db.reviews.delete_one({"id": review_id})
+    
+    # Create audit log
+    await create_audit_log(
+        admin_id=token_data.user_id,
+        admin_email=token_data.email,
+        action=AuditAction.REVIEW_DELETE,
+        target_type="review",
+        target_id=review_id,
+        details={
+            "business_id": review.get("business_id"),
+            "user_id": review.get("user_id"),
+            "rating": review.get("rating"),
+            "reason": reason
+        },
+        request=request
+    )
+    
+    return {"message": "Review deleted"}
+
+
+
+@router.get("/audit-logs", response_model=List[AuditLogResponse])
+async def get_audit_logs(
+    page: int = 1,
+    limit: int = 50,
+    action: Optional[str] = None,
+    admin_id: Optional[str] = None,
+    token_data: TokenData = Depends(require_admin)
+):
+    filters = {}
+    if action:
+        filters["action"] = action
+    if admin_id:
+        filters["admin_id"] = admin_id
+    
+    skip = (page - 1) * limit
+    logs = await db.audit_logs.find(filters, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
+    return [AuditLogResponse(**log) for log in logs]
+
+
+
+@router.put("/businesses/{business_id}/feature")
+async def toggle_featured(business_id: str, request: Request, featured: bool = True, token_data: TokenData = Depends(require_admin)):
+    business = await db.businesses.find_one({"id": business_id})
+    if not business:
+        raise HTTPException(status_code=404, detail="Business not found")
+    
+    await db.businesses.update_one(
+        {"id": business_id},
+        {"$set": {"is_featured": featured}}
+    )
+    
+    # Create audit log
+    await create_audit_log(
+        admin_id=token_data.user_id,
+        admin_email=token_data.email,
+        action=AuditAction.BUSINESS_FEATURE,
+        target_type="business",
+        target_id=business_id,
+        details={"business_name": business.get("name"), "featured": featured},
+        request=request
+    )
+    
+    return {"message": f"Business {'featured' if featured else 'unfeatured'}"}
+
+
+
+@router.get("/emails")
+async def get_sent_emails(
+    limit: int = 50,
+    status: Optional[str] = None,
+    to: Optional[str] = None,
+    token_data: TokenData = Depends(require_admin)
+):
+    """Admin: Get sent emails from the system"""
+    from services.email import get_sent_emails as fetch_emails
+    emails = await fetch_emails(limit=limit, status=status, to=to)
+    return emails
+
+
+
+@router.put("/payments/{payment_id}/hold")
+async def hold_payment(payment_id: str, request: Request, reason: str = "", token_data: TokenData = Depends(require_admin)):
+    """Put a payment on hold - prevents payout to business"""
+    payment = await db.payment_transactions.find_one({"id": payment_id})
+    if not payment:
+        raise HTTPException(status_code=404, detail="Payment not found")
+    
+    await db.payment_transactions.update_one(
+        {"id": payment_id},
+        {"$set": {"on_hold": True, "hold_reason": reason, "held_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    
+    # Create audit log
+    await create_audit_log(
+        admin_id=token_data.user_id,
+        admin_email=token_data.email,
+        action=AuditAction.PAYMENT_HOLD,
+        target_type="payment",
+        target_id=payment_id,
+        details={"amount": payment.get("amount"), "reason": reason},
+        request=request
+    )
+    
+    return {"message": "Payment put on hold"}
+
+
+
+@router.put("/payments/{payment_id}/release")
+async def release_payment(payment_id: str, request: Request, token_data: TokenData = Depends(require_admin)):
+    """Release a payment from hold"""
+    payment = await db.payment_transactions.find_one({"id": payment_id})
+    if not payment:
+        raise HTTPException(status_code=404, detail="Payment not found")
+    
+    await db.payment_transactions.update_one(
+        {"id": payment_id},
+        {"$set": {"on_hold": False, "released_at": datetime.now(timezone.utc).isoformat()},
+         "$unset": {"hold_reason": ""}}
+    )
+    
+    # Create audit log
+    await create_audit_log(
+        admin_id=token_data.user_id,
+        admin_email=token_data.email,
+        action=AuditAction.PAYMENT_RELEASE,
+        target_type="payment",
+        target_id=payment_id,
+        details={"amount": payment.get("amount")},
+        request=request
+    )
+    
+    return {"message": "Payment released"}
+
+
+
+@router.get("/payments/held")
+async def get_held_payments(page: int = 1, limit: int = 50, token_data: TokenData = Depends(require_admin)):
+    """Get all payments currently on hold"""
+    skip = (page - 1) * limit
+    payments = await db.payment_transactions.find(
+        {"on_hold": True},
+        {"_id": 0}
+    ).sort("held_at", -1).skip(skip).limit(limit).to_list(limit)
+    return payments
+
+
+
