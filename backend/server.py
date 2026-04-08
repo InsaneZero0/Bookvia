@@ -7038,6 +7038,8 @@ async def startup_event():
         logger.warning("Cloudinary not configured - using fallback storage")
     # Start appointment reminder scheduler
     asyncio.create_task(appointment_reminder_scheduler())
+    # Start subscription reminder scheduler
+    asyncio.create_task(subscription_reminder_scheduler())
 
 
 async def appointment_reminder_scheduler():
@@ -7118,3 +7120,53 @@ async def send_pending_reminders():
         except Exception as e:
             logger.error(f"Failed to send reminder for booking {booking.get('id')}: {e}")
 
+
+
+async def subscription_reminder_scheduler():
+    """Background task that checks every 6 hours for businesses that haven't paid subscription."""
+    logger.info("Subscription reminder scheduler started")
+    await asyncio.sleep(300)  # Wait 5 min after startup before first check
+    while True:
+        try:
+            await send_subscription_reminders()
+        except Exception as e:
+            logger.error(f"Subscription reminder scheduler error: {e}")
+        await asyncio.sleep(21600)  # 6 hours
+
+
+async def send_subscription_reminders():
+    """Find businesses registered 24h+ ago with subscription_status='none' and send reminder."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+    
+    businesses = await db.businesses.find({
+        "subscription_status": "none",
+        "created_at": {"$lt": cutoff},
+        "subscription_reminder_sent": {"$ne": True}
+    }, {"_id": 0, "id": 1, "email": 1, "name": 1}).to_list(50)
+    
+    if not businesses:
+        return
+    
+    base_url = os.environ.get("BASE_URL", "")
+    login_url = f"{base_url}/login"
+    
+    logger.info(f"Sending {len(businesses)} subscription reminders")
+    
+    for biz in businesses:
+        try:
+            from services.email import send_subscription_reminder
+            await send_subscription_reminder(
+                business_email=biz["email"],
+                business_name=biz.get("name", ""),
+                login_url=login_url
+            )
+            
+            await db.businesses.update_one(
+                {"id": biz["id"]},
+                {"$set": {"subscription_reminder_sent": True}}
+            )
+            
+            logger.info(f"Subscription reminder sent to {biz['email']}")
+            
+        except Exception as e:
+            logger.error(f"Failed to send subscription reminder to {biz.get('email')}: {e}")

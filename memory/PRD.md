@@ -22,6 +22,7 @@ Bookvia es una plataforma marketplace de reservas profesionales que conecta nego
 - [x] Reagendar citas (negocio y cliente, solo 24h antes)
 - [x] **Recordatorios por email 24h antes** (scheduler cada 30 min + Resend)
 - [x] **Registro de negocio: pago de suscripcion como ultimo paso obligatorio** (sin pagar no pueden hacer login, correo de verificacion se envia despues del pago)
+- [x] **Recordatorio automatico de suscripcion** (email 24h despues si no pagaron, scheduler cada 6h)
 
 ### Busqueda y Perfil Publico
 - [x] Filtros + geolocalizacion, horarios agrupados, Abierto/Cerrado
@@ -54,6 +55,7 @@ Bookvia es una plataforma marketplace de reservas profesionales que conecta nego
 - Google Login: Usa Emergent Auth (auth.emergentagent.com). Solo para clientes. Callback en /auth/google/callback. Backend valida session_id con Emergent API.
 - Registro Negocio: Pasos 1-4 guardan datos, Paso 5 redirige a Stripe. Sin pago, login bloqueado (403 subscription_required). Tras pago, se envia email de verificacion.
 - Endpoints sin auth para registro: POST /api/auth/business/create-subscription, POST /api/auth/business/verify-subscription
-- Recordatorios: Scheduler asyncio cada 30 min, busca citas confirmadas para manana (timezone Mexico)
+- Recordatorio de suscripcion: Scheduler asyncio cada 6h, busca negocios con subscription_status='none' creados hace +24h. Campo subscription_reminder_sent evita duplicados.
+- Recordatorios de citas: Scheduler asyncio cada 30 min, busca citas confirmadas para manana (timezone Mexico)
 - reminder_sent: Campo bool en bookings para evitar duplicados
 - Endpoint admin: POST /api/bookings/send-reminders para disparar manualmente

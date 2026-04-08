@@ -414,6 +414,39 @@ async def send_booking_cancelled(
     )
 
 
+async def send_subscription_reminder(
+    business_email: str,
+    business_name: str,
+    login_url: str
+) -> str:
+    """Send reminder to business that hasn't completed subscription payment"""
+    subject = "Completa tu registro en Bookvia"
+    content = f"""<p style="color:#334155;font-size:15px;line-height:1.6;">Hola <strong>{business_name}</strong>,</p>
+<p style="color:#334155;font-size:15px;line-height:1.6;">Notamos que iniciaste el registro de tu negocio en Bookvia pero aun no has completado el pago de tu suscripcion.</p>
+<div style="margin:20px 0;padding:16px;background:#fef3c7;border-radius:8px;border:1px solid #fbbf24;">
+<p style="margin:0;color:#92400e;font-size:14px;font-weight:600;">Tu cuenta esta lista, solo falta el pago</p>
+<p style="margin:8px 0 0;color:#92400e;font-size:13px;">Recuerda que el primer mes es GRATIS. Despues solo pagas $39 MXN/mes.</p>
+</div>
+<p style="color:#334155;font-size:15px;line-height:1.6;">Para completar tu registro:</p>
+<ol style="color:#334155;font-size:14px;line-height:1.8;">
+<li>Ve a <a href="{login_url}" style="color:#F05D5E;font-weight:600;">iniciar sesion</a></li>
+<li>Ingresa con tu email y contrasena</li>
+<li>Sigue las instrucciones para completar el pago</li>
+</ol>
+<div style="text-align:center;margin:24px 0;">
+<a href="{login_url}" style="display:inline-block;background:#F05D5E;color:#ffffff;text-decoration:none;padding:14px 32px;border-radius:8px;font-size:15px;font-weight:600;">Completar mi registro</a>
+</div>
+<p style="color:#64748b;font-size:13px;">Si tienes alguna duda, no dudes en contactarnos.</p>"""
+
+    return await send_email(
+        to=business_email, subject=subject,
+        body=f"Hola {business_name}, completa tu registro en Bookvia. Tu primer mes es GRATIS. Inicia sesion en {login_url} para completar el pago.",
+        html=email_html("Completa tu Registro", content), template="subscription_reminder",
+        data={"business_name": business_name, "login_url": login_url}
+    )
+
+
+
 async def get_sent_emails(
     limit: int = 50,
     status: Optional[str] = None,
