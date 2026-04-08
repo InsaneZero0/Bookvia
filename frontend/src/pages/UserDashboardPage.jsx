@@ -124,10 +124,11 @@ export default function UserDashboardPage() {
         </div>
 
         {/* ── Quick Actions ──────────────────────────── */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
           {[
             { icon: CalendarDays, label: language === 'es' ? 'Mis citas' : 'My bookings', path: '/bookings', color: 'text-blue-500 bg-blue-50', count: user?.active_appointments_count || 0 },
             { icon: Heart, label: t('nav.favorites'), path: '/favorites', color: 'text-rose-500 bg-rose-50', count: user?.favorites?.length || 0 },
+            { icon: CreditCard, label: language === 'es' ? 'Mis pagos' : 'My payments', path: '/payments', color: 'text-emerald-500 bg-emerald-50' },
             { icon: Search, label: language === 'es' ? 'Buscar' : 'Search', path: '/search', color: 'text-violet-500 bg-violet-50' },
             { icon: Bell, label: language === 'es' ? 'Notificaciones' : 'Notifications', path: '/notifications', color: 'text-amber-500 bg-amber-50' },
           ].map(item => (

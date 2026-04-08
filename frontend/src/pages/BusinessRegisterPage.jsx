@@ -12,6 +12,7 @@ import { Progress } from '@/components/ui/progress';
 import { useAuth } from '@/lib/auth';
 import { useI18n } from '@/lib/i18n';
 import { categoriesAPI, businessesAPI } from '@/lib/api';
+import apiInstance from '@/lib/api';
 import { countries, getCountryByCode } from '@/lib/countries';
 import { getDetectedCountry } from '@/lib/detectCountry';
 import { AgeVerification } from '@/components/AgeVerification';
@@ -21,7 +22,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { 
   ArrowLeft, ArrowRight, Mail, Lock, Phone, Building2, MapPin, 
   FileText, CreditCard, Upload, CheckCircle2, AlertTriangle, Eye, EyeOff,
-  HelpCircle, CalendarX, Banknote, Globe, Search
+  HelpCircle, CalendarX, Banknote, Globe, Search, Camera
 } from 'lucide-react';
 
 const STEPS = [
@@ -53,10 +54,13 @@ export default function BusinessRegisterPage() {
   const [proofPreview, setProofPreview] = useState(null);
   const [logoFile, setLogoFile] = useState(null);
   const [logoPreview, setLogoPreview] = useState(null);
+  const [coverFile, setCoverFile] = useState(null);
+  const [coverPreview, setCoverPreview] = useState(null);
   
   const ineInputRef = useRef(null);
   const proofInputRef = useRef(null);
   const logoInputRef = useRef(null);
+  const coverInputRef = useRef(null);
   
   const [formData, setFormData] = useState({
     // Business info
@@ -143,85 +147,53 @@ export default function BusinessRegisterPage() {
   const handleFileChange = (type, file) => {
     if (!file) return;
     
-    // Validate file type
-    const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
-    if (!validTypes.includes(file.type)) {
+    const imageTypes = ['image/jpeg', 'image/png', 'image/webp'];
+    const docTypes = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
+    const allowedTypes = (type === 'logo' || type === 'cover') ? imageTypes : docTypes;
+    
+    if (!allowedTypes.includes(file.type)) {
       toast.error(language === 'es' 
-        ? 'Solo se permiten archivos JPG, PNG, WebP o PDF' 
-        : 'Only JPG, PNG, WebP or PDF files allowed');
+        ? (type === 'logo' || type === 'cover' ? 'Solo se permiten archivos JPG, PNG o WebP' : 'Solo se permiten archivos JPG, PNG, WebP o PDF')
+        : 'Only JPG, PNG, WebP files allowed');
       return;
     }
     
-    // Validate file size (max 10MB)
-    if (file.size > 10 * 1024 * 1024) {
-      toast.error(language === 'es' 
-        ? 'El archivo no debe exceder 10MB' 
-        : 'File must not exceed 10MB');
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error(language === 'es' ? 'El archivo no debe exceder 5MB' : 'File must not exceed 5MB');
       return;
     }
     
-    // Create preview for images
     if (file.type.startsWith('image/')) {
       const reader = new FileReader();
       reader.onload = (e) => {
-        if (type === 'ine') {
-          setInePreview(e.target.result);
-        } else {
-          setProofPreview(e.target.result);
-        }
+        if (type === 'ine') setInePreview(e.target.result);
+        else if (type === 'proof') setProofPreview(e.target.result);
+        else if (type === 'logo') setLogoPreview(e.target.result);
+        else if (type === 'cover') setCoverPreview(e.target.result);
       };
       reader.readAsDataURL(file);
     } else {
-      // For PDFs, show file name
-      if (type === 'ine') {
-        setInePreview('pdf');
-      } else {
-        setProofPreview('pdf');
-      }
+      if (type === 'ine') setInePreview('pdf');
+      else if (type === 'proof') setProofPreview('pdf');
     }
     
-    if (type === 'ine') {
-      setIneFile(file);
-    } else {
-      setProofFile(file);
-    }
+    if (type === 'ine') setIneFile(file);
+    else if (type === 'proof') setProofFile(file);
+    else if (type === 'logo') setLogoFile(file);
+    else if (type === 'cover') setCoverFile(file);
   };
 
   const uploadFile = async (file) => {
-    // For now, we'll store files locally and return a mock URL
-    // In production, this would upload to S3/CloudStorage
-    const formDataUpload = new FormData();
-    formDataUpload.append('file', file);
-    
-    // Mock URL for development - in production, upload to cloud storage
-    // For now, we'll convert to base64 and store temporarily
-    return new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        // In real implementation, this would be a cloud storage URL
-        // For now, we'll use a placeholder that indicates the file was uploaded
-        resolve(`uploaded:${file.name}`);
-      };
-      reader.readAsDataURL(file);
-    });
-  };
-
-  const handleLogoChange = (file) => {
-    if (!file) return;
-    const validExts = ['jpg', 'jpeg', 'png', 'webp', 'jfif'];
-    const ext = file.name.split('.').pop().toLowerCase();
-    if (!validExts.includes(ext) && !file.type.startsWith('image/')) {
-      toast.error(language === 'es' ? 'Solo se permiten imágenes (JPG, PNG, WebP)' : 'Only images allowed (JPG, PNG, WebP)');
-      return;
+    const fd = new FormData();
+    fd.append('file', file);
+    try {
+      const res = await apiInstance.post('/upload/public', fd, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      return res.data.url;
+    } catch {
+      return null;
     }
-    if (file.size > 5 * 1024 * 1024) {
-      toast.error(language === 'es' ? 'El logo no debe exceder 5MB' : 'Logo must not exceed 5MB');
-      return;
-    }
-    setLogoFile(file);
-    const reader = new FileReader();
-    reader.onload = (e) => setLogoPreview(e.target.result);
-    reader.readAsDataURL(file);
   };
 
   const validateStep = () => {
@@ -233,8 +205,8 @@ export default function BusinessRegisterPage() {
             : 'Complete all required fields');
           return false;
         }
-        if (!logoFile) {
-          toast.error(language === 'es' ? 'El logo de tu negocio es obligatorio' : 'Business logo is required');
+        if (!logoFile && !coverFile) {
+          toast.error(language === 'es' ? 'Sube al menos una imagen: logo o foto de tu negocio' : 'Upload at least one image: logo or business photo');
           return false;
         }
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
@@ -337,8 +309,14 @@ export default function BusinessRegisterPage() {
     try {
       let ineUrl = '';
       let proofUrl = '';
+      let logoUrl = null;
+      let coverUrl = null;
+      
+      // Upload files
       if (ineFile) ineUrl = await uploadFile(ineFile);
       if (proofFile) proofUrl = await uploadFile(proofFile);
+      if (logoFile) logoUrl = await uploadFile(logoFile);
+      if (coverFile) coverUrl = await uploadFile(coverFile);
       
       const registerData = {
         name: formData.name, email: formData.email, password: formData.password,
@@ -353,6 +331,8 @@ export default function BusinessRegisterPage() {
         cancellation_days: Number(formData.cancellation_days) || 1,
         payout_schedule: formData.requires_deposit ? formData.payout_schedule : null,
         owner_birth_date: ownerBirthDate,
+        logo_url: logoUrl,
+        cover_photo: coverUrl,
       };
       
       await businessRegister(registerData);
@@ -606,37 +586,73 @@ export default function BusinessRegisterPage() {
                     />
                   </div>
 
-                  {/* Logo upload */}
+                  {/* Image uploads */}
                   <div className="space-y-2">
-                    <Label>{language === 'es' ? 'Logo del negocio' : 'Business logo'} *</Label>
-                    <div
-                      className={`relative border-2 border-dashed rounded-xl p-4 text-center cursor-pointer transition-colors hover:border-[#F05D5E]/50 ${logoPreview ? 'border-green-300 bg-green-50/50 dark:bg-green-900/10' : 'border-muted-foreground/20'}`}
-                      onClick={() => logoInputRef.current?.click()}
-                      data-testid="logo-upload-area"
-                    >
-                      <input
-                        ref={logoInputRef}
-                        type="file"
-                        className="hidden"
-                        accept="image/jpeg,image/png,image/webp,.jfif"
-                        onChange={(e) => handleLogoChange(e.target.files[0])}
-                        data-testid="logo-file-input"
-                      />
-                      {logoPreview ? (
-                        <div className="flex items-center gap-3">
-                          <img src={logoPreview} alt="Logo" className="h-16 w-16 rounded-lg object-cover border" />
-                          <div className="text-left">
-                            <p className="text-sm font-medium text-green-700 dark:text-green-300">{logoFile?.name}</p>
-                            <p className="text-xs text-muted-foreground">{language === 'es' ? 'Clic para cambiar' : 'Click to change'}</p>
+                    <Label>{language === 'es' ? 'Imágenes de tu negocio' : 'Business images'} *</Label>
+                    <p className="text-xs text-muted-foreground">{language === 'es' ? 'Sube al menos una: logo o foto de tu negocio' : 'Upload at least one: logo or business photo'}</p>
+                    
+                    <div className="grid sm:grid-cols-2 gap-3">
+                      {/* Logo upload */}
+                      <div
+                        className={`relative border-2 border-dashed rounded-xl p-4 text-center cursor-pointer transition-colors hover:border-[#F05D5E]/50 ${logoPreview ? 'border-green-300 bg-green-50/50 dark:bg-green-900/10' : 'border-muted-foreground/20'}`}
+                        onClick={() => logoInputRef.current?.click()}
+                        data-testid="logo-upload-area"
+                      >
+                        <input
+                          ref={logoInputRef}
+                          type="file"
+                          className="hidden"
+                          accept="image/jpeg,image/png,image/webp,.jfif"
+                          onChange={(e) => handleFileChange('logo', e.target.files[0])}
+                          data-testid="logo-file-input"
+                        />
+                        {logoPreview ? (
+                          <div className="flex flex-col items-center gap-2">
+                            <img src={logoPreview} alt="Logo" className="h-20 w-20 rounded-full object-cover border-2 border-green-300" />
+                            <p className="text-xs font-medium text-green-700 dark:text-green-300">{language === 'es' ? 'Logo subido' : 'Logo uploaded'}</p>
+                            <p className="text-[10px] text-muted-foreground">{language === 'es' ? 'Clic para cambiar' : 'Click to change'}</p>
                           </div>
-                        </div>
-                      ) : (
-                        <div className="py-2">
-                          <Upload className="h-8 w-8 mx-auto text-muted-foreground/40 mb-2" />
-                          <p className="text-sm text-muted-foreground">{language === 'es' ? 'Sube el logo de tu negocio' : 'Upload your business logo'}</p>
-                          <p className="text-xs text-muted-foreground/60">{language === 'es' ? 'JPG, PNG o WebP. Máximo 5MB' : 'JPG, PNG or WebP. Max 5MB'}</p>
-                        </div>
-                      )}
+                        ) : (
+                          <div className="py-3">
+                            <div className="h-14 w-14 rounded-full bg-muted flex items-center justify-center mx-auto mb-2">
+                              <Upload className="h-6 w-6 text-muted-foreground/40" />
+                            </div>
+                            <p className="text-sm font-medium">{language === 'es' ? 'Logo' : 'Logo'}</p>
+                            <p className="text-[10px] text-muted-foreground">{language === 'es' ? 'Se mostrará en el perfil circular' : 'Shown in circular profile'}</p>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Cover photo upload */}
+                      <div
+                        className={`relative border-2 border-dashed rounded-xl p-4 text-center cursor-pointer transition-colors hover:border-[#F05D5E]/50 ${coverPreview ? 'border-green-300 bg-green-50/50 dark:bg-green-900/10' : 'border-muted-foreground/20'}`}
+                        onClick={() => coverInputRef.current?.click()}
+                        data-testid="cover-upload-area"
+                      >
+                        <input
+                          ref={coverInputRef}
+                          type="file"
+                          className="hidden"
+                          accept="image/jpeg,image/png,image/webp,.jfif"
+                          onChange={(e) => handleFileChange('cover', e.target.files[0])}
+                          data-testid="cover-file-input"
+                        />
+                        {coverPreview ? (
+                          <div className="flex flex-col items-center gap-2">
+                            <img src={coverPreview} alt="Cover" className="h-20 w-full rounded-lg object-cover border-2 border-green-300" />
+                            <p className="text-xs font-medium text-green-700 dark:text-green-300">{language === 'es' ? 'Foto subida' : 'Photo uploaded'}</p>
+                            <p className="text-[10px] text-muted-foreground">{language === 'es' ? 'Clic para cambiar' : 'Click to change'}</p>
+                          </div>
+                        ) : (
+                          <div className="py-3">
+                            <div className="h-14 w-full max-w-[80px] rounded-lg bg-muted flex items-center justify-center mx-auto mb-2">
+                              <Camera className="h-6 w-6 text-muted-foreground/40" />
+                            </div>
+                            <p className="text-sm font-medium">{language === 'es' ? 'Foto del negocio' : 'Business photo'}</p>
+                            <p className="text-[10px] text-muted-foreground">{language === 'es' ? 'Se mostrará en búsquedas' : 'Shown in search results'}</p>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>

@@ -35,6 +35,8 @@ import RegistrationSuccessPage from '@/pages/RegistrationSuccessPage';
 import VerifyEmailPage from '@/pages/VerifyEmailPage';
 import ForgotPasswordPage from '@/pages/ForgotPasswordPage';
 import ResetPasswordPage from '@/pages/ResetPasswordPage';
+import FavoritesPage from '@/pages/FavoritesPage';
+import PaymentHistoryPage from '@/pages/PaymentHistoryPage';
 
 // SEO Pages
 import CountryPage from '@/pages/seo/CountryPage';
@@ -78,7 +80,8 @@ function App() {
               <Route path="/dashboard" element={<Layout><UserDashboardPage /></Layout>} />
               <Route path="/dashboard/bookings" element={<Layout><UserBookingsPage /></Layout>} />
               <Route path="/bookings" element={<Layout><UserBookingsPage /></Layout>} />
-              <Route path="/favorites" element={<Layout><SearchPage /></Layout>} />
+              <Route path="/favorites" element={<Layout><FavoritesPage /></Layout>} />
+              <Route path="/payments" element={<Layout><PaymentHistoryPage /></Layout>} />
               <Route path="/notifications" element={<Layout><UserDashboardPage /></Layout>} />
               
               {/* Business Pages - MUST be before /business/:slug */}

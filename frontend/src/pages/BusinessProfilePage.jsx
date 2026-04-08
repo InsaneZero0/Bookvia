@@ -13,6 +13,7 @@ import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
+import { Carousel, CarouselContent, CarouselItem, CarouselPrevious, CarouselNext } from '@/components/ui/carousel';
 import { StarRating } from '@/components/StarRating';
 import { BusinessCard } from '@/components/BusinessCard';
 import { useI18n } from '@/lib/i18n';
@@ -26,7 +27,7 @@ import {
   MapPin, Clock, Phone, Mail, Star, Heart, Share2, CheckCircle2,
   ArrowLeft, Calendar as CalendarIcon, User, ChevronRight, ChevronLeft,
   Globe, Shield, Scissors, ExternalLink, MessageSquare, HelpCircle,
-  Award, Users, Briefcase, Navigation
+  Award, Users, Briefcase, Navigation, Link2
 } from 'lucide-react';
 
 // ─── Day name helper ──────────────────────────────────
@@ -36,6 +37,10 @@ const DAY_NAMES_EN = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'S
 // ─── Photo Gallery ────────────────────────────────────
 function PhotoGrid({ photos, name }) {
   const [showAll, setShowAll] = useState(false);
+  const [lightboxIdx, setLightboxIdx] = useState(null);
+  const [carouselApi, setCarouselApi] = useState(null);
+  const [currentSlide, setCurrentSlide] = useState(0);
+
   const displayPhotos = photos.length > 0 ? photos : [
     'https://images.unsplash.com/photo-1560066984-138dadb4c035?w=800',
     'https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?w=400',
@@ -44,19 +49,28 @@ function PhotoGrid({ photos, name }) {
     'https://images.unsplash.com/photo-1600948836101-f9ffda59d250?w=400',
   ];
 
+  useEffect(() => {
+    if (!carouselApi) return;
+    const onSelect = () => setCurrentSlide(carouselApi.selectedScrollSnap());
+    carouselApi.on('select', onSelect);
+    onSelect();
+    return () => carouselApi.off('select', onSelect);
+  }, [carouselApi]);
+
   return (
     <>
       <div className="relative h-[280px] md:h-[420px] overflow-hidden">
+        {/* Desktop: grid layout */}
         <div className="hidden md:grid grid-cols-4 grid-rows-2 gap-1.5 h-full">
-          <div className="col-span-2 row-span-2 relative overflow-hidden rounded-l-xl">
+          <div className="col-span-2 row-span-2 relative overflow-hidden rounded-l-xl cursor-pointer" onClick={() => setLightboxIdx(0)}>
             <img src={displayPhotos[0]} alt={name} className="w-full h-full object-cover hover:scale-105 transition-transform duration-500" />
           </div>
           {displayPhotos.slice(1, 5).map((photo, i) => (
-            <div key={i} className={`relative overflow-hidden ${i === 1 ? 'rounded-tr-xl' : ''} ${i === 3 ? 'rounded-br-xl' : ''}`}>
+            <div key={i} className={`relative overflow-hidden cursor-pointer ${i === 1 ? 'rounded-tr-xl' : ''} ${i === 3 ? 'rounded-br-xl' : ''}`} onClick={() => setLightboxIdx(i + 1)}>
               <img src={photo} alt={`${name} ${i + 2}`} className="w-full h-full object-cover hover:scale-105 transition-transform duration-500" />
               {i === 3 && displayPhotos.length > 5 && (
                 <button
-                  onClick={() => setShowAll(true)}
+                  onClick={(e) => { e.stopPropagation(); setShowAll(true); }}
                   className="absolute inset-0 bg-black/50 flex items-center justify-center text-white font-bold text-lg hover:bg-black/60 transition-colors"
                   data-testid="show-all-photos"
                 >
@@ -66,9 +80,36 @@ function PhotoGrid({ photos, name }) {
             </div>
           ))}
         </div>
-        {/* Mobile: single image */}
-        <div className="md:hidden h-full">
-          <img src={displayPhotos[0]} alt={name} className="w-full h-full object-cover" />
+
+        {/* Mobile: swipeable carousel */}
+        <div className="md:hidden h-full relative">
+          <Carousel opts={{ loop: true, align: 'start' }} setApi={setCarouselApi} className="h-full">
+            <CarouselContent className="h-[280px] -ml-0">
+              {displayPhotos.map((photo, i) => (
+                <CarouselItem key={i} className="pl-0 basis-full h-full" onClick={() => setLightboxIdx(i)}>
+                  <img src={photo} alt={`${name} ${i + 1}`} className="w-full h-full object-cover" />
+                </CarouselItem>
+              ))}
+            </CarouselContent>
+          </Carousel>
+          {/* Dot indicators */}
+          <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5 z-10">
+            {displayPhotos.slice(0, 8).map((_, i) => (
+              <button
+                key={i}
+                onClick={() => carouselApi?.scrollTo(i)}
+                className={`w-2 h-2 rounded-full transition-all ${currentSlide === i ? 'bg-white w-4' : 'bg-white/50'}`}
+                data-testid={`photo-dot-${i}`}
+              />
+            ))}
+            {displayPhotos.length > 8 && (
+              <span className="text-white text-[10px] font-medium ml-1">+{displayPhotos.length - 8}</span>
+            )}
+          </div>
+          {/* Counter */}
+          <div className="absolute top-3 right-3 bg-black/50 text-white text-xs px-2.5 py-1 rounded-full z-10">
+            {currentSlide + 1}/{displayPhotos.length}
+          </div>
         </div>
       </div>
 
@@ -81,9 +122,49 @@ function PhotoGrid({ photos, name }) {
           </DialogHeader>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
             {displayPhotos.map((photo, i) => (
-              <img key={i} src={photo} alt={`${name} ${i + 1}`} className="w-full aspect-square object-cover rounded-lg" />
+              <img key={i} src={photo} alt={`${name} ${i + 1}`} className="w-full aspect-square object-cover rounded-lg cursor-pointer hover:opacity-90 transition-opacity" onClick={() => { setShowAll(false); setLightboxIdx(i); }} />
             ))}
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Lightbox - fullscreen single photo */}
+      <Dialog open={lightboxIdx !== null} onOpenChange={() => setLightboxIdx(null)}>
+        <DialogContent className="max-w-5xl p-0 bg-black/95 border-0">
+          <DialogHeader className="sr-only">
+            <DialogTitle>{name}</DialogTitle>
+            <DialogDescription>Foto {(lightboxIdx || 0) + 1}</DialogDescription>
+          </DialogHeader>
+          {lightboxIdx !== null && (
+            <div className="relative flex items-center justify-center min-h-[50vh] max-h-[90vh]">
+              <img
+                src={displayPhotos[lightboxIdx]}
+                alt={`${name} ${lightboxIdx + 1}`}
+                className="max-w-full max-h-[85vh] object-contain"
+              />
+              {displayPhotos.length > 1 && (
+                <>
+                  <button
+                    onClick={() => setLightboxIdx((lightboxIdx - 1 + displayPhotos.length) % displayPhotos.length)}
+                    className="absolute left-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/20 hover:bg-white/40 flex items-center justify-center text-white transition-colors"
+                    data-testid="lightbox-prev"
+                  >
+                    <ChevronLeft className="h-6 w-6" />
+                  </button>
+                  <button
+                    onClick={() => setLightboxIdx((lightboxIdx + 1) % displayPhotos.length)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/20 hover:bg-white/40 flex items-center justify-center text-white transition-colors"
+                    data-testid="lightbox-next"
+                  >
+                    <ChevronRight className="h-6 w-6" />
+                  </button>
+                </>
+              )}
+              <div className="absolute bottom-3 left-1/2 -translate-x-1/2 text-white text-sm bg-black/40 px-3 py-1 rounded-full">
+                {lightboxIdx + 1} / {displayPhotos.length}
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </>
@@ -122,6 +203,69 @@ function RatingSummary({ rating, reviewCount, reviews }) {
 }
 
 // ─── Business Hours ───────────────────────────────────
+function getOpenStatus(workers, language) {
+  const now = new Date();
+  const today = (now.getDay() + 6) % 7; // JS Sunday=0 -> Monday=0
+  const currentTime = now.toTimeString().slice(0, 5); // "HH:MM"
+
+  let isOpen = false;
+  let nextOpenText = '';
+
+  // Check if open right now
+  workers.forEach(w => {
+    const daySchedule = w.schedule?.[String(today)];
+    if (daySchedule?.is_available && daySchedule.blocks?.length > 0) {
+      daySchedule.blocks.forEach(block => {
+        if (currentTime >= block.start_time && currentTime < block.end_time) {
+          isOpen = true;
+        }
+      });
+    }
+  });
+
+  if (isOpen) {
+    // Find closing time today
+    let latestClose = '00:00';
+    workers.forEach(w => {
+      const ds = w.schedule?.[String(today)];
+      if (ds?.is_available) {
+        ds.blocks?.forEach(b => {
+          if (currentTime >= b.start_time && currentTime < b.end_time && b.end_time > latestClose) {
+            latestClose = b.end_time;
+          }
+        });
+      }
+    });
+    nextOpenText = language === 'es' ? `Cierra a las ${latestClose}` : `Closes at ${latestClose}`;
+  } else {
+    // Find next opening
+    const dayNames = language === 'es'
+      ? ['Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab', 'Dom']
+      : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    for (let offset = 0; offset < 7; offset++) {
+      const checkDay = (today + offset) % 7;
+      for (const w of workers) {
+        const ds = w.schedule?.[String(checkDay)];
+        if (ds?.is_available && ds.blocks?.length > 0) {
+          const firstBlock = ds.blocks[0];
+          if (offset === 0 && firstBlock.start_time > currentTime) {
+            nextOpenText = language === 'es' ? `Abre hoy a las ${firstBlock.start_time}` : `Opens today at ${firstBlock.start_time}`;
+            return { isOpen, nextOpenText };
+          } else if (offset === 1) {
+            nextOpenText = language === 'es' ? `Abre manana a las ${firstBlock.start_time}` : `Opens tomorrow at ${firstBlock.start_time}`;
+            return { isOpen, nextOpenText };
+          } else if (offset > 1) {
+            nextOpenText = language === 'es' ? `Abre ${dayNames[checkDay]} a las ${firstBlock.start_time}` : `Opens ${dayNames[checkDay]} at ${firstBlock.start_time}`;
+            return { isOpen, nextOpenText };
+          }
+        }
+      }
+    }
+  }
+
+  return { isOpen, nextOpenText };
+}
+
 function BusinessHours({ workers, language }) {
   const dayNames = language === 'es' ? DAY_NAMES_ES : DAY_NAMES_EN;
 
@@ -146,18 +290,122 @@ function BusinessHours({ workers, language }) {
     mergedHours[day] = isOpen ? { open: earliest, close: latest } : null;
   }
 
-  const today = (new Date().getDay() + 6) % 7; // JS Sunday=0, we need Monday=0
+  // Group consecutive days with same hours
+  const groups = [];
+  let i = 0;
+  while (i < 7) {
+    const current = mergedHours[i];
+    const currentKey = current ? `${current.open}-${current.close}` : 'closed';
+    let j = i + 1;
+    while (j < 7) {
+      const next = mergedHours[j];
+      const nextKey = next ? `${next.open}-${next.close}` : 'closed';
+      if (nextKey !== currentKey) break;
+      j++;
+    }
+    groups.push({ startDay: i, endDay: j - 1, hours: current });
+    i = j;
+  }
+
+  const today = (new Date().getDay() + 6) % 7;
+  const { isOpen, nextOpenText } = getOpenStatus(workers, language);
 
   return (
-    <div className="space-y-2">
-      {dayNames.map((name, i) => (
-        <div key={i} className={`flex justify-between items-center py-2 px-3 rounded-lg text-sm ${i === today ? 'bg-[#F05D5E]/5 font-medium' : ''}`}>
-          <span className={i === today ? 'text-[#F05D5E] font-semibold' : ''}>{name}</span>
-          <span className={mergedHours[i] ? '' : 'text-muted-foreground'}>
-            {mergedHours[i] ? `${mergedHours[i].open} - ${mergedHours[i].close}` : (language === 'es' ? 'Cerrado' : 'Closed')}
-          </span>
-        </div>
-      ))}
+    <div className="space-y-1">
+      {/* Open/Closed status */}
+      <div className="flex items-center gap-2 mb-3 pb-3 border-b">
+        <span className={`inline-flex items-center gap-1.5 text-sm font-semibold ${isOpen ? 'text-emerald-600' : 'text-red-500'}`}>
+          <span className={`w-2 h-2 rounded-full ${isOpen ? 'bg-emerald-500 animate-pulse' : 'bg-red-400'}`} />
+          {isOpen ? (language === 'es' ? 'Abierto ahora' : 'Open now') : (language === 'es' ? 'Cerrado' : 'Closed')}
+        </span>
+        {nextOpenText && <span className="text-xs text-muted-foreground">&mdash; {nextOpenText}</span>}
+      </div>
+
+      {/* Grouped hours */}
+      {groups.map((g, idx) => {
+        const isToday = today >= g.startDay && today <= g.endDay;
+        const label = g.startDay === g.endDay
+          ? dayNames[g.startDay]
+          : `${dayNames[g.startDay]} - ${dayNames[g.endDay]}`;
+
+        return (
+          <div key={idx} className={`flex justify-between items-center py-2 px-3 rounded-lg text-sm ${isToday ? 'bg-[#F05D5E]/5 font-medium' : ''}`}>
+            <span className={isToday ? 'text-[#F05D5E] font-semibold' : ''}>{label}</span>
+            <span className={g.hours ? '' : 'text-muted-foreground'}>
+              {g.hours ? `${g.hours.open} - ${g.hours.close}` : (language === 'es' ? 'Cerrado' : 'Closed')}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── Share Button ──────────────────────────────────────
+function ShareButton({ business, language }) {
+  const [showMenu, setShowMenu] = useState(false);
+  const shareUrl = window.location.href;
+  const shareText = language === 'es'
+    ? `Mira ${business.name} en Bookvia - ${business.description || 'Reserva tu cita ahora'}`
+    : `Check out ${business.name} on Bookvia - ${business.description || 'Book your appointment now'}`;
+
+  const handleNativeShare = async () => {
+    try {
+      await navigator.share({ title: business.name, text: shareText, url: shareUrl });
+    } catch {
+      setShowMenu(true);
+    }
+  };
+
+  const handleWhatsApp = () => {
+    const waUrl = `https://wa.me/?text=${encodeURIComponent(shareText + '\n' + shareUrl)}`;
+    window.open(waUrl, '_blank');
+    setShowMenu(false);
+  };
+
+  const handleCopyLink = () => {
+    navigator.clipboard.writeText(shareUrl);
+    toast.success(language === 'es' ? 'Enlace copiado al portapapeles' : 'Link copied to clipboard');
+    setShowMenu(false);
+  };
+
+  return (
+    <div className="relative">
+      <Button
+        variant="outline"
+        size="sm"
+        className="rounded-full gap-1.5"
+        onClick={navigator.share ? handleNativeShare : () => setShowMenu(!showMenu)}
+        data-testid="share-button"
+      >
+        <Share2 className="h-4 w-4" />
+        {language === 'es' ? 'Compartir' : 'Share'}
+      </Button>
+      {showMenu && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setShowMenu(false)} />
+          <div className="absolute right-0 top-full mt-1 z-50 bg-popover border rounded-lg shadow-lg py-1 w-48" data-testid="share-menu">
+            <button
+              className="w-full px-3 py-2 text-sm text-left hover:bg-muted flex items-center gap-2 transition-colors"
+              onClick={handleWhatsApp}
+              data-testid="share-whatsapp"
+            >
+              <svg className="h-4 w-4 text-green-600" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+              </svg>
+              WhatsApp
+            </button>
+            <button
+              className="w-full px-3 py-2 text-sm text-left hover:bg-muted flex items-center gap-2 transition-colors"
+              onClick={handleCopyLink}
+              data-testid="share-copy-link"
+            >
+              <Link2 className="h-4 w-4 text-muted-foreground" />
+              {language === 'es' ? 'Copiar enlace' : 'Copy link'}
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -201,6 +449,7 @@ export default function BusinessProfilePage() {
   const teamRef = useRef(null);
   const reviewsRef = useRef(null);
   const locationRef = useRef(null);
+  const hoursRef = useRef(null);
 
   // Check if the logged-in user is a business
   const isBizUser = isAuthenticated && user?.role === 'business';
@@ -434,8 +683,8 @@ export default function BusinessProfilePage() {
         <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
           <div className="space-y-2 flex-1">
             <div className="flex items-start gap-4">
-              {business.logo_url && (
-                <img src={business.logo_url} alt={business.name} className="h-16 w-16 rounded-xl object-cover border shadow-sm shrink-0" data-testid="business-logo" />
+              {(business.logo_url || business.cover_photo) && (
+                <img src={business.logo_url || business.cover_photo} alt={business.name} className="h-16 w-16 rounded-full object-cover border-2 border-white shadow-sm shrink-0" data-testid="business-logo" />
               )}
               <div className="space-y-2">
                 <div className="flex flex-wrap items-center gap-2">
@@ -466,6 +715,18 @@ export default function BusinessProfilePage() {
                   <span>({business.review_count})</span>
                 </button>
               )}
+              {workers.length > 0 && (() => {
+                const { isOpen, nextOpenText } = getOpenStatus(workers, language);
+                return (
+                  <button onClick={() => scrollTo(hoursRef)} className="flex items-center gap-1.5 hover:text-foreground transition-colors" data-testid="open-status-badge">
+                    <span className={`w-2 h-2 rounded-full ${isOpen ? 'bg-emerald-500 animate-pulse' : 'bg-red-400'}`} />
+                    <span className={`font-medium ${isOpen ? 'text-emerald-600' : 'text-red-500'}`}>
+                      {isOpen ? (language === 'es' ? 'Abierto' : 'Open') : (language === 'es' ? 'Cerrado' : 'Closed')}
+                    </span>
+                    {nextOpenText && <span className="text-xs hidden sm:inline">{nextOpenText}</span>}
+                  </button>
+                );
+              })()}
               <span className="flex items-center gap-1">
                 <MapPin className="h-4 w-4" />
                 {business.address}, {business.city}, {business.state}
@@ -481,15 +742,7 @@ export default function BusinessProfilePage() {
               <Heart className={`h-4 w-4 ${isFavorite ? 'fill-[#F05D5E] text-[#F05D5E]' : ''}`} />
               {isFavorite ? (language === 'es' ? 'Guardado' : 'Saved') : (language === 'es' ? 'Guardar' : 'Save')}
             </Button>
-            <Button variant="outline" size="sm" className="rounded-full gap-1.5"
-              onClick={() => navigator.share?.({ title: business.name, url: window.location.href }).catch(() => {
-                navigator.clipboard.writeText(window.location.href);
-                toast.success(language === 'es' ? 'Enlace copiado' : 'Link copied');
-              })}
-            >
-              <Share2 className="h-4 w-4" />
-              {language === 'es' ? 'Compartir' : 'Share'}
-            </Button>
+            <ShareButton business={business} language={language} />
           </div>
         </div>
       </div>
@@ -503,6 +756,7 @@ export default function BusinessProfilePage() {
             {[
               { label: language === 'es' ? 'Servicios' : 'Services', ref: servicesRef },
               { label: language === 'es' ? 'Equipo' : 'Team', ref: teamRef },
+              { label: language === 'es' ? 'Horarios' : 'Hours', ref: hoursRef },
               { label: language === 'es' ? 'Reseñas' : 'Reviews', ref: reviewsRef },
               { label: language === 'es' ? 'Ubicación' : 'Location', ref: locationRef },
             ].map(item => (
@@ -642,7 +896,7 @@ export default function BusinessProfilePage() {
 
             {/* ── Business Hours ────────────────────── */}
             {workers.length > 0 && (
-              <section data-testid="hours-section">
+              <section ref={hoursRef} className="scroll-mt-32" data-testid="hours-section">
                 <h2 className="text-lg font-heading font-bold mb-4 flex items-center gap-2">
                   <Clock className="h-5 w-5 text-[#F05D5E]" />
                   {language === 'es' ? 'Horarios de apertura' : 'Opening hours'}

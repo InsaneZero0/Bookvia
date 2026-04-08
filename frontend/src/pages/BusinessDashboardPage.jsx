@@ -613,12 +613,12 @@ export default function BusinessDashboardPage() {
                 } catch {}
               }
               if (profileSlug) {
-                window.location.href = `/business/${profileSlug}`;
+                window.open(`/business/${profileSlug}`, '_blank');
               } else {
                 toast.error(language === 'es' ? 'Perfil no disponible. Intenta recargar la pagina.' : 'Profile not available. Try reloading the page.');
               }
             }} data-testid="view-profile-button">
-              <Eye className="h-4 w-4 mr-1.5" />{language === 'es' ? 'Ver perfil' : 'View profile'}
+              <Eye className="h-4 w-4 mr-1.5" />{language === 'es' ? 'Ver como cliente' : 'View as client'}
             </Button>
             {(hasPermission('edit_description') || hasPermission('edit_schedule') || hasPermission('edit_contact') || hasPermission('edit_photos') || hasPermission('block_clients')) && (
               <Button variant="outline" size="sm" onClick={() => navigate('/business/settings')}>

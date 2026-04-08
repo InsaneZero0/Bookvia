@@ -83,6 +83,8 @@ export default function SearchPage() {
   const [onlyFeatured, setOnlyFeatured] = useState(searchParams.get('featured') === 'true');
   const [page, setPage] = useState(1);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [userLocation, setUserLocation] = useState(null);
+  const [locatingUser, setLocatingUser] = useState(false);
 
   useEffect(() => {
     loadCategories();
@@ -92,7 +94,7 @@ export default function SearchPage() {
 
   useEffect(() => {
     loadBusinesses();
-  }, [categoryId, city, minRating, homeService, requiresDeposit, sortBy, onlyFeatured, page, countryCode]);
+  }, [categoryId, city, minRating, homeService, requiresDeposit, sortBy, onlyFeatured, page, countryCode, userLocation]);
 
   const loadCategories = async () => {
     try {
@@ -133,10 +135,50 @@ export default function SearchPage() {
         is_home_service: homeService || undefined,
         page, limit: 20,
       };
+      if (userLocation) {
+        params.user_lat = userLocation.lat;
+        params.user_lng = userLocation.lng;
+        if (sortBy === 'nearest') params.sort = 'nearest';
+      }
       const res = await businessesAPI.search(params);
       setBusinesses(Array.isArray(res.data) ? res.data : []);
     } catch { setBusinesses([]); }
     finally { setLoading(false); }
+  };
+
+  const requestLocation = () => {
+    if (userLocation) {
+      // Already have location, just switch to nearest sort and clear restrictive filters
+      setSortBy('nearest');
+      setCity('');
+      setCategoryId('');
+      setMinRating([0]);
+      setOnlyFeatured(false);
+      return;
+    }
+    if (!navigator.geolocation) {
+      toast.error(language === 'es' ? 'Tu navegador no soporta geolocalizacion' : 'Your browser does not support geolocation');
+      return;
+    }
+    setLocatingUser(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        setSortBy('nearest');
+        // Clear restrictive filters so more businesses appear
+        setCity('');
+        setCategoryId('');
+        setMinRating([0]);
+        setOnlyFeatured(false);
+        setLocatingUser(false);
+        toast.success(language === 'es' ? 'Ubicacion obtenida. Mostrando negocios cercanos.' : 'Location obtained. Showing nearby businesses.');
+      },
+      () => {
+        toast.error(language === 'es' ? 'No pudimos obtener tu ubicacion. Permite el acceso en tu navegador.' : 'Could not get your location. Allow access in your browser.');
+        setLocatingUser(false);
+      },
+      { timeout: 10000 }
+    );
   };
 
   const handleSearch = (e) => {
@@ -220,9 +262,10 @@ export default function SearchPage() {
           <SelectTrigger data-testid="filter-sort" className="h-9"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="relevance">{language === 'es' ? 'Relevancia' : 'Relevance'}</SelectItem>
+            <SelectItem value="nearest">{language === 'es' ? 'Mas cercanos' : 'Nearest'}</SelectItem>
             <SelectItem value="rating">{language === 'es' ? 'Mejor calificados' : 'Top rated'}</SelectItem>
-            <SelectItem value="reviews">{language === 'es' ? 'Más reseñas' : 'Most reviews'}</SelectItem>
-            <SelectItem value="newest">{language === 'es' ? 'Más recientes' : 'Newest'}</SelectItem>
+            <SelectItem value="reviews">{language === 'es' ? 'Mas resenas' : 'Most reviews'}</SelectItem>
+            <SelectItem value="newest">{language === 'es' ? 'Mas recientes' : 'Newest'}</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -282,13 +325,30 @@ export default function SearchPage() {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input placeholder={language === 'es' ? '¿Qué servicio buscas?' : 'Search service...'} value={query} onChange={(e) => setQuery(e.target.value)} className="pl-10 h-11" data-testid="search-input" />
             </div>
-            <div className="relative flex-1 sm:max-w-[200px]">
-              <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input placeholder={language === 'es' ? 'Ciudad' : 'City'} value={city} onChange={(e) => setCity(e.target.value)} className="pl-10 h-11" data-testid="search-city" />
+            <div className="flex gap-2">
+              <div className="relative flex-1 sm:max-w-[200px]">
+                <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input placeholder={language === 'es' ? 'Ciudad' : 'City'} value={city} onChange={(e) => setCity(e.target.value)} className="pl-10 h-11" data-testid="search-city" />
+              </div>
+              <Button type="submit" className="h-11 btn-coral shrink-0" data-testid="search-button">
+                <Search className="h-4 w-4 sm:mr-1.5" /><span className="hidden sm:inline">{language === 'es' ? 'Buscar' : 'Search'}</span>
+              </Button>
             </div>
-            <Button type="submit" className="h-11 btn-coral" data-testid="search-button">
-              <Search className="h-4 w-4 mr-1.5" />{language === 'es' ? 'Buscar' : 'Search'}
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant={sortBy === 'nearest' ? 'default' : 'outline'}
+                className={`h-11 flex-1 sm:flex-none ${sortBy === 'nearest' ? 'bg-[#F05D5E] hover:bg-[#F05D5E]/90 text-white' : ''}`}
+                onClick={requestLocation}
+                disabled={locatingUser}
+                data-testid="nearby-button"
+              >
+                {locatingUser ? (
+                  <><span className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin mr-1.5" />{language === 'es' ? 'Ubicando...' : 'Locating...'}</>
+                ) : (
+                  <><MapPin className="h-4 w-4 mr-1.5" />{language === 'es' ? 'Cerca de ti' : 'Near you'}</>
+                )}
+              </Button>
 
             {/* View Toggle */}
             <div className="hidden md:flex items-center border rounded-lg overflow-hidden">
@@ -322,6 +382,7 @@ export default function SearchPage() {
                 <div className="mt-4"><FilterContent /></div>
               </SheetContent>
             </Sheet>
+            </div>
           </form>
         </div>
       </div>
@@ -347,11 +408,16 @@ export default function SearchPage() {
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h1 className="text-xl font-heading font-bold">
-                  {query ? `"${query}"` : (language === 'es' ? 'Todos los negocios' : 'All businesses')}
+                  {sortBy === 'nearest' && userLocation
+                    ? (language === 'es' ? 'Negocios cerca de ti' : 'Businesses near you')
+                    : query ? `"${query}"` : (language === 'es' ? 'Todos los negocios' : 'All businesses')}
                 </h1>
                 <p className="text-xs text-muted-foreground mt-0.5">
                   {businesses.length} {language === 'es' ? 'resultados' : 'results'}
                   {city && ` ${language === 'es' ? 'en' : 'in'} ${city}`}
+                  {sortBy === 'nearest' && userLocation && businesses.length > 0 && businesses[0]?.distance_km != null && (
+                    <> &mdash; {language === 'es' ? 'el más cercano a' : 'closest at'} {businesses[0].distance_km} km</>
+                  )}
                 </p>
               </div>
 
@@ -365,6 +431,55 @@ export default function SearchPage() {
                 </button>
               </div>
             </div>
+
+            {/* Proximity info banner */}
+            {sortBy === 'nearest' && userLocation && !loading && businesses.length > 0 && (
+              <div className="mb-4 p-3 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-lg flex items-center gap-2 text-sm text-emerald-700 dark:text-emerald-300" data-testid="proximity-banner">
+                <MapPin className="h-4 w-4 shrink-0" />
+                <span>
+                  {(() => {
+                    const withDist = businesses.filter(b => b.distance_km != null);
+                    const closestDist = withDist.length > 0 ? withDist[0].distance_km : null;
+                    const farthestDist = withDist.length > 0 ? withDist[withDist.length - 1].distance_km : null;
+                    if (withDist.length === 0) {
+                      return language === 'es'
+                        ? 'Los negocios mostrados aún no han configurado su ubicación exacta.'
+                        : 'Shown businesses have not set their exact location yet.';
+                    }
+                    return language === 'es'
+                      ? `Mostrando ${withDist.length} negocios de ${closestDist} km a ${farthestDist} km de distancia.`
+                      : `Showing ${withDist.length} businesses from ${closestDist} km to ${farthestDist} km away.`;
+                  })()}
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="ml-auto h-7 text-xs text-emerald-600 hover:text-emerald-800"
+                  onClick={() => { setSortBy('relevance'); setUserLocation(null); }}
+                  data-testid="clear-proximity"
+                >
+                  <X className="h-3 w-3 mr-1" />{language === 'es' ? 'Quitar' : 'Clear'}
+                </Button>
+              </div>
+            )}
+
+            {/* No results with proximity */}
+            {sortBy === 'nearest' && userLocation && !loading && businesses.length === 0 && (
+              <div className="text-center py-12">
+                <MapPin className="h-12 w-12 text-muted-foreground/30 mx-auto mb-4" />
+                <h2 className="text-lg font-heading font-bold mb-2">
+                  {language === 'es' ? 'No encontramos negocios cerca de ti' : 'No businesses found near you'}
+                </h2>
+                <p className="text-sm text-muted-foreground mb-4">
+                  {language === 'es'
+                    ? 'Intenta buscar en otra ciudad o quita el filtro de cercanía.'
+                    : 'Try searching in another city or remove the proximity filter.'}
+                </p>
+                <Button variant="outline" onClick={() => { setSortBy('relevance'); setUserLocation(null); }}>
+                  {language === 'es' ? 'Ver todos los negocios' : 'View all businesses'}
+                </Button>
+              </div>
+            )}
 
             {loading ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -508,7 +623,7 @@ export default function SearchPage() {
                           <p className="text-xs text-muted-foreground truncate mt-0.5">
                             <MapPin className="inline h-3 w-3 mr-0.5" />{biz.address}, {biz.city}
                           </p>
-                          <div className="flex items-center gap-2 mt-1.5">
+                          <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                             {biz.rating > 0 && (
                               <span className="flex items-center gap-0.5 text-xs">
                                 <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
@@ -517,6 +632,9 @@ export default function SearchPage() {
                               </span>
                             )}
                             {biz.category_name && <Badge variant="secondary" className="text-[10px] h-4">{biz.category_name}</Badge>}
+                            {biz.next_available_text && (
+                              <span className="text-[10px] font-medium text-emerald-600">{biz.next_available_text}</span>
+                            )}
                           </div>
                         </div>
                       </CardContent>

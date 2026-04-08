@@ -31,7 +31,7 @@ export function BusinessCard({ business, onFavorite, isFavorite = false }) {
     >
       <div className="relative aspect-[4/3] overflow-hidden">
         <img
-          src={business.photos?.[0] || business.logo_url || 'https://images.unsplash.com/photo-1560066984-138dadb4c035?w=400'}
+          src={business.cover_photo || business.photos?.[0] || business.logo_url || 'https://images.unsplash.com/photo-1560066984-138dadb4c035?w=400'}
           alt={business.name}
           className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
         />
@@ -97,11 +97,28 @@ export function BusinessCard({ business, onFavorite, isFavorite = false }) {
           </p>
         </div>
 
-        <div className="flex items-center gap-4 text-sm text-muted-foreground">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
           <div className="flex items-center gap-1">
-            <MapPin className="h-4 w-4" />
-            <span className="line-clamp-1">{business.city}</span>
+            <MapPin className="h-3.5 w-3.5" />
+            <span className="line-clamp-1 text-xs">{business.city}</span>
           </div>
+          {business.is_open_now != null && (
+            <span className={`flex items-center gap-1 text-xs font-medium ${business.is_open_now ? 'text-emerald-600' : 'text-red-400'}`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${business.is_open_now ? 'bg-emerald-500' : 'bg-red-400'}`} />
+              {business.is_open_now ? (language === 'es' ? 'Abierto' : 'Open') : (language === 'es' ? 'Cerrado' : 'Closed')}
+            </span>
+          )}
+          {business.distance_km != null && (
+            <span className="text-xs font-medium text-[#F05D5E]">
+              {business.distance_km < 1 ? `${Math.round(business.distance_km * 1000)}m` : `${business.distance_km} km`}
+            </span>
+          )}
+          {business.next_available_text && !business.is_open_now && (
+            <div className="flex items-center gap-1 text-xs font-medium text-emerald-600">
+              <Clock className="h-3 w-3" />
+              <span>{business.next_available_text}</span>
+            </div>
+          )}
           {business.review_count > 0 && (
             <span className="text-xs">
               ({business.review_count} {t('business.reviews')})

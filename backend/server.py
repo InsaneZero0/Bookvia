@@ -301,6 +301,9 @@ class BusinessCreate(BaseModel):
     min_time_between_appointments: int = 0  # minutes (buffer between appointments)
     service_radius_km: Optional[float] = None  # for home service
     plan_type: str = "basic"  # basic, premium
+    # Images
+    logo_url: Optional[str] = None
+    cover_photo: Optional[str] = None
 
 class BusinessResponse(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -334,6 +337,7 @@ class BusinessResponse(BaseModel):
     min_time_between_appointments: int = 0
     photos: List[str] = []
     logo_url: Optional[str] = None
+    cover_photo: Optional[str] = None
     slug: Optional[str] = None
     created_at: str
     is_featured: bool = False
@@ -345,6 +349,9 @@ class BusinessResponse(BaseModel):
     stripe_subscription_id: Optional[str] = None
     logo_url: Optional[str] = None
     logo_public_id: Optional[str] = None
+    distance_km: Optional[float] = None
+    next_available_text: Optional[str] = None
+    is_open_now: Optional[bool] = None
 
 class BusinessUpdate(BaseModel):
     name: Optional[str] = None
@@ -1779,7 +1786,8 @@ async def register_business(business: BusinessCreate):
         "service_radius_km": business.service_radius_km,
         "timezone": business.timezone,
         "photos": [],
-        "logo_url": None,
+        "logo_url": business.logo_url,
+        "cover_photo": business.cover_photo,
         "slug": slug,
         "plan_type": business.plan_type,
         "stripe_account_id": None,
@@ -2093,6 +2101,69 @@ async def get_favorites(token_data: TokenData = Depends(require_auth)):
         {"_id": 0, "password_hash": 0}
     ).to_list(100)
     
+    # Add category names
+    for b in businesses:
+        if b.get("category_id"):
+            cat = await db.categories.find_one({"id": b["category_id"]})
+            if cat:
+                b["category_name"] = cat.get("name_es", "")
+    
+    # Compute is_open_now and next_available_text
+    biz_ids = [b["id"] for b in businesses]
+    if biz_ids:
+        all_workers = await db.workers.find(
+            {"business_id": {"$in": biz_ids}, "active": True},
+            {"_id": 0, "business_id": 1, "schedule": 1}
+        ).to_list(500)
+        biz_workers_map = {}
+        for w in all_workers:
+            biz_workers_map.setdefault(w["business_id"], []).append(w)
+        day_names_es = ["Lun", "Mar", "Mie", "Jue", "Vie", "Sab", "Dom"]
+        try:
+            now_fav = datetime.now(pytz.timezone("America/Mexico_City"))
+        except Exception:
+            now_fav = datetime.now(timezone.utc)
+        cwd = now_fav.weekday()
+        ctm = now_fav.strftime("%H:%M")
+        for b in businesses:
+            wl = biz_workers_map.get(b["id"], [])
+            if not wl:
+                continue
+            # is_open_now
+            is_open = False
+            for wk in wl:
+                ds = wk.get("schedule", {}).get(str(cwd), {})
+                if ds.get("is_available") and ds.get("blocks"):
+                    for blk in ds["blocks"]:
+                        if blk["start_time"] <= ctm < blk["end_time"]:
+                            is_open = True
+                            break
+                if is_open:
+                    break
+            b["is_open_now"] = is_open
+            # next_available_text
+            found = False
+            for doff in range(7):
+                cd = (cwd + doff) % 7
+                for wk in wl:
+                    ds = wk.get("schedule", {}).get(str(cd), {})
+                    if ds.get("is_available") and ds.get("blocks"):
+                        for blk in ds["blocks"]:
+                            if doff == 0 and blk["end_time"] > ctm:
+                                b["next_available_text"] = "Hoy disponible"
+                                found = True
+                                break
+                            elif doff > 0:
+                                b["next_available_text"] = f"{'Manana' if doff == 1 else day_names_es[(cwd + doff) % 7]} {blk['start_time']}"
+                                found = True
+                                break
+                        if found:
+                            break
+                    if found:
+                        break
+                if found:
+                    break
+    
     return [BusinessResponse(**b) for b in businesses]
 
 # ========================== CATEGORY ROUTES ==========================
@@ -2151,6 +2222,9 @@ async def search_businesses(
     min_rating: Optional[float] = None,
     is_home_service: Optional[bool] = None,
     include_pending: bool = False,
+    user_lat: Optional[float] = None,
+    user_lng: Optional[float] = None,
+    sort: Optional[str] = None,
     page: int = 1,
     limit: int = 20,
     current_user: Optional[TokenData] = Depends(get_current_user)
@@ -2198,17 +2272,21 @@ async def search_businesses(
     if category_id:
         filters["category_id"] = category_id
     if city:
-        filters["city"] = {"$regex": city, "$options": "i"}
+        # When sorting by nearest, don't filter by city (geographic proximity takes priority)
+        if sort != "nearest":
+            filters["city"] = {"$regex": city, "$options": "i"}
     if min_rating:
         filters["rating"] = {"$gte": min_rating}
     if is_home_service is not None:
         filters["service_radius_km"] = {"$exists": True, "$ne": None} if is_home_service else {"$in": [None, 0]}
     
     skip = (page - 1) * limit
+    # When sorting by nearest, increase limit to show more nearby businesses
+    effective_limit = limit * 3 if (sort == "nearest" and user_lat is not None) else limit
     businesses = await db.businesses.find(
         filters,
         {"_id": 0, "password_hash": 0, "clabe": 0, "rfc": 0, "ine_url": 0, "proof_of_address_url": 0}
-    ).sort("rating", -1).skip(skip).limit(limit).to_list(limit)
+    ).sort("rating", -1).skip(skip).limit(effective_limit).to_list(effective_limit)
     
     # Add category names and booking availability
     for b in businesses:
@@ -2230,6 +2308,91 @@ async def search_businesses(
             if await is_user_blacklisted(b["id"], user_id=current_user.user_id):
                 blacklisted_biz_ids.add(b["id"])
         businesses = [b for b in businesses if b["id"] not in blacklisted_biz_ids]
+    
+    # Calculate distance and sort by proximity if user location provided
+    if user_lat is not None and user_lng is not None:
+        import math
+        def haversine(lat1, lng1, lat2, lng2):
+            R = 6371  # km
+            dlat = math.radians(lat2 - lat1)
+            dlng = math.radians(lng2 - lng1)
+            a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlng/2)**2
+            return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+        
+        for b in businesses:
+            if b.get("latitude") and b.get("longitude"):
+                b["distance_km"] = round(haversine(user_lat, user_lng, b["latitude"], b["longitude"]), 1)
+            else:
+                b["distance_km"] = None
+        
+        if sort == "nearest":
+            businesses.sort(key=lambda x: x.get("distance_km") if x.get("distance_km") is not None else 99999)
+    
+    # Compute next available text based on worker schedules
+    biz_ids = [b["id"] for b in businesses]
+    if biz_ids:
+        all_workers = await db.workers.find(
+            {"business_id": {"$in": biz_ids}, "active": True},
+            {"_id": 0, "business_id": 1, "schedule": 1}
+        ).to_list(500)
+        biz_workers_map = {}
+        for w in all_workers:
+            biz_workers_map.setdefault(w["business_id"], []).append(w)
+        
+        day_names_es = ["Lun", "Mar", "Mie", "Jue", "Vie", "Sab", "Dom"]
+        try:
+            now = datetime.now(pytz.timezone("America/Mexico_City"))
+        except Exception:
+            now = datetime.now(timezone.utc)
+        current_weekday = now.weekday()
+        current_time = now.strftime("%H:%M")
+        
+        for b in businesses:
+            workers_list = biz_workers_map.get(b["id"], [])
+            if not workers_list:
+                continue
+            # Check if open right now
+            is_open = False
+            for worker in workers_list:
+                ds = worker.get("schedule", {}).get(str(current_weekday), {})
+                if ds.get("is_available") and ds.get("blocks"):
+                    for block in ds["blocks"]:
+                        if block["start_time"] <= current_time < block["end_time"]:
+                            is_open = True
+                            break
+                if is_open:
+                    break
+            b["is_open_now"] = is_open
+            
+            # Find next available text
+            found = False
+            for day_offset in range(7):
+                check_day = (current_weekday + day_offset) % 7
+                day_str = str(check_day)
+                for worker in workers_list:
+                    schedule = worker.get("schedule", {})
+                    day_schedule = schedule.get(day_str, {})
+                    if day_schedule.get("is_available") and day_schedule.get("blocks"):
+                        for block in day_schedule["blocks"]:
+                            if day_offset == 0:
+                                if block["end_time"] > current_time:
+                                    b["next_available_text"] = "Hoy disponible"
+                                    found = True
+                                    break
+                            else:
+                                if day_offset == 1:
+                                    b["next_available_text"] = f"Manana {block['start_time']}"
+                                else:
+                                    target_day = (current_weekday + day_offset) % 7
+                                    b["next_available_text"] = f"{day_names_es[target_day]} {block['start_time']}"
+                                found = True
+                                break
+                        if found:
+                            break
+                    if found:
+                        break
+                if found:
+                    break
     
     return [BusinessResponse(**b) for b in businesses]
 
@@ -2262,6 +2425,62 @@ async def get_featured_businesses(limit: int = 8, country_code: Optional[str] = 
             if await is_user_blacklisted(b["id"], user_id=current_user.user_id):
                 blacklisted_biz_ids.add(b["id"])
         businesses = [b for b in businesses if b["id"] not in blacklisted_biz_ids]
+    
+    # Compute next available text for featured businesses
+    biz_ids = [b["id"] for b in businesses]
+    if biz_ids:
+        all_workers = await db.workers.find(
+            {"business_id": {"$in": biz_ids}, "active": True},
+            {"_id": 0, "business_id": 1, "schedule": 1}
+        ).to_list(500)
+        biz_workers_map = {}
+        for w in all_workers:
+            biz_workers_map.setdefault(w["business_id"], []).append(w)
+        day_names_es = ["Lun", "Mar", "Mie", "Jue", "Vie", "Sab", "Dom"]
+        try:
+            now_ft = datetime.now(pytz.timezone("America/Mexico_City"))
+        except Exception:
+            now_ft = datetime.now(timezone.utc)
+        current_wd = now_ft.weekday()
+        current_tm = now_ft.strftime("%H:%M")
+        for b in businesses:
+            wl = biz_workers_map.get(b["id"], [])
+            if not wl:
+                continue
+            # Check if open right now
+            is_open_ft = False
+            for wk in wl:
+                ds_now = wk.get("schedule", {}).get(str(current_wd), {})
+                if ds_now.get("is_available") and ds_now.get("blocks"):
+                    for blk in ds_now["blocks"]:
+                        if blk["start_time"] <= current_tm < blk["end_time"]:
+                            is_open_ft = True
+                            break
+                if is_open_ft:
+                    break
+            b["is_open_now"] = is_open_ft
+            
+            found = False
+            for doff in range(7):
+                cd = (current_wd + doff) % 7
+                for wk in wl:
+                    ds = wk.get("schedule", {}).get(str(cd), {})
+                    if ds.get("is_available") and ds.get("blocks"):
+                        for blk in ds["blocks"]:
+                            if doff == 0 and blk["end_time"] > current_tm:
+                                b["next_available_text"] = "Hoy disponible"
+                                found = True
+                                break
+                            elif doff > 0:
+                                b["next_available_text"] = f"{'Manana' if doff == 1 else day_names_es[(current_wd + doff) % 7]} {blk['start_time']}"
+                                found = True
+                                break
+                        if found:
+                            break
+                    if found:
+                        break
+                if found:
+                    break
     
     return [BusinessResponse(**b) for b in businesses]
 
@@ -6264,6 +6483,32 @@ from services.storage import init_storage, put_object, get_object, generate_uplo
 
 
 # ── Generic upload endpoint ──────────────────────────
+@api_router.post("/upload/public")
+async def upload_public_image(file: UploadFile = File(...)):
+    """Public upload endpoint for registration (no auth needed)."""
+    data = await file.read()
+    if len(data) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="File too large. Maximum 5MB")
+    
+    ext = file.filename.split(".")[-1].lower() if "." in file.filename else ""
+    if ext not in ("jpg", "jpeg", "png", "webp", "jfif"):
+        raise HTTPException(status_code=400, detail="Only JPG, PNG, WebP allowed")
+    
+    content_type = file.content_type or "image/jpeg"
+    if ext in ("jfif", "jpg", "jpeg", "pjpeg"):
+        content_type = "image/jpeg"
+    
+    path = generate_upload_path("registration", file.filename)
+    try:
+        result = put_object(path, data, content_type)
+        base_url = os.environ.get("BASE_URL", "")
+        photo_url = f"{base_url}/api/files/{result['path']}"
+        return {"url": photo_url}
+    except Exception as e:
+        logger.error(f"Public upload failed: {e}")
+        raise HTTPException(status_code=500, detail="Failed to upload image")
+
+
 @api_router.post("/upload/image")
 async def upload_image_endpoint(
     file: UploadFile = File(...),
