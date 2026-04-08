@@ -3,6 +3,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.responses import Response
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
+import asyncio
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
@@ -566,6 +567,7 @@ class BookingResponse(BaseModel):
     can_cancel: bool = True
     hours_until_appointment: Optional[float] = None
     has_review: bool = False
+    reminder_sent: bool = False
     business_slug: Optional[str] = None
 
 # Review Models
@@ -5000,6 +5002,14 @@ async def trigger_expire_holds(token_data: TokenData = Depends(require_admin)):
     count = await expire_holds_task()
     return {"expired_count": count}
 
+# Manual endpoint to trigger reminders (for testing/cron)
+@bookings_router.post("/send-reminders")
+async def trigger_send_reminders(token_data: TokenData = Depends(require_admin)):
+    """Admin endpoint to manually trigger appointment reminders"""
+    await send_pending_reminders()
+    return {"message": "Reminders processed"}
+
+
 # Get user transactions
 @payments_router.get("/my-transactions", response_model=List[TransactionResponse])
 async def get_my_transactions(
@@ -6802,3 +6812,85 @@ async def startup_event():
         logger.info("Cloudinary initialized")
     else:
         logger.warning("Cloudinary not configured - using fallback storage")
+    # Start appointment reminder scheduler
+    asyncio.create_task(appointment_reminder_scheduler())
+
+
+async def appointment_reminder_scheduler():
+    """Background task that checks every 30 minutes for appointments needing reminders."""
+    logger.info("Appointment reminder scheduler started")
+    while True:
+        try:
+            await send_pending_reminders()
+        except Exception as e:
+            logger.error(f"Reminder scheduler error: {e}")
+        await asyncio.sleep(1800)  # 30 minutes
+
+
+async def send_pending_reminders():
+    """Find confirmed bookings ~24h away and send email reminders."""
+    try:
+        now = datetime.now(pytz.timezone("America/Mexico_City"))
+    except Exception:
+        now = datetime.now(timezone.utc)
+    
+    tomorrow = now + timedelta(hours=24)
+    tomorrow_date = tomorrow.strftime("%Y-%m-%d")
+    
+    # Find confirmed bookings for tomorrow that haven't been reminded
+    bookings = await db.bookings.find({
+        "status": "confirmed",
+        "date": tomorrow_date,
+        "reminder_sent": {"$ne": True}
+    }, {"_id": 0}).to_list(200)
+    
+    if not bookings:
+        return
+    
+    logger.info(f"Sending {len(bookings)} appointment reminders for {tomorrow_date}")
+    
+    for booking in bookings:
+        try:
+            # Get user info
+            user = await db.users.find_one({"id": booking.get("user_id")}, {"_id": 0, "email": 1, "full_name": 1})
+            if not user:
+                continue
+            
+            # Get business info
+            business = await db.businesses.find_one({"id": booking.get("business_id")}, {"_id": 0, "name": 1, "address": 1, "city": 1})
+            if not business:
+                continue
+            
+            # Get service info
+            service = await db.services.find_one({"id": booking.get("service_id")}, {"_id": 0, "name": 1})
+            service_name = service["name"] if service else "Servicio"
+            
+            # Get worker info
+            worker = await db.workers.find_one({"id": booking.get("worker_id")}, {"_id": 0, "name": 1})
+            worker_name = worker["name"] if worker else ""
+            
+            business_address = f"{business.get('address', '')}, {business.get('city', '')}"
+            
+            from services.email import send_appointment_reminder
+            await send_appointment_reminder(
+                user_email=user["email"],
+                user_name=user.get("full_name", ""),
+                business_name=business["name"],
+                service_name=service_name,
+                date=booking["date"],
+                time=booking.get("time", ""),
+                worker_name=worker_name,
+                business_address=business_address
+            )
+            
+            # Mark as reminded
+            await db.bookings.update_one(
+                {"id": booking["id"]},
+                {"$set": {"reminder_sent": True}}
+            )
+            
+            logger.info(f"Reminder sent for booking {booking['id']} to {user['email']}")
+            
+        except Exception as e:
+            logger.error(f"Failed to send reminder for booking {booking.get('id')}: {e}")
+
