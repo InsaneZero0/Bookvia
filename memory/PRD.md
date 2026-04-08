@@ -34,19 +34,11 @@ Bookvia es una plataforma marketplace de reservas profesionales que conecta nego
 - [x] Mapa de ubicacion del negocio (Leaflet/OpenStreetMap)
 - [x] Notificaciones (campana) para duenos y clientes
 
-### Sistema de Administradores y PIN (Fases 1-3 COMPLETADAS)
-- [x] PIN de seguridad, login administrador, permisos granulares (16 permisos)
-- [x] Dashboard restringido por permisos
-- [x] Historial de actividad (business_activity_logs)
-
-### Email y Verificacion
-- [x] Resend integrado con dominio verificado (bookvia.app)
-- [x] Verificacion de email, recuperar contrasena
-- [x] Correos transaccionales (confirmacion, cancelacion)
-
 ### Busqueda y Perfil Publico
 - [x] Filtros: categoria, ciudad, calificacion, precio, anticipo, servicio domicilio, destacados
-- [x] Busqueda por geolocalizacion ("Cerca de ti" - Haversine)
+- [x] Busqueda por geolocalizacion ("Cerca de ti" - Haversine) con expansion automatica de radio
+- [x] Auto-limpieza de filtros restrictivos al buscar por cercania
+- [x] Banner informativo de rango de distancia
 - [x] "Proximo horario disponible" en tarjetas de negocio (next_available_text)
 - [x] Galeria de fotos con carousel swipeable en mobile y lightbox fullscreen en desktop
 - [x] Vista Lista / Mapa con markers
@@ -58,17 +50,17 @@ Bookvia es una plataforma marketplace de reservas profesionales que conecta nego
 - [x] Bottom bar de reserva en perfil de negocio
 - [x] Carousel de fotos con indicadores dot y contador
 
-### Internacionalizacion
-- [x] Auto-capitalizacion, logo con estrella, deteccion de pais por IP
-- [x] 50+ ciudades US, 122+ ciudades para 16 paises
-
 ## Backlog
 
 ### P0 (Tecnica)
-- [ ] Refactorizar server.py (~6500 lineas) en routers modulares
+- [ ] Refactorizar server.py (~6600 lineas) en routers modulares
 
-### P1
-- [ ] Permisos faltantes: Cierres y Suscripcion (tabs aun bloqueados para admins)
+### P1 - Area del Cliente
+- [ ] Reagendar cita desde el lado del cliente
+- [ ] Horarios del negocio visibles en perfil publico (tabla clara)
+- [ ] Compartir negocio (WhatsApp, copiar link)
+- [ ] Pagina de favoritos dedicada
+- [ ] Historial de pagos del cliente
 
 ### P2
 - [ ] Recordatorios de citas (email 24h antes, requiere cronjob)
@@ -82,16 +74,7 @@ Bookvia es una plataforma marketplace de reservas profesionales que conecta nego
 - [ ] Chat / Preguntas al negocio antes de reservar
 - [ ] Cupones o codigos de descuento
 
-## Esquema DB
-- **businesses:** subscription_status, approval_status, owner_pin_hash, latitude, longitude
-- **workers:** is_manager, manager_permissions (16 permisos), schedule
-- **business_activity_logs:** business_id, actor_type, actor_name, action, details
-- **bookings:** worker_id, end_time, status, cancelled_by
-- **reviews:** user_id, business_id, booking_id, rating, comment
-- **notifications:** user_id, title, message, type, is_read, created_at
-
 ## Notas Tecnicas
 - Timezone: SIEMPRE usar new Date(dateString + 'T12:00:00') para parsear YYYY-MM-DD
-- next_available_text: Calculado en backend basado en schedules de workers, no en bookings reales
-- TokenData extendido: worker_id e is_manager para sesiones de administradores
-- hasPermission(): true para duenos, checa permisos para admins
+- next_available_text: Calculado en backend basado en schedules de workers
+- Cerca de ti: Al activar, limpia filtros restrictivos (city, category, rating, featured) y aumenta limit x3

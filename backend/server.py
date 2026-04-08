@@ -2203,17 +2203,21 @@ async def search_businesses(
     if category_id:
         filters["category_id"] = category_id
     if city:
-        filters["city"] = {"$regex": city, "$options": "i"}
+        # When sorting by nearest, don't filter by city (geographic proximity takes priority)
+        if sort != "nearest":
+            filters["city"] = {"$regex": city, "$options": "i"}
     if min_rating:
         filters["rating"] = {"$gte": min_rating}
     if is_home_service is not None:
         filters["service_radius_km"] = {"$exists": True, "$ne": None} if is_home_service else {"$in": [None, 0]}
     
     skip = (page - 1) * limit
+    # When sorting by nearest, increase limit to show more nearby businesses
+    effective_limit = limit * 3 if (sort == "nearest" and user_lat is not None) else limit
     businesses = await db.businesses.find(
         filters,
         {"_id": 0, "password_hash": 0, "clabe": 0, "rfc": 0, "ine_url": 0, "proof_of_address_url": 0}
-    ).sort("rating", -1).skip(skip).limit(limit).to_list(limit)
+    ).sort("rating", -1).skip(skip).limit(effective_limit).to_list(effective_limit)
     
     # Add category names and booking availability
     for b in businesses:
