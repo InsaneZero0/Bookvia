@@ -95,6 +95,19 @@ export function AuthProvider({ children }) {
     return response.data;
   };
 
+  const googleLogin = async (sessionId) => {
+    const response = await authAPI.googleSession({ session_id: sessionId });
+    const { token, user: userData } = response.data;
+    
+    localStorage.setItem('bookvia-token', token);
+    localStorage.setItem('bookvia-user', JSON.stringify(userData));
+    
+    setUser(userData);
+    setIsAuthenticated(true);
+    
+    return userData;
+  };
+
   const adminLogin = async (email, password, totpCode) => {
     const response = await authAPI.adminLogin({ email, password, totp_code: totpCode });
     
@@ -171,6 +184,7 @@ export function AuthProvider({ children }) {
       managerLogin,
       businessRegister,
       adminLogin,
+      googleLogin,
       logout,
       updateUser,
       refreshUser,
