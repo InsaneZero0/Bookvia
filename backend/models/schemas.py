@@ -388,6 +388,7 @@ class BookingResponse(BaseModel):
     has_review: bool = False
     reminder_sent: bool = False
     business_slug: Optional[str] = None
+    booked_by: Optional[str] = None
 
 class ReviewCreate(BaseModel):
     business_id: str

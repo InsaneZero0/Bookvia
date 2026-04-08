@@ -47,6 +47,12 @@ export default function ReceptionPage() {
   const [slots, setSlots] = useState([]);
   const [slotsLoading, setSlotsLoading] = useState(false);
 
+  // Client search
+  const [clientSearch, setClientSearch] = useState('');
+  const [clientResults, setClientResults] = useState([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [showResults, setShowResults] = useState(false);
+
   // Today's bookings
   const [todayBookings, setTodayBookings] = useState([]);
 
@@ -104,6 +110,36 @@ export default function ReceptionPage() {
   useEffect(() => {
     loadAvailability();
   }, [loadAvailability]);
+
+  // Client search with debounce
+  useEffect(() => {
+    if (clientSearch.length < 2) {
+      setClientResults([]);
+      setShowResults(false);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      setSearchLoading(true);
+      try {
+        const res = await bookingsAPI.searchClients(clientSearch);
+        setClientResults(res.data || []);
+        setShowResults(true);
+      } catch {
+        setClientResults([]);
+      } finally {
+        setSearchLoading(false);
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [clientSearch]);
+
+  const selectClient = (client) => {
+    setClientName(client.name || '');
+    setClientPhone(client.phone || '');
+    setClientEmail(client.email || '');
+    setClientSearch('');
+    setShowResults(false);
+  };
 
   const handleSubmit = async () => {
     if (!selectedService || !selectedTime || !clientName.trim()) {
@@ -292,6 +328,47 @@ export default function ReceptionPage() {
                   <User className="h-4 w-4 text-[#F05D5E]" />
                   {t('Datos del cliente', 'Client information')}
                 </Label>
+
+                {/* Client search */}
+                <div className="relative">
+                  <Label className="text-xs text-muted-foreground">{t('Buscar cliente existente', 'Search existing client')}</Label>
+                  <Input
+                    value={clientSearch}
+                    onChange={e => setClientSearch(e.target.value)}
+                    placeholder={t('Buscar por nombre o telefono...', 'Search by name or phone...')}
+                    data-testid="client-search-input"
+                  />
+                  {searchLoading && (
+                    <Loader2 className="h-4 w-4 animate-spin absolute right-3 top-[30px]" />
+                  )}
+                  {showResults && clientResults.length > 0 && (
+                    <div className="absolute z-10 w-full mt-1 bg-popover border rounded-lg shadow-lg max-h-40 overflow-y-auto" data-testid="client-search-results">
+                      {clientResults.map((c, i) => (
+                        <button
+                          key={i}
+                          className="w-full text-left px-3 py-2.5 hover:bg-muted/50 text-sm flex items-center gap-3 border-b last:border-b-0"
+                          onClick={() => selectClient(c)}
+                          data-testid={`client-result-${i}`}
+                        >
+                          <User className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                          <div className="min-w-0">
+                            <p className="font-medium truncate">{c.name}</p>
+                            <p className="text-xs text-muted-foreground truncate">
+                              {c.phone && <><Phone className="h-3 w-3 inline mr-1" />{c.phone}</>}
+                              {c.phone && c.email && ' · '}
+                              {c.email && <><Mail className="h-3 w-3 inline mr-1" />{c.email}</>}
+                            </p>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {showResults && clientResults.length === 0 && clientSearch.length >= 2 && !searchLoading && (
+                    <p className="text-xs text-muted-foreground mt-1">{t('No se encontraron clientes', 'No clients found')}</p>
+                  )}
+                </div>
+
+                <Separator />
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label className="text-xs text-muted-foreground">{t('Nombre', 'Name')} *</Label>
@@ -397,6 +474,16 @@ export default function ReceptionPage() {
                           </div>
                           <p className="font-medium text-xs">{booking.client_name || booking.user_name || t('Cliente', 'Client')}</p>
                           <p className="text-[11px] text-muted-foreground">{booking.service_name} - {booking.worker_name}</p>
+                          {(booking.booked_by === 'business' || (booking.skip_payment && booking.client_name)) && (
+                            <div className="flex gap-1.5 mt-0.5">
+                              <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-700 font-medium" data-testid="reception-badge">
+                                {t('Recepcion', 'Reception')}
+                              </span>
+                              <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-700 font-medium" data-testid="pay-at-business-badge">
+                                {t('Pago en negocio', 'Pay at business')}
+                              </span>
+                            </div>
+                          )}
                         </div>
                       ))}
                   </div>

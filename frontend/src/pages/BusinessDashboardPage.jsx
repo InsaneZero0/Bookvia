@@ -1378,6 +1378,16 @@ export default function BusinessDashboardPage() {
                           <span>{formatTime(b.time)} - {formatTime(b.end_time)}</span>
                           {b.worker_name && <span>| {b.worker_name}</span>}
                         </div>
+                        {(b.booked_by === 'business' || (b.skip_payment && b.client_name)) && (
+                          <div className="flex gap-1 mt-1">
+                            <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-700 font-medium">
+                              {language === 'es' ? 'Recepcion' : 'Reception'}
+                            </span>
+                            <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-700 font-medium">
+                              {language === 'es' ? 'Pago en negocio' : 'Pay at business'}
+                            </span>
+                          </div>
+                        )}
                       </div>
                       <div className="flex flex-col items-end gap-1 shrink-0">
                         <Badge className={`text-[10px] ${getStatusColor(b.status)}`}>
@@ -1545,6 +1555,19 @@ export default function BusinessDashboardPage() {
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">{language === 'es' ? 'Anticipo' : 'Deposit'}</span>
                         <span className="font-medium">{b.deposit_paid ? '✓' : '✗'} ${b.deposit_amount} MXN</span>
+                      </div>
+                    )}
+                    {(b.booked_by === 'business' || (b.skip_payment && b.client_name)) && (
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">{language === 'es' ? 'Origen' : 'Source'}</span>
+                        <div className="flex gap-1">
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-700 font-medium">
+                            {language === 'es' ? 'Recepcion' : 'Reception'}
+                          </span>
+                          <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-700 font-medium">
+                            {language === 'es' ? 'Pago en negocio' : 'Pay at business'}
+                          </span>
+                        </div>
                       </div>
                     )}
                     {b.total_amount > 0 && (

@@ -225,6 +225,7 @@ export const bookingsAPI = {
   getStatsDetail: (statType, dateFrom, dateTo) => api.get('/bookings/business/stats-detail', { 
     params: { stat_type: statType, date_from: dateFrom, date_to: dateTo } 
   }),
+  searchClients: (q) => api.get('/bookings/search-clients', { params: { q } }),
 };
 
 // Reviews API

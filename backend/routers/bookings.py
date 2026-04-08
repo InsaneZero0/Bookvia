@@ -50,6 +50,87 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/bookings", tags=["Bookings"])
 
 @router.get("/business/stats-detail")
+
+@router.get("/search-clients")
+async def search_clients(
+    q: str = "",
+    token_data: TokenData = Depends(require_business)
+):
+    """Search past clients by name or phone for auto-fill in reception."""
+    user = await db.users.find_one({"id": token_data.user_id}, {"_id": 0, "business_id": 1})
+    if not user or not user.get("business_id"):
+        raise HTTPException(status_code=404, detail="Business not found")
+    
+    business_id = user["business_id"]
+    
+    if not q or len(q) < 2:
+        return []
+    
+    # Search in past bookings for this business
+    regex_filter = {"$regex": q, "$options": "i"}
+    bookings = await db.bookings.find(
+        {
+            "business_id": business_id,
+            "$or": [
+                {"client_name": regex_filter},
+                {"client_phone": regex_filter},
+                {"client_email": regex_filter},
+            ]
+        },
+        {"_id": 0, "client_name": 1, "client_phone": 1, "client_email": 1}
+    ).sort("created_at", -1).to_list(100)
+    
+    # Also search registered users who have booked with this business
+    user_bookings = await db.bookings.find(
+        {"business_id": business_id, "user_id": {"$exists": True}, "booked_by": {"$ne": "business"}},
+        {"_id": 0, "user_id": 1}
+    ).to_list(500)
+    user_ids = list(set(b["user_id"] for b in user_bookings if b.get("user_id")))
+    
+    if user_ids:
+        users = await db.users.find(
+            {
+                "id": {"$in": user_ids},
+                "$or": [
+                    {"full_name": regex_filter},
+                    {"phone": regex_filter},
+                    {"email": regex_filter},
+                ]
+            },
+            {"_id": 0, "full_name": 1, "phone": 1, "email": 1}
+        ).to_list(50)
+    else:
+        users = []
+    
+    # Deduplicate by name+phone
+    seen = set()
+    results = []
+    
+    for b in bookings:
+        name = (b.get("client_name") or "").strip()
+        phone = (b.get("client_phone") or "").strip()
+        email = (b.get("client_email") or "").strip()
+        if not name:
+            continue
+        key = f"{name.lower()}|{phone}"
+        if key not in seen:
+            seen.add(key)
+            results.append({"name": name, "phone": phone, "email": email})
+    
+    for u in users:
+        name = (u.get("full_name") or "").strip()
+        phone = (u.get("phone") or "").strip()
+        email = (u.get("email") or "").strip()
+        if not name:
+            continue
+        key = f"{name.lower()}|{phone}"
+        if key not in seen:
+            seen.add(key)
+            results.append({"name": name, "phone": phone, "email": email})
+    
+    return results[:20]
+
+
 async def get_business_stats_detail(
     stat_type: str,
     date_from: Optional[str] = None,
@@ -378,8 +459,8 @@ async def create_booking(booking: BookingCreate, token_data: TokenData = Depends
         workers = await db.workers.find(worker_filter).to_list(100)
         
         # Filter workers by service_ids (worker must offer this service)
-        if service_id:
-            workers = [w for w in workers if not w.get("service_ids") or service_id in w.get("service_ids", [])]
+        if booking.service_id:
+            workers = [w for w in workers if not w.get("service_ids") or booking.service_id in w.get("service_ids", [])]
         
         if not workers:
             raise HTTPException(status_code=400, detail="No workers available for this service")
@@ -524,6 +605,7 @@ async def create_booking(booking: BookingCreate, token_data: TokenData = Depends
             "client_email": booking.client_email,
             "client_phone": booking.client_phone,
             "client_info": booking.client_info,
+            "booked_by": "business",
         }
     else:
         # Regular user: hold status, pending payment
