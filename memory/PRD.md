@@ -65,6 +65,8 @@ Auth Social: Emergent-managed Google Auth (solo clientes)
 - [x] Dashboard de negocio con modales de reagendar, detalles cliente
 - [x] Panel admin con 2FA, aprobaciones, estadisticas
 - [x] **Pagina de Recepcion**: crear citas walk-in, panel de citas del dia, seleccion de servicio/trabajador/horario
+- [x] **Busqueda de clientes existentes** en Recepcion (por nombre/telefono), auto-rellena datos
+- [x] **Badges "Recepcion" + "Pago en negocio"** en citas creadas por el negocio (campo booked_by)
 
 ### Tecnico
 - [x] Refactorizacion backend: server.py ~7000 lineas -> 235 lineas + 12 routers modulares
