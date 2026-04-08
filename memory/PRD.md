@@ -12,6 +12,7 @@ Bookvia es una plataforma marketplace de reservas profesionales que conecta nego
 
 ### Core
 - [x] Autenticacion JWT, registro negocio multi-paso, 2FA admin
+- [x] Login con Google (Emergent Auth) para usuarios/clientes
 - [x] 2 campos de imagen en registro: Logo + Foto del negocio
 - [x] Upload publico POST /api/upload/public
 
@@ -39,16 +40,17 @@ Bookvia es una plataforma marketplace de reservas profesionales que conecta nego
 ## Backlog
 
 ### P0 (Tecnica)
-- [ ] Refactorizar server.py (~6900 lineas) en routers modulares
+- [ ] Refactorizar server.py (~7000 lineas) en routers modulares
 
 ### P2
-- [ ] Login con Google (Emergent-managed)
+- [x] Login con Google (Emergent-managed) - Solo para clientes/usuarios
 - [ ] Optimizacion UX mobile avanzada
 
 ### P3
 - [ ] PWA, Stripe Connect, Notificaciones Push, Chat, Cupones
 
 ## Notas Tecnicas
+- Google Login: Usa Emergent Auth (auth.emergentagent.com). Solo para clientes. Callback en /auth/google/callback. Backend valida session_id con Emergent API.
 - Recordatorios: Scheduler asyncio cada 30 min, busca citas confirmadas para manana (timezone Mexico)
 - reminder_sent: Campo bool en bookings para evitar duplicados
 - Endpoint admin: POST /api/bookings/send-reminders para disparar manualmente
