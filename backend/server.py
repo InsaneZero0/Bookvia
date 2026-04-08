@@ -1620,6 +1620,105 @@ async def resend_verification_email(data: dict):
     
     return {"message": "Si el correo existe, recibirás un email de verificación"}
 
+@auth_router.post("/google/session")
+async def google_auth_session(data: dict):
+    """Exchange Emergent Google Auth session_id for a Bookvia JWT token."""
+    session_id = data.get("session_id")
+    if not session_id:
+        raise HTTPException(status_code=400, detail="session_id requerido")
+    
+    # Call Emergent Auth to get user data
+    import httpx
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(
+                "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data",
+                headers={"X-Session-ID": session_id},
+                timeout=10.0
+            )
+            if resp.status_code != 200:
+                raise HTTPException(status_code=401, detail="Sesion de Google invalida")
+            google_data = resp.json()
+    except httpx.RequestError:
+        raise HTTPException(status_code=500, detail="Error al verificar con Google")
+    
+    google_email = google_data.get("email", "").strip().lower()
+    google_name = google_data.get("name", "")
+    google_picture = google_data.get("picture", "")
+    google_id = google_data.get("id", "")
+    
+    if not google_email:
+        raise HTTPException(status_code=400, detail="No se pudo obtener email de Google")
+    
+    # Check if user exists by email
+    user = await db.users.find_one({"email": google_email}, {"_id": 0})
+    
+    if user:
+        # Update Google info on existing user
+        update_fields = {"auth_provider": "google", "google_id": google_id}
+        if not user.get("photo_url") and google_picture:
+            update_fields["photo_url"] = google_picture
+        if not user.get("email_verified"):
+            update_fields["email_verified"] = True
+        await db.users.update_one({"id": user["id"]}, {"$set": update_fields})
+    else:
+        # Create new user from Google data
+        user = {
+            "id": generate_id(),
+            "email": google_email,
+            "password_hash": None,
+            "full_name": google_name,
+            "phone": "",
+            "country": "MX",
+            "city": "",
+            "phone_verified": False,
+            "email_verified": True,
+            "auth_provider": "google",
+            "google_id": google_id,
+            "photo_url": google_picture,
+            "role": UserRole.USER,
+            "active_appointments_count": 0,
+            "cancellation_count": 0,
+            "suspended_until": None,
+            "favorites": [],
+            "preferred_language": "es",
+            "stripe_customer_id": None,
+            "saved_cards": [],
+            "created_at": datetime.now(timezone.utc).isoformat()
+        }
+        await db.users.insert_one(user)
+    
+    # Check if suspended
+    if user.get("suspended_until"):
+        try:
+            suspended = datetime.fromisoformat(user["suspended_until"])
+            if suspended.tzinfo is None:
+                suspended = suspended.replace(tzinfo=timezone.utc)
+            if suspended > datetime.now(timezone.utc):
+                raise HTTPException(status_code=403, detail="Cuenta suspendida")
+        except (ValueError, TypeError):
+            pass
+    
+    # Generate Bookvia JWT
+    token = create_token(user["id"], user.get("role", "user"), google_email)
+    
+    user_response = {
+        "id": user["id"],
+        "email": google_email,
+        "full_name": user.get("full_name", google_name),
+        "role": user.get("role", "user"),
+        "phone": user.get("phone", ""),
+        "photo_url": user.get("photo_url", google_picture),
+        "email_verified": True,
+        "favorites": user.get("favorites", []),
+        "country": user.get("country", "MX"),
+        "city": user.get("city", ""),
+    }
+    
+    return {"token": token, "user": user_response}
+
+
+
 @auth_router.post("/forgot-password")
 async def forgot_password(data: dict):
     """Send password reset email"""
