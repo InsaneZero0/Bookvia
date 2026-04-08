@@ -18,6 +18,7 @@ import BusinessProfilePage from '@/pages/BusinessProfilePage';
 import UserDashboardPage from '@/pages/UserDashboardPage';
 import UserBookingsPage from '@/pages/UserBookingsPage';
 import BusinessDashboardPage from '@/pages/BusinessDashboardPage';
+import ReceptionPage from '@/pages/ReceptionPage';
 import BusinessFinancePage from '@/pages/BusinessFinancePage';
 import TeamSchedulePage from '@/pages/TeamSchedulePage';
 import AdminDashboardPage from '@/pages/AdminDashboardPage';
@@ -88,6 +89,7 @@ function App() {
               
               {/* Business Pages - MUST be before /business/:slug */}
               <Route path="/business/dashboard" element={<Layout showFooter={false}><BusinessDashboardPage /></Layout>} />
+              <Route path="/business/reception" element={<Layout showFooter={false}><ReceptionPage /></Layout>} />
               <Route path="/business/finance" element={<Layout showFooter={false}><BusinessFinancePage /></Layout>} />
               <Route path="/business/team" element={<Layout showFooter={false}><TeamSchedulePage /></Layout>} />
               <Route path="/business/services" element={<Layout showFooter={false}><ServiceManagementPage /></Layout>} />

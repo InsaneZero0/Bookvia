@@ -43,6 +43,7 @@ from models.enums import (
     VISIBLE_BUSINESS_FILTER, DEFAULT_MANAGER_PERMISSIONS
 )
 from models.schemas import *
+from schemas.booking import SlotStatus
 
 logger = logging.getLogger(__name__)
 

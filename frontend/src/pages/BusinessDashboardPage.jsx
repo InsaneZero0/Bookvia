@@ -27,7 +27,7 @@ import {
   XCircle, AlertTriangle, TrendingUp, Settings, UserCog, Image, Upload,
   Trash2, Eye, Plus, Pencil, BarChart3, Briefcase, ArrowUpRight,
   Ban, CalendarOff, CreditCard, Shield, RefreshCw, Mail, Phone, History,
-  ChevronLeft, ChevronRight, Filter, Bell
+  ChevronLeft, ChevronRight, Filter, Bell, ClipboardList
 } from 'lucide-react';
 
 export default function BusinessDashboardPage() {
@@ -613,12 +613,15 @@ export default function BusinessDashboardPage() {
                 } catch {}
               }
               if (profileSlug) {
-                window.open(`/business/${profileSlug}`, '_blank');
+                navigate(`/business/${profileSlug}`);
               } else {
                 toast.error(language === 'es' ? 'Perfil no disponible. Intenta recargar la pagina.' : 'Profile not available. Try reloading the page.');
               }
             }} data-testid="view-profile-button">
-              <Eye className="h-4 w-4 mr-1.5" />{language === 'es' ? 'Ver como cliente' : 'View as client'}
+              <Eye className="h-4 w-4 mr-1.5" />{language === 'es' ? 'Ver perfil' : 'View profile'}
+            </Button>
+            <Button size="sm" className="btn-coral" onClick={() => navigate('/business/reception')} data-testid="reception-button">
+              <ClipboardList className="h-4 w-4 mr-1.5" />{language === 'es' ? 'Recepcion' : 'Reception'}
             </Button>
             {(hasPermission('edit_description') || hasPermission('edit_schedule') || hasPermission('edit_contact') || hasPermission('edit_photos') || hasPermission('block_clients')) && (
               <Button variant="outline" size="sm" onClick={() => navigate('/business/settings')}>
