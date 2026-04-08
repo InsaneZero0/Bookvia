@@ -33,13 +33,17 @@ Bookvia es una plataforma marketplace de reservas profesionales que conecta nego
 - [x] Filtros: categoria, ciudad, calificacion, precio, anticipo, domicilio, destacados
 - [x] Geolocalizacion "Cerca de ti" con expansion automatica de radio
 - [x] "Proximo horario disponible" (next_available_text) en tarjetas
-- [x] **Horarios de apertura visibles** con agrupacion (Lun-Vie: 9:00-18:00)
-- [x] **Badge "Abierto/Cerrado"** en encabezado del perfil y en tarjetas de busqueda
-- [x] **Estado en tiempo real**: punto verde pulsante "Abierto" o rojo "Cerrado" + hora de apertura
-- [x] **Link "Horarios" en navegacion sticky** del perfil
+- [x] Horarios de apertura agrupados (Lun-Vie: 9:00-18:00) con badge Abierto/Cerrado
+- [x] Badge is_open_now en tarjetas de busqueda y favoritos
+- [x] Link "Horarios" en navegacion sticky del perfil
 - [x] Galeria carousel mobile + lightbox desktop
 - [x] Vista Lista / Mapa con markers
-- [x] Boton Compartir (Web Share API / copiar link)
+
+### Favoritos
+- [x] Pagina dedicada /favorites con grid de tarjetas
+- [x] Agregar/eliminar favoritos desde tarjeta y perfil
+- [x] Estado vacio amigable con CTA "Explorar negocios"
+- [x] Info enriquecida: categoria, rating, Abierto/Cerrado, proximo horario
 
 ### Mobile
 - [x] Menu con links a Citas, Favoritos, Notificaciones
@@ -53,8 +57,8 @@ Bookvia es una plataforma marketplace de reservas profesionales que conecta nego
 
 ### P1 - Area del Cliente
 - [ ] Reagendar cita desde el lado del cliente
-- [ ] Pagina de Favoritos dedicada (actualmente redirige a SearchPage)
 - [ ] Historial de pagos del cliente
+- [ ] Compartir negocio (WhatsApp, copiar link)
 
 ### P2
 - [ ] Recordatorios de citas (email 24h antes)
@@ -65,6 +69,6 @@ Bookvia es una plataforma marketplace de reservas profesionales que conecta nego
 
 ## Notas Tecnicas
 - Timezone: SIEMPRE usar new Date(dateString + 'T12:00:00') para parsear YYYY-MM-DD
-- is_open_now: Calculado en backend comparando hora actual Mexico vs schedule de workers
+- is_open_now: Calculado comparando hora Mexico vs schedule de workers
 - next_available_text: "Hoy disponible", "Manana HH:MM", "Lun HH:MM"
-- getOpenStatus(): Funcion frontend que calcula estado abierto/cerrado y proxima apertura
+- authLoading: Esperar a que termine antes de verificar isAuthenticated en paginas protegidas
