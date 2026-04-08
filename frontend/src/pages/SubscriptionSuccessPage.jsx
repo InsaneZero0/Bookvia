@@ -2,25 +2,44 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { useAuth } from '@/lib/auth';
 import { useI18n } from '@/lib/i18n';
-import { businessesAPI } from '@/lib/api';
-import { CheckCircle2, ArrowRight, Loader2, Clock, Shield } from 'lucide-react';
+import { businessesAPI, authAPI } from '@/lib/api';
+import { CheckCircle2, ArrowRight, Loader2, Mail, Shield } from 'lucide-react';
 
 export default function SubscriptionSuccessPage() {
   const { language } = useI18n();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [status, setStatus] = useState('loading');
+  const [businessEmail, setBusinessEmail] = useState('');
+  const isFromRegister = searchParams.get('from') === 'register';
 
   useEffect(() => {
     const sessionId = searchParams.get('session_id');
     if (sessionId) {
-      verifySubscription(sessionId);
+      if (isFromRegister) {
+        verifyRegistrationSubscription(sessionId);
+      } else {
+        verifySubscription(sessionId);
+      }
     } else {
       setStatus('error');
     }
   }, []);
+
+  const verifyRegistrationSubscription = async (sessionId) => {
+    try {
+      const res = await authAPI.verifyRegistrationSubscription({ session_id: sessionId });
+      if (res.data?.status === 'active') {
+        setBusinessEmail(res.data.email || '');
+        setStatus('success');
+      } else {
+        setStatus('pending');
+      }
+    } catch {
+      setStatus('pending');
+    }
+  };
 
   const verifySubscription = async (sessionId) => {
     try {
@@ -58,23 +77,42 @@ export default function SubscriptionSuccessPage() {
           </div>
 
           <h1 className="text-2xl font-heading font-bold" data-testid="success-title">
-            {language === 'es' ? 'Tu tarjeta fue registrada correctamente' : 'Your card was registered successfully'}
+            {language === 'es' ? '¡Pago completado!' : 'Payment completed!'}
           </h1>
 
-          {/* Admin approval notice */}
-          <div className="rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 p-5 text-left space-y-3">
-            <div className="flex items-center gap-2">
-              <Clock className="h-5 w-5 text-amber-600 shrink-0" />
-              <p className="font-semibold text-amber-800 dark:text-amber-200 text-sm">
-                {language === 'es' ? 'Pendiente de aprobacion' : 'Pending approval'}
+          {/* Registration flow: Show email verification message */}
+          {isFromRegister && (
+            <div className="rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 p-5 text-left space-y-3">
+              <div className="flex items-center gap-2">
+                <Mail className="h-5 w-5 text-blue-600 shrink-0" />
+                <p className="font-semibold text-blue-800 dark:text-blue-200 text-sm">
+                  {language === 'es' ? 'Verifica tu correo electronico' : 'Verify your email'}
+                </p>
+              </div>
+              <p className="text-sm text-blue-700 dark:text-blue-300 leading-relaxed" data-testid="verify-email-message">
+                {language === 'es'
+                  ? `Te enviamos un correo de verificacion${businessEmail ? ` a ${businessEmail}` : ''}. Revisa tu bandeja de entrada (y spam) y haz clic en el enlace para activar tu cuenta.`
+                  : `We sent a verification email${businessEmail ? ` to ${businessEmail}` : ''}. Check your inbox (and spam) and click the link to activate your account.`}
               </p>
             </div>
-            <p className="text-sm text-amber-700 dark:text-amber-300 leading-relaxed" data-testid="approval-message">
-              {language === 'es'
-                ? 'Tu negocio ha sido enviado a revision y quedara activo una vez que sea aprobado por el administrador. Te notificaremos cuando tu negocio este visible en la plataforma.'
-                : 'Your business has been sent for review and will become active once approved by the administrator. We will notify you when your business is visible on the platform.'}
-            </p>
-          </div>
+          )}
+
+          {/* Non-registration flow: Show admin approval notice */}
+          {!isFromRegister && (
+            <div className="rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 p-5 text-left space-y-3">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0" />
+                <p className="font-semibold text-amber-800 dark:text-amber-200 text-sm">
+                  {language === 'es' ? 'Tu tarjeta fue registrada correctamente' : 'Your card was registered successfully'}
+                </p>
+              </div>
+              <p className="text-sm text-amber-700 dark:text-amber-300 leading-relaxed" data-testid="approval-message">
+                {language === 'es'
+                  ? 'Tu negocio ha sido enviado a revision y quedara activo una vez que sea aprobado por el administrador.'
+                  : 'Your business has been sent for review and will become active once approved by the administrator.'}
+              </p>
+            </div>
+          )}
 
           {/* Subscription info */}
           <div className="rounded-xl bg-muted/30 border p-4 text-left space-y-2">
@@ -91,10 +129,17 @@ export default function SubscriptionSuccessPage() {
             </ul>
           </div>
 
-          <Button className="btn-coral w-full h-12" onClick={() => navigate('/business/dashboard')} data-testid="go-to-dashboard">
-            {language === 'es' ? 'Ir a mi panel' : 'Go to my dashboard'}
-            <ArrowRight className="ml-2 h-4 w-4" />
-          </Button>
+          {isFromRegister ? (
+            <Button className="btn-coral w-full h-12" onClick={() => navigate('/login')} data-testid="go-to-login">
+              <Mail className="mr-2 h-4 w-4" />
+              {language === 'es' ? 'Ir a iniciar sesion' : 'Go to login'}
+            </Button>
+          ) : (
+            <Button className="btn-coral w-full h-12" onClick={() => navigate('/business/dashboard')} data-testid="go-to-dashboard">
+              {language === 'es' ? 'Ir a mi panel' : 'Go to my dashboard'}
+              <ArrowRight className="ml-2 h-4 w-4" />
+            </Button>
+          )}
         </CardContent>
       </Card>
     </div>

@@ -39,6 +39,11 @@
 - Email: zamorachapa50@gmail.com
 - Password: RainbowLol3133!
 
+## Business Account (Without Subscription - for testing blocked login)
+- Email: nosub@test.com
+- Password: Test1234!
+- subscription_status: none (login blocked with 403 subscription_required)
+
 ## Login URLs
 - /business/login (select "Negocio" tab, then "Soy el dueno" or "Soy administrador")
 - /login (default "Usuario" tab)

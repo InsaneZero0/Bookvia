@@ -339,6 +339,46 @@ Este es un correo automático, no responder.
     )
 
 
+
+async def send_appointment_reminder(
+    user_email: str,
+    user_name: str,
+    business_name: str,
+    service_name: str,
+    date: str,
+    time: str,
+    worker_name: str,
+    business_address: str = ""
+) -> str:
+    """Send 24h appointment reminder to user"""
+    subject = f"Recordatorio: Cita manana en {business_name}"
+    
+    address_row = f'<tr><td style="padding:12px 16px;background:#f8fafc;font-size:13px;color:#64748b;border-top:1px solid #e2e8f0;">Direccion</td><td style="padding:12px 16px;font-size:14px;color:#1e293b;border-top:1px solid #e2e8f0;">{business_address}</td></tr>' if business_address else ""
+    
+    content = f"""<p style="color:#334155;font-size:15px;line-height:1.6;">Hola <strong>{user_name}</strong>,</p>
+<p style="color:#334155;font-size:15px;line-height:1.6;">Te recordamos que tienes una cita programada para manana:</p>
+<table width="100%" style="margin:16px 0;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;" cellpadding="0" cellspacing="0">
+<tr><td style="padding:12px 16px;background:#f8fafc;font-size:13px;color:#64748b;width:120px;">Negocio</td><td style="padding:12px 16px;font-size:14px;color:#1e293b;font-weight:600;">{business_name}</td></tr>
+<tr><td style="padding:12px 16px;background:#f8fafc;font-size:13px;color:#64748b;border-top:1px solid #e2e8f0;">Servicio</td><td style="padding:12px 16px;font-size:14px;color:#1e293b;border-top:1px solid #e2e8f0;">{service_name}</td></tr>
+<tr><td style="padding:12px 16px;background:#f8fafc;font-size:13px;color:#64748b;border-top:1px solid #e2e8f0;">Fecha</td><td style="padding:12px 16px;font-size:14px;color:#1e293b;border-top:1px solid #e2e8f0;">{date}</td></tr>
+<tr><td style="padding:12px 16px;background:#f8fafc;font-size:13px;color:#64748b;border-top:1px solid #e2e8f0;">Hora</td><td style="padding:12px 16px;font-size:14px;color:#1e293b;border-top:1px solid #e2e8f0;">{time}</td></tr>
+<tr><td style="padding:12px 16px;background:#f8fafc;font-size:13px;color:#64748b;border-top:1px solid #e2e8f0;">Profesional</td><td style="padding:12px 16px;font-size:14px;color:#1e293b;border-top:1px solid #e2e8f0;">{worker_name}</td></tr>
+{address_row}
+</table>
+<p style="color:#64748b;font-size:14px;">Si necesitas cancelar o reagendar tu cita, puedes hacerlo desde tu cuenta en Bookvia hasta 24 horas antes.</p>
+<table cellpadding="0" cellspacing="0" style="margin:24px 0;"><tr><td style="background:#F05D5E;border-radius:8px;padding:12px 28px;">
+<a href="https://bookvia.vercel.app/bookings" style="color:#ffffff;text-decoration:none;font-weight:bold;font-size:15px;">Ver mis citas</a>
+</td></tr></table>"""
+    
+    return await send_email(
+        to=user_email, subject=subject,
+        body=f"Hola {user_name}, te recordamos que tienes una cita manana en {business_name} a las {time}. Servicio: {service_name}.",
+        html=email_html("Recordatorio de Cita", content), template="appointment_reminder",
+        data={"user_name": user_name, "business_name": business_name, "service_name": service_name, "date": date, "time": time}
+    )
+
+
+
 async def send_booking_cancelled(
     user_email: str,
     user_name: str,
@@ -372,6 +412,39 @@ async def send_booking_cancelled(
         html=email_html("Cita Cancelada", content), template="booking_cancelled",
         data={"user_name": user_name, "business_name": business_name, "date": date, "time": time, "reason": reason}
     )
+
+
+async def send_subscription_reminder(
+    business_email: str,
+    business_name: str,
+    login_url: str
+) -> str:
+    """Send reminder to business that hasn't completed subscription payment"""
+    subject = "Completa tu registro en Bookvia"
+    content = f"""<p style="color:#334155;font-size:15px;line-height:1.6;">Hola <strong>{business_name}</strong>,</p>
+<p style="color:#334155;font-size:15px;line-height:1.6;">Notamos que iniciaste el registro de tu negocio en Bookvia pero aun no has completado el pago de tu suscripcion.</p>
+<div style="margin:20px 0;padding:16px;background:#fef3c7;border-radius:8px;border:1px solid #fbbf24;">
+<p style="margin:0;color:#92400e;font-size:14px;font-weight:600;">Tu cuenta esta lista, solo falta el pago</p>
+<p style="margin:8px 0 0;color:#92400e;font-size:13px;">Recuerda que el primer mes es GRATIS. Despues solo pagas $39 MXN/mes.</p>
+</div>
+<p style="color:#334155;font-size:15px;line-height:1.6;">Para completar tu registro:</p>
+<ol style="color:#334155;font-size:14px;line-height:1.8;">
+<li>Ve a <a href="{login_url}" style="color:#F05D5E;font-weight:600;">iniciar sesion</a></li>
+<li>Ingresa con tu email y contrasena</li>
+<li>Sigue las instrucciones para completar el pago</li>
+</ol>
+<div style="text-align:center;margin:24px 0;">
+<a href="{login_url}" style="display:inline-block;background:#F05D5E;color:#ffffff;text-decoration:none;padding:14px 32px;border-radius:8px;font-size:15px;font-weight:600;">Completar mi registro</a>
+</div>
+<p style="color:#64748b;font-size:13px;">Si tienes alguna duda, no dudes en contactarnos.</p>"""
+
+    return await send_email(
+        to=business_email, subject=subject,
+        body=f"Hola {business_name}, completa tu registro en Bookvia. Tu primer mes es GRATIS. Inicia sesion en {login_url} para completar el pago.",
+        html=email_html("Completa tu Registro", content), template="subscription_reminder",
+        data={"business_name": business_name, "login_url": login_url}
+    )
+
 
 
 async def get_sent_emails(

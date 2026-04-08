@@ -3,6 +3,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.responses import Response
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
+import asyncio
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
@@ -566,6 +567,7 @@ class BookingResponse(BaseModel):
     can_cancel: bool = True
     hours_until_appointment: Optional[float] = None
     has_review: bool = False
+    reminder_sent: bool = False
     business_slug: Optional[str] = None
 
 # Review Models
@@ -1618,6 +1620,105 @@ async def resend_verification_email(data: dict):
     
     return {"message": "Si el correo existe, recibirás un email de verificación"}
 
+@auth_router.post("/google/session")
+async def google_auth_session(data: dict):
+    """Exchange Emergent Google Auth session_id for a Bookvia JWT token."""
+    session_id = data.get("session_id")
+    if not session_id:
+        raise HTTPException(status_code=400, detail="session_id requerido")
+    
+    # Call Emergent Auth to get user data
+    import httpx
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(
+                "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data",
+                headers={"X-Session-ID": session_id},
+                timeout=10.0
+            )
+            if resp.status_code != 200:
+                raise HTTPException(status_code=401, detail="Sesion de Google invalida")
+            google_data = resp.json()
+    except httpx.RequestError:
+        raise HTTPException(status_code=500, detail="Error al verificar con Google")
+    
+    google_email = google_data.get("email", "").strip().lower()
+    google_name = google_data.get("name", "")
+    google_picture = google_data.get("picture", "")
+    google_id = google_data.get("id", "")
+    
+    if not google_email:
+        raise HTTPException(status_code=400, detail="No se pudo obtener email de Google")
+    
+    # Check if user exists by email
+    user = await db.users.find_one({"email": google_email}, {"_id": 0})
+    
+    if user:
+        # Update Google info on existing user
+        update_fields = {"auth_provider": "google", "google_id": google_id}
+        if not user.get("photo_url") and google_picture:
+            update_fields["photo_url"] = google_picture
+        if not user.get("email_verified"):
+            update_fields["email_verified"] = True
+        await db.users.update_one({"id": user["id"]}, {"$set": update_fields})
+    else:
+        # Create new user from Google data
+        user = {
+            "id": generate_id(),
+            "email": google_email,
+            "password_hash": None,
+            "full_name": google_name,
+            "phone": "",
+            "country": "MX",
+            "city": "",
+            "phone_verified": False,
+            "email_verified": True,
+            "auth_provider": "google",
+            "google_id": google_id,
+            "photo_url": google_picture,
+            "role": UserRole.USER,
+            "active_appointments_count": 0,
+            "cancellation_count": 0,
+            "suspended_until": None,
+            "favorites": [],
+            "preferred_language": "es",
+            "stripe_customer_id": None,
+            "saved_cards": [],
+            "created_at": datetime.now(timezone.utc).isoformat()
+        }
+        await db.users.insert_one(user)
+    
+    # Check if suspended
+    if user.get("suspended_until"):
+        try:
+            suspended = datetime.fromisoformat(user["suspended_until"])
+            if suspended.tzinfo is None:
+                suspended = suspended.replace(tzinfo=timezone.utc)
+            if suspended > datetime.now(timezone.utc):
+                raise HTTPException(status_code=403, detail="Cuenta suspendida")
+        except (ValueError, TypeError):
+            pass
+    
+    # Generate Bookvia JWT
+    token = create_token(user["id"], user.get("role", "user"), google_email)
+    
+    user_response = {
+        "id": user["id"],
+        "email": google_email,
+        "full_name": user.get("full_name", google_name),
+        "role": user.get("role", "user"),
+        "phone": user.get("phone", ""),
+        "photo_url": user.get("photo_url", google_picture),
+        "email_verified": True,
+        "favorites": user.get("favorites", []),
+        "country": user.get("country", "MX"),
+        "city": user.get("city", ""),
+    }
+    
+    return {"token": token, "user": user_response}
+
+
+
 @auth_router.post("/forgot-password")
 async def forgot_password(data: dict):
     """Send password reset email"""
@@ -1818,14 +1919,134 @@ async def register_business(business: BusinessCreate):
     await db.businesses.insert_one(business_doc)
     await db.users.insert_one(user_doc)
     
-    # Send verification email (non-blocking)
-    try:
-        from services.email import send_verification_email
-        await send_verification_email(business.email, business.name, user_doc["email_verification_token"])
-    except Exception as e:
-        logger.warning(f"Failed to send verification email: {e}")
+    # NOTE: Verification email is NOT sent here. It will be sent after subscription payment.
     
-    return {"message": "Registro exitoso. Revisa tu correo para verificar tu cuenta.", "email": business.email}
+    return {"message": "Registro exitoso. Completa tu suscripción para activar tu cuenta.", "email": business.email, "business_id": business_id}
+
+
+@auth_router.post("/business/create-subscription")
+async def create_registration_subscription(data: dict):
+    """Create Stripe subscription checkout for a newly registered business (no auth required)."""
+    email = data.get("email", "").strip().lower()
+    origin_url = data.get("origin_url", os.environ.get("BASE_URL", ""))
+    
+    if not email:
+        raise HTTPException(status_code=400, detail="Email requerido")
+    
+    business = await db.businesses.find_one({"email": email}, {"_id": 0})
+    if not business:
+        raise HTTPException(status_code=404, detail="Negocio no encontrado")
+    
+    if business.get("subscription_status") not in ("none", None):
+        raise HTTPException(status_code=400, detail="Ya tiene una suscripción activa")
+    
+    price_id = await get_or_create_stripe_price()
+    if not price_id:
+        raise HTTPException(status_code=500, detail="Error de configuración de pagos")
+    
+    success_url = f"{origin_url}/business/subscription/success?session_id={{CHECKOUT_SESSION_ID}}&from=register"
+    cancel_url = f"{origin_url}/login"
+    
+    try:
+        customer_id = business.get("stripe_customer_id")
+        if not customer_id:
+            customer = stripe_lib.Customer.create(
+                email=business.get("email"),
+                name=business.get("name"),
+                metadata={"business_id": business["id"]}
+            )
+            customer_id = customer.id
+            await db.businesses.update_one(
+                {"id": business["id"]},
+                {"$set": {"stripe_customer_id": customer_id}}
+            )
+        
+        session = stripe_lib.checkout.Session.create(
+            customer=customer_id,
+            payment_method_types=["card"],
+            mode="subscription",
+            line_items=[{"price": price_id, "quantity": 1}],
+            subscription_data={"trial_period_days": SUBSCRIPTION_TRIAL_DAYS},
+            success_url=success_url,
+            cancel_url=cancel_url,
+            metadata={"business_id": business["id"], "registration_flow": "true"}
+        )
+        
+        await db.payment_transactions.insert_one({
+            "id": generate_id(),
+            "business_id": business["id"],
+            "session_id": session.id,
+            "type": "subscription",
+            "amount": SUBSCRIPTION_PRICE_MXN,
+            "currency": "mxn",
+            "payment_status": "pending",
+            "created_at": datetime.now(timezone.utc).isoformat()
+        })
+        
+        return {"url": session.url, "session_id": session.id}
+    except Exception as e:
+        logger.error(f"Stripe registration subscription error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@auth_router.post("/business/verify-subscription")
+async def verify_registration_subscription(data: dict):
+    """Verify subscription payment and send verification email (no auth required)."""
+    session_id = data.get("session_id")
+    if not session_id:
+        raise HTTPException(status_code=400, detail="session_id requerido")
+    
+    try:
+        session = stripe_lib.checkout.Session.retrieve(session_id)
+    except Exception as e:
+        logger.error(f"Stripe session retrieve error: {e}")
+        raise HTTPException(status_code=400, detail="Sesión de pago inválida")
+    
+    business_id = session.metadata.get("business_id") if session.metadata else None
+    if not business_id:
+        raise HTTPException(status_code=400, detail="Sesión no asociada a un negocio")
+    
+    business = await db.businesses.find_one({"id": business_id}, {"_id": 0})
+    if not business:
+        raise HTTPException(status_code=404, detail="Negocio no encontrado")
+    
+    if session.payment_status in ("paid", "no_payment_required") or session.status == "complete":
+        subscription_id = session.subscription
+        await db.businesses.update_one(
+            {"id": business_id},
+            {"$set": {
+                "stripe_subscription_id": subscription_id,
+                "stripe_customer_id": session.customer,
+                "subscription_status": "trialing",
+                "subscription_started_at": datetime.now(timezone.utc).isoformat()
+            }}
+        )
+        await db.payment_transactions.update_one(
+            {"session_id": session_id},
+            {"$set": {"payment_status": "completed", "subscription_id": subscription_id}}
+        )
+        
+        # NOW send verification email since payment is confirmed
+        user = await db.users.find_one({"business_id": business_id}, {"_id": 0})
+        if user and user.get("email_verification_token"):
+            try:
+                from services.email import send_verification_email
+                await send_verification_email(business["email"], business["name"], user["email_verification_token"])
+            except Exception as e:
+                logger.warning(f"Failed to send verification email after subscription: {e}")
+        
+        return {
+            "status": "active",
+            "subscription_status": "trialing",
+            "email": business["email"],
+            "message": "Suscripción activada. Revisa tu correo para verificar tu cuenta."
+        }
+    else:
+        return {
+            "status": "pending",
+            "message": "El pago aún no se ha confirmado. Intenta de nuevo."
+        }
+
 
 @auth_router.post("/business/login", response_model=dict)
 async def login_business(credentials: UserLogin):
@@ -1839,6 +2060,11 @@ async def login_business(credentials: UserLogin):
     user = await db.users.find_one({"business_id": business["id"]})
     if not user:
         raise HTTPException(status_code=500, detail="User account not found")
+    
+    # Check subscription payment - must pay before accessing account
+    sub_status = business.get("subscription_status", "none")
+    if sub_status == "none":
+        raise HTTPException(status_code=403, detail="subscription_required")
     
     # Check email verification
     if not user.get("email_verified", True):
@@ -5000,6 +5226,14 @@ async def trigger_expire_holds(token_data: TokenData = Depends(require_admin)):
     count = await expire_holds_task()
     return {"expired_count": count}
 
+# Manual endpoint to trigger reminders (for testing/cron)
+@bookings_router.post("/send-reminders")
+async def trigger_send_reminders(token_data: TokenData = Depends(require_admin)):
+    """Admin endpoint to manually trigger appointment reminders"""
+    await send_pending_reminders()
+    return {"message": "Reminders processed"}
+
+
 # Get user transactions
 @payments_router.get("/my-transactions", response_model=List[TransactionResponse])
 async def get_my_transactions(
@@ -6802,3 +7036,137 @@ async def startup_event():
         logger.info("Cloudinary initialized")
     else:
         logger.warning("Cloudinary not configured - using fallback storage")
+    # Start appointment reminder scheduler
+    asyncio.create_task(appointment_reminder_scheduler())
+    # Start subscription reminder scheduler
+    asyncio.create_task(subscription_reminder_scheduler())
+
+
+async def appointment_reminder_scheduler():
+    """Background task that checks every 30 minutes for appointments needing reminders."""
+    logger.info("Appointment reminder scheduler started")
+    while True:
+        try:
+            await send_pending_reminders()
+        except Exception as e:
+            logger.error(f"Reminder scheduler error: {e}")
+        await asyncio.sleep(1800)  # 30 minutes
+
+
+async def send_pending_reminders():
+    """Find confirmed bookings ~24h away and send email reminders."""
+    try:
+        now = datetime.now(pytz.timezone("America/Mexico_City"))
+    except Exception:
+        now = datetime.now(timezone.utc)
+    
+    tomorrow = now + timedelta(hours=24)
+    tomorrow_date = tomorrow.strftime("%Y-%m-%d")
+    
+    # Find confirmed bookings for tomorrow that haven't been reminded
+    bookings = await db.bookings.find({
+        "status": "confirmed",
+        "date": tomorrow_date,
+        "reminder_sent": {"$ne": True}
+    }, {"_id": 0}).to_list(200)
+    
+    if not bookings:
+        return
+    
+    logger.info(f"Sending {len(bookings)} appointment reminders for {tomorrow_date}")
+    
+    for booking in bookings:
+        try:
+            # Get user info
+            user = await db.users.find_one({"id": booking.get("user_id")}, {"_id": 0, "email": 1, "full_name": 1})
+            if not user:
+                continue
+            
+            # Get business info
+            business = await db.businesses.find_one({"id": booking.get("business_id")}, {"_id": 0, "name": 1, "address": 1, "city": 1})
+            if not business:
+                continue
+            
+            # Get service info
+            service = await db.services.find_one({"id": booking.get("service_id")}, {"_id": 0, "name": 1})
+            service_name = service["name"] if service else "Servicio"
+            
+            # Get worker info
+            worker = await db.workers.find_one({"id": booking.get("worker_id")}, {"_id": 0, "name": 1})
+            worker_name = worker["name"] if worker else ""
+            
+            business_address = f"{business.get('address', '')}, {business.get('city', '')}"
+            
+            from services.email import send_appointment_reminder
+            await send_appointment_reminder(
+                user_email=user["email"],
+                user_name=user.get("full_name", ""),
+                business_name=business["name"],
+                service_name=service_name,
+                date=booking["date"],
+                time=booking.get("time", ""),
+                worker_name=worker_name,
+                business_address=business_address
+            )
+            
+            # Mark as reminded
+            await db.bookings.update_one(
+                {"id": booking["id"]},
+                {"$set": {"reminder_sent": True}}
+            )
+            
+            logger.info(f"Reminder sent for booking {booking['id']} to {user['email']}")
+            
+        except Exception as e:
+            logger.error(f"Failed to send reminder for booking {booking.get('id')}: {e}")
+
+
+
+async def subscription_reminder_scheduler():
+    """Background task that checks every 6 hours for businesses that haven't paid subscription."""
+    logger.info("Subscription reminder scheduler started")
+    await asyncio.sleep(300)  # Wait 5 min after startup before first check
+    while True:
+        try:
+            await send_subscription_reminders()
+        except Exception as e:
+            logger.error(f"Subscription reminder scheduler error: {e}")
+        await asyncio.sleep(21600)  # 6 hours
+
+
+async def send_subscription_reminders():
+    """Find businesses registered 24h+ ago with subscription_status='none' and send reminder."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+    
+    businesses = await db.businesses.find({
+        "subscription_status": "none",
+        "created_at": {"$lt": cutoff},
+        "subscription_reminder_sent": {"$ne": True}
+    }, {"_id": 0, "id": 1, "email": 1, "name": 1}).to_list(50)
+    
+    if not businesses:
+        return
+    
+    base_url = os.environ.get("BASE_URL", "")
+    login_url = f"{base_url}/login"
+    
+    logger.info(f"Sending {len(businesses)} subscription reminders")
+    
+    for biz in businesses:
+        try:
+            from services.email import send_subscription_reminder
+            await send_subscription_reminder(
+                business_email=biz["email"],
+                business_name=biz.get("name", ""),
+                login_url=login_url
+            )
+            
+            await db.businesses.update_one(
+                {"id": biz["id"]},
+                {"$set": {"subscription_reminder_sent": True}}
+            )
+            
+            logger.info(f"Subscription reminder sent to {biz['email']}")
+            
+        except Exception as e:
+            logger.error(f"Failed to send subscription reminder to {biz.get('email')}: {e}")
