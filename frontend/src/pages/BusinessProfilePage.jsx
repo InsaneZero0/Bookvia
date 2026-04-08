@@ -13,6 +13,7 @@ import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
+import { Carousel, CarouselContent, CarouselItem, CarouselPrevious, CarouselNext } from '@/components/ui/carousel';
 import { StarRating } from '@/components/StarRating';
 import { BusinessCard } from '@/components/BusinessCard';
 import { useI18n } from '@/lib/i18n';
@@ -36,6 +37,10 @@ const DAY_NAMES_EN = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'S
 // ─── Photo Gallery ────────────────────────────────────
 function PhotoGrid({ photos, name }) {
   const [showAll, setShowAll] = useState(false);
+  const [lightboxIdx, setLightboxIdx] = useState(null);
+  const [carouselApi, setCarouselApi] = useState(null);
+  const [currentSlide, setCurrentSlide] = useState(0);
+
   const displayPhotos = photos.length > 0 ? photos : [
     'https://images.unsplash.com/photo-1560066984-138dadb4c035?w=800',
     'https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?w=400',
@@ -44,19 +49,28 @@ function PhotoGrid({ photos, name }) {
     'https://images.unsplash.com/photo-1600948836101-f9ffda59d250?w=400',
   ];
 
+  useEffect(() => {
+    if (!carouselApi) return;
+    const onSelect = () => setCurrentSlide(carouselApi.selectedScrollSnap());
+    carouselApi.on('select', onSelect);
+    onSelect();
+    return () => carouselApi.off('select', onSelect);
+  }, [carouselApi]);
+
   return (
     <>
       <div className="relative h-[280px] md:h-[420px] overflow-hidden">
+        {/* Desktop: grid layout */}
         <div className="hidden md:grid grid-cols-4 grid-rows-2 gap-1.5 h-full">
-          <div className="col-span-2 row-span-2 relative overflow-hidden rounded-l-xl">
+          <div className="col-span-2 row-span-2 relative overflow-hidden rounded-l-xl cursor-pointer" onClick={() => setLightboxIdx(0)}>
             <img src={displayPhotos[0]} alt={name} className="w-full h-full object-cover hover:scale-105 transition-transform duration-500" />
           </div>
           {displayPhotos.slice(1, 5).map((photo, i) => (
-            <div key={i} className={`relative overflow-hidden ${i === 1 ? 'rounded-tr-xl' : ''} ${i === 3 ? 'rounded-br-xl' : ''}`}>
+            <div key={i} className={`relative overflow-hidden cursor-pointer ${i === 1 ? 'rounded-tr-xl' : ''} ${i === 3 ? 'rounded-br-xl' : ''}`} onClick={() => setLightboxIdx(i + 1)}>
               <img src={photo} alt={`${name} ${i + 2}`} className="w-full h-full object-cover hover:scale-105 transition-transform duration-500" />
               {i === 3 && displayPhotos.length > 5 && (
                 <button
-                  onClick={() => setShowAll(true)}
+                  onClick={(e) => { e.stopPropagation(); setShowAll(true); }}
                   className="absolute inset-0 bg-black/50 flex items-center justify-center text-white font-bold text-lg hover:bg-black/60 transition-colors"
                   data-testid="show-all-photos"
                 >
@@ -66,9 +80,36 @@ function PhotoGrid({ photos, name }) {
             </div>
           ))}
         </div>
-        {/* Mobile: single image */}
-        <div className="md:hidden h-full">
-          <img src={displayPhotos[0]} alt={name} className="w-full h-full object-cover" />
+
+        {/* Mobile: swipeable carousel */}
+        <div className="md:hidden h-full relative">
+          <Carousel opts={{ loop: true, align: 'start' }} setApi={setCarouselApi} className="h-full">
+            <CarouselContent className="h-[280px] -ml-0">
+              {displayPhotos.map((photo, i) => (
+                <CarouselItem key={i} className="pl-0 basis-full h-full" onClick={() => setLightboxIdx(i)}>
+                  <img src={photo} alt={`${name} ${i + 1}`} className="w-full h-full object-cover" />
+                </CarouselItem>
+              ))}
+            </CarouselContent>
+          </Carousel>
+          {/* Dot indicators */}
+          <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5 z-10">
+            {displayPhotos.slice(0, 8).map((_, i) => (
+              <button
+                key={i}
+                onClick={() => carouselApi?.scrollTo(i)}
+                className={`w-2 h-2 rounded-full transition-all ${currentSlide === i ? 'bg-white w-4' : 'bg-white/50'}`}
+                data-testid={`photo-dot-${i}`}
+              />
+            ))}
+            {displayPhotos.length > 8 && (
+              <span className="text-white text-[10px] font-medium ml-1">+{displayPhotos.length - 8}</span>
+            )}
+          </div>
+          {/* Counter */}
+          <div className="absolute top-3 right-3 bg-black/50 text-white text-xs px-2.5 py-1 rounded-full z-10">
+            {currentSlide + 1}/{displayPhotos.length}
+          </div>
         </div>
       </div>
 
@@ -81,9 +122,49 @@ function PhotoGrid({ photos, name }) {
           </DialogHeader>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
             {displayPhotos.map((photo, i) => (
-              <img key={i} src={photo} alt={`${name} ${i + 1}`} className="w-full aspect-square object-cover rounded-lg" />
+              <img key={i} src={photo} alt={`${name} ${i + 1}`} className="w-full aspect-square object-cover rounded-lg cursor-pointer hover:opacity-90 transition-opacity" onClick={() => { setShowAll(false); setLightboxIdx(i); }} />
             ))}
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Lightbox - fullscreen single photo */}
+      <Dialog open={lightboxIdx !== null} onOpenChange={() => setLightboxIdx(null)}>
+        <DialogContent className="max-w-5xl p-0 bg-black/95 border-0">
+          <DialogHeader className="sr-only">
+            <DialogTitle>{name}</DialogTitle>
+            <DialogDescription>Foto {(lightboxIdx || 0) + 1}</DialogDescription>
+          </DialogHeader>
+          {lightboxIdx !== null && (
+            <div className="relative flex items-center justify-center min-h-[50vh] max-h-[90vh]">
+              <img
+                src={displayPhotos[lightboxIdx]}
+                alt={`${name} ${lightboxIdx + 1}`}
+                className="max-w-full max-h-[85vh] object-contain"
+              />
+              {displayPhotos.length > 1 && (
+                <>
+                  <button
+                    onClick={() => setLightboxIdx((lightboxIdx - 1 + displayPhotos.length) % displayPhotos.length)}
+                    className="absolute left-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/20 hover:bg-white/40 flex items-center justify-center text-white transition-colors"
+                    data-testid="lightbox-prev"
+                  >
+                    <ChevronLeft className="h-6 w-6" />
+                  </button>
+                  <button
+                    onClick={() => setLightboxIdx((lightboxIdx + 1) % displayPhotos.length)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-white/20 hover:bg-white/40 flex items-center justify-center text-white transition-colors"
+                    data-testid="lightbox-next"
+                  >
+                    <ChevronRight className="h-6 w-6" />
+                  </button>
+                </>
+              )}
+              <div className="absolute bottom-3 left-1/2 -translate-x-1/2 text-white text-sm bg-black/40 px-3 py-1 rounded-full">
+                {lightboxIdx + 1} / {displayPhotos.length}
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </>

@@ -314,27 +314,30 @@ export default function SearchPage() {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input placeholder={language === 'es' ? '¿Qué servicio buscas?' : 'Search service...'} value={query} onChange={(e) => setQuery(e.target.value)} className="pl-10 h-11" data-testid="search-input" />
             </div>
-            <div className="relative flex-1 sm:max-w-[200px]">
-              <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input placeholder={language === 'es' ? 'Ciudad' : 'City'} value={city} onChange={(e) => setCity(e.target.value)} className="pl-10 h-11" data-testid="search-city" />
+            <div className="flex gap-2">
+              <div className="relative flex-1 sm:max-w-[200px]">
+                <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input placeholder={language === 'es' ? 'Ciudad' : 'City'} value={city} onChange={(e) => setCity(e.target.value)} className="pl-10 h-11" data-testid="search-city" />
+              </div>
+              <Button type="submit" className="h-11 btn-coral shrink-0" data-testid="search-button">
+                <Search className="h-4 w-4 sm:mr-1.5" /><span className="hidden sm:inline">{language === 'es' ? 'Buscar' : 'Search'}</span>
+              </Button>
             </div>
-            <Button type="submit" className="h-11 btn-coral" data-testid="search-button">
-              <Search className="h-4 w-4 mr-1.5" />{language === 'es' ? 'Buscar' : 'Search'}
-            </Button>
-            <Button
-              type="button"
-              variant={sortBy === 'nearest' ? 'default' : 'outline'}
-              className={`h-11 ${sortBy === 'nearest' ? 'bg-[#F05D5E] hover:bg-[#F05D5E]/90 text-white' : ''}`}
-              onClick={requestLocation}
-              disabled={locatingUser}
-              data-testid="nearby-button"
-            >
-              {locatingUser ? (
-                <><span className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin mr-1.5" />{language === 'es' ? 'Ubicando...' : 'Locating...'}</>
-              ) : (
-                <><MapPin className="h-4 w-4 mr-1.5" />{language === 'es' ? 'Cerca de ti' : 'Near you'}</>
-              )}
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant={sortBy === 'nearest' ? 'default' : 'outline'}
+                className={`h-11 flex-1 sm:flex-none ${sortBy === 'nearest' ? 'bg-[#F05D5E] hover:bg-[#F05D5E]/90 text-white' : ''}`}
+                onClick={requestLocation}
+                disabled={locatingUser}
+                data-testid="nearby-button"
+              >
+                {locatingUser ? (
+                  <><span className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin mr-1.5" />{language === 'es' ? 'Ubicando...' : 'Locating...'}</>
+                ) : (
+                  <><MapPin className="h-4 w-4 mr-1.5" />{language === 'es' ? 'Cerca de ti' : 'Near you'}</>
+                )}
+              </Button>
 
             {/* View Toggle */}
             <div className="hidden md:flex items-center border rounded-lg overflow-hidden">
@@ -368,6 +371,7 @@ export default function SearchPage() {
                 <div className="mt-4"><FilterContent /></div>
               </SheetContent>
             </Sheet>
+            </div>
           </form>
         </div>
       </div>
@@ -554,7 +558,7 @@ export default function SearchPage() {
                           <p className="text-xs text-muted-foreground truncate mt-0.5">
                             <MapPin className="inline h-3 w-3 mr-0.5" />{biz.address}, {biz.city}
                           </p>
-                          <div className="flex items-center gap-2 mt-1.5">
+                          <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                             {biz.rating > 0 && (
                               <span className="flex items-center gap-0.5 text-xs">
                                 <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
@@ -563,6 +567,9 @@ export default function SearchPage() {
                               </span>
                             )}
                             {biz.category_name && <Badge variant="secondary" className="text-[10px] h-4">{biz.category_name}</Badge>}
+                            {biz.next_available_text && (
+                              <span className="text-[10px] font-medium text-emerald-600">{biz.next_available_text}</span>
+                            )}
                           </div>
                         </div>
                       </CardContent>

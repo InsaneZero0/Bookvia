@@ -500,17 +500,49 @@ export function Navbar() {
               {isAuthenticated ? (
                 <>
                   <div className="border-t border-border/50 my-2" />
+                  {!isBusiness && !isAdmin && (
+                    <>
+                      <Link
+                        to="/bookings"
+                        className="px-4 py-2.5 text-sm font-medium hover:bg-muted rounded-lg flex items-center gap-2"
+                        onClick={() => setMobileMenuOpen(false)}
+                      >
+                        <Calendar className="h-4 w-4 text-[#F05D5E]" />
+                        {t('nav.bookings')}
+                      </Link>
+                      <Link
+                        to="/favorites"
+                        className="px-4 py-2.5 text-sm font-medium hover:bg-muted rounded-lg flex items-center gap-2"
+                        onClick={() => setMobileMenuOpen(false)}
+                      >
+                        <Heart className="h-4 w-4 text-[#F05D5E]" />
+                        {t('nav.favorites')}
+                      </Link>
+                      <button
+                        className="px-4 py-2.5 text-sm font-medium hover:bg-muted rounded-lg flex items-center gap-2 w-full text-left"
+                        onClick={() => { setMobileMenuOpen(false); setNavNotifOpen(!navNotifOpen); }}
+                      >
+                        <Bell className="h-4 w-4 text-[#F05D5E]" />
+                        {language === 'es' ? 'Notificaciones' : 'Notifications'}
+                        {navUnreadCount > 0 && (
+                          <Badge className="ml-auto bg-[#F05D5E] text-white text-[10px] h-5 px-1.5">{navUnreadCount}</Badge>
+                        )}
+                      </button>
+                    </>
+                  )}
                   <Link
                     to={isBusiness ? '/business/dashboard' : '/dashboard'}
-                    className="px-4 py-2 text-sm font-medium hover:bg-muted rounded-lg"
+                    className="px-4 py-2.5 text-sm font-medium hover:bg-muted rounded-lg flex items-center gap-2"
                     onClick={() => setMobileMenuOpen(false)}
                   >
+                    <LayoutDashboard className="h-4 w-4 text-[#F05D5E]" />
                     {t('nav.dashboard')}
                   </Link>
                   <button
                     onClick={() => { handleLogout(); setMobileMenuOpen(false); }}
-                    className="px-4 py-2 text-sm font-medium text-red-600 hover:bg-muted rounded-lg text-left"
+                    className="px-4 py-2.5 text-sm font-medium text-red-600 hover:bg-muted rounded-lg text-left flex items-center gap-2"
                   >
+                    <LogOut className="h-4 w-4" />
                     {t('nav.logout')}
                   </button>
                 </>

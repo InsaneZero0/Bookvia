@@ -346,6 +346,7 @@ class BusinessResponse(BaseModel):
     logo_url: Optional[str] = None
     logo_public_id: Optional[str] = None
     distance_km: Optional[float] = None
+    next_available_text: Optional[str] = None
 
 class BusinessUpdate(BaseModel):
     name: Optional[str] = None
@@ -2254,6 +2255,58 @@ async def search_businesses(
         if sort == "nearest":
             businesses.sort(key=lambda x: x.get("distance_km") if x.get("distance_km") is not None else 99999)
     
+    # Compute next available text based on worker schedules
+    biz_ids = [b["id"] for b in businesses]
+    if biz_ids:
+        all_workers = await db.workers.find(
+            {"business_id": {"$in": biz_ids}, "active": True},
+            {"_id": 0, "business_id": 1, "schedule": 1}
+        ).to_list(500)
+        biz_workers_map = {}
+        for w in all_workers:
+            biz_workers_map.setdefault(w["business_id"], []).append(w)
+        
+        day_names_es = ["Lun", "Mar", "Mie", "Jue", "Vie", "Sab", "Dom"]
+        try:
+            now = datetime.now(pytz.timezone("America/Mexico_City"))
+        except Exception:
+            now = datetime.now(timezone.utc)
+        current_weekday = now.weekday()
+        current_time = now.strftime("%H:%M")
+        
+        for b in businesses:
+            workers_list = biz_workers_map.get(b["id"], [])
+            if not workers_list:
+                continue
+            found = False
+            for day_offset in range(7):
+                check_day = (current_weekday + day_offset) % 7
+                day_str = str(check_day)
+                for worker in workers_list:
+                    schedule = worker.get("schedule", {})
+                    day_schedule = schedule.get(day_str, {})
+                    if day_schedule.get("is_available") and day_schedule.get("blocks"):
+                        for block in day_schedule["blocks"]:
+                            if day_offset == 0:
+                                if block["end_time"] > current_time:
+                                    b["next_available_text"] = "Hoy disponible"
+                                    found = True
+                                    break
+                            else:
+                                if day_offset == 1:
+                                    b["next_available_text"] = f"Manana {block['start_time']}"
+                                else:
+                                    target_day = (current_weekday + day_offset) % 7
+                                    b["next_available_text"] = f"{day_names_es[target_day]} {block['start_time']}"
+                                found = True
+                                break
+                        if found:
+                            break
+                    if found:
+                        break
+                if found:
+                    break
+    
     return [BusinessResponse(**b) for b in businesses]
 
 @businesses_router.get("/featured", response_model=List[BusinessResponse])
@@ -2285,6 +2338,49 @@ async def get_featured_businesses(limit: int = 8, country_code: Optional[str] = 
             if await is_user_blacklisted(b["id"], user_id=current_user.user_id):
                 blacklisted_biz_ids.add(b["id"])
         businesses = [b for b in businesses if b["id"] not in blacklisted_biz_ids]
+    
+    # Compute next available text for featured businesses
+    biz_ids = [b["id"] for b in businesses]
+    if biz_ids:
+        all_workers = await db.workers.find(
+            {"business_id": {"$in": biz_ids}, "active": True},
+            {"_id": 0, "business_id": 1, "schedule": 1}
+        ).to_list(500)
+        biz_workers_map = {}
+        for w in all_workers:
+            biz_workers_map.setdefault(w["business_id"], []).append(w)
+        day_names_es = ["Lun", "Mar", "Mie", "Jue", "Vie", "Sab", "Dom"]
+        try:
+            now_ft = datetime.now(pytz.timezone("America/Mexico_City"))
+        except Exception:
+            now_ft = datetime.now(timezone.utc)
+        current_wd = now_ft.weekday()
+        current_tm = now_ft.strftime("%H:%M")
+        for b in businesses:
+            wl = biz_workers_map.get(b["id"], [])
+            if not wl:
+                continue
+            found = False
+            for doff in range(7):
+                cd = (current_wd + doff) % 7
+                for wk in wl:
+                    ds = wk.get("schedule", {}).get(str(cd), {})
+                    if ds.get("is_available") and ds.get("blocks"):
+                        for blk in ds["blocks"]:
+                            if doff == 0 and blk["end_time"] > current_tm:
+                                b["next_available_text"] = "Hoy disponible"
+                                found = True
+                                break
+                            elif doff > 0:
+                                b["next_available_text"] = f"{'Manana' if doff == 1 else day_names_es[(current_wd + doff) % 7]} {blk['start_time']}"
+                                found = True
+                                break
+                        if found:
+                            break
+                    if found:
+                        break
+                if found:
+                    break
     
     return [BusinessResponse(**b) for b in businesses]
 
