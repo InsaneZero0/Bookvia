@@ -63,6 +63,12 @@ export default function BusinessRegisterPage() {
   const logoInputRef = useRef(null);
   const coverInputRef = useRef(null);
   
+  // Location search states
+  const [locationQuery, setLocationQuery] = useState('');
+  const [locationResults, setLocationResults] = useState([]);
+  const [locationSearching, setLocationSearching] = useState(false);
+  const locationDebounceRef = useRef(null);
+
   const [formData, setFormData] = useState({
     // Business info
     name: '',
@@ -76,6 +82,8 @@ export default function BusinessRegisterPage() {
     state: '',
     country: getDetectedCountry(),
     zip_code: '',
+    latitude: null,
+    longitude: null,
     // Documents
     rfc: '',
     legal_name: '',
@@ -109,6 +117,51 @@ export default function BusinessRegisterPage() {
   useEffect(() => {
     loadCategories();
   }, []);
+
+  // Debounced location search
+  const searchLocation = async (query) => {
+    if (!query || query.length < 3) { setLocationResults([]); return; }
+    setLocationSearching(true);
+    try {
+      const countryCode = formData.country?.toLowerCase() || 'mx';
+      const res = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5&countrycodes=${countryCode}&addressdetails=1`,
+        { headers: { 'Accept-Language': language === 'es' ? 'es' : 'en' } }
+      );
+      const data = await res.json();
+      setLocationResults(data.map(r => ({
+        display: r.display_name,
+        lat: parseFloat(r.lat),
+        lng: parseFloat(r.lon),
+        address: r.address?.road ? `${r.address.road}${r.address.house_number ? ' ' + r.address.house_number : ''}` : r.display_name.split(',')[0],
+        city: r.address?.city || r.address?.town || r.address?.municipality || r.address?.village || '',
+        state: r.address?.state || '',
+        zip: r.address?.postcode || '',
+      })));
+    } catch { setLocationResults([]); }
+    setLocationSearching(false);
+  };
+
+  const handleLocationQueryChange = (value) => {
+    setLocationQuery(value);
+    if (locationDebounceRef.current) clearTimeout(locationDebounceRef.current);
+    locationDebounceRef.current = setTimeout(() => searchLocation(value), 400);
+  };
+
+  const selectLocationResult = (loc) => {
+    setFormData(prev => ({
+      ...prev,
+      address: loc.address,
+      city: loc.city,
+      state: loc.state,
+      zip_code: loc.zip || prev.zip_code,
+      latitude: loc.lat,
+      longitude: loc.lng,
+    }));
+    setLocationQuery('');
+    setLocationResults([]);
+    toast.success(language === 'es' ? 'Ubicación seleccionada' : 'Location selected');
+  };
 
   const loadCategories = async () => {
     try {
@@ -334,6 +387,8 @@ export default function BusinessRegisterPage() {
         owner_birth_date: ownerBirthDate,
         logo_url: logoUrl,
         cover_photo: coverUrl,
+        latitude: formData.latitude,
+        longitude: formData.longitude,
       };
       
       await businessRegister(registerData);
@@ -663,6 +718,45 @@ export default function BusinessRegisterPage() {
               {/* Step 2: Location */}
               {currentStep === 1 && (
                 <div className="space-y-4" data-testid="step-location">
+                  {/* Address search with Nominatim */}
+                  <div className="space-y-2">
+                    <Label>{language === 'es' ? 'Buscar dirección' : 'Search address'}</Label>
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                      <Input
+                        placeholder={language === 'es' ? 'Escribe tu dirección para buscar en el mapa...' : 'Type your address to search on map...'}
+                        value={locationQuery}
+                        onChange={e => handleLocationQueryChange(e.target.value)}
+                        className="pl-10 h-12"
+                        data-testid="location-search-input"
+                      />
+                      {locationSearching && (
+                        <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                          <div className="h-4 w-4 border-2 border-[#F05D5E] border-t-transparent rounded-full animate-spin" />
+                        </div>
+                      )}
+                    </div>
+                    {locationResults.length > 0 && (
+                      <div className="border rounded-lg divide-y max-h-48 overflow-y-auto bg-background shadow-lg" data-testid="location-results">
+                        {locationResults.map((r, i) => (
+                          <button key={i} type="button" className="w-full text-left px-3 py-2.5 hover:bg-muted/50 text-sm flex items-start gap-2 transition-colors"
+                            onClick={() => selectLocationResult(r)} data-testid={`location-result-${i}`}>
+                            <MapPin className="h-4 w-4 text-[#F05D5E] mt-0.5 shrink-0" />
+                            <span className="line-clamp-2">{r.display}</span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Map preview */}
+                  {formData.latitude && formData.longitude && (
+                    <div className="rounded-xl border overflow-hidden" data-testid="registration-map-preview">
+                      <iframe title="map" width="100%" height="180" style={{ border: 0 }} loading="lazy"
+                        src={`https://www.openstreetmap.org/export/embed.html?bbox=${formData.longitude - 0.006}%2C${formData.latitude - 0.004}%2C${formData.longitude + 0.006}%2C${formData.latitude + 0.004}&layer=mapnik&marker=${formData.latitude}%2C${formData.longitude}`} />
+                    </div>
+                  )}
+
                   <div className="space-y-2">
                     <Label htmlFor="address">{language === 'es' ? 'Dirección' : 'Address'} *</Label>
                     <div className="relative">
