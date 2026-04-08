@@ -170,13 +170,15 @@ async def send_appointment_reminders():
 
                 try:
                     from services.email import send_appointment_reminder
+                    worker = await db.workers.find_one({"id": booking.get("worker_id")}, {"_id": 0, "name": 1}) if booking.get("worker_id") else None
                     await send_appointment_reminder(
                         user_email=user["email"],
                         user_name=user.get("full_name", ""),
                         business_name=business.get("name", ""),
                         service_name=service.get("name", "") if service else "",
-                        appointment_date=date_str,
-                        appointment_time=time_str,
+                        date=date_str,
+                        time=time_str,
+                        worker_name=worker.get("name", "") if worker else "",
                         business_address=business.get("address", "")
                     )
                     await db.bookings.update_one(
