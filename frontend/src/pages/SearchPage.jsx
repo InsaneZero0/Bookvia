@@ -83,6 +83,8 @@ export default function SearchPage() {
   const [onlyFeatured, setOnlyFeatured] = useState(searchParams.get('featured') === 'true');
   const [page, setPage] = useState(1);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [userLocation, setUserLocation] = useState(null);
+  const [locatingUser, setLocatingUser] = useState(false);
 
   useEffect(() => {
     loadCategories();
@@ -92,7 +94,7 @@ export default function SearchPage() {
 
   useEffect(() => {
     loadBusinesses();
-  }, [categoryId, city, minRating, homeService, requiresDeposit, sortBy, onlyFeatured, page, countryCode]);
+  }, [categoryId, city, minRating, homeService, requiresDeposit, sortBy, onlyFeatured, page, countryCode, userLocation]);
 
   const loadCategories = async () => {
     try {
@@ -133,10 +135,39 @@ export default function SearchPage() {
         is_home_service: homeService || undefined,
         page, limit: 20,
       };
+      if (userLocation) {
+        params.user_lat = userLocation.lat;
+        params.user_lng = userLocation.lng;
+        if (sortBy === 'nearest') params.sort = 'nearest';
+      }
       const res = await businessesAPI.search(params);
       setBusinesses(Array.isArray(res.data) ? res.data : []);
     } catch { setBusinesses([]); }
     finally { setLoading(false); }
+  };
+
+  const requestLocation = () => {
+    if (userLocation) {
+      setSortBy('nearest');
+      return;
+    }
+    if (!navigator.geolocation) {
+      toast.error(language === 'es' ? 'Tu navegador no soporta geolocalizacion' : 'Your browser does not support geolocation');
+      return;
+    }
+    setLocatingUser(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        setSortBy('nearest');
+        setLocatingUser(false);
+      },
+      () => {
+        toast.error(language === 'es' ? 'No pudimos obtener tu ubicacion. Permite el acceso en tu navegador.' : 'Could not get your location. Allow access in your browser.');
+        setLocatingUser(false);
+      },
+      { timeout: 10000 }
+    );
   };
 
   const handleSearch = (e) => {
@@ -220,9 +251,10 @@ export default function SearchPage() {
           <SelectTrigger data-testid="filter-sort" className="h-9"><SelectValue /></SelectTrigger>
           <SelectContent>
             <SelectItem value="relevance">{language === 'es' ? 'Relevancia' : 'Relevance'}</SelectItem>
+            <SelectItem value="nearest">{language === 'es' ? 'Mas cercanos' : 'Nearest'}</SelectItem>
             <SelectItem value="rating">{language === 'es' ? 'Mejor calificados' : 'Top rated'}</SelectItem>
-            <SelectItem value="reviews">{language === 'es' ? 'Más reseñas' : 'Most reviews'}</SelectItem>
-            <SelectItem value="newest">{language === 'es' ? 'Más recientes' : 'Newest'}</SelectItem>
+            <SelectItem value="reviews">{language === 'es' ? 'Mas resenas' : 'Most reviews'}</SelectItem>
+            <SelectItem value="newest">{language === 'es' ? 'Mas recientes' : 'Newest'}</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -288,6 +320,20 @@ export default function SearchPage() {
             </div>
             <Button type="submit" className="h-11 btn-coral" data-testid="search-button">
               <Search className="h-4 w-4 mr-1.5" />{language === 'es' ? 'Buscar' : 'Search'}
+            </Button>
+            <Button
+              type="button"
+              variant={sortBy === 'nearest' ? 'default' : 'outline'}
+              className={`h-11 ${sortBy === 'nearest' ? 'bg-[#F05D5E] hover:bg-[#F05D5E]/90 text-white' : ''}`}
+              onClick={requestLocation}
+              disabled={locatingUser}
+              data-testid="nearby-button"
+            >
+              {locatingUser ? (
+                <><span className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin mr-1.5" />{language === 'es' ? 'Ubicando...' : 'Locating...'}</>
+              ) : (
+                <><MapPin className="h-4 w-4 mr-1.5" />{language === 'es' ? 'Cerca de ti' : 'Near you'}</>
+              )}
             </Button>
 
             {/* View Toggle */}

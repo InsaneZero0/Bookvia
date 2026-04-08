@@ -345,6 +345,7 @@ class BusinessResponse(BaseModel):
     stripe_subscription_id: Optional[str] = None
     logo_url: Optional[str] = None
     logo_public_id: Optional[str] = None
+    distance_km: Optional[float] = None
 
 class BusinessUpdate(BaseModel):
     name: Optional[str] = None
@@ -2151,6 +2152,9 @@ async def search_businesses(
     min_rating: Optional[float] = None,
     is_home_service: Optional[bool] = None,
     include_pending: bool = False,
+    user_lat: Optional[float] = None,
+    user_lng: Optional[float] = None,
+    sort: Optional[str] = None,
     page: int = 1,
     limit: int = 20,
     current_user: Optional[TokenData] = Depends(get_current_user)
@@ -2230,6 +2234,25 @@ async def search_businesses(
             if await is_user_blacklisted(b["id"], user_id=current_user.user_id):
                 blacklisted_biz_ids.add(b["id"])
         businesses = [b for b in businesses if b["id"] not in blacklisted_biz_ids]
+    
+    # Calculate distance and sort by proximity if user location provided
+    if user_lat is not None and user_lng is not None:
+        import math
+        def haversine(lat1, lng1, lat2, lng2):
+            R = 6371  # km
+            dlat = math.radians(lat2 - lat1)
+            dlng = math.radians(lng2 - lng1)
+            a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlng/2)**2
+            return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+        
+        for b in businesses:
+            if b.get("latitude") and b.get("longitude"):
+                b["distance_km"] = round(haversine(user_lat, user_lng, b["latitude"], b["longitude"]), 1)
+            else:
+                b["distance_km"] = None
+        
+        if sort == "nearest":
+            businesses.sort(key=lambda x: x.get("distance_km") if x.get("distance_km") is not None else 99999)
     
     return [BusinessResponse(**b) for b in businesses]
 

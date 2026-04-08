@@ -102,6 +102,11 @@ export function BusinessCard({ business, onFavorite, isFavorite = false }) {
             <MapPin className="h-4 w-4" />
             <span className="line-clamp-1">{business.city}</span>
           </div>
+          {business.distance_km != null && (
+            <span className="text-xs font-medium text-[#F05D5E]">
+              {business.distance_km < 1 ? `${Math.round(business.distance_km * 1000)}m` : `${business.distance_km} km`}
+            </span>
+          )}
           {business.review_count > 0 && (
             <span className="text-xs">
               ({business.review_count} {t('business.reviews')})
