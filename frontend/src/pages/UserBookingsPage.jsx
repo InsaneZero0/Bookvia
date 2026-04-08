@@ -7,6 +7,7 @@ import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
+import { Calendar as CalendarWidget } from '@/components/ui/calendar';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { useAuth } from '@/lib/auth';
 import { useI18n } from '@/lib/i18n';
@@ -15,7 +16,7 @@ import { formatTime, getStatusColor } from '@/lib/utils';
 import { toast } from 'sonner';
 import {
   Calendar, Clock, User, ChevronRight, AlertTriangle, XCircle, 
-  CreditCard, Timer, CheckCircle2, AlertCircle, Ban, Star
+  CreditCard, Timer, CheckCircle2, AlertCircle, Ban, Star, RefreshCw
 } from 'lucide-react';
 
 const STATUS_CONFIG = {
@@ -67,6 +68,12 @@ export default function UserBookingsPage() {
   const [reviewComment, setReviewComment] = useState('');
   const [reviewLoading, setReviewLoading] = useState(false);
   const [reviewedBookings, setReviewedBookings] = useState(new Set());
+  const [rescheduleModal, setRescheduleModal] = useState({ open: false, booking: null });
+  const [rescheduleDate, setRescheduleDate] = useState(null);
+  const [rescheduleSlots, setRescheduleSlots] = useState([]);
+  const [rescheduleTime, setRescheduleTime] = useState(null);
+  const [rescheduleLoading, setRescheduleLoading] = useState(false);
+  const [slotsLoading, setSlotsLoading] = useState(false);
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -180,6 +187,48 @@ export default function UserBookingsPage() {
       toast.error(detail || (language === 'es' ? 'Error al enviar reseña' : 'Error submitting review'));
     } finally {
       setReviewLoading(false);
+    }
+  };
+
+  const openReschedule = (booking) => {
+    setRescheduleModal({ open: true, booking });
+    setRescheduleDate(null);
+    setRescheduleSlots([]);
+    setRescheduleTime(null);
+  };
+
+  const loadRescheduleSlots = async (date) => {
+    const bk = rescheduleModal.booking;
+    if (!bk || !date) return;
+    setRescheduleDate(date);
+    setRescheduleTime(null);
+    setSlotsLoading(true);
+    try {
+      const dateStr = date.toISOString().split('T')[0];
+      const res = await bookingsAPI.getAvailability(bk.business_id, dateStr, bk.service_id, bk.worker_id);
+      setRescheduleSlots(res.data?.available_slots || []);
+    } catch {
+      setRescheduleSlots([]);
+    } finally {
+      setSlotsLoading(false);
+    }
+  };
+
+  const submitReschedule = async () => {
+    const bk = rescheduleModal.booking;
+    if (!bk || !rescheduleDate || !rescheduleTime) return;
+    setRescheduleLoading(true);
+    try {
+      const dateStr = rescheduleDate.toISOString().split('T')[0];
+      await bookingsAPI.reschedule(bk.id, dateStr, rescheduleTime);
+      toast.success(language === 'es' ? 'Cita reagendada exitosamente' : 'Appointment rescheduled successfully');
+      setRescheduleModal({ open: false, booking: null });
+      loadBookings();
+    } catch (error) {
+      const detail = error?.response?.data?.detail || '';
+      toast.error(detail || (language === 'es' ? 'Error al reagendar' : 'Error rescheduling'));
+    } finally {
+      setRescheduleLoading(false);
     }
   };
 
@@ -300,7 +349,19 @@ export default function UserBookingsPage() {
 
               {/* Action buttons */}
               {showActions && booking.can_cancel && (
-                <div className="flex gap-2 mt-4">
+                <div className="flex flex-wrap gap-2 mt-4">
+                  {booking.status === 'confirmed' && booking.hours_until_appointment > 24 && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => openReschedule(booking)}
+                      className="text-blue-600 hover:bg-blue-50"
+                      data-testid={`reschedule-booking-${booking.id}`}
+                    >
+                      <RefreshCw className="h-4 w-4 mr-1" />
+                      {language === 'es' ? 'Reagendar' : 'Reschedule'}
+                    </Button>
+                  )}
                   <Button
                     variant="outline"
                     size="sm"
@@ -535,6 +596,93 @@ export default function UserBookingsPage() {
                 {reviewLoading
                   ? (language === 'es' ? 'Enviando...' : 'Submitting...')
                   : (language === 'es' ? 'Enviar calificación' : 'Submit rating')}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Reschedule Modal */}
+        <Dialog open={rescheduleModal.open} onOpenChange={(open) => !open && setRescheduleModal({ open: false, booking: null })}>
+          <DialogContent className="max-w-md" data-testid="reschedule-modal">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <RefreshCw className="h-5 w-5 text-blue-600" />
+                {language === 'es' ? 'Reagendar cita' : 'Reschedule appointment'}
+              </DialogTitle>
+              <DialogDescription>
+                {rescheduleModal.booking && (
+                  <span>{rescheduleModal.booking.service_name} — {rescheduleModal.booking.business_name}</span>
+                )}
+              </DialogDescription>
+            </DialogHeader>
+
+            {rescheduleModal.booking?.deposit_paid && (
+              <div className="flex items-center gap-2 p-3 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300 rounded-lg text-sm" data-testid="no-extra-payment-notice">
+                <CheckCircle2 className="h-4 w-4 shrink-0" />
+                {language === 'es'
+                  ? 'Tu anticipo ya está pagado. No necesitas pagar de nuevo.'
+                  : 'Your deposit is already paid. No extra payment needed.'}
+              </div>
+            )}
+
+            <div className="space-y-4 mt-2">
+              <div>
+                <p className="text-sm font-medium mb-2">{language === 'es' ? 'Selecciona nueva fecha' : 'Select new date'}</p>
+                <CalendarWidget
+                  mode="single"
+                  selected={rescheduleDate}
+                  onSelect={loadRescheduleSlots}
+                  disabled={(date) => {
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+                    const tomorrow = new Date(today);
+                    tomorrow.setDate(tomorrow.getDate() + 1);
+                    return date < tomorrow;
+                  }}
+                  className="rounded-md border mx-auto"
+                  data-testid="reschedule-calendar"
+                />
+              </div>
+
+              {rescheduleDate && (
+                <div>
+                  <p className="text-sm font-medium mb-2">{language === 'es' ? 'Horarios disponibles' : 'Available times'}</p>
+                  {slotsLoading ? (
+                    <div className="flex gap-2 flex-wrap">
+                      {[1, 2, 3, 4].map(i => <Skeleton key={i} className="h-9 w-20" />)}
+                    </div>
+                  ) : rescheduleSlots.length > 0 ? (
+                    <div className="flex gap-2 flex-wrap max-h-40 overflow-y-auto" data-testid="reschedule-slots">
+                      {rescheduleSlots.map(slot => (
+                        <Button
+                          key={slot.time || slot}
+                          variant={rescheduleTime === (slot.time || slot) ? 'default' : 'outline'}
+                          size="sm"
+                          className={rescheduleTime === (slot.time || slot) ? 'bg-blue-600 hover:bg-blue-700 text-white' : ''}
+                          onClick={() => setRescheduleTime(slot.time || slot)}
+                          data-testid={`slot-${slot.time || slot}`}
+                        >
+                          {formatTime(slot.time || slot)}
+                        </Button>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">
+                      {language === 'es' ? 'No hay horarios disponibles para esta fecha.' : 'No available times for this date.'}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              <Button
+                className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+                disabled={!rescheduleDate || !rescheduleTime || rescheduleLoading}
+                onClick={submitReschedule}
+                data-testid="confirm-reschedule-btn"
+              >
+                {rescheduleLoading
+                  ? (language === 'es' ? 'Reagendando...' : 'Rescheduling...')
+                  : (language === 'es' ? 'Confirmar nueva fecha' : 'Confirm new date')}
               </Button>
             </div>
           </DialogContent>
