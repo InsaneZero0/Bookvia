@@ -4,7 +4,7 @@
 Bookvia es una plataforma marketplace de reservas profesionales que conecta negocios de servicios con clientes. Permite a los negocios registrarse, gestionar servicios, equipo y citas. Los clientes pueden buscar, reservar y pagar anticipos.
 
 ## Arquitectura
-- **Frontend:** React + Shadcn/UI + React Router + lucide-react
+- **Frontend:** React + Shadcn/UI + React Router + lucide-react + Recharts + React-Leaflet
 - **Backend:** FastAPI + MongoDB (Motor async)
 - **Integraciones:** Stripe (pagos nativos), Cloudinary (imagenes), Emergent Object Storage (fallback), Resend (email produccion)
 
@@ -15,7 +15,7 @@ Bookvia es una plataforma marketplace de reservas profesionales que conecta nego
 - [x] Registro de negocio multi-paso con suscripcion Stripe
 - [x] Aprobacion de negocios por admin
 - [x] Paneles: usuario, negocio, admin del sistema
-- [x] Busqueda con filtros y mapa (Leaflet/OpenStreetMap)
+- [x] Busqueda con filtros, mapa (Leaflet/OpenStreetMap) y geolocalizacion ("Cerca de ti")
 - [x] Smart Dropdowns en Hero
 - [x] 2FA para admin (pyotp)
 
@@ -28,37 +28,35 @@ Bookvia es una plataforma marketplace de reservas profesionales que conecta nego
 - [x] CRUD servicios, equipo, cierres, suscripcion
 - [x] Stats clickeables, veto/blacklist, modal detalle cita/cliente
 - [x] Completar, Cancelar, Reagendar citas
+- [x] Reportes graficos (Recharts) con exportacion a Excel (openpyxl)
+- [x] Historial de cliente (ultimas 5 citas, total gastado)
+- [x] Calendario visual / Agenda Timeline con bloques de colores
+- [x] Mapa de ubicacion del negocio (Leaflet/OpenStreetMap)
+- [x] Notificaciones (campana) para duenos y clientes
 
-### Sistema de Administradores y PIN (Fase 1 + 2 + 3 COMPLETADAS)
-**Fase 1 - Gestion de Administradores:**
-- [x] PIN de seguridad del dueno (4-6 digitos)
-- [x] Designar trabajador como administrador con permisos granulares
-- [x] Permisos: Citas (completar, reagendar, cancelar), Clientes (bloquear, ver datos), Negocio (servicios, perfil, reportes)
-- [x] Editar/quitar administrador, configurar PIN
-
-**Fase 2 - Login y Proteccion:**
-- [x] Login con PIN para administradores (sub-toggle "Soy el dueno / Soy administrador")
-- [x] Dashboard restringido por permisos (tabs, botones, stats filtrados)
-- [x] Banner de sesion de administrador
-- [x] hasPermission() en AuthContext
-
-**Fase 3 - Historial de Actividad:**
-- [x] Coleccion business_activity_logs en MongoDB
-- [x] Logging automatico en: completar/cancelar/reagendar citas, designar/quitar/editar admin
-- [x] Endpoint GET /api/businesses/my/activity-log con filtros (actor_type, action) y paginacion
-- [x] Acceso restringido solo al dueno (403 para admins)
-- [x] Pestana "Actividad" en dashboard con filtros, iconos por tipo, badges de actor, paginacion
+### Sistema de Administradores y PIN (Fases 1-3 COMPLETADAS)
+- [x] PIN de seguridad, login administrador, permisos granulares (16 permisos)
+- [x] Dashboard restringido por permisos
+- [x] Historial de actividad (business_activity_logs)
 
 ### Email y Verificacion
 - [x] Resend integrado con dominio verificado (bookvia.app)
-- [x] Verificacion de email obligatoria al registrarse
-- [x] Pagina de exito post-registro (/registration-success)
-- [x] Pagina de verificacion (/verify-email?token=xxx)
-- [x] Reenvio de correo de verificacion
-- [x] Login bloqueado hasta verificar email (backwards compatible con usuarios antiguos)
-- [x] Logo con estrella en emails, boton "Comenzar ahora" para negocios
-- [x] Correos automaticos desde noreply@bookvia.app, bienvenida desde hola@bookvia.app
-- [x] Recuperar contraseña: flujo completo (olvidé → email con link → nueva contraseña → login)
+- [x] Verificacion de email, recuperar contrasena
+- [x] Correos transaccionales (confirmacion, cancelacion)
+
+### Busqueda y Perfil Publico
+- [x] Filtros: categoria, ciudad, calificacion, precio, anticipo, servicio domicilio, destacados
+- [x] Busqueda por geolocalizacion ("Cerca de ti" - Haversine)
+- [x] "Proximo horario disponible" en tarjetas de negocio (next_available_text)
+- [x] Galeria de fotos con carousel swipeable en mobile y lightbox fullscreen en desktop
+- [x] Vista Lista / Mapa con markers
+- [x] Ordenar por: relevancia, cercania, calificacion, resenas, recientes
+
+### Mobile
+- [x] Menu hamburguesa con links a Citas, Favoritos, Notificaciones para usuarios logueados
+- [x] Barra de busqueda responsive (stacked en mobile)
+- [x] Bottom bar de reserva en perfil de negocio
+- [x] Carousel de fotos con indicadores dot y contador
 
 ### Internacionalizacion
 - [x] Auto-capitalizacion, logo con estrella, deteccion de pais por IP
@@ -67,39 +65,33 @@ Bookvia es una plataforma marketplace de reservas profesionales que conecta nego
 ## Backlog
 
 ### P0 (Tecnica)
-- [ ] Refactorizar server.py (~6000 lineas) en routers modulares
+- [ ] Refactorizar server.py (~6500 lineas) en routers modulares
 
 ### P1
-- [x] Emails transaccionales: confirmacion de cita y cancelacion (enviados automaticamente via Resend)
-- [x] Agregar permisos de visibilidad del administrador (Citas hoy, Confirmadas, Agenda, Equipo) — 4 nuevos permisos
-- [x] Agregar permisos granulares de edicion de perfil (Fotos, Descripcion, Horarios, Contacto) — 4 nuevos permisos que reemplazan edit_profile
-- [x] Sistema de notificaciones: campana en dashboard del negocio con panel dropdown, contador, marcar como leido
-- [x] Sistema de notificaciones: campana en Navbar para usuarios regulares (clientes) con panel dropdown
-- [x] Reportes/Estadisticas: tab completo con graficas de ingresos, citas, servicios populares, clientes frecuentes, dias/horarios pico, cancelaciones
-- [x] Exportar reportes a Excel (XLSX) con 4 hojas: Resumen, Citas, Servicios, Clientes
-- [x] Historial del cliente: al hacer clic en nombre del cliente se ve resumen (visitas, gastado, canceladas) y lista de citas anteriores
-- [x] Calendario visual: vista de agenda timeline con bloques de citas posicionados en horarios reales, lineas de hora y botones de accion
-- [x] Mapa de ubicacion del negocio: busqueda de direccion con Nominatim/OpenStreetMap, mapa interactivo en configuracion y perfil publico
 - [ ] Permisos faltantes: Cierres y Suscripcion (tabs aun bloqueados para admins)
 
 ### P2
 - [ ] Recordatorios de citas (email 24h antes, requiere cronjob)
 - [ ] Login con Google (Emergent-managed)
+- [ ] Optimizacion UX mobile avanzada
 
 ### P3
 - [ ] Convertir a PWA
 - [ ] Stripe Connect (pagos a negocios)
 - [ ] Notificaciones Push
+- [ ] Chat / Preguntas al negocio antes de reservar
+- [ ] Cupones o codigos de descuento
 
 ## Esquema DB
-- **businesses:** subscription_status, approval_status, owner_pin_hash
-- **workers:** is_manager, manager_permissions{15 permisos: complete/reschedule/cancel_bookings, block_clients, view_client_data, edit_services, view_reports, view_today/confirmed_bookings, view_agenda, view_team, edit_photos/description/schedule/contact}, manager_pin_hash
-- **business_activity_logs:** business_id, actor_type, actor_name, worker_id, action, target_type, target_id, details, created_at
+- **businesses:** subscription_status, approval_status, owner_pin_hash, latitude, longitude
+- **workers:** is_manager, manager_permissions (16 permisos), schedule
+- **business_activity_logs:** business_id, actor_type, actor_name, action, details
 - **bookings:** worker_id, end_time, status, cancelled_by
 - **reviews:** user_id, business_id, booking_id, rating, comment
+- **notifications:** user_id, title, message, type, is_read, created_at
 
 ## Notas Tecnicas
 - Timezone: SIEMPRE usar new Date(dateString + 'T12:00:00') para parsear YYYY-MM-DD
+- next_available_text: Calculado en backend basado en schedules de workers, no en bookings reales
 - TokenData extendido: worker_id e is_manager para sesiones de administradores
 - hasPermission(): true para duenos, checa permisos para admins
-- Activity logs: create_business_activity() inyectado en acciones sensibles
