@@ -64,6 +64,7 @@ Auth Social: Emergent-managed Google Auth (solo clientes)
 - [x] Carrusel de fotos en perfil publico
 - [x] Dashboard de negocio con modales de reagendar, detalles cliente
 - [x] Panel admin con 2FA, aprobaciones, estadisticas
+- [x] **Pagina de Recepcion**: crear citas walk-in, panel de citas del dia, seleccion de servicio/trabajador/horario
 
 ### Tecnico
 - [x] Refactorizacion backend: server.py ~7000 lineas -> 235 lineas + 12 routers modulares
