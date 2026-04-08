@@ -6,22 +6,31 @@ Bookvia es una plataforma marketplace de reservas profesionales que conecta nego
 ## Arquitectura
 - **Frontend:** React + Shadcn/UI + React Router + lucide-react + Recharts + React-Leaflet
 - **Backend:** FastAPI + MongoDB (Motor async)
-- **Integraciones:** Stripe (pagos), Emergent Object Storage (fallback), Resend (email)
+- **Integraciones:** Stripe (pagos), Emergent Object Storage (imagenes), Resend (email)
 
 ## Funcionalidades Implementadas
 
 ### Core
 - [x] Autenticacion JWT (usuario, negocio, administrador de negocio)
 - [x] Registro de negocio multi-paso con suscripcion Stripe
+- [x] **2 campos de imagen en registro**: Logo (perfil circular) y Foto del negocio (tarjetas de busqueda)
+- [x] Upload publico POST /api/upload/public (sin auth, max 5MB, JPG/PNG/WebP)
 - [x] Paneles: usuario, negocio, admin del sistema
-- [x] Busqueda con filtros, mapa (Leaflet/OSM) y geolocalizacion
-- [x] 2FA para admin (pyotp)
 
-### Reservas y Pagos
-- [x] Flujo multi-paso con anticipo Stripe Checkout
-- [x] Cancelacion con politicas, sistema de resenas
-- [x] Completar, Cancelar, Reagendar citas (negocio)
-- [x] **Reagendar cita desde el cliente** (solo 24h antes, sin pagar otro anticipo)
+### Busqueda y Perfil Publico
+- [x] Filtros completos + geolocalizacion "Cerca de ti" con expansion automatica
+- [x] cover_photo como imagen principal en tarjetas de busqueda (fallback: photos[0] > logo_url)
+- [x] logo_url como avatar circular en perfil del negocio
+- [x] Horarios agrupados con badge Abierto/Cerrado
+- [x] "Proximo horario disponible" en tarjetas
+- [x] Galeria carousel mobile + lightbox desktop
+- [x] **Compartir negocio** (WhatsApp + Copiar enlace)
+
+### Area del Cliente (P1 COMPLETADO)
+- [x] Pagina de Favoritos dedicada /favorites
+- [x] Reagendar cita con modal (calendario + horarios) - solo 24h antes, anticipo preservado
+- [x] Historial de pagos /payments con filtros y resumen total
+- [x] Dashboard con 5 acciones rapidas (Citas, Favoritos, Pagos, Buscar, Notificaciones)
 
 ### Gestion de Negocio
 - [x] CRUD servicios, equipo, cierres, suscripcion
@@ -30,29 +39,10 @@ Bookvia es una plataforma marketplace de reservas profesionales que conecta nego
 - [x] Mapa ubicacion (Leaflet/OSM)
 - [x] Notificaciones (campana)
 
-### Busqueda y Perfil Publico
-- [x] Filtros completos + geolocalizacion "Cerca de ti" con expansion automatica
-- [x] "Proximo horario disponible" en tarjetas
-- [x] Horarios agrupados con badge Abierto/Cerrado
-- [x] Galeria carousel mobile + lightbox desktop
-- [x] **Compartir negocio** (WhatsApp + Copiar enlace)
-
-### Area del Cliente (P1 COMPLETADO)
-- [x] Pagina de Favoritos dedicada /favorites
-- [x] **Reagendar cita** con modal (calendario + horarios) - solo 24h antes, anticipo preservado
-- [x] **Historial de pagos** /payments con filtros y resumen de total pagado
-- [x] **Compartir negocio** (WhatsApp + Copiar enlace) en perfil publico
-- [x] Dashboard con 5 acciones rapidas (Citas, Favoritos, Pagos, Buscar, Notificaciones)
-
-### Mobile
-- [x] Menu con links a Citas, Favoritos, Notificaciones
-- [x] Busqueda responsive, bottom bar reserva
-- [x] Carousel fotos con dots y contador
-
 ## Backlog
 
 ### P0 (Tecnica)
-- [ ] Refactorizar server.py (~6700 lineas) en routers modulares
+- [ ] Refactorizar server.py (~6800 lineas) en routers modulares
 
 ### P2
 - [ ] Recordatorios de citas (email 24h antes)
@@ -61,3 +51,9 @@ Bookvia es una plataforma marketplace de reservas profesionales que conecta nego
 
 ### P3
 - [ ] PWA, Stripe Connect, Notificaciones Push, Chat, Cupones
+
+## Notas Tecnicas
+- cover_photo: Foto principal del negocio (entrada/local) para tarjetas de busqueda
+- logo_url: Logo para avatar circular del perfil
+- Si solo suben una imagen, se usa para ambos usos
+- Upload publico: POST /api/upload/public acepta JPG/PNG/WebP max 5MB sin auth
