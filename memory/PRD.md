@@ -69,6 +69,8 @@ Auth Social: Emergent-managed Google Auth (solo clientes)
 - [x] Badges "Recepcion" + "Pago en negocio" en citas creadas por el negocio
 - [x] Pagina de Configuracion (Settings): 5 tabs - Info, Documentos legales, Suscripcion, Ubicacion, Vetos
 - [x] Buscador de direccion con mapa en registro de negocio (Nominatim + OpenStreetMap, auto-rellena campos, guarda lat/lng)
+- [x] Mapa interactivo Leaflet con marcador arrastrable en registro y configuracion (reemplaza iframe estatico)
+- [x] Campo separado de "Num. ext." en registro para direcciones mas precisas
 
 ### Tecnico
 - [x] Refactorizacion backend: server.py ~7000 lineas -> 235 lineas + 12 routers modulares
