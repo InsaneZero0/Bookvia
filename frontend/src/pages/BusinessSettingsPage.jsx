@@ -11,6 +11,7 @@ import { Separator } from '@/components/ui/separator';
 import { useAuth } from '@/lib/auth';
 import { useI18n } from '@/lib/i18n';
 import { businessesAPI } from '@/lib/api';
+import DraggableMap from '@/components/DraggableMap';
 import { toast } from 'sonner';
 import {
   ArrowLeft, Mail, Phone, User, ShieldX, MapPin, Search, Loader2,
@@ -461,13 +462,28 @@ export default function BusinessSettingsPage() {
               )}
 
               {currentLocation ? (
-                <div className="rounded-xl border overflow-hidden" data-testid="current-location-map">
-                  <iframe title="map" width="100%" height="200" style={{ border: 0 }} loading="lazy"
-                    src={`https://www.openstreetmap.org/export/embed.html?bbox=${currentLocation.lng - 0.008}%2C${currentLocation.lat - 0.005}%2C${currentLocation.lng + 0.008}%2C${currentLocation.lat + 0.005}&layer=mapnik&marker=${currentLocation.lat}%2C${currentLocation.lng}`} />
-                  <div className="px-3 py-2 bg-muted/30 flex items-center gap-2">
+                <div className="space-y-1" data-testid="current-location-map">
+                  <DraggableMap
+                    lat={currentLocation.lat}
+                    lng={currentLocation.lng}
+                    height="220px"
+                    onPositionChange={async (lat, lng) => {
+                      setCurrentLocation(prev => ({ ...prev, lat, lng }));
+                      setSavingLocation(true);
+                      try {
+                        await businessesAPI.updateBusiness({ latitude: lat, longitude: lng });
+                        toast.success(t('Ubicacion actualizada', 'Location updated'));
+                      } catch { toast.error(t('Error al guardar', 'Save error')); }
+                      setSavingLocation(false);
+                    }}
+                  />
+                  <div className="px-3 py-2 bg-muted/30 rounded-b-xl flex items-center gap-2">
                     <MapPin className="h-4 w-4 text-[#F05D5E] shrink-0" />
                     <span className="text-sm truncate">{currentLocation.address}, {currentLocation.city}, {currentLocation.state}</span>
                   </div>
+                  <p className="text-xs text-muted-foreground text-center">
+                    {t('Arrastra el marcador para ajustar la ubicacion', 'Drag the marker to adjust location')}
+                  </p>
                 </div>
               ) : (
                 <div className="h-[160px] border-2 border-dashed rounded-xl flex flex-col items-center justify-center">
