@@ -17,6 +17,7 @@ import { countries, getCountryByCode } from '@/lib/countries';
 import { getDetectedCountry } from '@/lib/detectCountry';
 import { AgeVerification } from '@/components/AgeVerification';
 import { CitySelector } from '@/components/CitySelector';
+import DraggableMap from '@/components/DraggableMap';
 import { toast } from 'sonner';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { 
@@ -78,6 +79,7 @@ export default function BusinessRegisterPage() {
     category_id: '',
     // Location
     address: '',
+    address_number: '',
     city: '',
     state: '',
     country: getDetectedCountry(),
@@ -372,10 +374,14 @@ export default function BusinessRegisterPage() {
       if (logoFile) logoUrl = await uploadFile(logoFile);
       if (coverFile) coverUrl = await uploadFile(coverFile);
       
+      const fullAddress = formData.address_number 
+        ? `${formData.address} ${formData.address_number}` 
+        : formData.address;
+
       const registerData = {
         name: formData.name, email: formData.email, password: formData.password,
         phone: formData.phone, description: formData.description,
-        category_id: formData.category_id, address: formData.address,
+        category_id: formData.category_id, address: fullAddress,
         city: formData.city, state: formData.state, country: formData.country,
         zip_code: formData.zip_code, rfc: formData.rfc.toUpperCase(),
         legal_name: formData.legal_name, ine_url: ineUrl,
@@ -749,27 +755,48 @@ export default function BusinessRegisterPage() {
                     )}
                   </div>
 
-                  {/* Map preview */}
-                  {formData.latitude && formData.longitude && (
-                    <div className="rounded-xl border overflow-hidden" data-testid="registration-map-preview">
-                      <iframe title="map" width="100%" height="180" style={{ border: 0 }} loading="lazy"
-                        src={`https://www.openstreetmap.org/export/embed.html?bbox=${formData.longitude - 0.006}%2C${formData.latitude - 0.004}%2C${formData.longitude + 0.006}%2C${formData.latitude + 0.004}&layer=mapnik&marker=${formData.latitude}%2C${formData.longitude}`} />
-                    </div>
-                  )}
+                  {/* Interactive map - always visible */}
+                  <div className="rounded-xl border overflow-hidden" data-testid="registration-map-preview">
+                    <DraggableMap
+                      lat={formData.latitude}
+                      lng={formData.longitude}
+                      height="200px"
+                      onPositionChange={(lat, lng) => {
+                        setFormData(prev => ({ ...prev, latitude: lat, longitude: lng }));
+                      }}
+                    />
+                    <p className="text-xs text-muted-foreground px-3 py-1.5 bg-muted/30 text-center">
+                      {language === 'es' ? 'Arrastra el marcador para ajustar la ubicación exacta' : 'Drag the marker to adjust the exact location'}
+                    </p>
+                  </div>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="address">{language === 'es' ? 'Dirección' : 'Address'} *</Label>
-                    <div className="relative">
-                      <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="col-span-2 space-y-2">
+                      <Label htmlFor="address">{language === 'es' ? 'Calle' : 'Street'} *</Label>
+                      <div className="relative">
+                        <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                        <Input
+                          id="address"
+                          name="address"
+                          placeholder={language === 'es' ? 'Ej: Av. Rio Tam' : 'E.g.: Main St'}
+                          value={formData.address}
+                          onChange={handleChange}
+                          className="pl-10 h-12"
+                          required
+                          data-testid="address-input"
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="address_number">{language === 'es' ? 'Núm. ext.' : 'Number'}</Label>
                       <Input
-                        id="address"
-                        name="address"
-                        placeholder={language === 'es' ? 'Calle, número, colonia' : 'Street, number, neighborhood'}
-                        value={formData.address}
+                        id="address_number"
+                        name="address_number"
+                        placeholder="123"
+                        value={formData.address_number || ''}
                         onChange={handleChange}
-                        className="pl-10 h-12"
-                        required
-                        data-testid="address-input"
+                        className="h-12"
+                        data-testid="address-number-input"
                       />
                     </div>
                   </div>
