@@ -73,6 +73,7 @@ Auth Social: Emergent-managed Google Auth (solo clientes)
 ### Tecnico
 - [x] Refactorizacion backend: server.py ~7000 lineas -> 235 lineas + 12 routers modulares
 - [x] Fix scheduler recordatorios: parametros corregidos (date, time, worker_name)
+- [x] Fix funcion calculate_fees perdida en refactorizacion (causaba error al pagar anticipo)
 
 ## Tareas Pendientes
 

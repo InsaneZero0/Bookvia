@@ -54,6 +54,12 @@ if "sk_test_emergent" in (STRIPE_API_KEY or ""):
 
 router = APIRouter(prefix="/payments", tags=["Payments"])
 
+def calculate_fees(amount: float) -> dict:
+    """Calculate platform fee and payout amount for a given deposit."""
+    fee_amount = round(amount * PLATFORM_FEE_PERCENT, 2)
+    payout_amount = round(amount - fee_amount, 2)
+    return {"fee_amount": fee_amount, "payout_amount": payout_amount}
+
 @router.post("/deposit/checkout")
 async def create_deposit_checkout(
     request: Request, 
