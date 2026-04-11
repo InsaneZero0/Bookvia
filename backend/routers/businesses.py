@@ -57,6 +57,21 @@ from services.storage import init_storage, put_object, get_object, generate_uplo
 
 router = APIRouter(prefix="/businesses", tags=["Businesses"])
 
+
+def validate_schedule_blocks(schedule: dict):
+    """Validate that schedule blocks don't overlap within a day."""
+    for day_key, day_schedule in schedule.items():
+        if not day_schedule.is_available or not day_schedule.blocks:
+            continue
+        blocks = sorted(day_schedule.blocks, key=lambda b: b.start_time)
+        for i in range(len(blocks) - 1):
+            if blocks[i].end_time > blocks[i + 1].start_time:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Overlapping blocks on day {day_key}: {blocks[i].end_time} > {blocks[i+1].start_time}"
+                )
+
+
 @router.get("/my/reports")
 async def get_business_reports(
     period: str = "month",

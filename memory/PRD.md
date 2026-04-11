@@ -79,6 +79,7 @@ Auth Social: Emergent-managed Google Auth (solo clientes)
 - [x] Fix funcion calculate_fees perdida en refactorizacion (causaba error al pagar anticipo)
 - [x] Fix schema ClosureDateCreate corrupto (campos de reseñas mezclados, causaba error 422 al marcar cierres)
 - [x] Fix imports faltantes de cloudinary_service en routers (cloudinary_configured, upload_image, validate_image perdidos en refactorizacion)
+- [x] Fix validate_schedule_blocks perdida en refactorizacion (causaba error al guardar horario de trabajadores)
 
 ## Tareas Pendientes
 
