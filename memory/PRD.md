@@ -67,7 +67,8 @@ Auth Social: Emergent-managed Google Auth (solo clientes)
 - [x] Pagina de Recepcion: crear citas walk-in, panel de citas del dia
 - [x] Busqueda de clientes existentes en Recepcion (por nombre/telefono)
 - [x] Badges "Recepcion" + "Pago en negocio" en citas creadas por el negocio
-- [x] Pagina de Configuracion (Settings): 5 tabs - Info, Documentos legales, Suscripcion, Ubicacion, Vetos
+- [x] Pagina de Configuracion (Settings): 6 tabs - Info, Horarios, Documentos legales, Suscripcion, Ubicacion, Vetos
+- [x] Edicion de horarios de apertura/cierre por dia del negocio (sincroniza con horarios de trabajadores)
 - [x] Buscador de direccion con mapa en registro de negocio (Nominatim + OpenStreetMap, auto-rellena campos, guarda lat/lng)
 - [x] Mapa interactivo Leaflet con marcador arrastrable en registro y configuracion (reemplaza iframe estatico)
 - [x] Campo separado de "Num. ext." en registro para direcciones mas precisas
@@ -76,6 +77,8 @@ Auth Social: Emergent-managed Google Auth (solo clientes)
 - [x] Refactorizacion backend: server.py ~7000 lineas -> 235 lineas + 12 routers modulares
 - [x] Fix scheduler recordatorios: parametros corregidos (date, time, worker_name)
 - [x] Fix funcion calculate_fees perdida en refactorizacion (causaba error al pagar anticipo)
+- [x] Fix schema ClosureDateCreate corrupto (campos de reseñas mezclados, causaba error 422 al marcar cierres)
+- [x] Fix imports faltantes de cloudinary_service en routers (cloudinary_configured, upload_image, validate_image perdidos en refactorizacion)
 
 ## Tareas Pendientes
 

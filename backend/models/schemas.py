@@ -151,6 +151,7 @@ class BusinessResponse(BaseModel):
     distance_km: Optional[float] = None
     next_available_text: Optional[str] = None
     is_open_now: Optional[bool] = None
+    business_hours: Optional[Dict[str, Any]] = None
 
 class BusinessUpdate(BaseModel):
     name: Optional[str] = None
@@ -449,17 +450,6 @@ class ContactMessage(BaseModel):
 class ClosureDateCreate(BaseModel):
     date: str
     reason: Optional[str] = None
-
-    model_config = ConfigDict(extra="ignore")
-    id: str
-    user_id: str
-    business_id: str
-    booking_id: str
-    rating: int
-    comment: Optional[str] = None
-    created_at: str
-    user_name: Optional[str] = None
-    user_photo: Optional[str] = None
 
 class DepositCheckoutRequest(BaseModel):
     booking_id: str

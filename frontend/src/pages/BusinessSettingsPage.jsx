@@ -16,7 +16,7 @@ import { toast } from 'sonner';
 import {
   ArrowLeft, Mail, Phone, User, ShieldX, MapPin, Search, Loader2,
   Ban, Trash2, Plus, FileText, CreditCard, Building2, Eye, EyeOff,
-  Calendar, Shield, ExternalLink, Save, Pencil
+  Calendar, Shield, ExternalLink, Save, Pencil, Clock
 } from 'lucide-react';
 
 export default function BusinessSettingsPage() {
@@ -50,6 +50,13 @@ export default function BusinessSettingsPage() {
   const [currentLocation, setCurrentLocation] = useState(null);
   const [savingLocation, setSavingLocation] = useState(false);
 
+  // Business hours
+  const DAY_NAMES = language === 'es'
+    ? ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo']
+    : ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+  const [businessHours, setBusinessHours] = useState(null);
+  const [savingHours, setSavingHours] = useState(false);
+
   useEffect(() => {
     if (!isAuthenticated || !isBusiness) { navigate('/business/login'); return; }
     loadData();
@@ -57,10 +64,11 @@ export default function BusinessSettingsPage() {
 
   const loadData = async () => {
     try {
-      const [infoRes, blRes, dashRes] = await Promise.all([
+      const [infoRes, blRes, dashRes, hoursRes] = await Promise.all([
         businessesAPI.getPrivateInfo().catch(() => null),
         businessesAPI.getBlacklist().catch(() => ({ data: [] })),
         businessesAPI.getDashboard().catch(() => null),
+        businessesAPI.getBusinessHours().catch(() => null),
       ]);
       if (infoRes?.data) {
         setPrivateInfo(infoRes.data);
@@ -75,6 +83,7 @@ export default function BusinessSettingsPage() {
       if (biz?.latitude && biz?.longitude) {
         setCurrentLocation({ lat: biz.latitude, lng: biz.longitude, address: biz.address, city: biz.city, state: biz.state });
       }
+      if (hoursRes?.data) setBusinessHours(hoursRes.data);
     } catch {}
     setLoading(false);
   };
@@ -169,6 +178,7 @@ export default function BusinessSettingsPage() {
 
   const tabs = [
     { id: 'info', label: t('Informacion', 'Information'), icon: Building2 },
+    { id: 'hours', label: t('Horarios', 'Hours'), icon: Clock },
     { id: 'documents', label: t('Documentos', 'Documents'), icon: FileText },
     { id: 'subscription', label: t('Suscripcion', 'Subscription'), icon: CreditCard },
     { id: 'location', label: t('Ubicacion', 'Location'), icon: MapPin },
@@ -258,6 +268,104 @@ export default function BusinessSettingsPage() {
                   </div>
                 </div>
               )}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* ===================== HOURS TAB ===================== */}
+        {activeTab === 'hours' && businessHours && (
+          <Card data-testid="hours-section">
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle className="text-base font-heading flex items-center gap-2">
+                  <Clock className="h-5 w-5 text-[#F05D5E]" />
+                  {t('Horarios de apertura', 'Opening hours')}
+                </CardTitle>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {t('Define los horarios en que tu negocio atiende cada dia.', 'Set when your business is open each day.')}
+                </p>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {DAY_NAMES.map((dayName, i) => {
+                const dayKey = String(i);
+                const day = businessHours[dayKey] || { is_open: false, open_time: '09:00', close_time: '18:00' };
+                return (
+                  <div key={i} className={`flex items-center gap-3 p-3 rounded-xl border transition-colors ${day.is_open ? 'bg-green-50/50 border-green-200 dark:bg-green-900/10 dark:border-green-800' : 'bg-muted/30'}`}
+                    data-testid={`day-row-${i}`}>
+                    <div className="w-24 shrink-0">
+                      <p className={`text-sm font-medium ${day.is_open ? 'text-foreground' : 'text-muted-foreground'}`}>{dayName}</p>
+                    </div>
+
+                    <label className="flex items-center gap-2 shrink-0 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={day.is_open}
+                        onChange={e => {
+                          setBusinessHours(prev => ({
+                            ...prev,
+                            [dayKey]: { ...prev[dayKey], is_open: e.target.checked }
+                          }));
+                        }}
+                        className="h-4 w-4 rounded border-gray-300 text-[#F05D5E] focus:ring-[#F05D5E]"
+                        data-testid={`day-toggle-${i}`}
+                      />
+                      <span className="text-xs text-muted-foreground">
+                        {day.is_open ? t('Abierto', 'Open') : t('Cerrado', 'Closed')}
+                      </span>
+                    </label>
+
+                    {day.is_open && (
+                      <div className="flex items-center gap-2 ml-auto">
+                        <Input
+                          type="time"
+                          value={day.open_time || '09:00'}
+                          onChange={e => setBusinessHours(prev => ({
+                            ...prev,
+                            [dayKey]: { ...prev[dayKey], open_time: e.target.value }
+                          }))}
+                          className="w-28 h-9 text-sm"
+                          data-testid={`day-open-${i}`}
+                        />
+                        <span className="text-muted-foreground text-sm">—</span>
+                        <Input
+                          type="time"
+                          value={day.close_time || '18:00'}
+                          onChange={e => setBusinessHours(prev => ({
+                            ...prev,
+                            [dayKey]: { ...prev[dayKey], close_time: e.target.value }
+                          }))}
+                          className="w-28 h-9 text-sm"
+                          data-testid={`day-close-${i}`}
+                        />
+                      </div>
+                    )}
+
+                    {!day.is_open && (
+                      <p className="ml-auto text-sm text-muted-foreground italic">{t('Cerrado', 'Closed')}</p>
+                    )}
+                  </div>
+                );
+              })}
+
+              <Button
+                className="w-full btn-coral mt-4"
+                disabled={savingHours}
+                onClick={async () => {
+                  setSavingHours(true);
+                  try {
+                    await businessesAPI.updateBusinessHours(businessHours);
+                    toast.success(t('Horarios guardados', 'Hours saved'));
+                  } catch {
+                    toast.error(t('Error al guardar horarios', 'Error saving hours'));
+                  }
+                  setSavingHours(false);
+                }}
+                data-testid="save-hours-btn"
+              >
+                {savingHours ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
+                {t('Guardar horarios', 'Save hours')}
+              </Button>
             </CardContent>
           </Card>
         )}

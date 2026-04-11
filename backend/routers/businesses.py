@@ -52,7 +52,7 @@ from core.stripe_config import STRIPE_API_KEY, get_or_create_stripe_price
 stripe_lib.api_key = STRIPE_API_KEY
 if "sk_test_emergent" in (STRIPE_API_KEY or ""):
     stripe_lib.api_base = "https://integrations.emergentagent.com/stripe"
-from services.cloudinary_service import upload_image as cloudinary_upload, delete_image as cloudinary_delete
+from services.cloudinary_service import upload_image, delete_image as cloudinary_delete, is_configured as cloudinary_configured, validate_image
 from services.storage import init_storage, put_object, get_object, generate_upload_path, ALLOWED_IMAGE_TYPES, ALLOWED_IMAGE_EXTENSIONS, MAX_FILE_SIZE
 
 router = APIRouter(prefix="/businesses", tags=["Businesses"])
@@ -1711,6 +1711,60 @@ async def remove_business_closure(date: str, token_data: TokenData = Depends(req
     if result.modified_count == 0:
         raise HTTPException(status_code=404, detail="Closure not found")
     return {"message": "Closure removed"}
+
+
+
+@router.get("/me/hours")
+async def get_business_hours(token_data: TokenData = Depends(require_business)):
+    """Get business opening hours."""
+    user = await db.users.find_one({"id": token_data.user_id})
+    if not user or not user.get("business_id"):
+        raise HTTPException(status_code=404, detail="Business not found")
+    business = await db.businesses.find_one({"id": user["business_id"]}, {"_id": 0, "business_hours": 1})
+    hours = business.get("business_hours") if business else None
+    if not hours:
+        # Return default: Mon-Fri 9-18, Sat-Sun closed
+        hours = {}
+        for d in range(5):
+            hours[str(d)] = {"is_open": True, "open_time": "09:00", "close_time": "18:00"}
+        for d in range(5, 7):
+            hours[str(d)] = {"is_open": False, "open_time": "09:00", "close_time": "18:00"}
+    return hours
+
+
+@router.put("/me/hours")
+async def update_business_hours(hours: Dict[str, Any], token_data: TokenData = Depends(require_business)):
+    """Update business opening hours. Keys: 0-6 (Mon-Sun). Values: {is_open, open_time, close_time}."""
+    user = await db.users.find_one({"id": token_data.user_id})
+    if not user or not user.get("business_id"):
+        raise HTTPException(status_code=404, detail="Business not found")
+    # Validate
+    for day_key, day_val in hours.items():
+        if day_key not in [str(i) for i in range(7)]:
+            raise HTTPException(status_code=400, detail=f"Invalid day key: {day_key}")
+        if not isinstance(day_val, dict) or "is_open" not in day_val:
+            raise HTTPException(status_code=400, detail=f"Invalid data for day {day_key}")
+    await db.businesses.update_one(
+        {"id": user["business_id"]},
+        {"$set": {"business_hours": hours}}
+    )
+    # Also update all workers' schedules to match
+    workers = await db.workers.find(
+        {"business_id": user["business_id"], "active": True},
+        {"_id": 0, "id": 1}
+    ).to_list(100)
+    for w in workers:
+        new_schedule = {}
+        for day_key, day_val in hours.items():
+            if day_val.get("is_open"):
+                new_schedule[day_key] = {
+                    "is_available": True,
+                    "blocks": [{"start_time": day_val.get("open_time", "09:00"), "end_time": day_val.get("close_time", "18:00")}]
+                }
+            else:
+                new_schedule[day_key] = {"is_available": False, "blocks": []}
+        await db.workers.update_one({"id": w["id"]}, {"$set": {"schedule": new_schedule}})
+    return {"message": "Hours updated", "business_hours": hours}
 
 
 
