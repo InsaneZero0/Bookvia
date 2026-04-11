@@ -450,17 +450,6 @@ class ClosureDateCreate(BaseModel):
     date: str
     reason: Optional[str] = None
 
-    model_config = ConfigDict(extra="ignore")
-    id: str
-    user_id: str
-    business_id: str
-    booking_id: str
-    rating: int
-    comment: Optional[str] = None
-    created_at: str
-    user_name: Optional[str] = None
-    user_photo: Optional[str] = None
-
 class DepositCheckoutRequest(BaseModel):
     booking_id: str
 
