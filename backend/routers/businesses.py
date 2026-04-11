@@ -52,7 +52,7 @@ from core.stripe_config import STRIPE_API_KEY, get_or_create_stripe_price
 stripe_lib.api_key = STRIPE_API_KEY
 if "sk_test_emergent" in (STRIPE_API_KEY or ""):
     stripe_lib.api_base = "https://integrations.emergentagent.com/stripe"
-from services.cloudinary_service import upload_image as cloudinary_upload, delete_image as cloudinary_delete
+from services.cloudinary_service import upload_image, delete_image as cloudinary_delete, is_configured as cloudinary_configured, validate_image
 from services.storage import init_storage, put_object, get_object, generate_upload_path, ALLOWED_IMAGE_TYPES, ALLOWED_IMAGE_EXTENSIONS, MAX_FILE_SIZE
 
 router = APIRouter(prefix="/businesses", tags=["Businesses"])
