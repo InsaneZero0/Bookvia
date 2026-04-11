@@ -49,6 +49,63 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/bookings", tags=["Bookings"])
 
+
+def is_exception_blocking(exc: dict, date_str: str, slot_start, slot_end) -> tuple:
+    """Check if a worker exception blocks a given time slot.
+    Returns (is_blocking: bool, reason: str|None)."""
+    exc_start = exc.get("start_date", "")
+    exc_end = exc.get("end_date", "")
+    if not exc_start or not exc_end:
+        return False, None
+    # Check if date falls within exception range
+    if not (exc_start <= date_str <= exc_end):
+        return False, None
+    # If exception has specific times, check overlap
+    exc_start_time = exc.get("start_time")
+    exc_end_time = exc.get("end_time")
+    if exc_start_time and exc_end_time:
+        slot_s = slot_start.strftime("%H:%M") if hasattr(slot_start, 'strftime') else str(slot_start)
+        slot_e = slot_end.strftime("%H:%M") if hasattr(slot_end, 'strftime') else str(slot_end)
+        if slot_s >= exc_end_time or slot_e <= exc_start_time:
+            return False, None
+    reason = exc.get("reason", exc.get("exception_type", "block"))
+    return True, reason
+
+
+async def send_pending_reminders():
+    """Send reminders for bookings that are pending confirmation."""
+    from services.email import send_appointment_reminder
+    try:
+        pending = await db.bookings.find(
+            {"status": "confirmed", "reminder_sent": {"$ne": True}},
+            {"_id": 0}
+        ).to_list(200)
+        count = 0
+        for booking in pending:
+            try:
+                user = await db.users.find_one({"id": booking["user_id"]}, {"_id": 0, "email": 1, "full_name": 1})
+                business = await db.businesses.find_one({"id": booking["business_id"]}, {"_id": 0, "name": 1, "address": 1})
+                service = await db.services.find_one({"id": booking.get("service_id")}, {"_id": 0, "name": 1})
+                if user and business:
+                    await send_appointment_reminder(
+                        user_email=user["email"],
+                        user_name=user.get("full_name", ""),
+                        business_name=business.get("name", ""),
+                        service_name=service.get("name", "") if service else "",
+                        date=booking.get("date", ""),
+                        time=booking.get("time", ""),
+                        worker_name="",
+                        business_address=business.get("address", "")
+                    )
+                    await db.bookings.update_one({"id": booking["id"]}, {"$set": {"reminder_sent": True}})
+                    count += 1
+            except Exception as e:
+                logger.error(f"Error sending reminder for booking {booking.get('id')}: {e}")
+        logger.info(f"Sent {count} pending reminders")
+    except Exception as e:
+        logger.error(f"Error in send_pending_reminders: {e}")
+
+
 @router.get("/business/stats-detail")
 
 @router.get("/search-clients")

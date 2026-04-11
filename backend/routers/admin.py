@@ -48,6 +48,58 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
+
+async def generate_monthly_settlements(year: int, month: int, idempotency_key: str, admin_id: str = None, request=None):
+    """Generate monthly settlements for all businesses with completed bookings."""
+    period_key = f"{year}-{str(month).zfill(2)}"
+    
+    # Check if already generated
+    existing = await db.settlements.find_one({"period_key": period_key, "idempotency_key": idempotency_key}, {"_id": 0})
+    if existing:
+        return {"message": "Settlements already generated", "period": period_key}
+    
+    # Find all completed bookings in the period
+    start_date = f"{year}-{str(month).zfill(2)}-01"
+    if month == 12:
+        end_date = f"{year + 1}-01-01"
+    else:
+        end_date = f"{year}-{str(month + 1).zfill(2)}-01"
+    
+    pipeline = [
+        {"$match": {"status": "completed", "date": {"$gte": start_date, "$lt": end_date}, "deposit_paid": True}},
+        {"$group": {
+            "_id": "$business_id",
+            "total_amount": {"$sum": "$deposit_amount"},
+            "booking_count": {"$sum": 1},
+            "booking_ids": {"$push": "$id"}
+        }}
+    ]
+    results = await db.bookings.aggregate(pipeline).to_list(1000)
+    
+    settlements_created = 0
+    for r in results:
+        fee = round(r["total_amount"] * PLATFORM_FEE_PERCENT, 2)
+        payout = round(r["total_amount"] - fee, 2)
+        settlement = {
+            "id": generate_id(),
+            "business_id": r["_id"],
+            "period_key": period_key,
+            "idempotency_key": idempotency_key,
+            "total_amount": r["total_amount"],
+            "fee_amount": fee,
+            "payout_amount": payout,
+            "booking_count": r["booking_count"],
+            "booking_ids": r["booking_ids"],
+            "status": SettlementStatus.PENDING,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_by": admin_id,
+        }
+        await db.settlements.insert_one(settlement)
+        settlements_created += 1
+    
+    return {"message": f"Generated {settlements_created} settlements", "period": period_key, "count": settlements_created}
+
+
 @router.post("/settlements/generate")
 async def admin_generate_settlements(
     request: Request,
