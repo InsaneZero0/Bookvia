@@ -120,6 +120,8 @@ export const businessesAPI = {
   updateMe: (data) => api.put('/businesses/me', data),
   getDashboard: () => api.get('/businesses/me/dashboard'),
   getPrivateInfo: () => api.get('/businesses/me/private-info'),
+  getBusinessHours: () => api.get('/businesses/me/hours'),
+  updateBusinessHours: (hours) => api.put('/businesses/me/hours', hours),
   // Workers (for specific business - public)
   getWorkers: (businessId, includeInactive = false, serviceId = null) => 
     api.get(`/businesses/${businessId}/workers`, { params: { include_inactive: includeInactive, ...(serviceId ? { service_id: serviceId } : {}) } }),

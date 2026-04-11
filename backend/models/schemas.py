@@ -151,6 +151,7 @@ class BusinessResponse(BaseModel):
     distance_km: Optional[float] = None
     next_available_text: Optional[str] = None
     is_open_now: Optional[bool] = None
+    business_hours: Optional[Dict[str, Any]] = None
 
 class BusinessUpdate(BaseModel):
     name: Optional[str] = None

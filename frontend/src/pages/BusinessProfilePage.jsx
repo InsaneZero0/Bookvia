@@ -269,25 +269,30 @@ function getOpenStatus(workers, language) {
 function BusinessHours({ workers, language }) {
   const dayNames = language === 'es' ? DAY_NAMES_ES : DAY_NAMES_EN;
 
-  // Merge all worker schedules to get business hours
+  // Merge all worker schedules to get business hours (fallback)
+  // Prefer business_hours from business document if set
   const mergedHours = {};
+  const bizHours = business?.business_hours;
   for (let day = 0; day < 7; day++) {
-    let earliest = '23:59';
-    let latest = '00:00';
-    let isOpen = false;
-
-    workers.forEach(w => {
-      const daySchedule = w.schedule?.[String(day)];
-      if (daySchedule?.is_available && daySchedule.blocks?.length > 0) {
-        isOpen = true;
-        daySchedule.blocks.forEach(block => {
-          if (block.start_time < earliest) earliest = block.start_time;
-          if (block.end_time > latest) latest = block.end_time;
-        });
-      }
-    });
-
-    mergedHours[day] = isOpen ? { open: earliest, close: latest } : null;
+    if (bizHours && bizHours[String(day)]) {
+      const bh = bizHours[String(day)];
+      mergedHours[day] = bh.is_open ? { open: bh.open_time, close: bh.close_time } : null;
+    } else {
+      let earliest = '23:59';
+      let latest = '00:00';
+      let isOpen = false;
+      workers.forEach(w => {
+        const daySchedule = w.schedule?.[String(day)];
+        if (daySchedule?.is_available && daySchedule.blocks?.length > 0) {
+          isOpen = true;
+          daySchedule.blocks.forEach(block => {
+            if (block.start_time < earliest) earliest = block.start_time;
+            if (block.end_time > latest) latest = block.end_time;
+          });
+        }
+      });
+      mergedHours[day] = isOpen ? { open: earliest, close: latest } : null;
+    }
   }
 
   // Group consecutive days with same hours
