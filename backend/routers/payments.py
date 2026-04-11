@@ -60,6 +60,19 @@ def calculate_fees(amount: float) -> dict:
     payout_amount = round(amount - fee_amount, 2)
     return {"fee_amount": fee_amount, "payout_amount": payout_amount}
 
+
+async def expire_holds_task() -> int:
+    """Expire bookings that have been in 'hold' status for too long."""
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=HOLD_EXPIRATION_MINUTES)
+    cutoff_str = cutoff.isoformat()
+    result = await db.bookings.update_many(
+        {"status": "hold", "created_at": {"$lt": cutoff_str}},
+        {"$set": {"status": "cancelled", "cancelled_by": "system", "cancelled_reason": "Hold expired"}}
+    )
+    if result.modified_count > 0:
+        logger.info(f"Expired {result.modified_count} hold bookings")
+    return result.modified_count
+
 @router.post("/deposit/checkout")
 async def create_deposit_checkout(
     request: Request, 

@@ -80,6 +80,9 @@ Auth Social: Emergent-managed Google Auth (solo clientes)
 - [x] Fix schema ClosureDateCreate corrupto (campos de reseñas mezclados, causaba error 422 al marcar cierres)
 - [x] Fix imports faltantes de cloudinary_service en routers (cloudinary_configured, upload_image, validate_image perdidos en refactorizacion)
 - [x] Fix validate_schedule_blocks perdida en refactorizacion (causaba error al guardar horario de trabajadores)
+- [x] Fix is_exception_blocking perdida (motor de disponibilidad de citas bloqueaba incorrectamente)
+- [x] Fix send_pending_reminders, expire_holds_task y generate_monthly_settlements perdidas (admin endpoints rotos)
+- [x] Auditoria completa AST: 0 funciones indefinidas en todos los routers
 
 ## Tareas Pendientes
 
