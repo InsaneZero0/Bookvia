@@ -73,7 +73,7 @@ Auth Social: Emergent-managed Google Auth (solo clientes)
 - [x] Campo separado de "Num. ext." en registro para direcciones mas precisas
 
 ### Panel Admin (2FA con TOTP)
-- [x] 11 tabs: Resumen, Negocios, Usuarios, Resenas, Categorias, Rankings, Ciudades, Configuracion, Soporte, Suscripciones, Finanzas
+- [x] 12 tabs: Resumen, Negocios, Usuarios, Resenas, Categorias, Rankings, Ciudades, Configuracion, Soporte, Reportes, Suscripciones, Finanzas
 - [x] Vista Detalle de Negocio (Dialog): info general, documentos legales (RFC, CLABE, INE, CURP), suscripcion, propietario, servicios, trabajadores, resenas
 - [x] Aprobar/Rechazar/Suspender negocios desde detalle o listado
 - [x] Moderacion de resenas: buscar, paginar y eliminar resenas inapropiadas
@@ -88,6 +88,14 @@ Auth Social: Emergent-managed Google Auth (solo clientes)
 - [x] Rankings: top negocios por reservas, mejor calificados, ciudades mas activas, categorias populares (solo negocios aprobados)
 - [x] Alertas Admin: seccion en Resumen con alertas automaticas (pendientes, tickets abiertos, resenas negativas, suscripciones vencidas, negocios sin suscripcion, pagos retenidos)
 - [x] Gestion de Ciudades: listar 162 ciudades con busqueda, filtro activa/inactiva, toggle activar/desactivar con audit log
+- [x] Reportes Personalizados: filtros por fecha, ciudad, categoria. Resumen (reservas, ingresos, cancelaciones, usuarios), grafica diaria, top negocios y ciudades del periodo
+
+### Experiencia del Cliente
+- [x] Stats del usuario en dashboard: total reservas, gasto total, citas pendientes, rating promedio dado, resenas
+- [x] Seccion "Reservar de nuevo" con servicios completados recientes (acceso rapido a negocio)
+
+### Dashboard del Negocio
+- [x] Resumen rapido del dia/semana/mes con ingresos, citas, % cambio semanal, clientes unicos, resenas nuevas
 
 ### Tecnico
 - [x] Refactorizacion backend: server.py ~7000 lineas -> 235 lineas + 12 routers modulares

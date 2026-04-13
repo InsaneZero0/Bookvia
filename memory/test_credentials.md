@@ -8,6 +8,8 @@
 
 ## Business (Test)
 - Email: testrealstripe@bookvia.com
+- Email: testbiz_dashboard@test.com / TestBiz123!
 
 ## User (Test)
 - Email: test@test.com
+- Email: testuser_stats@test.com / TestPass123!
