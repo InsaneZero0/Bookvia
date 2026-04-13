@@ -162,3 +162,61 @@ async def get_favorites(token_data: TokenData = Depends(require_auth)):
 
 
 
+
+
+@router.get("/my-stats")
+async def get_user_stats(token_data: TokenData = Depends(require_auth)):
+    """Get user statistics for dashboard."""
+    user_id = token_data.user_id
+    user = await db.users.find_one({"id": user_id}, {"_id": 0, "created_at": 1})
+
+    total_bookings = await db.bookings.count_documents({"user_id": user_id})
+    completed = await db.bookings.count_documents({"user_id": user_id, "status": "completed"})
+    upcoming = await db.bookings.count_documents({"user_id": user_id, "status": {"$in": ["confirmed", "hold"]}})
+
+    # Total spent
+    pipeline = [
+        {"$match": {"user_id": user_id, "deposit_paid": True}},
+        {"$group": {"_id": None, "total": {"$sum": "$deposit_amount"}}}
+    ]
+    spent_res = await db.bookings.aggregate(pipeline).to_list(1)
+    total_spent = spent_res[0]["total"] if spent_res else 0
+
+    # Reviews given
+    reviews_given = await db.reviews.count_documents({"user_id": user_id})
+
+    # Avg rating given
+    avg_pipeline = [
+        {"$match": {"user_id": user_id}},
+        {"$group": {"_id": None, "avg": {"$avg": "$rating"}}}
+    ]
+    avg_res = await db.reviews.aggregate(avg_pipeline).to_list(1)
+    avg_rating = round(avg_res[0]["avg"], 1) if avg_res else 0
+
+    # Favorite category
+    cat_pipeline = [
+        {"$match": {"user_id": user_id}},
+        {"$group": {"_id": "$service_name", "count": {"$sum": 1}}},
+        {"$sort": {"count": -1}},
+        {"$limit": 1}
+    ]
+    cat_res = await db.bookings.aggregate(cat_pipeline).to_list(1)
+    fav_service = cat_res[0]["_id"] if cat_res else None
+
+    # Last 3 completed bookings (for rebook)
+    recent = await db.bookings.find(
+        {"user_id": user_id, "status": "completed"},
+        {"_id": 0, "id": 1, "business_id": 1, "business_name": 1, "service_id": 1, "service_name": 1, "worker_id": 1, "worker_name": 1}
+    ).sort("date", -1).limit(3).to_list(3)
+
+    return {
+        "total_bookings": total_bookings,
+        "completed": completed,
+        "upcoming": upcoming,
+        "total_spent": round(total_spent, 2),
+        "reviews_given": reviews_given,
+        "avg_rating_given": avg_rating,
+        "favorite_service": fav_service,
+        "member_since": user.get("created_at") if user else None,
+        "recent_completed": recent,
+    }

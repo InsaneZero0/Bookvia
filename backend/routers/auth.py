@@ -15,6 +15,7 @@ import uuid
 import json
 import math
 import pytz
+import pyotp
 from bson import ObjectId
 
 from core.database import db
@@ -808,22 +809,35 @@ async def verify_admin_2fa(verify: Admin2FAVerify, token_data: TokenData = Depen
 
 @router.post("/admin/login", response_model=dict)
 async def admin_login(credentials: AdminLogin, request: Request):
-    user = await db.users.find_one({"email": credentials.email, "role": UserRole.ADMIN})
+    user = await db.users.find_one({"email": credentials.email, "role": {"$in": [UserRole.ADMIN, UserRole.STAFF]}})
     if not user:
         raise HTTPException(status_code=401, detail="Invalid credentials")
     
     if not verify_password(credentials.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid credentials")
     
-    # Check if 2FA is enabled - REQUIRED for admin
+    user_role = user.get("role", UserRole.ADMIN)
+
+    # Check if 2FA is enabled
     if not user.get("totp_enabled"):
-        # Return special response indicating 2FA setup required
-        temp_token = create_token(user["id"], UserRole.ADMIN, user["email"])
-        return {
-            "requires_2fa_setup": True,
-            "temp_token": temp_token,
-            "message": "2FA setup required before accessing admin panel"
-        }
+        if user_role == UserRole.ADMIN:
+            # Super admin MUST set up 2FA
+            temp_token = create_token(user["id"], user_role, user["email"])
+            return {
+                "requires_2fa_setup": True,
+                "temp_token": temp_token,
+                "message": "2FA setup required before accessing admin panel"
+            }
+        # Staff without 2FA can login directly (2FA optional for staff)
+        await create_audit_log(
+            admin_id=user["id"], admin_email=user["email"],
+            action=AuditAction.ADMIN_LOGIN, target_type="staff",
+            target_id=user["id"], details={"login_successful": True, "role": user_role},
+            request=request
+        )
+        token = create_token(user["id"], user_role, user["email"])
+        user_resp = {k: v for k, v in user.items() if k not in ("_id", "password_hash", "totp_secret", "backup_codes")}
+        return {"token": token, "user": user_resp, "totp_enabled": False}
     
     # Verify 2FA
     totp = pyotp.TOTP(user["totp_secret"])
@@ -833,7 +847,6 @@ async def admin_login(credentials: AdminLogin, request: Request):
         for i, hashed_code in enumerate(user.get("backup_codes", [])):
             if verify_password(credentials.totp_code, hashed_code):
                 valid_backup = True
-                # Remove used backup code
                 backup_codes = user["backup_codes"]
                 backup_codes.pop(i)
                 await db.users.update_one(
@@ -845,19 +858,17 @@ async def admin_login(credentials: AdminLogin, request: Request):
         if not valid_backup:
             raise HTTPException(status_code=401, detail="Invalid 2FA code")
     
-    # Create audit log for admin login
+    # Create audit log
     await create_audit_log(
-        admin_id=user["id"],
-        admin_email=user["email"],
-        action=AuditAction.ADMIN_LOGIN,
-        target_type="admin",
-        target_id=user["id"],
-        details={"login_successful": True},
+        admin_id=user["id"], admin_email=user["email"],
+        action=AuditAction.ADMIN_LOGIN, target_type=user_role,
+        target_id=user["id"], details={"login_successful": True, "role": user_role},
         request=request
     )
     
-    token = create_token(user["id"], UserRole.ADMIN, user["email"])
-    return {"token": token, "user": UserResponse(**user).model_dump(), "totp_enabled": True}
+    token = create_token(user["id"], user_role, user["email"])
+    user_resp = {k: v for k, v in user.items() if k not in ("_id", "password_hash", "totp_secret", "backup_codes")}
+    return {"token": token, "user": user_resp, "totp_enabled": True}
 
 
 

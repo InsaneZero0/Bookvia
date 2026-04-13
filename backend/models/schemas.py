@@ -593,3 +593,74 @@ class NotificationResponse(BaseModel):
     read: bool = False
     created_at: str
     data: Optional[Dict[str, Any]] = None
+
+
+class CategoryUpdate(BaseModel):
+    name_es: Optional[str] = None
+    name_en: Optional[str] = None
+    slug: Optional[str] = None
+    icon: Optional[str] = None
+    image_url: Optional[str] = None
+    active: Optional[bool] = None
+
+
+class PlatformConfigUpdate(BaseModel):
+    platform_fee_percent: Optional[float] = None
+    subscription_price_mxn: Optional[float] = None
+    subscription_trial_days: Optional[int] = None
+    min_deposit_amount: Optional[float] = None
+
+
+class PlatformConfigResponse(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    platform_fee_percent: float = 0.08
+    subscription_price_mxn: float = 39.00
+    subscription_trial_days: int = 30
+    min_deposit_amount: float = 50.0
+    updated_at: Optional[str] = None
+    updated_by: Optional[str] = None
+
+
+class SupportTicketCreate(BaseModel):
+    subject: str
+    message: str
+    category: str = "general"
+    business_id: Optional[str] = None
+    booking_id: Optional[str] = None
+
+
+class SupportTicketResponse(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str
+    user_id: str
+    user_name: Optional[str] = None
+    user_email: Optional[str] = None
+    subject: str
+    category: str = "general"
+    status: str = "open"
+    business_id: Optional[str] = None
+    business_name: Optional[str] = None
+    booking_id: Optional[str] = None
+    messages: list = []
+    created_at: str
+    updated_at: Optional[str] = None
+    closed_at: Optional[str] = None
+
+
+class TicketMessageCreate(BaseModel):
+    message: str
+
+
+class StaffCreate(BaseModel):
+    email: EmailStr
+    password: str
+    full_name: str
+    role_label: str = "staff"
+    permissions: List[str] = []
+
+
+class StaffUpdate(BaseModel):
+    full_name: Optional[str] = None
+    role_label: Optional[str] = None
+    permissions: Optional[List[str]] = None
+    active: Optional[bool] = None

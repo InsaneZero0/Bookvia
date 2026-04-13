@@ -75,6 +75,7 @@ export default function BusinessDashboardPage() {
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [notifOpen, setNotifOpen] = useState(false);
+  const [dashSummary, setDashSummary] = useState(null);
   useEffect(() => {
     if (!isAuthenticated || !isBusiness) {
       navigate('/business/login');
@@ -178,6 +179,11 @@ export default function BusinessDashboardPage() {
         const pinRes = await businessesAPI.getPinStatus();
         setOwnerHasPin(pinRes.data?.has_pin || false);
       } catch { setOwnerHasPin(false); }
+      // Load dashboard summary
+      try {
+        const sumRes = await businessesAPI.getDashboardSummary();
+        setDashSummary(sumRes.data);
+      } catch { setDashSummary(null); }
     } catch (error) {
       console.error('Error loading dashboard:', error);
       const detail = error?.response?.data?.detail || error?.message || 'Error desconocido';
@@ -719,6 +725,58 @@ export default function BusinessDashboardPage() {
 
           {/* ── Overview/Schedule Tab ────────────────── */}
           <TabsContent value="overview" className="mt-6">
+            {/* Dashboard Summary Cards */}
+            {dashSummary && (
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6" data-testid="biz-dashboard-summary">
+                <Card>
+                  <CardContent className="p-3.5">
+                    <div className="flex items-center gap-2 mb-1">
+                      <div className="p-1.5 rounded-lg bg-blue-50"><CalendarIcon className="h-4 w-4 text-blue-600" /></div>
+                      <span className="text-xs text-muted-foreground">{t('Hoy', 'Today')}</span>
+                    </div>
+                    <p className="text-xl font-bold">{dashSummary.today?.bookings || 0}</p>
+                    <p className="text-xs text-muted-foreground">{t('citas', 'bookings')} · {formatCurrency(dashSummary.today?.revenue || 0)}</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-3.5">
+                    <div className="flex items-center gap-2 mb-1">
+                      <div className="p-1.5 rounded-lg bg-emerald-50"><DollarSign className="h-4 w-4 text-emerald-600" /></div>
+                      <span className="text-xs text-muted-foreground">{t('Esta semana', 'This week')}</span>
+                    </div>
+                    <p className="text-xl font-bold">{formatCurrency(dashSummary.week?.revenue || 0)}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {dashSummary.week?.bookings || 0} {t('citas', 'bookings')}
+                      {dashSummary.week?.change_pct !== 0 && (
+                        <span className={dashSummary.week?.change_pct > 0 ? 'text-emerald-600 ml-1' : 'text-red-500 ml-1'}>
+                          {dashSummary.week?.change_pct > 0 ? '+' : ''}{dashSummary.week?.change_pct}%
+                        </span>
+                      )}
+                    </p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-3.5">
+                    <div className="flex items-center gap-2 mb-1">
+                      <div className="p-1.5 rounded-lg bg-purple-50"><Users className="h-4 w-4 text-purple-600" /></div>
+                      <span className="text-xs text-muted-foreground">{t('Este mes', 'This month')}</span>
+                    </div>
+                    <p className="text-xl font-bold">{dashSummary.month?.unique_clients || 0}</p>
+                    <p className="text-xs text-muted-foreground">{t('clientes unicos', 'unique clients')} · {dashSummary.month?.bookings || 0} {t('citas', 'bookings')}</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-3.5">
+                    <div className="flex items-center gap-2 mb-1">
+                      <div className="p-1.5 rounded-lg bg-amber-50"><Star className="h-4 w-4 text-amber-600" /></div>
+                      <span className="text-xs text-muted-foreground">{t('Resenas nuevas', 'New reviews')}</span>
+                    </div>
+                    <p className="text-xl font-bold">{dashSummary.new_reviews || 0}</p>
+                    <p className="text-xs text-muted-foreground">{t('ultimos 7 dias', 'last 7 days')}</p>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
             <div className="grid lg:grid-cols-3 gap-6">
               <Card className="lg:col-span-1">
                 <CardHeader className="pb-2">

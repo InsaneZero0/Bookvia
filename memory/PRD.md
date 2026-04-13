@@ -31,7 +31,7 @@ Auth Social: Emergent-managed Google Auth (solo clientes)
     reviews.py              # Review CRUD
     categories.py           # Category CRUD
     payments.py             # Stripe payments, deposit checkout
-    admin.py                # Admin dashboard, approvals, suspensions
+    admin.py                # Admin dashboard, approvals, suspensions, detail, reviews, subscriptions
     notifications.py        # Notification CRUD
     finance.py              # Finance, settlements
     system.py               # Health, seed, contact, cities, upload, webhook
@@ -63,7 +63,6 @@ Auth Social: Emergent-managed Google Auth (solo clientes)
 - [x] Pagina de favoritos, historial de transacciones
 - [x] Carrusel de fotos en perfil publico
 - [x] Dashboard de negocio con modales de reagendar, detalles cliente
-- [x] Panel admin con 2FA, aprobaciones, estadisticas
 - [x] Pagina de Recepcion: crear citas walk-in, panel de citas del dia
 - [x] Busqueda de clientes existentes en Recepcion (por nombre/telefono)
 - [x] Badges "Recepcion" + "Pago en negocio" en citas creadas por el negocio
@@ -73,16 +72,44 @@ Auth Social: Emergent-managed Google Auth (solo clientes)
 - [x] Mapa interactivo Leaflet con marcador arrastrable en registro y configuracion (reemplaza iframe estatico)
 - [x] Campo separado de "Num. ext." en registro para direcciones mas precisas
 
+### Panel Admin (2FA con TOTP)
+- [x] 12 tabs: Resumen, Negocios, Usuarios, Resenas, Categorias, Rankings, Ciudades, Configuracion, Soporte, Reportes, Suscripciones, Finanzas (+1 Equipo solo Super Admin = 13 total)
+- [x] Vista Detalle de Negocio (Dialog): info general, documentos legales (RFC, CLABE, INE, CURP), suscripcion, propietario, servicios, trabajadores, resenas
+- [x] Aprobar/Rechazar/Suspender negocios desde detalle o listado
+- [x] Moderacion de resenas: buscar, paginar y eliminar resenas inapropiadas
+- [x] Gestion de Suscripciones: resumen por estado + listado de negocios con suscripcion
+- [x] Gestion de Usuarios: buscar, paginar, suspender
+- [x] Finanzas: liquidaciones, generar settlements, marcar como pagado, exportar CSV
+- [x] Audit logs
+- [x] Estadisticas de Crecimiento: 3 graficas interactivas (Registros por mes, Reservas por mes, Ingresos por mes) con recharts
+- [x] Gestion de Categorias CRUD: crear, editar, eliminar categorias con auto-slug, validacion de slug duplicado, bloqueo de eliminacion si negocios la usan
+- [x] Configuracion de Plataforma: comision %, precio suscripcion, dias prueba, deposito minimo (con validacion de rangos)
+- [x] Panel de Soporte: lista de tickets con stats, filtros, busqueda, conversacion admin-usuario, responder y cerrar tickets
+- [x] Rankings: top negocios por reservas, mejor calificados, ciudades mas activas, categorias populares (solo negocios aprobados)
+- [x] Alertas Admin: seccion en Resumen con alertas automaticas (pendientes, tickets abiertos, resenas negativas, suscripciones vencidas, negocios sin suscripcion, pagos retenidos)
+- [x] Gestion de Ciudades: listar 162 ciudades con busqueda, filtro activa/inactiva, toggle activar/desactivar con audit log
+- [x] Reportes Personalizados: filtros por fecha, ciudad, categoria. Resumen (reservas, ingresos, cancelaciones, usuarios), grafica diaria, top negocios y ciudades del periodo
+- [x] Sistema de Staff/Sub-Admin: crear, editar, eliminar miembros de equipo con permisos granulares por tab. Staff login sin 2FA. Super Admin tiene acceso total + tab Equipo exclusivo. Reseteo de contrasena.
+
+### Experiencia del Cliente
+- [x] Stats del usuario en dashboard: total reservas, gasto total, citas pendientes, rating promedio dado, resenas
+- [x] Seccion "Reservar de nuevo" con servicios completados recientes (acceso rapido a negocio)
+
+### Dashboard del Negocio
+- [x] Resumen rapido del dia/semana/mes con ingresos, citas, % cambio semanal, clientes unicos, resenas nuevas
+
 ### Tecnico
 - [x] Refactorizacion backend: server.py ~7000 lineas -> 235 lineas + 12 routers modulares
 - [x] Fix scheduler recordatorios: parametros corregidos (date, time, worker_name)
-- [x] Fix funcion calculate_fees perdida en refactorizacion (causaba error al pagar anticipo)
-- [x] Fix schema ClosureDateCreate corrupto (campos de reseñas mezclados, causaba error 422 al marcar cierres)
-- [x] Fix imports faltantes de cloudinary_service en routers (cloudinary_configured, upload_image, validate_image perdidos en refactorizacion)
-- [x] Fix validate_schedule_blocks perdida en refactorizacion (causaba error al guardar horario de trabajadores)
-- [x] Fix is_exception_blocking perdida (motor de disponibilidad de citas bloqueaba incorrectamente)
-- [x] Fix send_pending_reminders, expire_holds_task y generate_monthly_settlements perdidas (admin endpoints rotos)
+- [x] Fix funcion calculate_fees perdida en refactorizacion
+- [x] Fix schema ClosureDateCreate corrupto
+- [x] Fix imports faltantes de cloudinary_service en routers
+- [x] Fix validate_schedule_blocks perdida en refactorizacion
+- [x] Fix is_exception_blocking perdida
+- [x] Fix send_pending_reminders, expire_holds_task y generate_monthly_settlements perdidas
 - [x] Auditoria completa AST: 0 funciones indefinidas en todos los routers
+- [x] Fix ADMIN_INITIAL_PASSWORD no importado en system.py
+- [x] Fix pyotp no importado en auth.py
 
 ## Tareas Pendientes
 
@@ -91,10 +118,11 @@ Auth Social: Emergent-managed Google Auth (solo clientes)
 
 ### P3
 - [ ] PWA (Progressive Web App)
-- [ ] Stripe Connect (payouts automaticos)
+- [ ] Stripe Connect (payouts automaticos - pausado hasta resolver estructura fiscal)
 - [ ] Chat / Preguntas al negocio
 - [ ] Cupones o codigos de descuento
 - [ ] Notificaciones Push
+- [ ] Notificaciones por WhatsApp/SMS
 
 ## Notas Tecnicas
 - Google Login: Usa Emergent Auth (auth.emergentagent.com). Solo para clientes.
@@ -102,3 +130,4 @@ Auth Social: Emergent-managed Google Auth (solo clientes)
 - Recordatorio suscripcion: Scheduler cada 6h, negocios con subscription_status='none' +24h.
 - Recordatorios citas: Scheduler cada 30 min, timezone Mexico.
 - TIMEZONE PARSING: Siempre usar new Date(dateString + 'T12:00:00') en frontend.
+- Admin TOTP: usar script /app/scripts/get_admin_totp.py para generar codigos.

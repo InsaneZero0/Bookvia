@@ -1,50 +1,20 @@
-# Test Credentials for Bookvia
+# Test Credentials
 
-## Business Account (Owner - full access)
-- Email: testrealstripe@bookvia.com
-- Password: Test1234!
-- Business Name: Test Real Stripe
-- Status: approved
-- Login: /business/login -> tab "Negocio" -> "Soy el dueno"
-
-## Administrator Account (restricted access by permissions)
-- Business Email: testrealstripe@bookvia.com
-- Worker Name: Test Worker Duration
-- Worker ID: e8156189-9cc2-4b3d-9f0e-2df518915bda
-- PIN: 1234
-- Login: /business/login -> tab "Negocio" -> "Soy administrador"
-- Permissions (16 total):
-  - view_today_bookings=true
-  - view_confirmed_bookings=true
-  - view_agenda=true
-  - view_team=false
-  - complete_bookings=true
-  - reschedule_bookings=true
-  - cancel_bookings=false
-  - block_clients=false
-  - view_client_data=true
-  - edit_services=false
-  - view_reports=false
-  - edit_photos=false
-  - edit_description=false
-  - edit_schedule=false
-  - edit_contact=false
-
-## Regular User Account
-- Email: cliente@bookvia.com
-- Password: Test1234!
-- Email Verified: Yes
-
-## Admin Account (System Admin)
+## Super Admin
 - Email: zamorachapa50@gmail.com
 - Password: RainbowLol3133!
+- TOTP: Required (use /app/scripts/get_admin_totp.py to generate codes)
+- Login endpoint: POST /api/auth/admin/login with {email, password, totp_code}
 
-## Business Account (Without Subscription - for testing blocked login)
-- Email: nosub@test.com
-- Password: Test1234!
-- subscription_status: none (login blocked with 403 subscription_required)
+## Staff (create via Super Admin panel)
+- Login: same endpoint POST /api/auth/admin/login
+- TOTP: NOT required (use totp_code: "000000")
+- Permissions: assigned per tab (overview, businesses, users, etc.)
 
-## Login URLs
-- /business/login (select "Negocio" tab, then "Soy el dueno" or "Soy administrador")
-- /login (default "Usuario" tab)
-- /admin/login (system admin)
+## Business (Test)
+- Email: testrealstripe@bookvia.com
+- Email: testbiz_dashboard@test.com / TestBiz123!
+
+## User (Test)
+- Email: test@test.com
+- Email: testuser_stats@test.com / TestPass123!

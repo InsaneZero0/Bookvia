@@ -18,7 +18,7 @@ import pytz
 from bson import ObjectId
 
 from core.database import db
-from core.config import ENV, BASE_URL, ADMIN_EMAIL
+from core.config import ENV, BASE_URL, ADMIN_EMAIL, ADMIN_INITIAL_PASSWORD
 from core.security import (
     TokenData, create_token, decode_token,
     hash_password, verify_password,
@@ -591,3 +591,43 @@ async def serve_file(path: str):
 
 
 
+
+
+@router.post("/support/tickets")
+async def create_support_ticket(ticket: SupportTicketCreate, token_data: TokenData = Depends(require_auth)):
+    """Create a support ticket (authenticated users)."""
+    user = await db.users.find_one({"id": token_data.user_id}, {"_id": 0, "full_name": 1, "email": 1})
+    now = datetime.now(timezone.utc).isoformat()
+    biz_name = None
+    if ticket.business_id:
+        biz = await db.businesses.find_one({"id": ticket.business_id}, {"_id": 0, "name": 1})
+        biz_name = biz.get("name") if biz else None
+    doc = {
+        "id": generate_id(),
+        "user_id": token_data.user_id,
+        "user_name": user.get("full_name", "") if user else "",
+        "user_email": user.get("email", "") if user else "",
+        "subject": ticket.subject,
+        "message": ticket.message,
+        "category": ticket.category,
+        "status": "open",
+        "business_id": ticket.business_id,
+        "business_name": biz_name,
+        "booking_id": ticket.booking_id,
+        "messages": [{"sender": "user", "sender_name": user.get("full_name", ""), "message": ticket.message, "created_at": now}],
+        "created_at": now,
+        "updated_at": now,
+    }
+    await db.support_tickets.insert_one(doc)
+    doc.pop("_id", None)
+    return doc
+
+
+@router.get("/support/my-tickets")
+async def get_my_tickets(page: int = 1, limit: int = 20, token_data: TokenData = Depends(require_auth)):
+    """Get tickets created by the current user."""
+    total = await db.support_tickets.count_documents({"user_id": token_data.user_id})
+    tickets = await db.support_tickets.find(
+        {"user_id": token_data.user_id}, {"_id": 0}
+    ).sort("created_at", -1).skip((page - 1) * limit).limit(limit).to_list(limit)
+    return {"tickets": tickets, "total": total}

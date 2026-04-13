@@ -266,7 +266,7 @@ function getOpenStatus(workers, language) {
   return { isOpen, nextOpenText };
 }
 
-function BusinessHours({ workers, language }) {
+function BusinessHours({ workers, language, business }) {
   const dayNames = language === 'es' ? DAY_NAMES_ES : DAY_NAMES_EN;
 
   // Merge all worker schedules to get business hours (fallback)
@@ -907,7 +907,7 @@ export default function BusinessProfilePage() {
                   {language === 'es' ? 'Horarios de apertura' : 'Opening hours'}
                 </h2>
                 <div className="rounded-xl border p-4">
-                  <BusinessHours workers={workers} language={language} />
+                  <BusinessHours workers={workers} language={language} business={business} />
                 </div>
               </section>
             )}

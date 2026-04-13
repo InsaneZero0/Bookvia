@@ -102,6 +102,7 @@ export const usersAPI = {
   addFavorite: (businessId) => api.post(`/users/favorites/${businessId}`),
   removeFavorite: (businessId) => api.delete(`/users/favorites/${businessId}`),
   getFavorites: () => api.get('/users/favorites'),
+  getMyStats: () => api.get('/users/my-stats'),
 };
 
 // Categories API
@@ -188,6 +189,7 @@ export const businessesAPI = {
   getActivityLog: (params = {}) => api.get('/businesses/my/activity-log', { params }),
   getReports: (period = 'month') => api.get('/businesses/my/reports', { params: { period } }),
   exportReports: (period = 'month') => api.get('/businesses/my/reports/export', { params: { period }, responseType: 'blob' }),
+  getDashboardSummary: () => api.get('/businesses/my/dashboard-summary'),
   getClientHistory: (userId) => api.get(`/businesses/my/client-history/${userId}`),
   getMyBusiness: () => api.get('/businesses/me'),
   updateBusiness: (data) => api.put('/businesses/me', data),
@@ -269,6 +271,8 @@ export const notificationsAPI = {
 export const adminAPI = {
   getStats: () => api.get('/admin/stats'),
   getPendingBusinesses: () => api.get('/admin/businesses/pending'),
+  getAllBusinesses: (params) => api.get('/admin/businesses/all', { params }),
+  getAllUsers: (params) => api.get('/admin/users/all', { params }),
   approveBusiness: (id) => api.put(`/admin/businesses/${id}/approve`),
   rejectBusiness: (id, reason) => api.put(`/admin/businesses/${id}/reject`, null, { params: { reason } }),
   suspendBusiness: (id, reason) => api.put(`/admin/businesses/${id}/suspend`, null, { params: { reason } }),
@@ -277,18 +281,49 @@ export const adminAPI = {
   getAuditLogs: (params) => api.get('/admin/audit-logs', { params }),
   toggleFeatured: (id, featured) => api.put(`/admin/businesses/${id}/feature`, null, { params: { featured } }),
   getSentEmails: (params) => api.get('/admin/emails', { params }),
-  // Payment management
   holdPayment: (id, reason) => api.put(`/admin/payments/${id}/hold`, null, { params: { reason } }),
   releasePayment: (id) => api.put(`/admin/payments/${id}/release`),
   getHeldPayments: (params) => api.get('/admin/payments/held', { params }),
-  // Settlements
   getSettlements: (params) => api.get('/admin/settlements', { params }),
   generateSettlements: (year, month) => api.post(`/admin/settlements/generate?year=${year}&month=${month}`),
   markSettlementPaid: (id, payout_reference) => api.put(`/admin/settlements/${id}/pay`, { payout_reference }),
   togglePayoutHold: (businessId, hold, reason) => api.put(`/admin/businesses/${businessId}/payout-hold`, { hold, reason }),
-  // Export
   exportTransactions: (year, month) => api.get(`/admin/export/transactions?year=${year}&month=${month}`, { responseType: 'blob' }),
   exportSettlements: (year, month) => api.get(`/admin/export/settlements?year=${year}&month=${month}`, { responseType: 'blob' }),
+  getBusinessDetail: (id) => api.get(`/admin/businesses/${id}/detail`),
+  getAllReviews: (params) => api.get('/admin/reviews/all', { params }),
+  getSubscriptions: () => api.get('/admin/subscriptions'),
+  getGrowthStats: (months) => api.get('/admin/growth', { params: { months } }),
+  // Categories CRUD
+  getCategories: () => api.get('/admin/categories'),
+  createCategory: (data) => api.post('/admin/categories', data),
+  updateCategory: (id, data) => api.put(`/admin/categories/${id}`, data),
+  deleteCategory: (id) => api.delete(`/admin/categories/${id}`),
+  // Platform config
+  getConfig: () => api.get('/admin/config'),
+  updateConfig: (data) => api.put('/admin/config', data),
+  // Support tickets
+  getTickets: (params) => api.get('/admin/tickets', { params }),
+  getTicketStats: () => api.get('/admin/tickets/stats'),
+  getTicketDetail: (id) => api.get(`/admin/tickets/${id}`),
+  respondToTicket: (id, message) => api.post(`/admin/tickets/${id}/respond`, { message }),
+  closeTicket: (id) => api.put(`/admin/tickets/${id}/close`),
+  // Rankings
+  getRankings: () => api.get('/admin/rankings'),
+  // Alerts
+  getAlerts: () => api.get('/admin/alerts'),
+  // Cities
+  getCities: (params) => api.get('/admin/cities', { params }),
+  toggleCity: (slug, active) => api.put(`/admin/cities/${slug}/toggle`, null, { params: { active } }),
+  // Custom reports
+  getCustomReport: (params) => api.get('/admin/reports/custom', { params }),
+  // Staff management
+  getStaff: () => api.get('/admin/staff'),
+  createStaff: (data) => api.post('/admin/staff', data),
+  updateStaff: (id, data) => api.put(`/admin/staff/${id}`, data),
+  deleteStaff: (id) => api.delete(`/admin/staff/${id}`),
+  resetStaffPassword: (id) => api.put(`/admin/staff/${id}/reset-password`),
+  getMyPermissions: () => api.get('/admin/my-permissions'),
 };
 
 // Utility API
@@ -296,6 +331,8 @@ export const utilityAPI = {
   getCities: (countryCode = 'MX') => api.get('/cities', { params: { country_code: countryCode } }),
   seed: () => api.post('/seed'),
   seedCountries: () => api.post('/seed/countries'),
+  createSupportTicket: (data) => api.post('/support/tickets', data),
+  getMyTickets: (params) => api.get('/support/my-tickets', { params }),
 };
 
 // SEO API

@@ -155,7 +155,9 @@ export function AuthProvider({ children }) {
     }
   };
 
-  const isAdmin = user?.role === 'admin';
+  const isAdmin = user?.role === 'admin' || user?.role === 'staff';
+  const isSuperAdmin = user?.role === 'admin';
+  const isStaff = user?.role === 'staff';
   const isBusiness = user?.role === 'business';
   const isUser = user?.role === 'user';
   const isManager = !!user?.is_manager;
@@ -173,6 +175,8 @@ export function AuthProvider({ children }) {
       loading,
       isAuthenticated,
       isAdmin,
+      isSuperAdmin,
+      isStaff,
       isBusiness,
       isUser,
       isManager,

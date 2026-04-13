@@ -72,6 +72,75 @@ def validate_schedule_blocks(schedule: dict):
                 )
 
 
+@router.get("/my/dashboard-summary")
+async def get_dashboard_summary(token_data: TokenData = Depends(require_business)):
+    """Quick dashboard summary: today, this week, comparison."""
+    business = await db.businesses.find_one({"user_id": token_data.user_id}, {"_id": 0, "id": 1})
+    if not business:
+        raise HTTPException(status_code=404, detail="Business not found")
+    bid = business["id"]
+    now = datetime.now(timezone.utc)
+    today = now.strftime("%Y-%m-%d")
+    week_start = (now - timedelta(days=now.weekday())).strftime("%Y-%m-%d")
+    prev_week_start = (now - timedelta(days=now.weekday() + 7)).strftime("%Y-%m-%d")
+    month_start = now.replace(day=1).strftime("%Y-%m-%d")
+
+    # Today
+    today_bookings = await db.bookings.count_documents({"business_id": bid, "date": today})
+    today_completed = await db.bookings.count_documents({"business_id": bid, "date": today, "status": "completed"})
+    today_revenue_pipe = [
+        {"$match": {"business_id": bid, "date": today, "deposit_paid": True}},
+        {"$group": {"_id": None, "t": {"$sum": "$deposit_amount"}}}
+    ]
+    today_rev = await db.bookings.aggregate(today_revenue_pipe).to_list(1)
+    today_revenue = today_rev[0]["t"] if today_rev else 0
+
+    # This week
+    week_bookings = await db.bookings.count_documents({"business_id": bid, "date": {"$gte": week_start}})
+    week_rev_pipe = [
+        {"$match": {"business_id": bid, "date": {"$gte": week_start}, "deposit_paid": True}},
+        {"$group": {"_id": None, "t": {"$sum": "$deposit_amount"}}}
+    ]
+    week_rev = await db.bookings.aggregate(week_rev_pipe).to_list(1)
+    week_revenue = week_rev[0]["t"] if week_rev else 0
+
+    # Previous week (for comparison)
+    prev_week_bookings = await db.bookings.count_documents({
+        "business_id": bid, "date": {"$gte": prev_week_start, "$lt": week_start}
+    })
+
+    # This month
+    month_bookings = await db.bookings.count_documents({"business_id": bid, "date": {"$gte": month_start}})
+    month_rev_pipe = [
+        {"$match": {"business_id": bid, "date": {"$gte": month_start}, "deposit_paid": True}},
+        {"$group": {"_id": None, "t": {"$sum": "$deposit_amount"}}}
+    ]
+    month_rev = await db.bookings.aggregate(month_rev_pipe).to_list(1)
+    month_revenue = month_rev[0]["t"] if month_rev else 0
+
+    # Pending reviews (unresponded)
+    new_reviews = await db.reviews.count_documents({
+        "business_id": bid,
+        "created_at": {"$gte": (now - timedelta(days=7)).isoformat()}
+    })
+
+    # Client retention: unique clients this month vs last month
+    this_month_clients_pipe = [
+        {"$match": {"business_id": bid, "date": {"$gte": month_start}}},
+        {"$group": {"_id": "$user_id"}}
+    ]
+    this_month_clients = len(await db.bookings.aggregate(this_month_clients_pipe).to_list(1000))
+
+    week_change = round(((week_bookings - prev_week_bookings) / max(prev_week_bookings, 1)) * 100) if prev_week_bookings else 0
+
+    return {
+        "today": {"bookings": today_bookings, "completed": today_completed, "revenue": round(today_revenue, 2)},
+        "week": {"bookings": week_bookings, "revenue": round(week_revenue, 2), "change_pct": week_change},
+        "month": {"bookings": month_bookings, "revenue": round(month_revenue, 2), "unique_clients": this_month_clients},
+        "new_reviews": new_reviews,
+    }
+
+
 @router.get("/my/reports")
 async def get_business_reports(
     period: str = "month",

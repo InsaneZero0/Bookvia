@@ -24,7 +24,8 @@ from core.security import (
     generate_totp_secret, verify_totp, generate_totp_qr
 )
 from core.dependencies import (
-    security, get_current_user, require_auth, require_business, require_admin
+    security, get_current_user, require_auth, require_business, require_admin,
+    require_super_admin, check_staff_permission
 )
 from core.helpers import (
     generate_id, generate_slug, calculate_bayesian_rating,
@@ -395,6 +396,214 @@ async def get_admin_stats(token_data: TokenData = Depends(require_admin)):
 
 
 
+@router.get("/growth")
+async def get_growth_stats(months: int = 12, token_data: TokenData = Depends(require_admin)):
+    """Get monthly growth stats for businesses, bookings and revenue."""
+    now = datetime.now(timezone.utc)
+    results = []
+
+    for i in range(months - 1, -1, -1):
+        # Calculate month boundaries
+        d = now.replace(day=1) - timedelta(days=i * 28)
+        y, m = d.year, d.month
+        start = f"{y}-{m:02d}-01"
+        if m == 12:
+            end = f"{y + 1}-01-01"
+        else:
+            end = f"{y}-{m + 1:02d}-01"
+        start_iso = f"{y}-{m:02d}-01T00:00:00"
+        end_iso = end + "T00:00:00"
+
+        biz_count = await db.businesses.count_documents({
+            "created_at": {"$gte": start_iso, "$lt": end_iso}
+        })
+        booking_count = await db.bookings.count_documents({
+            "date": {"$gte": start, "$lt": end}
+        })
+        user_count = await db.users.count_documents({
+            "role": UserRole.USER,
+            "created_at": {"$gte": start_iso, "$lt": end_iso}
+        })
+        payments = await db.payment_transactions.find({
+            "status": PaymentStatus.COMPLETED,
+            "created_at": {"$gte": start_iso, "$lt": end_iso}
+        }, {"_id": 0, "amount": 1}).to_list(10000)
+        revenue = sum(p.get("amount", 0) for p in payments)
+
+        label = f"{y}-{m:02d}"
+        results.append({
+            "month": label,
+            "businesses": biz_count,
+            "bookings": booking_count,
+            "users": user_count,
+            "revenue": round(revenue, 2),
+        })
+
+    return results
+
+
+@router.get("/businesses/all")
+async def get_all_businesses(
+    search: str = "", status: str = "", city: str = "",
+    page: int = 1, limit: int = 50,
+    token_data: TokenData = Depends(require_admin)
+):
+    """List all businesses with search and filters."""
+    query = {}
+    if status:
+        query["status"] = status
+    if city:
+        query["city"] = {"$regex": city, "$options": "i"}
+    if search:
+        query["$or"] = [
+            {"name": {"$regex": search, "$options": "i"}},
+            {"email": {"$regex": search, "$options": "i"}},
+            {"phone": {"$regex": search, "$options": "i"}},
+        ]
+    total = await db.businesses.count_documents(query)
+    businesses = await db.businesses.find(
+        query, {"_id": 0, "password_hash": 0}
+    ).sort("created_at", -1).skip((page - 1) * limit).limit(limit).to_list(limit)
+
+    # Get owner info and booking counts for each business
+    results = []
+    for b in businesses:
+        owner = await db.users.find_one({"business_id": b["id"]}, {"_id": 0, "email": 1, "full_name": 1})
+        booking_count = await db.bookings.count_documents({"business_id": b["id"]})
+        review_count = await db.reviews.count_documents({"business_id": b["id"]})
+        b["owner_email"] = owner.get("email", "") if owner else ""
+        b["owner_name"] = owner.get("full_name", "") if owner else ""
+        b["booking_count"] = booking_count
+        b["review_count"] = review_count
+        results.append(b)
+
+    return {"businesses": results, "total": total, "page": page, "pages": (total + limit - 1) // limit}
+
+
+@router.get("/users/all")
+async def get_all_users(
+    search: str = "", page: int = 1, limit: int = 50,
+    token_data: TokenData = Depends(require_admin)
+):
+    """List all users with search."""
+    query = {"role": {"$ne": "admin"}}
+    if search:
+        query["$or"] = [
+            {"full_name": {"$regex": search, "$options": "i"}},
+            {"email": {"$regex": search, "$options": "i"}},
+            {"phone": {"$regex": search, "$options": "i"}},
+        ]
+    total = await db.users.count_documents(query)
+    users = await db.users.find(
+        query, {"_id": 0, "password_hash": 0, "totp_secret": 0}
+    ).sort("created_at", -1).skip((page - 1) * limit).limit(limit).to_list(limit)
+
+    results = []
+    for u in users:
+        booking_count = await db.bookings.count_documents({"user_id": u["id"]})
+        u["booking_count"] = booking_count
+        results.append(u)
+
+    return {"users": results, "total": total, "page": page, "pages": (total + limit - 1) // limit}
+
+
+
+@router.get("/businesses/{business_id}/detail")
+async def get_business_detail(business_id: str, token_data: TokenData = Depends(require_admin)):
+    """Get complete business detail for admin review including legal documents."""
+    business = await db.businesses.find_one({"id": business_id}, {"_id": 0, "password_hash": 0})
+    if not business:
+        raise HTTPException(status_code=404, detail="Business not found")
+
+    # Get owner info
+    owner = await db.users.find_one({"business_id": business_id}, {"_id": 0, "password_hash": 0, "totp_secret": 0})
+
+    # Get booking stats
+    total_bookings = await db.bookings.count_documents({"business_id": business_id})
+    completed_bookings = await db.bookings.count_documents({"business_id": business_id, "status": "completed"})
+    cancelled_bookings = await db.bookings.count_documents({"business_id": business_id, "status": "cancelled"})
+
+    # Get revenue
+    pipeline = [
+        {"$match": {"business_id": business_id, "status": "completed", "deposit_paid": True}},
+        {"$group": {"_id": None, "total": {"$sum": "$deposit_amount"}}}
+    ]
+    revenue_result = await db.bookings.aggregate(pipeline).to_list(1)
+    total_revenue = revenue_result[0]["total"] if revenue_result else 0
+
+    # Get reviews
+    reviews = await db.reviews.find({"business_id": business_id}, {"_id": 0}).sort("created_at", -1).to_list(20)
+    avg_rating = sum(r.get("rating", 0) for r in reviews) / len(reviews) if reviews else 0
+
+    # Get workers
+    workers = await db.workers.find({"business_id": business_id, "active": True}, {"_id": 0, "id": 1, "name": 1}).to_list(50)
+
+    # Get services
+    services = await db.services.find({"business_id": business_id, "active": True}, {"_id": 0, "id": 1, "name": 1, "price": 1, "duration": 1}).to_list(50)
+
+    return {
+        "business": business,
+        "owner": owner,
+        "stats": {
+            "total_bookings": total_bookings,
+            "completed_bookings": completed_bookings,
+            "cancelled_bookings": cancelled_bookings,
+            "total_revenue": total_revenue,
+            "avg_rating": round(avg_rating, 1),
+            "review_count": len(reviews),
+        },
+        "workers": workers,
+        "services": services,
+        "reviews": reviews,
+    }
+
+
+@router.get("/reviews/all")
+async def get_all_reviews(
+    search: str = "", page: int = 1, limit: int = 30,
+    token_data: TokenData = Depends(require_admin)
+):
+    """List all reviews for moderation."""
+    query = {}
+    if search:
+        query["$or"] = [
+            {"comment": {"$regex": search, "$options": "i"}},
+            {"user_name": {"$regex": search, "$options": "i"}},
+        ]
+    total = await db.reviews.count_documents(query)
+    reviews = await db.reviews.find(query, {"_id": 0}).sort("created_at", -1).skip((page - 1) * limit).limit(limit).to_list(limit)
+
+    # Enrich with business name
+    for r in reviews:
+        biz = await db.businesses.find_one({"id": r.get("business_id")}, {"_id": 0, "name": 1})
+        r["business_name"] = biz.get("name", "?") if biz else "?"
+
+    return {"reviews": reviews, "total": total, "page": page, "pages": (total + limit - 1) // limit}
+
+
+@router.get("/subscriptions")
+async def get_subscription_overview(token_data: TokenData = Depends(require_admin)):
+    """Get subscription overview for all businesses."""
+    pipeline = [
+        {"$group": {
+            "_id": "$subscription_status",
+            "count": {"$sum": 1}
+        }}
+    ]
+    status_counts = await db.businesses.aggregate(pipeline).to_list(10)
+    summary = {item["_id"]: item["count"] for item in status_counts if item["_id"]}
+
+    # Get businesses with subscription details
+    businesses = await db.businesses.find(
+        {"subscription_status": {"$exists": True, "$ne": None}},
+        {"_id": 0, "id": 1, "name": 1, "email": 1, "city": 1, "subscription_status": 1,
+         "subscription_id": 1, "subscription_started_at": 1, "created_at": 1}
+    ).sort("created_at", -1).to_list(500)
+
+    return {"summary": summary, "businesses": businesses}
+
+
+
 @router.get("/businesses/pending", response_model=List[BusinessResponse])
 async def get_pending_businesses(token_data: TokenData = Depends(require_admin)):
     # Only show businesses whose owner has verified their email
@@ -716,3 +925,647 @@ async def get_held_payments(page: int = 1, limit: int = 50, token_data: TokenDat
 
 
 
+
+
+# ============ CATEGORY MANAGEMENT ============
+
+@router.get("/categories")
+async def admin_get_categories(token_data: TokenData = Depends(require_admin)):
+    """Get all categories with business counts."""
+    cats = await db.categories.find({}, {"_id": 0}).to_list(100)
+    for c in cats:
+        count = await db.businesses.count_documents({"category_id": c["id"]})
+        c["business_count"] = count
+    return cats
+
+
+@router.post("/categories")
+async def admin_create_category(category: CategoryCreate, request: Request, token_data: TokenData = Depends(require_admin)):
+    """Create a new category."""
+    existing = await db.categories.find_one({"slug": category.slug}, {"_id": 0})
+    if existing:
+        raise HTTPException(status_code=400, detail="Category with this slug already exists")
+    doc = {"id": generate_id(), "active": True, **category.model_dump()}
+    await db.categories.insert_one(doc)
+    await create_audit_log(
+        admin_id=token_data.user_id, admin_email=token_data.email,
+        action=AuditAction.CATEGORY_CREATE, target_type="category",
+        target_id=doc["id"], details={"name_es": category.name_es}, request=request
+    )
+    doc.pop("_id", None)
+    return doc
+
+
+@router.put("/categories/{category_id}")
+async def admin_update_category(category_id: str, update: CategoryUpdate, request: Request, token_data: TokenData = Depends(require_admin)):
+    """Update a category."""
+    cat = await db.categories.find_one({"id": category_id})
+    if not cat:
+        raise HTTPException(status_code=404, detail="Category not found")
+    changes = {k: v for k, v in update.model_dump().items() if v is not None}
+    if not changes:
+        raise HTTPException(status_code=400, detail="No changes provided")
+    if "slug" in changes:
+        dup = await db.categories.find_one({"slug": changes["slug"], "id": {"$ne": category_id}})
+        if dup:
+            raise HTTPException(status_code=400, detail="Slug already in use")
+    await db.categories.update_one({"id": category_id}, {"$set": changes})
+    await create_audit_log(
+        admin_id=token_data.user_id, admin_email=token_data.email,
+        action=AuditAction.CATEGORY_UPDATE, target_type="category",
+        target_id=category_id, details=changes, request=request
+    )
+    updated = await db.categories.find_one({"id": category_id}, {"_id": 0})
+    return updated
+
+
+@router.delete("/categories/{category_id}")
+async def admin_delete_category(category_id: str, request: Request, token_data: TokenData = Depends(require_admin)):
+    """Delete a category (only if no businesses use it)."""
+    cat = await db.categories.find_one({"id": category_id})
+    if not cat:
+        raise HTTPException(status_code=404, detail="Category not found")
+    biz_count = await db.businesses.count_documents({"category_id": category_id})
+    if biz_count > 0:
+        raise HTTPException(status_code=400, detail=f"Cannot delete: {biz_count} businesses use this category")
+    await db.categories.delete_one({"id": category_id})
+    await create_audit_log(
+        admin_id=token_data.user_id, admin_email=token_data.email,
+        action=AuditAction.CATEGORY_DELETE, target_type="category",
+        target_id=category_id, details={"name_es": cat.get("name_es")}, request=request
+    )
+    return {"message": "Category deleted"}
+
+
+# ============ PLATFORM CONFIG ============
+
+@router.get("/config")
+async def get_platform_config(token_data: TokenData = Depends(require_admin)):
+    """Get current platform configuration."""
+    config = await db.platform_config.find_one({"_id": "main"})
+    if not config:
+        return {
+            "platform_fee_percent": PLATFORM_FEE_PERCENT,
+            "subscription_price_mxn": SUBSCRIPTION_PRICE_MXN,
+            "subscription_trial_days": SUBSCRIPTION_TRIAL_DAYS,
+            "min_deposit_amount": MIN_DEPOSIT_AMOUNT,
+            "updated_at": None,
+            "updated_by": None,
+        }
+    config.pop("_id", None)
+    return config
+
+
+@router.put("/config")
+async def update_platform_config(update: PlatformConfigUpdate, request: Request, token_data: TokenData = Depends(require_admin)):
+    """Update platform configuration."""
+    changes = {k: v for k, v in update.model_dump().items() if v is not None}
+    if not changes:
+        raise HTTPException(status_code=400, detail="No changes provided")
+    # Validate ranges
+    if "platform_fee_percent" in changes and not (0 <= changes["platform_fee_percent"] <= 0.5):
+        raise HTTPException(status_code=400, detail="Fee must be between 0% and 50%")
+    if "subscription_price_mxn" in changes and changes["subscription_price_mxn"] < 0:
+        raise HTTPException(status_code=400, detail="Price cannot be negative")
+    if "subscription_trial_days" in changes and changes["subscription_trial_days"] < 0:
+        raise HTTPException(status_code=400, detail="Trial days cannot be negative")
+    if "min_deposit_amount" in changes and changes["min_deposit_amount"] < 0:
+        raise HTTPException(status_code=400, detail="Min deposit cannot be negative")
+
+    changes["updated_at"] = datetime.now(timezone.utc).isoformat()
+    changes["updated_by"] = token_data.email
+
+    await db.platform_config.update_one(
+        {"_id": "main"},
+        {"$set": changes},
+        upsert=True
+    )
+    await create_audit_log(
+        admin_id=token_data.user_id, admin_email=token_data.email,
+        action=AuditAction.CONFIG_UPDATE, target_type="platform_config",
+        target_id="main", details=changes, request=request
+    )
+    config = await db.platform_config.find_one({"_id": "main"})
+    config.pop("_id", None)
+    return config
+
+
+# ============ SUPPORT TICKETS ============
+
+@router.get("/tickets")
+async def get_all_tickets(
+    status: str = "", search: str = "", page: int = 1, limit: int = 20,
+    token_data: TokenData = Depends(require_admin)
+):
+    """Get all support tickets with filters."""
+    query = {}
+    if status:
+        query["status"] = status
+    if search:
+        query["$or"] = [
+            {"subject": {"$regex": search, "$options": "i"}},
+            {"user_email": {"$regex": search, "$options": "i"}},
+        ]
+    total = await db.support_tickets.count_documents(query)
+    tickets = await db.support_tickets.find(query, {"_id": 0}).sort("created_at", -1).skip((page - 1) * limit).limit(limit).to_list(limit)
+    return {"tickets": tickets, "total": total, "page": page, "pages": max(1, (total + limit - 1) // limit)}
+
+
+@router.get("/tickets/stats")
+async def get_ticket_stats(token_data: TokenData = Depends(require_admin)):
+    """Get ticket statistics."""
+    open_count = await db.support_tickets.count_documents({"status": "open"})
+    in_progress = await db.support_tickets.count_documents({"status": "in_progress"})
+    closed = await db.support_tickets.count_documents({"status": "closed"})
+    total = open_count + in_progress + closed
+    return {"open": open_count, "in_progress": in_progress, "closed": closed, "total": total}
+
+
+@router.get("/tickets/{ticket_id}")
+async def get_ticket_detail(ticket_id: str, token_data: TokenData = Depends(require_admin)):
+    """Get a single ticket with all messages."""
+    ticket = await db.support_tickets.find_one({"id": ticket_id}, {"_id": 0})
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    return ticket
+
+
+@router.post("/tickets/{ticket_id}/respond")
+async def respond_to_ticket(ticket_id: str, body: TicketMessageCreate, request: Request, token_data: TokenData = Depends(require_admin)):
+    """Admin responds to a ticket."""
+    ticket = await db.support_tickets.find_one({"id": ticket_id})
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    now = datetime.now(timezone.utc).isoformat()
+    msg = {"sender": "admin", "sender_name": token_data.email, "message": body.message, "created_at": now}
+    await db.support_tickets.update_one(
+        {"id": ticket_id},
+        {"$push": {"messages": msg}, "$set": {"status": "in_progress", "updated_at": now}}
+    )
+    # Notify user
+    if ticket.get("user_id"):
+        await create_notification(
+            ticket["user_id"], "Respuesta a tu ticket",
+            f"Tu ticket '{ticket['subject']}' tiene una nueva respuesta.",
+            "system", {"ticket_id": ticket_id}
+        )
+    await create_audit_log(
+        admin_id=token_data.user_id, admin_email=token_data.email,
+        action=AuditAction.TICKET_RESPOND, target_type="ticket",
+        target_id=ticket_id, details={"subject": ticket.get("subject")}, request=request
+    )
+    return {"message": "Response sent"}
+
+
+@router.put("/tickets/{ticket_id}/close")
+async def close_ticket(ticket_id: str, request: Request, token_data: TokenData = Depends(require_admin)):
+    """Close a ticket."""
+    ticket = await db.support_tickets.find_one({"id": ticket_id})
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    now = datetime.now(timezone.utc).isoformat()
+    await db.support_tickets.update_one(
+        {"id": ticket_id},
+        {"$set": {"status": "closed", "closed_at": now, "updated_at": now}}
+    )
+    await create_audit_log(
+        admin_id=token_data.user_id, admin_email=token_data.email,
+        action=AuditAction.TICKET_CLOSE, target_type="ticket",
+        target_id=ticket_id, details={"subject": ticket.get("subject")}, request=request
+    )
+    return {"message": "Ticket closed"}
+
+
+
+# ============ RANKINGS / TOP ============
+
+@router.get("/rankings")
+async def get_rankings(token_data: TokenData = Depends(require_admin)):
+    """Get top businesses and cities rankings."""
+    # Top businesses by bookings
+    all_biz = await db.businesses.find(
+        {"status": BusinessStatus.APPROVED},
+        {"_id": 0, "id": 1, "name": 1, "city": 1, "rating": 1, "review_count": 1, "category": 1}
+    ).to_list(500)
+
+    for b in all_biz:
+        b["booking_count"] = await db.bookings.count_documents({"business_id": b["id"]})
+
+    top_by_bookings = sorted(all_biz, key=lambda x: x.get("booking_count", 0), reverse=True)[:10]
+    top_by_rating = sorted(
+        [b for b in all_biz if b.get("review_count", 0) >= 1],
+        key=lambda x: x.get("rating", 0), reverse=True
+    )[:10]
+
+    # Top cities
+    city_map = {}
+    for b in all_biz:
+        city = b.get("city", "?")
+        if city not in city_map:
+            city_map[city] = {"city": city, "businesses": 0, "bookings": 0}
+        city_map[city]["businesses"] += 1
+        city_map[city]["bookings"] += b.get("booking_count", 0)
+
+    top_cities = sorted(city_map.values(), key=lambda x: x["businesses"], reverse=True)[:10]
+
+    # Top categories
+    cat_map = {}
+    for b in all_biz:
+        cat = b.get("category", "Sin categoria")
+        if cat not in cat_map:
+            cat_map[cat] = {"category": cat, "businesses": 0, "bookings": 0}
+        cat_map[cat]["businesses"] += 1
+        cat_map[cat]["bookings"] += b.get("booking_count", 0)
+
+    top_categories = sorted(cat_map.values(), key=lambda x: x["businesses"], reverse=True)[:10]
+
+    return {
+        "top_by_bookings": top_by_bookings,
+        "top_by_rating": top_by_rating,
+        "top_cities": top_cities,
+        "top_categories": top_categories,
+    }
+
+
+# ============ ADMIN ALERTS ============
+
+@router.get("/alerts")
+async def get_admin_alerts(token_data: TokenData = Depends(require_admin)):
+    """Get important admin alerts: pending businesses, low ratings, open tickets, etc."""
+    alerts = []
+
+    # Pending businesses
+    pending_count = await db.businesses.count_documents({"status": BusinessStatus.PENDING})
+    if pending_count > 0:
+        alerts.append({
+            "type": "pending_business",
+            "severity": "warning",
+            "title": f"{pending_count} negocio(s) pendiente(s) de aprobacion",
+            "detail": "Hay negocios esperando revision.",
+            "count": pending_count,
+        })
+
+    # Open support tickets
+    open_tickets = await db.support_tickets.count_documents({"status": "open"})
+    if open_tickets > 0:
+        alerts.append({
+            "type": "open_tickets",
+            "severity": "warning" if open_tickets < 5 else "critical",
+            "title": f"{open_tickets} ticket(s) de soporte abierto(s)",
+            "detail": "Tickets pendientes de respuesta.",
+            "count": open_tickets,
+        })
+
+    # 1-star reviews (last 7 days)
+    week_ago = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+    bad_reviews = await db.reviews.count_documents({"rating": {"$lte": 2}, "created_at": {"$gte": week_ago}})
+    if bad_reviews > 0:
+        alerts.append({
+            "type": "bad_reviews",
+            "severity": "info",
+            "title": f"{bad_reviews} resena(s) negativa(s) esta semana",
+            "detail": "Resenas con 1-2 estrellas en los ultimos 7 dias.",
+            "count": bad_reviews,
+        })
+
+    # Subscriptions past_due
+    past_due = await db.businesses.count_documents({"subscription_status": "past_due"})
+    if past_due > 0:
+        alerts.append({
+            "type": "past_due_subs",
+            "severity": "critical",
+            "title": f"{past_due} suscripcion(es) vencida(s)",
+            "detail": "Negocios con pago de suscripcion atrasado.",
+            "count": past_due,
+        })
+
+    # Businesses without subscription (>7 days old)
+    week_old = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+    no_sub = await db.businesses.count_documents({
+        "subscription_status": "none",
+        "created_at": {"$lte": week_old}
+    })
+    if no_sub > 0:
+        alerts.append({
+            "type": "no_subscription",
+            "severity": "info",
+            "title": f"{no_sub} negocio(s) sin suscripcion activa (>7 dias)",
+            "detail": "Negocios registrados hace mas de 7 dias sin pagar suscripcion.",
+            "count": no_sub,
+        })
+
+    # Held payments
+    held_count = await db.payment_transactions.count_documents({"on_hold": True})
+    if held_count > 0:
+        alerts.append({
+            "type": "held_payments",
+            "severity": "warning",
+            "title": f"{held_count} pago(s) retenido(s)",
+            "detail": "Pagos en espera de liberacion.",
+            "count": held_count,
+        })
+
+    return {"alerts": alerts, "total": len(alerts)}
+
+
+# ============ CITY MANAGEMENT ============
+
+@router.get("/cities")
+async def admin_get_cities(
+    search: str = "", country_code: str = "", active_only: str = "",
+    page: int = 1, limit: int = 50,
+    token_data: TokenData = Depends(require_admin)
+):
+    """Get all cities with business counts and management info."""
+    query = {}
+    if country_code:
+        query["country_code"] = country_code.upper()
+    if active_only == "true":
+        query["active"] = True
+    elif active_only == "false":
+        query["active"] = False
+    if search:
+        query["$or"] = [
+            {"name": {"$regex": search, "$options": "i"}},
+            {"state": {"$regex": search, "$options": "i"}},
+        ]
+    total = await db.cities.count_documents(query)
+    cities = await db.cities.find(query, {"_id": 0}).sort("name", 1).skip((page - 1) * limit).limit(limit).to_list(limit)
+
+    # Enrich with business count
+    for c in cities:
+        biz_count = await db.businesses.count_documents({"city": c.get("name")})
+        c["business_count"] = biz_count
+
+    return {"cities": cities, "total": total, "page": page, "pages": max(1, (total + limit - 1) // limit)}
+
+
+@router.put("/cities/{city_slug}/toggle")
+async def toggle_city_active(city_slug: str, request: Request, active: bool = True, token_data: TokenData = Depends(require_admin)):
+    """Activate or deactivate a city."""
+    city = await db.cities.find_one({"slug": city_slug})
+    if not city:
+        raise HTTPException(status_code=404, detail="City not found")
+    await db.cities.update_one({"slug": city_slug}, {"$set": {"active": active}})
+    await create_audit_log(
+        admin_id=token_data.user_id, admin_email=token_data.email,
+        action=AuditAction.CITY_ACTIVATE if active else AuditAction.CITY_DEACTIVATE,
+        target_type="city", target_id=city_slug,
+        details={"city_name": city.get("name"), "active": active}, request=request
+    )
+    return {"message": f"City {'activated' if active else 'deactivated'}", "slug": city_slug, "active": active}
+
+
+
+# ============ CUSTOM REPORTS ============
+
+@router.get("/reports/custom")
+async def get_custom_report(
+    date_from: str = "", date_to: str = "",
+    city: str = "", category: str = "",
+    token_data: TokenData = Depends(require_admin)
+):
+    """Generate a custom report with filters."""
+    now = datetime.now(timezone.utc)
+    if not date_from:
+        date_from = (now - timedelta(days=30)).strftime("%Y-%m-%d")
+    if not date_to:
+        date_to = now.strftime("%Y-%m-%d")
+
+    # Booking filter
+    bk_filter = {"date": {"$gte": date_from, "$lte": date_to}}
+
+    # Business filter for city/category
+    biz_ids = None
+    if city or category:
+        biz_query = {}
+        if city:
+            biz_query["city"] = {"$regex": city, "$options": "i"}
+        if category:
+            biz_query["category"] = {"$regex": category, "$options": "i"}
+        biz_docs = await db.businesses.find(biz_query, {"_id": 0, "id": 1}).to_list(5000)
+        biz_ids = [b["id"] for b in biz_docs]
+        bk_filter["business_id"] = {"$in": biz_ids}
+
+    bookings = await db.bookings.find(bk_filter, {"_id": 0}).to_list(50000)
+
+    total = len(bookings)
+    completed = len([b for b in bookings if b.get("status") == "completed"])
+    confirmed = len([b for b in bookings if b.get("status") == "confirmed"])
+    cancelled = len([b for b in bookings if b.get("status") == "cancelled"])
+    revenue = sum(b.get("deposit_amount", 0) for b in bookings if b.get("deposit_paid"))
+
+    # Unique users and businesses
+    unique_users = len(set(b.get("user_id", "") for b in bookings if b.get("user_id")))
+    unique_businesses = len(set(b.get("business_id", "") for b in bookings if b.get("business_id")))
+
+    # Daily breakdown
+    from collections import Counter, defaultdict
+    daily_counts = Counter()
+    daily_revenue = defaultdict(float)
+    for b in bookings:
+        d = b.get("date", "")
+        daily_counts[d] += 1
+        if b.get("deposit_paid"):
+            daily_revenue[d] += b.get("deposit_amount", 0)
+
+    daily_chart = sorted([
+        {"date": d, "bookings": daily_counts[d], "revenue": round(daily_revenue.get(d, 0), 2)}
+        for d in set(list(daily_counts.keys()) + list(daily_revenue.keys()))
+    ], key=lambda x: x["date"])
+
+    # Top businesses in period
+    biz_counts = Counter(b.get("business_id") for b in bookings if b.get("business_id"))
+    top_biz = []
+    for bid, cnt in biz_counts.most_common(10):
+        biz = await db.businesses.find_one({"id": bid}, {"_id": 0, "name": 1, "city": 1})
+        top_biz.append({"business_id": bid, "name": biz.get("name", "?") if biz else "?", "city": biz.get("city", "") if biz else "", "bookings": cnt})
+
+    # Top cities in period
+    city_map = defaultdict(int)
+    for b in bookings:
+        city_map[b.get("business_city", b.get("city", "?"))] += 1
+    # Fallback: enrich from businesses
+    if not any(v for v in city_map.values()):
+        for b in bookings:
+            bid = b.get("business_id")
+            if bid:
+                biz = await db.businesses.find_one({"id": bid}, {"_id": 0, "city": 1})
+                if biz:
+                    city_map[biz.get("city", "?")] += 1
+
+    top_cities_report = [{"city": c, "bookings": n} for c, n in sorted(city_map.items(), key=lambda x: -x[1])[:10]]
+
+    # New users in period
+    new_users = await db.users.count_documents({
+        "role": "user",
+        "created_at": {"$gte": date_from + "T00:00:00", "$lte": date_to + "T23:59:59"}
+    })
+    new_businesses = await db.businesses.count_documents({
+        "created_at": {"$gte": date_from + "T00:00:00", "$lte": date_to + "T23:59:59"}
+    })
+
+    return {
+        "filters": {"date_from": date_from, "date_to": date_to, "city": city, "category": category},
+        "summary": {
+            "total_bookings": total,
+            "completed": completed,
+            "confirmed": confirmed,
+            "cancelled": cancelled,
+            "cancel_rate": round((cancelled / total * 100), 1) if total else 0,
+            "revenue": round(revenue, 2),
+            "unique_users": unique_users,
+            "unique_businesses": unique_businesses,
+            "new_users": new_users,
+            "new_businesses": new_businesses,
+        },
+        "daily_chart": daily_chart,
+        "top_businesses": top_biz,
+        "top_cities": top_cities_report,
+    }
+
+
+
+# ============ STAFF MANAGEMENT ============
+
+AVAILABLE_PERMISSIONS = [
+    "overview", "businesses", "users", "reviews", "categories",
+    "rankings", "cities", "config", "support", "reports",
+    "subscriptions", "finance",
+]
+
+@router.get("/staff")
+async def get_staff_list(token_data: TokenData = Depends(require_super_admin)):
+    """List all staff members (Super Admin only)."""
+    staff = await db.users.find(
+        {"role": UserRole.STAFF},
+        {"_id": 0, "password_hash": 0, "totp_secret": 0, "backup_codes": 0}
+    ).sort("created_at", -1).to_list(100)
+    return {"staff": staff, "available_permissions": AVAILABLE_PERMISSIONS}
+
+
+@router.post("/staff")
+async def create_staff(body: StaffCreate, request: Request, token_data: TokenData = Depends(require_super_admin)):
+    """Create a new staff member (Super Admin only)."""
+    existing = await db.users.find_one({"email": body.email})
+    if existing:
+        raise HTTPException(status_code=400, detail="Email already in use")
+
+    # Validate permissions
+    invalid = [p for p in body.permissions if p not in AVAILABLE_PERMISSIONS]
+    if invalid:
+        raise HTTPException(status_code=400, detail=f"Invalid permissions: {invalid}")
+
+    now = datetime.now(timezone.utc).isoformat()
+    staff_doc = {
+        "id": generate_id(),
+        "email": body.email,
+        "password_hash": hash_password(body.password),
+        "full_name": body.full_name,
+        "role": UserRole.STAFF,
+        "role_label": body.role_label,
+        "staff_permissions": body.permissions,
+        "active": True,
+        "totp_enabled": False,
+        "email_verified": True,
+        "created_at": now,
+        "created_by": token_data.email,
+    }
+    await db.users.insert_one(staff_doc)
+
+    await create_audit_log(
+        admin_id=token_data.user_id, admin_email=token_data.email,
+        action=AuditAction.STAFF_CREATE, target_type="staff",
+        target_id=staff_doc["id"],
+        details={"email": body.email, "permissions": body.permissions, "role_label": body.role_label},
+        request=request
+    )
+
+    staff_doc.pop("_id", None)
+    staff_doc.pop("password_hash", None)
+    return staff_doc
+
+
+@router.put("/staff/{staff_id}")
+async def update_staff(staff_id: str, body: StaffUpdate, request: Request, token_data: TokenData = Depends(require_super_admin)):
+    """Update a staff member (Super Admin only)."""
+    staff = await db.users.find_one({"id": staff_id, "role": UserRole.STAFF})
+    if not staff:
+        raise HTTPException(status_code=404, detail="Staff member not found")
+
+    changes = {}
+    if body.full_name is not None:
+        changes["full_name"] = body.full_name
+    if body.role_label is not None:
+        changes["role_label"] = body.role_label
+    if body.active is not None:
+        changes["active"] = body.active
+    if body.permissions is not None:
+        invalid = [p for p in body.permissions if p not in AVAILABLE_PERMISSIONS]
+        if invalid:
+            raise HTTPException(status_code=400, detail=f"Invalid permissions: {invalid}")
+        changes["staff_permissions"] = body.permissions
+
+    if not changes:
+        raise HTTPException(status_code=400, detail="No changes provided")
+
+    await db.users.update_one({"id": staff_id}, {"$set": changes})
+
+    await create_audit_log(
+        admin_id=token_data.user_id, admin_email=token_data.email,
+        action=AuditAction.STAFF_UPDATE, target_type="staff",
+        target_id=staff_id, details=changes, request=request
+    )
+
+    updated = await db.users.find_one({"id": staff_id}, {"_id": 0, "password_hash": 0, "totp_secret": 0, "backup_codes": 0})
+    return updated
+
+
+@router.delete("/staff/{staff_id}")
+async def delete_staff(staff_id: str, request: Request, token_data: TokenData = Depends(require_super_admin)):
+    """Delete a staff member (Super Admin only)."""
+    staff = await db.users.find_one({"id": staff_id, "role": UserRole.STAFF})
+    if not staff:
+        raise HTTPException(status_code=404, detail="Staff member not found")
+
+    await db.users.delete_one({"id": staff_id})
+
+    await create_audit_log(
+        admin_id=token_data.user_id, admin_email=token_data.email,
+        action=AuditAction.STAFF_DELETE, target_type="staff",
+        target_id=staff_id, details={"email": staff.get("email")}, request=request
+    )
+    return {"message": "Staff member deleted"}
+
+
+@router.put("/staff/{staff_id}/reset-password")
+async def reset_staff_password(staff_id: str, request: Request, token_data: TokenData = Depends(require_super_admin)):
+    """Reset staff password to a temporary one (Super Admin only)."""
+    staff = await db.users.find_one({"id": staff_id, "role": UserRole.STAFF})
+    if not staff:
+        raise HTTPException(status_code=404, detail="Staff member not found")
+
+    temp_password = f"Staff{generate_id()[:8]}!"
+    await db.users.update_one({"id": staff_id}, {"$set": {"password_hash": hash_password(temp_password)}})
+
+    return {"message": "Password reset", "temporary_password": temp_password}
+
+
+@router.get("/staff/permissions")
+async def get_available_permissions(token_data: TokenData = Depends(require_admin)):
+    """Get list of available permissions."""
+    return {"permissions": AVAILABLE_PERMISSIONS}
+
+
+@router.get("/my-permissions")
+async def get_my_permissions(token_data: TokenData = Depends(require_admin)):
+    """Get current user's permissions (for staff UI rendering)."""
+    if token_data.role == UserRole.ADMIN:
+        return {"role": "admin", "permissions": AVAILABLE_PERMISSIONS + ["staff"], "is_super_admin": True}
+    user = await db.users.find_one({"id": token_data.user_id}, {"_id": 0, "staff_permissions": 1, "role_label": 1})
+    return {
+        "role": "staff",
+        "permissions": user.get("staff_permissions", []) if user else [],
+        "role_label": user.get("role_label", "staff") if user else "staff",
+        "is_super_admin": False,
+    }
