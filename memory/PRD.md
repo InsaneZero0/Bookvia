@@ -81,6 +81,7 @@ Auth Social: Emergent-managed Google Auth (solo clientes)
 - [x] Gestion de Usuarios: buscar, paginar, suspender
 - [x] Finanzas: liquidaciones, generar settlements, marcar como pagado, exportar CSV
 - [x] Audit logs
+- [x] Estadisticas de Crecimiento: 3 graficas interactivas (Registros por mes, Reservas por mes, Ingresos por mes) con recharts
 
 ### Tecnico
 - [x] Refactorizacion backend: server.py ~7000 lineas -> 235 lineas + 12 routers modulares

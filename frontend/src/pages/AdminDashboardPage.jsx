@@ -15,10 +15,13 @@ import { adminAPI } from '@/lib/api';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { toast } from 'sonner';
 import {
+  AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
+} from 'recharts';
+import {
   Users, Building2, Calendar, DollarSign, CheckCircle2, XCircle, Clock,
   Shield, FileText, Search, Ban, ChevronLeft, ChevronRight, Download,
   Eye, Star, Wallet, BarChart3, Loader2, MapPin, Phone, Mail, Globe,
-  CreditCard, Briefcase, MessageSquare, Trash2, ExternalLink
+  CreditCard, Briefcase, MessageSquare, Trash2, ExternalLink, TrendingUp
 } from 'lucide-react';
 
 const STATUS_COLORS = {
@@ -286,6 +289,10 @@ export default function AdminDashboardPage() {
   const [subData, setSubData] = useState(null);
   const [subLoading, setSubLoading] = useState(false);
 
+  // Growth stats
+  const [growthData, setGrowthData] = useState([]);
+  const [growthLoading, setGrowthLoading] = useState(false);
+
   useEffect(() => {
     if (!isAuthenticated || !isAdmin) { navigate('/admin/login'); return; }
     if (!user?.totp_enabled) { navigate('/admin/login'); return; }
@@ -304,6 +311,13 @@ export default function AdminDashboardPage() {
       setAuditLogs(logsRes.data);
     } catch { /* silent */ }
     setLoading(false);
+    // Load growth in background
+    setGrowthLoading(true);
+    try {
+      const gRes = await adminAPI.getGrowthStats(12);
+      setGrowthData(gRes.data);
+    } catch { /* silent */ }
+    setGrowthLoading(false);
   };
 
   const loadBusinesses = useCallback(async (page = 1) => {
@@ -610,6 +624,105 @@ export default function AdminDashboardPage() {
                   )}
                 </CardContent>
               </Card>
+            </div>
+
+            {/* ─── Growth Charts ─── */}
+            <div data-testid="growth-charts-section">
+              <h3 className="text-lg font-heading font-semibold flex items-center gap-2 mb-4">
+                <TrendingUp className="h-5 w-5 text-emerald-500" />{t('Estadisticas de Crecimiento', 'Growth Statistics')}
+              </h3>
+              {growthLoading ? (
+                <div className="grid lg:grid-cols-2 gap-6">
+                  <Skeleton className="h-72 rounded-xl" />
+                  <Skeleton className="h-72 rounded-xl" />
+                </div>
+              ) : growthData.length > 0 ? (
+                <div className="grid lg:grid-cols-2 gap-6">
+                  {/* Negocios & Usuarios */}
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-base font-medium">{t('Registros por Mes', 'Monthly Registrations')}</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <ResponsiveContainer width="100%" height={260}>
+                        <BarChart data={growthData} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
+                          <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                          <XAxis dataKey="month" tick={{ fontSize: 11 }} className="text-muted-foreground" />
+                          <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
+                          <Tooltip
+                            contentStyle={{ borderRadius: '8px', fontSize: '13px', border: '1px solid hsl(var(--border))' }}
+                            labelStyle={{ fontWeight: 600 }}
+                          />
+                          <Legend wrapperStyle={{ fontSize: '12px' }} />
+                          <Bar dataKey="businesses" name={t('Negocios', 'Businesses')} fill="#8b5cf6" radius={[4, 4, 0, 0]} />
+                          <Bar dataKey="users" name={t('Usuarios', 'Users')} fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </CardContent>
+                  </Card>
+
+                  {/* Reservas */}
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-base font-medium">{t('Reservas por Mes', 'Monthly Bookings')}</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <ResponsiveContainer width="100%" height={260}>
+                        <AreaChart data={growthData} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
+                          <defs>
+                            <linearGradient id="colorBookings" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="#10b981" stopOpacity={0.3} />
+                              <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                          <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+                          <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
+                          <Tooltip
+                            contentStyle={{ borderRadius: '8px', fontSize: '13px', border: '1px solid hsl(var(--border))' }}
+                            labelStyle={{ fontWeight: 600 }}
+                          />
+                          <Area type="monotone" dataKey="bookings" name={t('Reservas', 'Bookings')} stroke="#10b981" strokeWidth={2} fill="url(#colorBookings)" />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    </CardContent>
+                  </Card>
+
+                  {/* Ingresos */}
+                  <Card className="lg:col-span-2">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-base font-medium">{t('Ingresos por Mes (MXN)', 'Monthly Revenue (MXN)')}</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <ResponsiveContainer width="100%" height={260}>
+                        <AreaChart data={growthData} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
+                          <defs>
+                            <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.3} />
+                              <stop offset="95%" stopColor="#f59e0b" stopOpacity={0} />
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                          <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+                          <YAxis tick={{ fontSize: 11 }} tickFormatter={v => `$${v}`} />
+                          <Tooltip
+                            contentStyle={{ borderRadius: '8px', fontSize: '13px', border: '1px solid hsl(var(--border))' }}
+                            labelStyle={{ fontWeight: 600 }}
+                            formatter={(v) => [`$${Number(v).toLocaleString('es-MX', { minimumFractionDigits: 2 })}`, t('Ingresos', 'Revenue')]}
+                          />
+                          <Area type="monotone" dataKey="revenue" name={t('Ingresos', 'Revenue')} stroke="#f59e0b" strokeWidth={2} fill="url(#colorRevenue)" />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    </CardContent>
+                  </Card>
+                </div>
+              ) : (
+                <Card>
+                  <CardContent className="py-12 text-center text-muted-foreground">
+                    {t('No hay datos de crecimiento disponibles', 'No growth data available')}
+                  </CardContent>
+                </Card>
+              )}
             </div>
 
             <div className="grid md:grid-cols-3 gap-4">

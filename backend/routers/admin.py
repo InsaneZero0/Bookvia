@@ -395,6 +395,52 @@ async def get_admin_stats(token_data: TokenData = Depends(require_admin)):
 
 
 
+@router.get("/growth")
+async def get_growth_stats(months: int = 12, token_data: TokenData = Depends(require_admin)):
+    """Get monthly growth stats for businesses, bookings and revenue."""
+    now = datetime.now(timezone.utc)
+    results = []
+
+    for i in range(months - 1, -1, -1):
+        # Calculate month boundaries
+        d = now.replace(day=1) - timedelta(days=i * 28)
+        y, m = d.year, d.month
+        start = f"{y}-{m:02d}-01"
+        if m == 12:
+            end = f"{y + 1}-01-01"
+        else:
+            end = f"{y}-{m + 1:02d}-01"
+        start_iso = f"{y}-{m:02d}-01T00:00:00"
+        end_iso = end + "T00:00:00"
+
+        biz_count = await db.businesses.count_documents({
+            "created_at": {"$gte": start_iso, "$lt": end_iso}
+        })
+        booking_count = await db.bookings.count_documents({
+            "date": {"$gte": start, "$lt": end}
+        })
+        user_count = await db.users.count_documents({
+            "role": UserRole.USER,
+            "created_at": {"$gte": start_iso, "$lt": end_iso}
+        })
+        payments = await db.payment_transactions.find({
+            "status": PaymentStatus.COMPLETED,
+            "created_at": {"$gte": start_iso, "$lt": end_iso}
+        }, {"_id": 0, "amount": 1}).to_list(10000)
+        revenue = sum(p.get("amount", 0) for p in payments)
+
+        label = f"{y}-{m:02d}"
+        results.append({
+            "month": label,
+            "businesses": biz_count,
+            "bookings": booking_count,
+            "users": user_count,
+            "revenue": round(revenue, 2),
+        })
+
+    return results
+
+
 @router.get("/businesses/all")
 async def get_all_businesses(
     search: str = "", status: str = "", city: str = "",

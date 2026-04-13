@@ -291,6 +291,7 @@ export const adminAPI = {
   getBusinessDetail: (id) => api.get(`/admin/businesses/${id}/detail`),
   getAllReviews: (params) => api.get('/admin/reviews/all', { params }),
   getSubscriptions: () => api.get('/admin/subscriptions'),
+  getGrowthStats: (months) => api.get('/admin/growth', { params: { months } }),
 };
 
 // Utility API
