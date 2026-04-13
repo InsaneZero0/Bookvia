@@ -73,7 +73,7 @@ Auth Social: Emergent-managed Google Auth (solo clientes)
 - [x] Campo separado de "Num. ext." en registro para direcciones mas precisas
 
 ### Panel Admin (2FA con TOTP)
-- [x] 6 tabs: Resumen, Negocios, Usuarios, Resenas, Suscripciones, Finanzas
+- [x] 9 tabs: Resumen, Negocios, Usuarios, Resenas, Categorias, Configuracion, Soporte, Suscripciones, Finanzas
 - [x] Vista Detalle de Negocio (Dialog): info general, documentos legales (RFC, CLABE, INE, CURP), suscripcion, propietario, servicios, trabajadores, resenas
 - [x] Aprobar/Rechazar/Suspender negocios desde detalle o listado
 - [x] Moderacion de resenas: buscar, paginar y eliminar resenas inapropiadas
@@ -82,6 +82,9 @@ Auth Social: Emergent-managed Google Auth (solo clientes)
 - [x] Finanzas: liquidaciones, generar settlements, marcar como pagado, exportar CSV
 - [x] Audit logs
 - [x] Estadisticas de Crecimiento: 3 graficas interactivas (Registros por mes, Reservas por mes, Ingresos por mes) con recharts
+- [x] Gestion de Categorias CRUD: crear, editar, eliminar categorias con auto-slug, validacion de slug duplicado, bloqueo de eliminacion si negocios la usan
+- [x] Configuracion de Plataforma: comision %, precio suscripcion, dias prueba, deposito minimo (con validacion de rangos)
+- [x] Panel de Soporte: lista de tickets con stats, filtros, busqueda, conversacion admin-usuario, responder y cerrar tickets
 
 ### Tecnico
 - [x] Refactorizacion backend: server.py ~7000 lineas -> 235 lineas + 12 routers modulares
