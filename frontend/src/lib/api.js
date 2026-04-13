@@ -102,6 +102,7 @@ export const usersAPI = {
   addFavorite: (businessId) => api.post(`/users/favorites/${businessId}`),
   removeFavorite: (businessId) => api.delete(`/users/favorites/${businessId}`),
   getFavorites: () => api.get('/users/favorites'),
+  getMyStats: () => api.get('/users/my-stats'),
 };
 
 // Categories API
@@ -188,6 +189,7 @@ export const businessesAPI = {
   getActivityLog: (params = {}) => api.get('/businesses/my/activity-log', { params }),
   getReports: (period = 'month') => api.get('/businesses/my/reports', { params: { period } }),
   exportReports: (period = 'month') => api.get('/businesses/my/reports/export', { params: { period }, responseType: 'blob' }),
+  getDashboardSummary: () => api.get('/businesses/my/dashboard-summary'),
   getClientHistory: (userId) => api.get(`/businesses/my/client-history/${userId}`),
   getMyBusiness: () => api.get('/businesses/me'),
   updateBusiness: (data) => api.put('/businesses/me', data),
@@ -313,6 +315,8 @@ export const adminAPI = {
   // Cities
   getCities: (params) => api.get('/admin/cities', { params }),
   toggleCity: (slug, active) => api.put(`/admin/cities/${slug}/toggle`, null, { params: { active } }),
+  // Custom reports
+  getCustomReport: (params) => api.get('/admin/reports/custom', { params }),
 };
 
 // Utility API

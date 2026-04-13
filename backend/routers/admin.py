@@ -1313,3 +1313,112 @@ async def toggle_city_active(city_slug: str, request: Request, active: bool = Tr
         details={"city_name": city.get("name"), "active": active}, request=request
     )
     return {"message": f"City {'activated' if active else 'deactivated'}", "slug": city_slug, "active": active}
+
+
+
+# ============ CUSTOM REPORTS ============
+
+@router.get("/reports/custom")
+async def get_custom_report(
+    date_from: str = "", date_to: str = "",
+    city: str = "", category: str = "",
+    token_data: TokenData = Depends(require_admin)
+):
+    """Generate a custom report with filters."""
+    now = datetime.now(timezone.utc)
+    if not date_from:
+        date_from = (now - timedelta(days=30)).strftime("%Y-%m-%d")
+    if not date_to:
+        date_to = now.strftime("%Y-%m-%d")
+
+    # Booking filter
+    bk_filter = {"date": {"$gte": date_from, "$lte": date_to}}
+
+    # Business filter for city/category
+    biz_ids = None
+    if city or category:
+        biz_query = {}
+        if city:
+            biz_query["city"] = {"$regex": city, "$options": "i"}
+        if category:
+            biz_query["category"] = {"$regex": category, "$options": "i"}
+        biz_docs = await db.businesses.find(biz_query, {"_id": 0, "id": 1}).to_list(5000)
+        biz_ids = [b["id"] for b in biz_docs]
+        bk_filter["business_id"] = {"$in": biz_ids}
+
+    bookings = await db.bookings.find(bk_filter, {"_id": 0}).to_list(50000)
+
+    total = len(bookings)
+    completed = len([b for b in bookings if b.get("status") == "completed"])
+    confirmed = len([b for b in bookings if b.get("status") == "confirmed"])
+    cancelled = len([b for b in bookings if b.get("status") == "cancelled"])
+    revenue = sum(b.get("deposit_amount", 0) for b in bookings if b.get("deposit_paid"))
+
+    # Unique users and businesses
+    unique_users = len(set(b.get("user_id", "") for b in bookings if b.get("user_id")))
+    unique_businesses = len(set(b.get("business_id", "") for b in bookings if b.get("business_id")))
+
+    # Daily breakdown
+    from collections import Counter, defaultdict
+    daily_counts = Counter()
+    daily_revenue = defaultdict(float)
+    for b in bookings:
+        d = b.get("date", "")
+        daily_counts[d] += 1
+        if b.get("deposit_paid"):
+            daily_revenue[d] += b.get("deposit_amount", 0)
+
+    daily_chart = sorted([
+        {"date": d, "bookings": daily_counts[d], "revenue": round(daily_revenue.get(d, 0), 2)}
+        for d in set(list(daily_counts.keys()) + list(daily_revenue.keys()))
+    ], key=lambda x: x["date"])
+
+    # Top businesses in period
+    biz_counts = Counter(b.get("business_id") for b in bookings if b.get("business_id"))
+    top_biz = []
+    for bid, cnt in biz_counts.most_common(10):
+        biz = await db.businesses.find_one({"id": bid}, {"_id": 0, "name": 1, "city": 1})
+        top_biz.append({"business_id": bid, "name": biz.get("name", "?") if biz else "?", "city": biz.get("city", "") if biz else "", "bookings": cnt})
+
+    # Top cities in period
+    city_map = defaultdict(int)
+    for b in bookings:
+        city_map[b.get("business_city", b.get("city", "?"))] += 1
+    # Fallback: enrich from businesses
+    if not any(v for v in city_map.values()):
+        for b in bookings:
+            bid = b.get("business_id")
+            if bid:
+                biz = await db.businesses.find_one({"id": bid}, {"_id": 0, "city": 1})
+                if biz:
+                    city_map[biz.get("city", "?")] += 1
+
+    top_cities_report = [{"city": c, "bookings": n} for c, n in sorted(city_map.items(), key=lambda x: -x[1])[:10]]
+
+    # New users in period
+    new_users = await db.users.count_documents({
+        "role": "user",
+        "created_at": {"$gte": date_from + "T00:00:00", "$lte": date_to + "T23:59:59"}
+    })
+    new_businesses = await db.businesses.count_documents({
+        "created_at": {"$gte": date_from + "T00:00:00", "$lte": date_to + "T23:59:59"}
+    })
+
+    return {
+        "filters": {"date_from": date_from, "date_to": date_to, "city": city, "category": category},
+        "summary": {
+            "total_bookings": total,
+            "completed": completed,
+            "confirmed": confirmed,
+            "cancelled": cancelled,
+            "cancel_rate": round((cancelled / total * 100), 1) if total else 0,
+            "revenue": round(revenue, 2),
+            "unique_users": unique_users,
+            "unique_businesses": unique_businesses,
+            "new_users": new_users,
+            "new_businesses": new_businesses,
+        },
+        "daily_chart": daily_chart,
+        "top_businesses": top_biz,
+        "top_cities": top_cities_report,
+    }

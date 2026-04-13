@@ -30,6 +30,7 @@ export default function UserDashboardPage() {
   const [saving, setSaving] = useState(false);
   const [upcomingBookings, setUpcomingBookings] = useState([]);
   const [favorites, setFavorites] = useState([]);
+  const [userStats, setUserStats] = useState(null);
 
   useEffect(() => {
     if (!isAuthenticated) { navigate('/login'); return; }
@@ -38,10 +39,11 @@ export default function UserDashboardPage() {
 
   const loadData = async () => {
     try {
-      const [userData, bookingsRes, favsRes] = await Promise.all([
+      const [userData, bookingsRes, favsRes, statsRes] = await Promise.all([
         refreshUser(),
         bookingsAPI.getMy({ upcoming: true }).catch(() => ({ data: [] })),
         usersAPI.getFavorites().catch(() => ({ data: [] })),
+        usersAPI.getMyStats().catch(() => ({ data: null })),
       ]);
       setFormData({
         full_name: userData.full_name || '',
@@ -51,6 +53,7 @@ export default function UserDashboardPage() {
       });
       setUpcomingBookings(Array.isArray(bookingsRes.data) ? bookingsRes.data.slice(0, 3) : []);
       setFavorites(Array.isArray(favsRes.data) ? favsRes.data.slice(0, 4) : []);
+      setUserStats(statsRes?.data || null);
     } catch (error) {
       console.error('Error loading user data:', error);
     } finally {
@@ -150,6 +153,64 @@ export default function UserDashboardPage() {
             </Card>
           ))}
         </div>
+
+        {/* ── Stats Summary ──────────────────────────── */}
+        {userStats && (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6" data-testid="user-stats-section">
+            <Card>
+              <CardContent className="p-3.5 text-center">
+                <p className="text-2xl font-bold text-[#F05D5E]">{userStats.total_bookings}</p>
+                <p className="text-xs text-muted-foreground">{language === 'es' ? 'Total reservas' : 'Total bookings'}</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-3.5 text-center">
+                <p className="text-2xl font-bold text-emerald-600">{formatCurrency(userStats.total_spent)}</p>
+                <p className="text-xs text-muted-foreground">{language === 'es' ? 'Total gastado' : 'Total spent'}</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-3.5 text-center">
+                <p className="text-2xl font-bold text-blue-600">{userStats.upcoming}</p>
+                <p className="text-xs text-muted-foreground">{language === 'es' ? 'Citas pendientes' : 'Upcoming'}</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-3.5 text-center">
+                <div className="flex items-center justify-center gap-1">
+                  <Star className="h-4 w-4 fill-amber-400 text-amber-400" />
+                  <p className="text-2xl font-bold">{userStats.avg_rating_given || '-'}</p>
+                </div>
+                <p className="text-xs text-muted-foreground">{userStats.reviews_given} {language === 'es' ? 'resenas dadas' : 'reviews given'}</p>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* ── Rebook Suggestions ──────────────────────── */}
+        {userStats?.recent_completed?.length > 0 && (
+          <Card className="mb-6" data-testid="rebook-section">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base font-heading">
+                {language === 'es' ? 'Reservar de nuevo' : 'Book again'}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex gap-3 overflow-x-auto pb-1">
+                {userStats.recent_completed.map(b => (
+                  <Card key={b.id} className="shrink-0 w-52 cursor-pointer hover:border-[#F05D5E]/30 transition-all"
+                    onClick={() => navigate(`/business/${b.business_id}`)} data-testid={`rebook-${b.id}`}>
+                    <CardContent className="p-3">
+                      <p className="text-sm font-medium truncate">{b.service_name}</p>
+                      <p className="text-xs text-muted-foreground truncate">{b.business_name}</p>
+                      <p className="text-xs text-muted-foreground">{b.worker_name}</p>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         <div className="grid lg:grid-cols-3 gap-6">
           {/* ── Left Column: Upcoming Bookings ─────── */}

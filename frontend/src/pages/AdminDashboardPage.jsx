@@ -24,7 +24,7 @@ import {
   Eye, Star, Wallet, BarChart3, Loader2, MapPin, Phone, Mail, Globe,
   CreditCard, Briefcase, MessageSquare, Trash2, ExternalLink, TrendingUp,
   Tags, Settings, LifeBuoy, Plus, Pencil, Send, X, AlertCircle,
-  Trophy, Bell, Map, ToggleLeft, ToggleRight
+  Trophy, Bell, Map, ToggleLeft, ToggleRight, FileBarChart
 } from 'lucide-react';
 
 const STATUS_COLORS = {
@@ -337,6 +337,16 @@ export default function AdminDashboardPage() {
   const [citiesActive, setCitiesActive] = useState('');
   const [citiesLoading, setCitiesLoading] = useState(false);
 
+  // Reports tab
+  const [reportData, setReportData] = useState(null);
+  const [reportLoading, setReportLoading] = useState(false);
+  const [reportDateFrom, setReportDateFrom] = useState(() => {
+    const d = new Date(); d.setDate(d.getDate() - 30); return d.toISOString().split('T')[0];
+  });
+  const [reportDateTo, setReportDateTo] = useState(() => new Date().toISOString().split('T')[0]);
+  const [reportCity, setReportCity] = useState('');
+  const [reportCategory, setReportCategory] = useState('');
+
   useEffect(() => {
     if (!isAuthenticated || !isAdmin) { navigate('/admin/login'); return; }
     if (!user?.totp_enabled) { navigate('/admin/login'); return; }
@@ -498,7 +508,17 @@ export default function AdminDashboardPage() {
     if (activeTab === 'support') loadTickets(1);
     if (activeTab === 'rankings') loadRankings();
     if (activeTab === 'cities') loadCities(1);
+    if (activeTab === 'reports') loadReport();
   }, [activeTab]);
+
+  const loadReport = async () => {
+    setReportLoading(true);
+    try {
+      const res = await adminAPI.getCustomReport({ date_from: reportDateFrom, date_to: reportDateTo, city: reportCity, category: reportCategory });
+      setReportData(res.data);
+    } catch { /* silent */ }
+    setReportLoading(false);
+  };
 
   const openDetail = (id) => { setDetailBizId(id); setDetailOpen(true); };
 
@@ -665,6 +685,7 @@ export default function AdminDashboardPage() {
     { id: 'cities', label: t('Ciudades', 'Cities'), icon: Map },
     { id: 'config', label: t('Configuracion', 'Config'), icon: Settings },
     { id: 'support', label: alertsCount > 0 ? `${t('Soporte', 'Support')} (${alertsCount})` : t('Soporte', 'Support'), icon: LifeBuoy },
+    { id: 'reports', label: t('Reportes', 'Reports'), icon: FileBarChart },
     { id: 'subscriptions', label: t('Suscripciones', 'Subscriptions'), icon: CreditCard },
     { id: 'finance', label: t('Finanzas', 'Finance'), icon: Wallet },
   ];
@@ -1848,6 +1869,168 @@ export default function AdminDashboardPage() {
                   <ChevronRight className="h-4 w-4" />
                 </Button>
               </div>
+            )}
+          </div>
+        )}
+
+        {/* ============ REPORTS TAB ============ */}
+        {activeTab === 'reports' && (
+          <div className="space-y-6">
+            {/* Filters */}
+            <Card data-testid="report-filters">
+              <CardContent className="p-4">
+                <div className="flex flex-wrap items-end gap-4">
+                  <div>
+                    <label className="text-sm font-medium mb-1 block">{t('Desde', 'From')}</label>
+                    <Input type="date" value={reportDateFrom} onChange={e => setReportDateFrom(e.target.value)} className="w-40" data-testid="report-date-from" />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium mb-1 block">{t('Hasta', 'To')}</label>
+                    <Input type="date" value={reportDateTo} onChange={e => setReportDateTo(e.target.value)} className="w-40" data-testid="report-date-to" />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium mb-1 block">{t('Ciudad', 'City')}</label>
+                    <Input value={reportCity} onChange={e => setReportCity(e.target.value)} placeholder={t('Todas', 'All')} className="w-40" data-testid="report-city" />
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium mb-1 block">{t('Categoria', 'Category')}</label>
+                    <Input value={reportCategory} onChange={e => setReportCategory(e.target.value)} placeholder={t('Todas', 'All')} className="w-40" data-testid="report-category" />
+                  </div>
+                  <Button onClick={loadReport} data-testid="generate-report-btn">
+                    <FileBarChart className="h-4 w-4 mr-2" />{t('Generar Reporte', 'Generate Report')}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            {reportLoading ? (
+              <div className="space-y-4">{[1,2,3].map(i => <Skeleton key={i} className="h-32" />)}</div>
+            ) : reportData ? (
+              <>
+                {/* Summary Cards */}
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-3" data-testid="report-summary">
+                  {[
+                    { label: t('Total Reservas', 'Total Bookings'), value: reportData.summary.total_bookings, color: 'text-blue-600' },
+                    { label: t('Completadas', 'Completed'), value: reportData.summary.completed, color: 'text-green-600' },
+                    { label: t('Canceladas', 'Cancelled'), value: `${reportData.summary.cancelled} (${reportData.summary.cancel_rate}%)`, color: 'text-red-600' },
+                    { label: t('Ingresos', 'Revenue'), value: formatCurrency(reportData.summary.revenue), color: 'text-emerald-600' },
+                    { label: t('Usuarios Unicos', 'Unique Users'), value: reportData.summary.unique_users, color: 'text-purple-600' },
+                  ].map((s, i) => (
+                    <Card key={i}>
+                      <CardContent className="p-3 text-center">
+                        <p className={`text-xl font-bold ${s.color}`}>{s.value}</p>
+                        <p className="text-xs text-muted-foreground">{s.label}</p>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+
+                {/* Growth stats */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <Card className="bg-blue-50 dark:bg-blue-900/10">
+                    <CardContent className="p-3 text-center">
+                      <p className="text-lg font-bold text-blue-600">{reportData.summary.new_users}</p>
+                      <p className="text-xs text-muted-foreground">{t('Nuevos usuarios', 'New users')}</p>
+                    </CardContent>
+                  </Card>
+                  <Card className="bg-purple-50 dark:bg-purple-900/10">
+                    <CardContent className="p-3 text-center">
+                      <p className="text-lg font-bold text-purple-600">{reportData.summary.new_businesses}</p>
+                      <p className="text-xs text-muted-foreground">{t('Nuevos negocios', 'New businesses')}</p>
+                    </CardContent>
+                  </Card>
+                  <Card className="bg-green-50 dark:bg-green-900/10">
+                    <CardContent className="p-3 text-center">
+                      <p className="text-lg font-bold text-green-600">{reportData.summary.unique_businesses}</p>
+                      <p className="text-xs text-muted-foreground">{t('Negocios activos', 'Active businesses')}</p>
+                    </CardContent>
+                  </Card>
+                  <Card className="bg-amber-50 dark:bg-amber-900/10">
+                    <CardContent className="p-3 text-center">
+                      <p className="text-lg font-bold text-amber-600">{reportData.summary.confirmed}</p>
+                      <p className="text-xs text-muted-foreground">{t('Confirmadas', 'Confirmed')}</p>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                {/* Daily chart */}
+                {reportData.daily_chart?.length > 0 && (
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-base font-medium">{t('Reservas e Ingresos por Dia', 'Daily Bookings & Revenue')}</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <ResponsiveContainer width="100%" height={280}>
+                        <BarChart data={reportData.daily_chart} margin={{ top: 5, right: 10, left: -10, bottom: 5 }}>
+                          <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                          <XAxis dataKey="date" tick={{ fontSize: 10 }} tickFormatter={v => v.slice(5)} />
+                          <YAxis tick={{ fontSize: 10 }} />
+                          <Tooltip contentStyle={{ borderRadius: '8px', fontSize: '12px', border: '1px solid hsl(var(--border))' }} />
+                          <Legend wrapperStyle={{ fontSize: '11px' }} />
+                          <Bar dataKey="bookings" name={t('Reservas', 'Bookings')} fill="#3b82f6" radius={[3, 3, 0, 0]} />
+                          <Bar dataKey="revenue" name={t('Ingresos', 'Revenue')} fill="#10b981" radius={[3, 3, 0, 0]} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Top businesses + top cities */}
+                <div className="grid md:grid-cols-2 gap-6">
+                  <Card data-testid="report-top-businesses">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-base font-medium">{t('Top Negocios en Periodo', 'Top Businesses in Period')}</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-2">
+                        {reportData.top_businesses?.map((b, i) => (
+                          <div key={b.business_id} className="flex items-center justify-between p-2 rounded-lg bg-muted/50">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="text-xs font-bold text-muted-foreground w-5">{i + 1}</span>
+                              <div className="min-w-0">
+                                <p className="text-sm font-medium truncate">{b.name}</p>
+                                <p className="text-xs text-muted-foreground">{b.city}</p>
+                              </div>
+                            </div>
+                            <Badge variant="outline">{b.bookings} {t('reservas', 'bookings')}</Badge>
+                          </div>
+                        ))}
+                        {(!reportData.top_businesses || reportData.top_businesses.length === 0) && (
+                          <p className="text-center text-muted-foreground text-sm py-4">{t('Sin datos', 'No data')}</p>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                  <Card data-testid="report-top-cities">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-base font-medium">{t('Top Ciudades en Periodo', 'Top Cities in Period')}</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-2">
+                        {reportData.top_cities?.map((c, i) => (
+                          <div key={c.city} className="flex items-center justify-between p-2 rounded-lg bg-muted/50">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-bold text-muted-foreground w-5">{i + 1}</span>
+                              <span className="text-sm font-medium">{c.city}</span>
+                            </div>
+                            <Badge variant="outline">{c.bookings} {t('reservas', 'bookings')}</Badge>
+                          </div>
+                        ))}
+                        {(!reportData.top_cities || reportData.top_cities.length === 0) && (
+                          <p className="text-center text-muted-foreground text-sm py-4">{t('Sin datos', 'No data')}</p>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+              </>
+            ) : (
+              <Card>
+                <CardContent className="py-16 text-center text-muted-foreground">
+                  <FileBarChart className="h-10 w-10 mx-auto mb-3 opacity-30" />
+                  <p>{t('Selecciona un rango de fechas y genera un reporte', 'Select a date range and generate a report')}</p>
+                </CardContent>
+              </Card>
             )}
           </div>
         )}
