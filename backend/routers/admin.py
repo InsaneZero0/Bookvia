@@ -1133,3 +1133,183 @@ async def close_ticket(ticket_id: str, request: Request, token_data: TokenData =
         target_id=ticket_id, details={"subject": ticket.get("subject")}, request=request
     )
     return {"message": "Ticket closed"}
+
+
+
+# ============ RANKINGS / TOP ============
+
+@router.get("/rankings")
+async def get_rankings(token_data: TokenData = Depends(require_admin)):
+    """Get top businesses and cities rankings."""
+    # Top businesses by bookings
+    all_biz = await db.businesses.find(
+        {"status": BusinessStatus.APPROVED},
+        {"_id": 0, "id": 1, "name": 1, "city": 1, "rating": 1, "review_count": 1, "category": 1}
+    ).to_list(500)
+
+    for b in all_biz:
+        b["booking_count"] = await db.bookings.count_documents({"business_id": b["id"]})
+
+    top_by_bookings = sorted(all_biz, key=lambda x: x.get("booking_count", 0), reverse=True)[:10]
+    top_by_rating = sorted(
+        [b for b in all_biz if b.get("review_count", 0) >= 1],
+        key=lambda x: x.get("rating", 0), reverse=True
+    )[:10]
+
+    # Top cities
+    city_map = {}
+    for b in all_biz:
+        city = b.get("city", "?")
+        if city not in city_map:
+            city_map[city] = {"city": city, "businesses": 0, "bookings": 0}
+        city_map[city]["businesses"] += 1
+        city_map[city]["bookings"] += b.get("booking_count", 0)
+
+    top_cities = sorted(city_map.values(), key=lambda x: x["businesses"], reverse=True)[:10]
+
+    # Top categories
+    cat_map = {}
+    for b in all_biz:
+        cat = b.get("category", "Sin categoria")
+        if cat not in cat_map:
+            cat_map[cat] = {"category": cat, "businesses": 0, "bookings": 0}
+        cat_map[cat]["businesses"] += 1
+        cat_map[cat]["bookings"] += b.get("booking_count", 0)
+
+    top_categories = sorted(cat_map.values(), key=lambda x: x["businesses"], reverse=True)[:10]
+
+    return {
+        "top_by_bookings": top_by_bookings,
+        "top_by_rating": top_by_rating,
+        "top_cities": top_cities,
+        "top_categories": top_categories,
+    }
+
+
+# ============ ADMIN ALERTS ============
+
+@router.get("/alerts")
+async def get_admin_alerts(token_data: TokenData = Depends(require_admin)):
+    """Get important admin alerts: pending businesses, low ratings, open tickets, etc."""
+    alerts = []
+
+    # Pending businesses
+    pending_count = await db.businesses.count_documents({"status": BusinessStatus.PENDING})
+    if pending_count > 0:
+        alerts.append({
+            "type": "pending_business",
+            "severity": "warning",
+            "title": f"{pending_count} negocio(s) pendiente(s) de aprobacion",
+            "detail": "Hay negocios esperando revision.",
+            "count": pending_count,
+        })
+
+    # Open support tickets
+    open_tickets = await db.support_tickets.count_documents({"status": "open"})
+    if open_tickets > 0:
+        alerts.append({
+            "type": "open_tickets",
+            "severity": "warning" if open_tickets < 5 else "critical",
+            "title": f"{open_tickets} ticket(s) de soporte abierto(s)",
+            "detail": "Tickets pendientes de respuesta.",
+            "count": open_tickets,
+        })
+
+    # 1-star reviews (last 7 days)
+    week_ago = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+    bad_reviews = await db.reviews.count_documents({"rating": {"$lte": 2}, "created_at": {"$gte": week_ago}})
+    if bad_reviews > 0:
+        alerts.append({
+            "type": "bad_reviews",
+            "severity": "info",
+            "title": f"{bad_reviews} resena(s) negativa(s) esta semana",
+            "detail": "Resenas con 1-2 estrellas en los ultimos 7 dias.",
+            "count": bad_reviews,
+        })
+
+    # Subscriptions past_due
+    past_due = await db.businesses.count_documents({"subscription_status": "past_due"})
+    if past_due > 0:
+        alerts.append({
+            "type": "past_due_subs",
+            "severity": "critical",
+            "title": f"{past_due} suscripcion(es) vencida(s)",
+            "detail": "Negocios con pago de suscripcion atrasado.",
+            "count": past_due,
+        })
+
+    # Businesses without subscription (>7 days old)
+    week_old = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+    no_sub = await db.businesses.count_documents({
+        "subscription_status": "none",
+        "created_at": {"$lte": week_old}
+    })
+    if no_sub > 0:
+        alerts.append({
+            "type": "no_subscription",
+            "severity": "info",
+            "title": f"{no_sub} negocio(s) sin suscripcion activa (>7 dias)",
+            "detail": "Negocios registrados hace mas de 7 dias sin pagar suscripcion.",
+            "count": no_sub,
+        })
+
+    # Held payments
+    held_count = await db.payment_transactions.count_documents({"on_hold": True})
+    if held_count > 0:
+        alerts.append({
+            "type": "held_payments",
+            "severity": "warning",
+            "title": f"{held_count} pago(s) retenido(s)",
+            "detail": "Pagos en espera de liberacion.",
+            "count": held_count,
+        })
+
+    return {"alerts": alerts, "total": len(alerts)}
+
+
+# ============ CITY MANAGEMENT ============
+
+@router.get("/cities")
+async def admin_get_cities(
+    search: str = "", country_code: str = "", active_only: str = "",
+    page: int = 1, limit: int = 50,
+    token_data: TokenData = Depends(require_admin)
+):
+    """Get all cities with business counts and management info."""
+    query = {}
+    if country_code:
+        query["country_code"] = country_code.upper()
+    if active_only == "true":
+        query["active"] = True
+    elif active_only == "false":
+        query["active"] = False
+    if search:
+        query["$or"] = [
+            {"name": {"$regex": search, "$options": "i"}},
+            {"state": {"$regex": search, "$options": "i"}},
+        ]
+    total = await db.cities.count_documents(query)
+    cities = await db.cities.find(query, {"_id": 0}).sort("name", 1).skip((page - 1) * limit).limit(limit).to_list(limit)
+
+    # Enrich with business count
+    for c in cities:
+        biz_count = await db.businesses.count_documents({"city": c.get("name")})
+        c["business_count"] = biz_count
+
+    return {"cities": cities, "total": total, "page": page, "pages": max(1, (total + limit - 1) // limit)}
+
+
+@router.put("/cities/{city_slug}/toggle")
+async def toggle_city_active(city_slug: str, request: Request, active: bool = True, token_data: TokenData = Depends(require_admin)):
+    """Activate or deactivate a city."""
+    city = await db.cities.find_one({"slug": city_slug})
+    if not city:
+        raise HTTPException(status_code=404, detail="City not found")
+    await db.cities.update_one({"slug": city_slug}, {"$set": {"active": active}})
+    await create_audit_log(
+        admin_id=token_data.user_id, admin_email=token_data.email,
+        action=AuditAction.CITY_ACTIVATE if active else AuditAction.CITY_DEACTIVATE,
+        target_type="city", target_id=city_slug,
+        details={"city_name": city.get("name"), "active": active}, request=request
+    )
+    return {"message": f"City {'activated' if active else 'deactivated'}", "slug": city_slug, "active": active}

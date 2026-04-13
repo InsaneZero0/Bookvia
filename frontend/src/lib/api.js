@@ -306,6 +306,13 @@ export const adminAPI = {
   getTicketDetail: (id) => api.get(`/admin/tickets/${id}`),
   respondToTicket: (id, message) => api.post(`/admin/tickets/${id}/respond`, { message }),
   closeTicket: (id) => api.put(`/admin/tickets/${id}/close`),
+  // Rankings
+  getRankings: () => api.get('/admin/rankings'),
+  // Alerts
+  getAlerts: () => api.get('/admin/alerts'),
+  // Cities
+  getCities: (params) => api.get('/admin/cities', { params }),
+  toggleCity: (slug, active) => api.put(`/admin/cities/${slug}/toggle`, null, { params: { active } }),
 };
 
 // Utility API

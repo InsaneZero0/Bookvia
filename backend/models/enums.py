@@ -90,6 +90,8 @@ class AuditAction(str, Enum):
     CONFIG_UPDATE = "config_update"
     TICKET_RESPOND = "ticket_respond"
     TICKET_CLOSE = "ticket_close"
+    CITY_ACTIVATE = "city_activate"
+    CITY_DEACTIVATE = "city_deactivate"
 
 
 # ========================== CONSTANTS ==========================

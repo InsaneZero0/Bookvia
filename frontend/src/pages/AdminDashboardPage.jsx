@@ -23,7 +23,8 @@ import {
   Shield, FileText, Search, Ban, ChevronLeft, ChevronRight, Download,
   Eye, Star, Wallet, BarChart3, Loader2, MapPin, Phone, Mail, Globe,
   CreditCard, Briefcase, MessageSquare, Trash2, ExternalLink, TrendingUp,
-  Tags, Settings, LifeBuoy, Plus, Pencil, Send, X, AlertCircle
+  Tags, Settings, LifeBuoy, Plus, Pencil, Send, X, AlertCircle,
+  Trophy, Bell, Map, ToggleLeft, ToggleRight
 } from 'lucide-react';
 
 const STATUS_COLORS = {
@@ -319,6 +320,23 @@ export default function AdminDashboardPage() {
   const [selectedTicket, setSelectedTicket] = useState(null);
   const [ticketReply, setTicketReply] = useState('');
 
+  // Rankings tab
+  const [rankings, setRankings] = useState(null);
+  const [rankingsLoading, setRankingsLoading] = useState(false);
+
+  // Alerts
+  const [alerts, setAlerts] = useState([]);
+  const [alertsCount, setAlertsCount] = useState(0);
+
+  // Cities tab
+  const [cities, setCities] = useState([]);
+  const [citiesTotal, setCitiesTotal] = useState(0);
+  const [citiesPage, setCitiesPage] = useState(1);
+  const [citiesPages, setCitiesPages] = useState(1);
+  const [citiesSearch, setCitiesSearch] = useState('');
+  const [citiesActive, setCitiesActive] = useState('');
+  const [citiesLoading, setCitiesLoading] = useState(false);
+
   useEffect(() => {
     if (!isAuthenticated || !isAdmin) { navigate('/admin/login'); return; }
     if (!user?.totp_enabled) { navigate('/admin/login'); return; }
@@ -337,11 +355,16 @@ export default function AdminDashboardPage() {
       setAuditLogs(logsRes.data);
     } catch { /* silent */ }
     setLoading(false);
-    // Load growth in background
+    // Load growth and alerts in background
     setGrowthLoading(true);
     try {
-      const gRes = await adminAPI.getGrowthStats(12);
+      const [gRes, aRes] = await Promise.all([
+        adminAPI.getGrowthStats(12),
+        adminAPI.getAlerts(),
+      ]);
       setGrowthData(gRes.data);
+      setAlerts(aRes.data.alerts);
+      setAlertsCount(aRes.data.total);
     } catch { /* silent */ }
     setGrowthLoading(false);
   };
@@ -435,6 +458,35 @@ export default function AdminDashboardPage() {
     setTicketsLoading(false);
   }, [ticketsSearch, ticketsStatus]);
 
+  const loadRankings = async () => {
+    setRankingsLoading(true);
+    try {
+      const res = await adminAPI.getRankings();
+      setRankings(res.data);
+    } catch { /* silent */ }
+    setRankingsLoading(false);
+  };
+
+  const loadAlerts = async () => {
+    try {
+      const res = await adminAPI.getAlerts();
+      setAlerts(res.data.alerts);
+      setAlertsCount(res.data.total);
+    } catch { /* silent */ }
+  };
+
+  const loadCities = useCallback(async (page = 1) => {
+    setCitiesLoading(true);
+    try {
+      const res = await adminAPI.getCities({ search: citiesSearch, active_only: citiesActive, page, limit: 50 });
+      setCities(res.data.cities);
+      setCitiesTotal(res.data.total);
+      setCitiesPages(res.data.pages);
+      setCitiesPage(page);
+    } catch { /* silent */ }
+    setCitiesLoading(false);
+  }, [citiesSearch, citiesActive]);
+
   useEffect(() => {
     if (activeTab === 'businesses') loadBusinesses(1);
     if (activeTab === 'users') loadUsers(1);
@@ -444,6 +496,8 @@ export default function AdminDashboardPage() {
     if (activeTab === 'categories') loadCategories();
     if (activeTab === 'config') loadConfig();
     if (activeTab === 'support') loadTickets(1);
+    if (activeTab === 'rankings') loadRankings();
+    if (activeTab === 'cities') loadCities(1);
   }, [activeTab]);
 
   const openDetail = (id) => { setDetailBizId(id); setDetailOpen(true); };
@@ -593,14 +647,24 @@ export default function AdminDashboardPage() {
     } catch { toast.error('Error'); }
   };
 
+  const handleToggleCity = async (slug, currentActive) => {
+    try {
+      await adminAPI.toggleCity(slug, !currentActive);
+      toast.success(!currentActive ? t('Ciudad activada', 'City activated') : t('Ciudad desactivada', 'City deactivated'));
+      loadCities(citiesPage);
+    } catch { toast.error('Error'); }
+  };
+
   const tabs = [
     { id: 'overview', label: t('Resumen', 'Overview'), icon: BarChart3 },
     { id: 'businesses', label: t('Negocios', 'Businesses'), icon: Building2 },
     { id: 'users', label: t('Usuarios', 'Users'), icon: Users },
     { id: 'reviews', label: t('Resenas', 'Reviews'), icon: MessageSquare },
     { id: 'categories', label: t('Categorias', 'Categories'), icon: Tags },
+    { id: 'rankings', label: t('Rankings', 'Rankings'), icon: Trophy },
+    { id: 'cities', label: t('Ciudades', 'Cities'), icon: Map },
     { id: 'config', label: t('Configuracion', 'Config'), icon: Settings },
-    { id: 'support', label: t('Soporte', 'Support'), icon: LifeBuoy },
+    { id: 'support', label: alertsCount > 0 ? `${t('Soporte', 'Support')} (${alertsCount})` : t('Soporte', 'Support'), icon: LifeBuoy },
     { id: 'subscriptions', label: t('Suscripciones', 'Subscriptions'), icon: CreditCard },
     { id: 'finance', label: t('Finanzas', 'Finance'), icon: Wallet },
   ];
@@ -756,6 +820,38 @@ export default function AdminDashboardPage() {
             </div>
 
             {/* ─── Growth Charts ─── */}
+            {/* Alerts */}
+            {alerts.length > 0 && (
+              <Card data-testid="admin-alerts-section">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base font-heading flex items-center gap-2">
+                    <Bell className="h-5 w-5 text-amber-500" />{t('Alertas', 'Alerts')}
+                    <Badge className="bg-amber-100 text-amber-700">{alerts.length}</Badge>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    {alerts.map((a, i) => (
+                      <div key={i} className={`flex items-start gap-3 p-3 rounded-lg ${
+                        a.severity === 'critical' ? 'bg-red-50 dark:bg-red-900/10' :
+                        a.severity === 'warning' ? 'bg-amber-50 dark:bg-amber-900/10' :
+                        'bg-blue-50 dark:bg-blue-900/10'
+                      }`} data-testid={`alert-${a.type}`}>
+                        <AlertCircle className={`h-5 w-5 shrink-0 mt-0.5 ${
+                          a.severity === 'critical' ? 'text-red-500' :
+                          a.severity === 'warning' ? 'text-amber-500' : 'text-blue-500'
+                        }`} />
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium">{a.title}</p>
+                          <p className="text-xs text-muted-foreground">{a.detail}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
             <div data-testid="growth-charts-section">
               <h3 className="text-lg font-heading font-semibold flex items-center gap-2 mb-4">
                 <TrendingUp className="h-5 w-5 text-emerald-500" />{t('Estadisticas de Crecimiento', 'Growth Statistics')}
@@ -1541,6 +1637,218 @@ export default function AdminDashboardPage() {
                 )}
               </div>
             </div>
+          </div>
+        )}
+
+        {/* ============ RANKINGS TAB ============ */}
+        {activeTab === 'rankings' && (
+          <div className="space-y-6">
+            {rankingsLoading ? (
+              <div className="grid md:grid-cols-2 gap-6">{[1,2,3,4].map(i => <Skeleton key={i} className="h-64" />)}</div>
+            ) : rankings ? (
+              <div className="grid md:grid-cols-2 gap-6">
+                {/* Top by bookings */}
+                <Card data-testid="top-by-bookings">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base font-heading flex items-center gap-2">
+                      <Trophy className="h-5 w-5 text-amber-500" />{t('Top por Reservas', 'Top by Bookings')}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-2">
+                      {rankings.top_by_bookings?.map((b, i) => (
+                        <div key={b.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 cursor-pointer" onClick={() => openDetail(b.id)}>
+                          <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                            i === 0 ? 'bg-amber-100 text-amber-700' : i === 1 ? 'bg-gray-200 text-gray-700' : i === 2 ? 'bg-orange-100 text-orange-700' : 'bg-muted text-muted-foreground'
+                          }`}>{i + 1}</span>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-medium truncate">{b.name}</p>
+                            <p className="text-xs text-muted-foreground">{b.city}</p>
+                          </div>
+                          <Badge variant="outline" className="shrink-0">{b.booking_count} {t('reservas', 'bookings')}</Badge>
+                        </div>
+                      ))}
+                      {(!rankings.top_by_bookings || rankings.top_by_bookings.length === 0) && (
+                        <p className="text-center text-muted-foreground py-4 text-sm">{t('Sin datos', 'No data')}</p>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Top by rating */}
+                <Card data-testid="top-by-rating">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base font-heading flex items-center gap-2">
+                      <Star className="h-5 w-5 text-amber-500" />{t('Mejor Calificados', 'Top Rated')}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-2">
+                      {rankings.top_by_rating?.map((b, i) => (
+                        <div key={b.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 cursor-pointer" onClick={() => openDetail(b.id)}>
+                          <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                            i === 0 ? 'bg-amber-100 text-amber-700' : i === 1 ? 'bg-gray-200 text-gray-700' : i === 2 ? 'bg-orange-100 text-orange-700' : 'bg-muted text-muted-foreground'
+                          }`}>{i + 1}</span>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-medium truncate">{b.name}</p>
+                            <p className="text-xs text-muted-foreground">{b.city}</p>
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <Star className="h-3 w-3 fill-amber-400 text-amber-400" />
+                            <span className="text-sm font-medium">{b.rating?.toFixed(1)}</span>
+                            <span className="text-xs text-muted-foreground">({b.review_count})</span>
+                          </div>
+                        </div>
+                      ))}
+                      {(!rankings.top_by_rating || rankings.top_by_rating.length === 0) && (
+                        <p className="text-center text-muted-foreground py-4 text-sm">{t('Sin resenas suficientes', 'Not enough reviews')}</p>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Top cities */}
+                <Card data-testid="top-cities">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base font-heading flex items-center gap-2">
+                      <MapPin className="h-5 w-5 text-blue-500" />{t('Ciudades mas Activas', 'Most Active Cities')}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-2">
+                      {rankings.top_cities?.map((c, i) => (
+                        <div key={c.city} className="flex items-center gap-3 p-2 rounded-lg">
+                          <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                            i === 0 ? 'bg-blue-100 text-blue-700' : 'bg-muted text-muted-foreground'
+                          }`}>{i + 1}</span>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-medium">{c.city}</p>
+                          </div>
+                          <div className="flex gap-3 text-xs text-muted-foreground shrink-0">
+                            <span>{c.businesses} {t('negocios', 'businesses')}</span>
+                            <span>{c.bookings} {t('reservas', 'bookings')}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Top categories */}
+                <Card data-testid="top-categories">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base font-heading flex items-center gap-2">
+                      <Tags className="h-5 w-5 text-purple-500" />{t('Categorias Populares', 'Popular Categories')}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-2">
+                      {rankings.top_categories?.map((c, i) => (
+                        <div key={c.category} className="flex items-center gap-3 p-2 rounded-lg">
+                          <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                            i === 0 ? 'bg-purple-100 text-purple-700' : 'bg-muted text-muted-foreground'
+                          }`}>{i + 1}</span>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-medium">{c.category || t('Sin categoria', 'No category')}</p>
+                          </div>
+                          <div className="flex gap-3 text-xs text-muted-foreground shrink-0">
+                            <span>{c.businesses} {t('negocios', 'businesses')}</span>
+                            <span>{c.bookings} {t('reservas', 'bookings')}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            ) : (
+              <p className="text-center text-muted-foreground py-12">{t('Error al cargar rankings', 'Error loading rankings')}</p>
+            )}
+          </div>
+        )}
+
+        {/* ============ CITIES TAB ============ */}
+        {activeTab === 'cities' && (
+          <div className="space-y-4">
+            <div className="flex flex-col sm:flex-row gap-3">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input placeholder={t('Buscar ciudad o estado...', 'Search city or state...')}
+                  value={citiesSearch} onChange={e => setCitiesSearch(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && loadCities(1)}
+                  className="pl-10" data-testid="cities-search-input" />
+              </div>
+              <Select value={citiesActive} onValueChange={v => setCitiesActive(v === 'all' ? '' : v)}>
+                <SelectTrigger className="w-40" data-testid="cities-active-filter">
+                  <SelectValue placeholder={t('Estado', 'Status')} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">{t('Todas', 'All')}</SelectItem>
+                  <SelectItem value="true">{t('Activas', 'Active')}</SelectItem>
+                  <SelectItem value="false">{t('Inactivas', 'Inactive')}</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button onClick={() => loadCities(1)} data-testid="cities-search-btn">
+                <Search className="h-4 w-4 mr-2" />{t('Buscar', 'Search')}
+              </Button>
+            </div>
+
+            <p className="text-sm text-muted-foreground">{citiesTotal} {t('ciudades', 'cities')}</p>
+
+            {citiesLoading ? (
+              <div className="space-y-2">{[1,2,3,4].map(i => <Skeleton key={i} className="h-14" />)}</div>
+            ) : (
+              <div className="grid gap-2">
+                {cities.map(c => (
+                  <Card key={c.slug} data-testid={`city-row-${c.slug}`}>
+                    <CardContent className="p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                          <MapPin className="h-4 w-4 text-muted-foreground shrink-0" />
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium text-sm">{c.name}</span>
+                              <span className="text-xs text-muted-foreground">{c.state}</span>
+                              {c.active === false && <Badge className="bg-red-100 text-red-700 text-xs">{t('Inactiva', 'Inactive')}</Badge>}
+                              {c.active !== false && <Badge className="bg-green-100 text-green-700 text-xs">{t('Activa', 'Active')}</Badge>}
+                            </div>
+                            <div className="flex gap-3 text-xs text-muted-foreground">
+                              <span>{c.country_code}</span>
+                              <span>{c.business_count || 0} {t('negocios', 'businesses')}</span>
+                            </div>
+                          </div>
+                        </div>
+                        <Button size="sm" variant="outline"
+                          className={c.active !== false ? 'text-red-600 hover:bg-red-50' : 'text-green-600 hover:bg-green-50'}
+                          onClick={() => handleToggleCity(c.slug, c.active !== false)}
+                          data-testid={`toggle-city-${c.slug}`}>
+                          {c.active !== false ? (
+                            <><ToggleRight className="h-4 w-4 mr-1" />{t('Desactivar', 'Deactivate')}</>
+                          ) : (
+                            <><ToggleLeft className="h-4 w-4 mr-1" />{t('Activar', 'Activate')}</>
+                          )}
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+                {cities.length === 0 && (
+                  <p className="text-center text-muted-foreground py-12">{t('No se encontraron ciudades', 'No cities found')}</p>
+                )}
+              </div>
+            )}
+
+            {citiesPages > 1 && (
+              <div className="flex items-center justify-center gap-3 pt-4">
+                <Button variant="outline" size="sm" disabled={citiesPage <= 1} onClick={() => loadCities(citiesPage - 1)}>
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <span className="text-sm text-muted-foreground">{citiesPage} / {citiesPages}</span>
+                <Button variant="outline" size="sm" disabled={citiesPage >= citiesPages} onClick={() => loadCities(citiesPage + 1)}>
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            )}
           </div>
         )}
 
