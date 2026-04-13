@@ -924,3 +924,212 @@ async def get_held_payments(page: int = 1, limit: int = 50, token_data: TokenDat
 
 
 
+
+
+# ============ CATEGORY MANAGEMENT ============
+
+@router.get("/categories")
+async def admin_get_categories(token_data: TokenData = Depends(require_admin)):
+    """Get all categories with business counts."""
+    cats = await db.categories.find({}, {"_id": 0}).to_list(100)
+    for c in cats:
+        count = await db.businesses.count_documents({"category_id": c["id"]})
+        c["business_count"] = count
+    return cats
+
+
+@router.post("/categories")
+async def admin_create_category(category: CategoryCreate, request: Request, token_data: TokenData = Depends(require_admin)):
+    """Create a new category."""
+    existing = await db.categories.find_one({"slug": category.slug}, {"_id": 0})
+    if existing:
+        raise HTTPException(status_code=400, detail="Category with this slug already exists")
+    doc = {"id": generate_id(), "active": True, **category.model_dump()}
+    await db.categories.insert_one(doc)
+    await create_audit_log(
+        admin_id=token_data.user_id, admin_email=token_data.email,
+        action=AuditAction.CATEGORY_CREATE, target_type="category",
+        target_id=doc["id"], details={"name_es": category.name_es}, request=request
+    )
+    doc.pop("_id", None)
+    return doc
+
+
+@router.put("/categories/{category_id}")
+async def admin_update_category(category_id: str, update: CategoryUpdate, request: Request, token_data: TokenData = Depends(require_admin)):
+    """Update a category."""
+    cat = await db.categories.find_one({"id": category_id})
+    if not cat:
+        raise HTTPException(status_code=404, detail="Category not found")
+    changes = {k: v for k, v in update.model_dump().items() if v is not None}
+    if not changes:
+        raise HTTPException(status_code=400, detail="No changes provided")
+    if "slug" in changes:
+        dup = await db.categories.find_one({"slug": changes["slug"], "id": {"$ne": category_id}})
+        if dup:
+            raise HTTPException(status_code=400, detail="Slug already in use")
+    await db.categories.update_one({"id": category_id}, {"$set": changes})
+    await create_audit_log(
+        admin_id=token_data.user_id, admin_email=token_data.email,
+        action=AuditAction.CATEGORY_UPDATE, target_type="category",
+        target_id=category_id, details=changes, request=request
+    )
+    updated = await db.categories.find_one({"id": category_id}, {"_id": 0})
+    return updated
+
+
+@router.delete("/categories/{category_id}")
+async def admin_delete_category(category_id: str, request: Request, token_data: TokenData = Depends(require_admin)):
+    """Delete a category (only if no businesses use it)."""
+    cat = await db.categories.find_one({"id": category_id})
+    if not cat:
+        raise HTTPException(status_code=404, detail="Category not found")
+    biz_count = await db.businesses.count_documents({"category_id": category_id})
+    if biz_count > 0:
+        raise HTTPException(status_code=400, detail=f"Cannot delete: {biz_count} businesses use this category")
+    await db.categories.delete_one({"id": category_id})
+    await create_audit_log(
+        admin_id=token_data.user_id, admin_email=token_data.email,
+        action=AuditAction.CATEGORY_DELETE, target_type="category",
+        target_id=category_id, details={"name_es": cat.get("name_es")}, request=request
+    )
+    return {"message": "Category deleted"}
+
+
+# ============ PLATFORM CONFIG ============
+
+@router.get("/config")
+async def get_platform_config(token_data: TokenData = Depends(require_admin)):
+    """Get current platform configuration."""
+    config = await db.platform_config.find_one({"_id": "main"})
+    if not config:
+        return {
+            "platform_fee_percent": PLATFORM_FEE_PERCENT,
+            "subscription_price_mxn": SUBSCRIPTION_PRICE_MXN,
+            "subscription_trial_days": SUBSCRIPTION_TRIAL_DAYS,
+            "min_deposit_amount": MIN_DEPOSIT_AMOUNT,
+            "updated_at": None,
+            "updated_by": None,
+        }
+    config.pop("_id", None)
+    return config
+
+
+@router.put("/config")
+async def update_platform_config(update: PlatformConfigUpdate, request: Request, token_data: TokenData = Depends(require_admin)):
+    """Update platform configuration."""
+    changes = {k: v for k, v in update.model_dump().items() if v is not None}
+    if not changes:
+        raise HTTPException(status_code=400, detail="No changes provided")
+    # Validate ranges
+    if "platform_fee_percent" in changes and not (0 <= changes["platform_fee_percent"] <= 0.5):
+        raise HTTPException(status_code=400, detail="Fee must be between 0% and 50%")
+    if "subscription_price_mxn" in changes and changes["subscription_price_mxn"] < 0:
+        raise HTTPException(status_code=400, detail="Price cannot be negative")
+    if "subscription_trial_days" in changes and changes["subscription_trial_days"] < 0:
+        raise HTTPException(status_code=400, detail="Trial days cannot be negative")
+    if "min_deposit_amount" in changes and changes["min_deposit_amount"] < 0:
+        raise HTTPException(status_code=400, detail="Min deposit cannot be negative")
+
+    changes["updated_at"] = datetime.now(timezone.utc).isoformat()
+    changes["updated_by"] = token_data.email
+
+    await db.platform_config.update_one(
+        {"_id": "main"},
+        {"$set": changes},
+        upsert=True
+    )
+    await create_audit_log(
+        admin_id=token_data.user_id, admin_email=token_data.email,
+        action=AuditAction.CONFIG_UPDATE, target_type="platform_config",
+        target_id="main", details=changes, request=request
+    )
+    config = await db.platform_config.find_one({"_id": "main"})
+    config.pop("_id", None)
+    return config
+
+
+# ============ SUPPORT TICKETS ============
+
+@router.get("/tickets")
+async def get_all_tickets(
+    status: str = "", search: str = "", page: int = 1, limit: int = 20,
+    token_data: TokenData = Depends(require_admin)
+):
+    """Get all support tickets with filters."""
+    query = {}
+    if status:
+        query["status"] = status
+    if search:
+        query["$or"] = [
+            {"subject": {"$regex": search, "$options": "i"}},
+            {"user_email": {"$regex": search, "$options": "i"}},
+        ]
+    total = await db.support_tickets.count_documents(query)
+    tickets = await db.support_tickets.find(query, {"_id": 0}).sort("created_at", -1).skip((page - 1) * limit).limit(limit).to_list(limit)
+    return {"tickets": tickets, "total": total, "page": page, "pages": max(1, (total + limit - 1) // limit)}
+
+
+@router.get("/tickets/stats")
+async def get_ticket_stats(token_data: TokenData = Depends(require_admin)):
+    """Get ticket statistics."""
+    open_count = await db.support_tickets.count_documents({"status": "open"})
+    in_progress = await db.support_tickets.count_documents({"status": "in_progress"})
+    closed = await db.support_tickets.count_documents({"status": "closed"})
+    total = open_count + in_progress + closed
+    return {"open": open_count, "in_progress": in_progress, "closed": closed, "total": total}
+
+
+@router.get("/tickets/{ticket_id}")
+async def get_ticket_detail(ticket_id: str, token_data: TokenData = Depends(require_admin)):
+    """Get a single ticket with all messages."""
+    ticket = await db.support_tickets.find_one({"id": ticket_id}, {"_id": 0})
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    return ticket
+
+
+@router.post("/tickets/{ticket_id}/respond")
+async def respond_to_ticket(ticket_id: str, body: TicketMessageCreate, request: Request, token_data: TokenData = Depends(require_admin)):
+    """Admin responds to a ticket."""
+    ticket = await db.support_tickets.find_one({"id": ticket_id})
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    now = datetime.now(timezone.utc).isoformat()
+    msg = {"sender": "admin", "sender_name": token_data.email, "message": body.message, "created_at": now}
+    await db.support_tickets.update_one(
+        {"id": ticket_id},
+        {"$push": {"messages": msg}, "$set": {"status": "in_progress", "updated_at": now}}
+    )
+    # Notify user
+    if ticket.get("user_id"):
+        await create_notification(
+            ticket["user_id"], "Respuesta a tu ticket",
+            f"Tu ticket '{ticket['subject']}' tiene una nueva respuesta.",
+            "system", {"ticket_id": ticket_id}
+        )
+    await create_audit_log(
+        admin_id=token_data.user_id, admin_email=token_data.email,
+        action=AuditAction.TICKET_RESPOND, target_type="ticket",
+        target_id=ticket_id, details={"subject": ticket.get("subject")}, request=request
+    )
+    return {"message": "Response sent"}
+
+
+@router.put("/tickets/{ticket_id}/close")
+async def close_ticket(ticket_id: str, request: Request, token_data: TokenData = Depends(require_admin)):
+    """Close a ticket."""
+    ticket = await db.support_tickets.find_one({"id": ticket_id})
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
+    now = datetime.now(timezone.utc).isoformat()
+    await db.support_tickets.update_one(
+        {"id": ticket_id},
+        {"$set": {"status": "closed", "closed_at": now, "updated_at": now}}
+    )
+    await create_audit_log(
+        admin_id=token_data.user_id, admin_email=token_data.email,
+        action=AuditAction.TICKET_CLOSE, target_type="ticket",
+        target_id=ticket_id, details={"subject": ticket.get("subject")}, request=request
+    )
+    return {"message": "Ticket closed"}

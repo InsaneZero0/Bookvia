@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
@@ -21,7 +22,8 @@ import {
   Users, Building2, Calendar, DollarSign, CheckCircle2, XCircle, Clock,
   Shield, FileText, Search, Ban, ChevronLeft, ChevronRight, Download,
   Eye, Star, Wallet, BarChart3, Loader2, MapPin, Phone, Mail, Globe,
-  CreditCard, Briefcase, MessageSquare, Trash2, ExternalLink, TrendingUp
+  CreditCard, Briefcase, MessageSquare, Trash2, ExternalLink, TrendingUp,
+  Tags, Settings, LifeBuoy, Plus, Pencil, Send, X, AlertCircle
 } from 'lucide-react';
 
 const STATUS_COLORS = {
@@ -293,6 +295,30 @@ export default function AdminDashboardPage() {
   const [growthData, setGrowthData] = useState([]);
   const [growthLoading, setGrowthLoading] = useState(false);
 
+  // Categories tab
+  const [categories, setCategories] = useState([]);
+  const [catsLoading, setCatsLoading] = useState(false);
+  const [editingCat, setEditingCat] = useState(null);
+  const [catForm, setCatForm] = useState({ name_es: '', name_en: '', slug: '', icon: '', image_url: '' });
+  const [showCatForm, setShowCatForm] = useState(false);
+
+  // Config tab
+  const [platformConfig, setPlatformConfig] = useState(null);
+  const [configLoading, setConfigLoading] = useState(false);
+  const [configForm, setConfigForm] = useState({});
+
+  // Support tab
+  const [tickets, setTickets] = useState([]);
+  const [ticketsTotal, setTicketsTotal] = useState(0);
+  const [ticketsPage, setTicketsPage] = useState(1);
+  const [ticketsPages, setTicketsPages] = useState(1);
+  const [ticketsSearch, setTicketsSearch] = useState('');
+  const [ticketsStatus, setTicketsStatus] = useState('');
+  const [ticketsLoading, setTicketsLoading] = useState(false);
+  const [ticketStats, setTicketStats] = useState(null);
+  const [selectedTicket, setSelectedTicket] = useState(null);
+  const [ticketReply, setTicketReply] = useState('');
+
   useEffect(() => {
     if (!isAuthenticated || !isAdmin) { navigate('/admin/login'); return; }
     if (!user?.totp_enabled) { navigate('/admin/login'); return; }
@@ -374,12 +400,50 @@ export default function AdminDashboardPage() {
     setSubLoading(false);
   };
 
+  const loadCategories = async () => {
+    setCatsLoading(true);
+    try {
+      const res = await adminAPI.getCategories();
+      setCategories(res.data);
+    } catch { /* silent */ }
+    setCatsLoading(false);
+  };
+
+  const loadConfig = async () => {
+    setConfigLoading(true);
+    try {
+      const res = await adminAPI.getConfig();
+      setPlatformConfig(res.data);
+      setConfigForm(res.data);
+    } catch { /* silent */ }
+    setConfigLoading(false);
+  };
+
+  const loadTickets = useCallback(async (page = 1) => {
+    setTicketsLoading(true);
+    try {
+      const [ticketsRes, statsRes] = await Promise.all([
+        adminAPI.getTickets({ search: ticketsSearch, status: ticketsStatus, page, limit: 20 }),
+        adminAPI.getTicketStats(),
+      ]);
+      setTickets(ticketsRes.data.tickets);
+      setTicketsTotal(ticketsRes.data.total);
+      setTicketsPages(ticketsRes.data.pages);
+      setTicketsPage(page);
+      setTicketStats(statsRes.data);
+    } catch { /* silent */ }
+    setTicketsLoading(false);
+  }, [ticketsSearch, ticketsStatus]);
+
   useEffect(() => {
     if (activeTab === 'businesses') loadBusinesses(1);
     if (activeTab === 'users') loadUsers(1);
     if (activeTab === 'finance') loadFinance();
     if (activeTab === 'reviews') loadReviews(1);
     if (activeTab === 'subscriptions') loadSubscriptions();
+    if (activeTab === 'categories') loadCategories();
+    if (activeTab === 'config') loadConfig();
+    if (activeTab === 'support') loadTickets(1);
   }, [activeTab]);
 
   const openDetail = (id) => { setDetailBizId(id); setDetailOpen(true); };
@@ -467,11 +531,76 @@ export default function AdminDashboardPage() {
     } catch { toast.error(t('Error', 'Error')); }
   };
 
+  // Category handlers
+  const resetCatForm = () => { setCatForm({ name_es: '', name_en: '', slug: '', icon: '', image_url: '' }); setEditingCat(null); setShowCatForm(false); };
+  const startEditCat = (cat) => { setEditingCat(cat.id); setCatForm({ name_es: cat.name_es, name_en: cat.name_en, slug: cat.slug, icon: cat.icon, image_url: cat.image_url || '' }); setShowCatForm(true); };
+  const handleSaveCat = async () => {
+    try {
+      if (editingCat) {
+        await adminAPI.updateCategory(editingCat, catForm);
+        toast.success(t('Categoria actualizada', 'Category updated'));
+      } else {
+        await adminAPI.createCategory(catForm);
+        toast.success(t('Categoria creada', 'Category created'));
+      }
+      resetCatForm();
+      loadCategories();
+    } catch (e) { toast.error(e.response?.data?.detail || 'Error'); }
+  };
+  const handleDeleteCat = async (id, name) => {
+    if (!window.confirm(t(`Eliminar "${name}"?`, `Delete "${name}"?`))) return;
+    try {
+      await adminAPI.deleteCategory(id);
+      toast.success(t('Categoria eliminada', 'Category deleted'));
+      loadCategories();
+    } catch (e) { toast.error(e.response?.data?.detail || 'Error'); }
+  };
+  const autoSlug = (name) => name.toLowerCase().replace(/[áàä]/g,'a').replace(/[éèë]/g,'e').replace(/[íìï]/g,'i').replace(/[óòö]/g,'o').replace(/[úùü]/g,'u').replace(/ñ/g,'n').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+
+  // Config handler
+  const handleSaveConfig = async () => {
+    try {
+      const res = await adminAPI.updateConfig(configForm);
+      setPlatformConfig(res.data);
+      toast.success(t('Configuracion guardada', 'Configuration saved'));
+    } catch (e) { toast.error(e.response?.data?.detail || 'Error'); }
+  };
+
+  // Ticket handlers
+  const handleOpenTicket = async (id) => {
+    try {
+      const res = await adminAPI.getTicketDetail(id);
+      setSelectedTicket(res.data);
+      setTicketReply('');
+    } catch { toast.error('Error'); }
+  };
+  const handleReplyTicket = async () => {
+    if (!ticketReply.trim() || !selectedTicket) return;
+    try {
+      await adminAPI.respondToTicket(selectedTicket.id, ticketReply);
+      toast.success(t('Respuesta enviada', 'Reply sent'));
+      setTicketReply('');
+      handleOpenTicket(selectedTicket.id);
+      loadTickets(ticketsPage);
+    } catch { toast.error('Error'); }
+  };
+  const handleCloseTicket = async (id) => {
+    try {
+      await adminAPI.closeTicket(id);
+      toast.success(t('Ticket cerrado', 'Ticket closed'));
+      setSelectedTicket(null);
+      loadTickets(ticketsPage);
+    } catch { toast.error('Error'); }
+  };
+
   const tabs = [
     { id: 'overview', label: t('Resumen', 'Overview'), icon: BarChart3 },
     { id: 'businesses', label: t('Negocios', 'Businesses'), icon: Building2 },
     { id: 'users', label: t('Usuarios', 'Users'), icon: Users },
     { id: 'reviews', label: t('Resenas', 'Reviews'), icon: MessageSquare },
+    { id: 'categories', label: t('Categorias', 'Categories'), icon: Tags },
+    { id: 'config', label: t('Configuracion', 'Config'), icon: Settings },
+    { id: 'support', label: t('Soporte', 'Support'), icon: LifeBuoy },
     { id: 'subscriptions', label: t('Suscripciones', 'Subscriptions'), icon: CreditCard },
     { id: 'finance', label: t('Finanzas', 'Finance'), icon: Wallet },
   ];
@@ -1062,6 +1191,356 @@ export default function AdminDashboardPage() {
             ) : (
               <p className="text-center text-muted-foreground py-12">{t('Error al cargar suscripciones', 'Error loading subscriptions')}</p>
             )}
+          </div>
+        )}
+
+        {/* ============ CATEGORIES TAB ============ */}
+        {activeTab === 'categories' && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-heading font-semibold flex items-center gap-2">
+                <Tags className="h-5 w-5 text-purple-500" />{t('Gestionar Categorias', 'Manage Categories')}
+              </h3>
+              <Button onClick={() => { resetCatForm(); setShowCatForm(true); }} data-testid="add-category-btn">
+                <Plus className="h-4 w-4 mr-2" />{t('Nueva Categoria', 'New Category')}
+              </Button>
+            </div>
+
+            {/* Inline form */}
+            {showCatForm && (
+              <Card data-testid="category-form">
+                <CardContent className="p-4 space-y-3">
+                  <h4 className="font-medium">{editingCat ? t('Editar Categoria', 'Edit Category') : t('Nueva Categoria', 'New Category')}</h4>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                    <div>
+                      <label className="text-sm font-medium mb-1 block">{t('Nombre (ES)', 'Name (ES)')}</label>
+                      <Input value={catForm.name_es} onChange={e => { setCatForm(f => ({ ...f, name_es: e.target.value, slug: editingCat ? f.slug : autoSlug(e.target.value) })); }} data-testid="cat-name-es" />
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium mb-1 block">{t('Nombre (EN)', 'Name (EN)')}</label>
+                      <Input value={catForm.name_en} onChange={e => setCatForm(f => ({ ...f, name_en: e.target.value }))} data-testid="cat-name-en" />
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium mb-1 block">Slug</label>
+                      <Input value={catForm.slug} onChange={e => setCatForm(f => ({ ...f, slug: e.target.value }))} data-testid="cat-slug" />
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium mb-1 block">{t('Icono (Lucide)', 'Icon (Lucide)')}</label>
+                      <Input value={catForm.icon} onChange={e => setCatForm(f => ({ ...f, icon: e.target.value }))} placeholder="Sparkles, Heart, Car..." data-testid="cat-icon" />
+                    </div>
+                    <div className="md:col-span-2">
+                      <label className="text-sm font-medium mb-1 block">{t('URL de imagen', 'Image URL')}</label>
+                      <Input value={catForm.image_url} onChange={e => setCatForm(f => ({ ...f, image_url: e.target.value }))} placeholder="https://..." data-testid="cat-image" />
+                    </div>
+                  </div>
+                  <div className="flex gap-2 pt-2">
+                    <Button onClick={handleSaveCat} disabled={!catForm.name_es || !catForm.slug} data-testid="save-category-btn">
+                      <CheckCircle2 className="h-4 w-4 mr-2" />{editingCat ? t('Guardar', 'Save') : t('Crear', 'Create')}
+                    </Button>
+                    <Button variant="outline" onClick={resetCatForm}><X className="h-4 w-4 mr-2" />{t('Cancelar', 'Cancel')}</Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Categories list */}
+            {catsLoading ? (
+              <div className="space-y-3">{[1,2,3].map(i => <Skeleton key={i} className="h-16" />)}</div>
+            ) : (
+              <div className="space-y-2">
+                {categories.map(cat => (
+                  <Card key={cat.id} data-testid={`cat-row-${cat.id}`}>
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                          <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center text-lg font-bold text-muted-foreground shrink-0">
+                            {cat.icon?.charAt(0) || '?'}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium">{cat.name_es}</span>
+                              <span className="text-sm text-muted-foreground">/ {cat.name_en}</span>
+                              {cat.active === false && <Badge className="bg-red-100 text-red-700 text-xs">{t('Inactiva', 'Inactive')}</Badge>}
+                            </div>
+                            <div className="flex gap-3 text-sm text-muted-foreground">
+                              <span>slug: {cat.slug}</span>
+                              <span>icon: {cat.icon}</span>
+                              <span>{cat.business_count || 0} {t('negocios', 'businesses')}</span>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex gap-2 shrink-0">
+                          <Button size="sm" variant="outline" onClick={() => startEditCat(cat)} data-testid={`edit-cat-${cat.id}`}>
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button size="sm" variant="outline" className="text-red-600 hover:bg-red-50"
+                            onClick={() => handleDeleteCat(cat.id, cat.name_es)} data-testid={`delete-cat-${cat.id}`}>
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+                {categories.length === 0 && (
+                  <p className="text-center text-muted-foreground py-12">{t('No hay categorias', 'No categories')}</p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ============ CONFIG TAB ============ */}
+        {activeTab === 'config' && (
+          <div className="space-y-6">
+            <h3 className="text-lg font-heading font-semibold flex items-center gap-2">
+              <Settings className="h-5 w-5 text-gray-500" />{t('Configuracion de la Plataforma', 'Platform Configuration')}
+            </h3>
+            {configLoading ? (
+              <Skeleton className="h-64" />
+            ) : platformConfig ? (
+              <Card data-testid="platform-config-form">
+                <CardContent className="p-6 space-y-6">
+                  <div className="grid md:grid-cols-2 gap-6">
+                    <div>
+                      <label className="text-sm font-medium mb-1 block">{t('Comision de plataforma (%)', 'Platform fee (%)')}</label>
+                      <div className="flex items-center gap-2">
+                        <Input type="number" step="0.01" min="0" max="50"
+                          value={(configForm.platform_fee_percent ?? 0.08) * 100}
+                          onChange={e => setConfigForm(f => ({ ...f, platform_fee_percent: parseFloat(e.target.value) / 100 }))}
+                          className="w-28" data-testid="config-fee" />
+                        <span className="text-sm text-muted-foreground">%</span>
+                        <span className="text-xs text-muted-foreground ml-2">{t('Actual', 'Current')}: {((platformConfig.platform_fee_percent || 0.08) * 100).toFixed(1)}%</span>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium mb-1 block">{t('Precio suscripcion (MXN)', 'Subscription price (MXN)')}</label>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm">$</span>
+                        <Input type="number" step="1" min="0"
+                          value={configForm.subscription_price_mxn ?? 39}
+                          onChange={e => setConfigForm(f => ({ ...f, subscription_price_mxn: parseFloat(e.target.value) }))}
+                          className="w-28" data-testid="config-price" />
+                        <span className="text-sm text-muted-foreground">MXN</span>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium mb-1 block">{t('Dias de prueba', 'Trial days')}</label>
+                      <div className="flex items-center gap-2">
+                        <Input type="number" min="0"
+                          value={configForm.subscription_trial_days ?? 30}
+                          onChange={e => setConfigForm(f => ({ ...f, subscription_trial_days: parseInt(e.target.value) }))}
+                          className="w-28" data-testid="config-trial" />
+                        <span className="text-sm text-muted-foreground">{t('dias', 'days')}</span>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium mb-1 block">{t('Deposito minimo (MXN)', 'Min deposit (MXN)')}</label>
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm">$</span>
+                        <Input type="number" step="10" min="0"
+                          value={configForm.min_deposit_amount ?? 50}
+                          onChange={e => setConfigForm(f => ({ ...f, min_deposit_amount: parseFloat(e.target.value) }))}
+                          className="w-28" data-testid="config-deposit" />
+                        <span className="text-sm text-muted-foreground">MXN</span>
+                      </div>
+                    </div>
+                  </div>
+                  {platformConfig.updated_at && (
+                    <p className="text-xs text-muted-foreground">
+                      {t('Ultima modificacion', 'Last modified')}: {formatDate(platformConfig.updated_at, language === 'es' ? 'es-MX' : 'en-US')} - {platformConfig.updated_by}
+                    </p>
+                  )}
+                  <Button onClick={handleSaveConfig} data-testid="save-config-btn">
+                    <CheckCircle2 className="h-4 w-4 mr-2" />{t('Guardar Configuracion', 'Save Configuration')}
+                  </Button>
+                </CardContent>
+              </Card>
+            ) : (
+              <p className="text-center text-muted-foreground py-12">{t('Error al cargar', 'Error loading')}</p>
+            )}
+            <Card className="border-amber-200 bg-amber-50 dark:bg-amber-900/10">
+              <CardContent className="p-4">
+                <div className="flex items-start gap-3">
+                  <AlertCircle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-medium text-amber-800 dark:text-amber-200">{t('Nota importante', 'Important note')}</p>
+                    <p className="text-sm text-amber-700 dark:text-amber-300 mt-1">
+                      {t('Los cambios de precio y comision aplican a nuevas transacciones. Las suscripciones existentes en Stripe no se modifican automaticamente.',
+                         'Price and fee changes apply to new transactions. Existing Stripe subscriptions are not automatically modified.')}
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* ============ SUPPORT TAB ============ */}
+        {activeTab === 'support' && (
+          <div className="space-y-4">
+            {/* Stats */}
+            {ticketStats && (
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {[
+                  { label: t('Abiertos', 'Open'), value: ticketStats.open, color: 'text-red-600 bg-red-50' },
+                  { label: t('En progreso', 'In progress'), value: ticketStats.in_progress, color: 'text-blue-600 bg-blue-50' },
+                  { label: t('Cerrados', 'Closed'), value: ticketStats.closed, color: 'text-green-600 bg-green-50' },
+                  { label: t('Total', 'Total'), value: ticketStats.total, color: 'text-gray-600 bg-gray-50' },
+                ].map((s, i) => (
+                  <Card key={i} className={s.color.split(' ')[1]}>
+                    <CardContent className="p-3 text-center">
+                      <p className={`text-2xl font-bold ${s.color.split(' ')[0]}`}>{s.value}</p>
+                      <p className="text-xs text-muted-foreground">{s.label}</p>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+
+            {/* Filters */}
+            <div className="flex flex-col sm:flex-row gap-3">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input placeholder={t('Buscar por asunto o email...', 'Search by subject or email...')}
+                  value={ticketsSearch} onChange={e => setTicketsSearch(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && loadTickets(1)}
+                  className="pl-10" data-testid="tickets-search-input" />
+              </div>
+              <Select value={ticketsStatus} onValueChange={v => { setTicketsStatus(v === 'all' ? '' : v); }}>
+                <SelectTrigger className="w-40" data-testid="tickets-status-filter">
+                  <SelectValue placeholder={t('Estado', 'Status')} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">{t('Todos', 'All')}</SelectItem>
+                  <SelectItem value="open">{t('Abiertos', 'Open')}</SelectItem>
+                  <SelectItem value="in_progress">{t('En progreso', 'In progress')}</SelectItem>
+                  <SelectItem value="closed">{t('Cerrados', 'Closed')}</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button onClick={() => loadTickets(1)} data-testid="tickets-search-btn">
+                <Search className="h-4 w-4 mr-2" />{t('Buscar', 'Search')}
+              </Button>
+            </div>
+
+            <div className="grid lg:grid-cols-2 gap-6">
+              {/* Tickets list */}
+              <div className="space-y-2">
+                <p className="text-sm text-muted-foreground">{ticketsTotal} {t('tickets', 'tickets')}</p>
+                {ticketsLoading ? (
+                  <div className="space-y-3">{[1,2,3].map(i => <Skeleton key={i} className="h-20" />)}</div>
+                ) : (
+                  <>
+                    {tickets.map(tk => (
+                      <Card key={tk.id} className={`cursor-pointer transition-shadow hover:shadow-md ${selectedTicket?.id === tk.id ? 'ring-2 ring-primary' : ''}`}
+                        onClick={() => handleOpenTicket(tk.id)} data-testid={`ticket-row-${tk.id}`}>
+                        <CardContent className="p-4">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-medium text-sm line-clamp-1">{tk.subject}</span>
+                                <Badge className={tk.status === 'open' ? 'bg-red-100 text-red-700' : tk.status === 'in_progress' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'}>
+                                  {tk.status === 'open' ? t('Abierto', 'Open') : tk.status === 'in_progress' ? t('En progreso', 'In progress') : t('Cerrado', 'Closed')}
+                                </Badge>
+                              </div>
+                              <div className="flex gap-3 text-xs text-muted-foreground mt-1">
+                                <span>{tk.user_name || tk.user_email}</span>
+                                {tk.business_name && <span>{tk.business_name}</span>}
+                                <span>{formatDate(tk.created_at, language === 'es' ? 'es-MX' : 'en-US')}</span>
+                              </div>
+                            </div>
+                            <Badge variant="outline" className="text-xs shrink-0">{tk.category}</Badge>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                    {tickets.length === 0 && (
+                      <div className="text-center py-12">
+                        <LifeBuoy className="h-12 w-12 text-muted-foreground/30 mx-auto mb-3" />
+                        <p className="text-muted-foreground">{t('No hay tickets de soporte', 'No support tickets')}</p>
+                      </div>
+                    )}
+                  </>
+                )}
+                {ticketsPages > 1 && (
+                  <div className="flex items-center justify-center gap-3 pt-2">
+                    <Button variant="outline" size="sm" disabled={ticketsPage <= 1} onClick={() => loadTickets(ticketsPage - 1)}>
+                      <ChevronLeft className="h-4 w-4" />
+                    </Button>
+                    <span className="text-sm text-muted-foreground">{ticketsPage} / {ticketsPages}</span>
+                    <Button variant="outline" size="sm" disabled={ticketsPage >= ticketsPages} onClick={() => loadTickets(ticketsPage + 1)}>
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                )}
+              </div>
+
+              {/* Ticket detail / conversation */}
+              <div>
+                {selectedTicket ? (
+                  <Card data-testid="ticket-detail-panel">
+                    <CardHeader className="pb-3">
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <CardTitle className="text-base">{selectedTicket.subject}</CardTitle>
+                          <p className="text-sm text-muted-foreground mt-1">
+                            {selectedTicket.user_name} ({selectedTicket.user_email})
+                            {selectedTicket.business_name && ` — ${selectedTicket.business_name}`}
+                          </p>
+                        </div>
+                        <div className="flex gap-2">
+                          {selectedTicket.status !== 'closed' && (
+                            <Button size="sm" variant="outline" onClick={() => handleCloseTicket(selectedTicket.id)} data-testid="close-ticket-btn">
+                              <CheckCircle2 className="h-4 w-4 mr-1" />{t('Cerrar', 'Close')}
+                            </Button>
+                          )}
+                          <Button size="sm" variant="ghost" onClick={() => setSelectedTicket(null)}>
+                            <X className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      {/* Messages */}
+                      <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
+                        {selectedTicket.messages?.map((msg, i) => (
+                          <div key={i} className={`p-3 rounded-lg text-sm ${msg.sender === 'admin' ? 'bg-blue-50 dark:bg-blue-900/20 ml-6' : 'bg-muted/50 mr-6'}`}>
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="font-medium text-xs">
+                                {msg.sender === 'admin' ? t('Admin', 'Admin') : msg.sender_name || t('Usuario', 'User')}
+                              </span>
+                              <span className="text-xs text-muted-foreground">{formatDate(msg.created_at, language === 'es' ? 'es-MX' : 'en-US')}</span>
+                            </div>
+                            <p className="whitespace-pre-wrap">{msg.message}</p>
+                          </div>
+                        ))}
+                      </div>
+                      {/* Reply box */}
+                      {selectedTicket.status !== 'closed' && (
+                        <div className="flex gap-2 pt-2 border-t">
+                          <Textarea placeholder={t('Escribe tu respuesta...', 'Write your reply...')}
+                            value={ticketReply} onChange={e => setTicketReply(e.target.value)}
+                            className="min-h-[80px]" data-testid="ticket-reply-input" />
+                          <Button className="shrink-0 self-end" onClick={handleReplyTicket} disabled={!ticketReply.trim()} data-testid="send-reply-btn">
+                            <Send className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      )}
+                      {selectedTicket.status === 'closed' && (
+                        <p className="text-center text-sm text-muted-foreground py-2 border-t">{t('Este ticket esta cerrado', 'This ticket is closed')}</p>
+                      )}
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <Card>
+                    <CardContent className="py-16 text-center text-muted-foreground">
+                      <LifeBuoy className="h-10 w-10 mx-auto mb-3 opacity-30" />
+                      <p>{t('Selecciona un ticket para ver los detalles', 'Select a ticket to see details')}</p>
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
+            </div>
           </div>
         )}
 

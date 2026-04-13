@@ -292,6 +292,20 @@ export const adminAPI = {
   getAllReviews: (params) => api.get('/admin/reviews/all', { params }),
   getSubscriptions: () => api.get('/admin/subscriptions'),
   getGrowthStats: (months) => api.get('/admin/growth', { params: { months } }),
+  // Categories CRUD
+  getCategories: () => api.get('/admin/categories'),
+  createCategory: (data) => api.post('/admin/categories', data),
+  updateCategory: (id, data) => api.put(`/admin/categories/${id}`, data),
+  deleteCategory: (id) => api.delete(`/admin/categories/${id}`),
+  // Platform config
+  getConfig: () => api.get('/admin/config'),
+  updateConfig: (data) => api.put('/admin/config', data),
+  // Support tickets
+  getTickets: (params) => api.get('/admin/tickets', { params }),
+  getTicketStats: () => api.get('/admin/tickets/stats'),
+  getTicketDetail: (id) => api.get(`/admin/tickets/${id}`),
+  respondToTicket: (id, message) => api.post(`/admin/tickets/${id}/respond`, { message }),
+  closeTicket: (id) => api.put(`/admin/tickets/${id}/close`),
 };
 
 // Utility API
@@ -299,6 +313,8 @@ export const utilityAPI = {
   getCities: (countryCode = 'MX') => api.get('/cities', { params: { country_code: countryCode } }),
   seed: () => api.post('/seed'),
   seedCountries: () => api.post('/seed/countries'),
+  createSupportTicket: (data) => api.post('/support/tickets', data),
+  getMyTickets: (params) => api.get('/support/my-tickets', { params }),
 };
 
 // SEO API

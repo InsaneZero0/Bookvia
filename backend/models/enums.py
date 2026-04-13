@@ -84,6 +84,12 @@ class AuditAction(str, Enum):
     PAYOUT_RELEASE = "payout_release"
     SETTLEMENT_GENERATE = "settlement_generate"
     SETTLEMENT_MARK_PAID = "settlement_mark_paid"
+    CATEGORY_CREATE = "category_create"
+    CATEGORY_UPDATE = "category_update"
+    CATEGORY_DELETE = "category_delete"
+    CONFIG_UPDATE = "config_update"
+    TICKET_RESPOND = "ticket_respond"
+    TICKET_CLOSE = "ticket_close"
 
 
 # ========================== CONSTANTS ==========================
