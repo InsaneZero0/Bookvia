@@ -1,0 +1,120 @@
+{
+  "summary": "Tested Staff/Sub-Admin Management feature. All 17 backend tests passed. Frontend testing confirmed: Super Admin sees 13 tabs including 'Equipo', Staff sees only permitted tabs (3 in test case). Fixed bug where staff was redirected to login due to totp_enabled check.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "passed_tests": [
+    "Backend: GET /api/admin/staff returns staff list and available_permissions (Super Admin only) - PASSED",
+    "Backend: POST /api/admin/staff creates staff member with permissions - PASSED",
+    "Backend: POST /api/admin/staff rejects duplicate email - PASSED",
+    "Backend: POST /api/admin/staff rejects invalid permissions - PASSED",
+    "Backend: PUT /api/admin/staff/{id} updates staff member - PASSED",
+    "Backend: Created staff appears in staff list - PASSED",
+    "Backend: Staff can login without TOTP (totp_code='000000') - PASSED",
+    "Backend: Staff login with wrong password fails - PASSED",
+    "Backend: GET /api/admin/my-permissions returns staff permissions correctly - PASSED",
+    "Backend: Super admin my-permissions returns is_super_admin=True - PASSED",
+    "Backend: Staff can access /api/admin/stats - PASSED",
+    "Backend: Staff can access /api/admin/businesses/all - PASSED",
+    "Backend: Staff CANNOT access /api/admin/staff (403 Forbidden) - PASSED",
+    "Backend: PUT /api/admin/staff/{id}/reset-password returns temporary_password - PASSED",
+    "Backend: DELETE /api/admin/staff/{id} deletes staff member - PASSED",
+    "Backend: Deleted staff cannot login - PASSED",
+    "Backend: GET /api/admin/staff/permissions returns available permissions list - PASSED",
+    "Frontend: Super Admin sees 13 tabs including 'Equipo' - PASSED",
+    "Frontend: Staff sees only permitted tabs (3 tabs for overview, businesses, users) - PASSED",
+    "Frontend: 'Equipo' tab is hidden for staff users - PASSED",
+    "Frontend: Staff can access Negocios tab and view business list - PASSED",
+    "Frontend: Staff creation form has Email, Password, Name, Role, 12 permission checkboxes - PASSED"
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_staff_management.py",
+    "/app/test_reports/pytest/pytest_staff_management.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Staff CRUD endpoints correctly protected by require_super_admin dependency",
+    "Staff login works without 2FA - totp_enabled=False for staff users",
+    "my-permissions endpoint correctly returns staff permissions and is_super_admin flag",
+    "Frontend correctly filters tabs based on user permissions using hasTabPerm function",
+    "AVAILABLE_PERMISSIONS list matches frontend permission checkboxes"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_staff_management.py",
+    "/app/frontend/src/pages/AdminDashboardPage.jsx"
+  ],
+  "bug_fixed": {
+    "description": "Staff users were being redirected to login page due to totp_enabled check",
+    "file": "/app/frontend/src/pages/AdminDashboardPage.jsx",
+    "line": 360,
+    "fix": "Changed condition to only require totp_enabled for Super Admin (isSuperAdmin), not for staff users"
+  },
+  "success_rate": {
+    "backend": "100% (17/17 tests passed)",
+    "frontend": "100% (all features verified working)"
+  },
+  "test_credentials": {
+    "super_admin": {
+      "email": "zamorachapa50@gmail.com",
+      "password": "RainbowLol3133!",
+      "note": "Requires TOTP 2FA - use /app/scripts/get_admin_totp.py"
+    },
+    "staff_test_pattern": {
+      "email": "any_email@bookvia.com",
+      "password": "any_password",
+      "totp_code": "000000",
+      "note": "Staff does not require 2FA, can use dummy TOTP code"
+    }
+  },
+  "seed_data_creation": "Created and deleted test staff member (frontend_test_staff@bookvia.com) during testing",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Staff/Sub-Admin feature fully working. Super Admin (role=admin) has 13 tabs including 'Equipo' for staff management. Staff (role=staff) sees only tabs matching their permissions. Staff login uses same /api/auth/admin/login endpoint but doesn't require valid TOTP (can use '000000'). Available permissions: overview, businesses, users, reviews, categories, rankings, cities, config, support, reports, subscriptions, finance.",
+  "mocked_apis": {
+    "has_mocked_apis": true,
+    "mocked_apis_list": ["Cloudinary image uploads use emergent object storage fallback"]
+  },
+  "features_verified": {
+    "staff_crud": {
+      "endpoints": [
+        "GET /api/admin/staff - List all staff (Super Admin only)",
+        "POST /api/admin/staff - Create staff (Super Admin only)",
+        "PUT /api/admin/staff/{id} - Update staff (Super Admin only)",
+        "DELETE /api/admin/staff/{id} - Delete staff (Super Admin only)",
+        "PUT /api/admin/staff/{id}/reset-password - Reset password (Super Admin only)",
+        "GET /api/admin/staff/permissions - Get available permissions"
+      ],
+      "status": "ALL WORKING"
+    },
+    "staff_login": {
+      "endpoint": "POST /api/auth/admin/login",
+      "note": "Staff can login with totp_code='000000' (no 2FA required)",
+      "status": "WORKING"
+    },
+    "my_permissions": {
+      "endpoint": "GET /api/admin/my-permissions",
+      "returns": {
+        "super_admin": {"role": "admin", "is_super_admin": true, "permissions": ["all + staff"]},
+        "staff": {"role": "staff", "is_super_admin": false, "permissions": ["assigned permissions only"]}
+      },
+      "status": "WORKING"
+    },
+    "frontend_tabs": {
+      "super_admin_tabs": 13,
+      "staff_tabs": "Filtered by permissions",
+      "equipo_tab": "Only visible for Super Admin",
+      "status": "WORKING"
+    },
+    "staff_form": {
+      "fields": ["Email", "Password", "Full Name", "Role Label", "12 Permission Checkboxes"],
+      "actions": ["Create", "Edit", "Delete", "Reset Password"],
+      "status": "WORKING"
+    }
+  }
+}

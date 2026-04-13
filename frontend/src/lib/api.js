@@ -317,6 +317,13 @@ export const adminAPI = {
   toggleCity: (slug, active) => api.put(`/admin/cities/${slug}/toggle`, null, { params: { active } }),
   // Custom reports
   getCustomReport: (params) => api.get('/admin/reports/custom', { params }),
+  // Staff management
+  getStaff: () => api.get('/admin/staff'),
+  createStaff: (data) => api.post('/admin/staff', data),
+  updateStaff: (id, data) => api.put(`/admin/staff/${id}`, data),
+  deleteStaff: (id) => api.delete(`/admin/staff/${id}`),
+  resetStaffPassword: (id) => api.put(`/admin/staff/${id}/reset-password`),
+  getMyPermissions: () => api.get('/admin/my-permissions'),
 };
 
 // Utility API

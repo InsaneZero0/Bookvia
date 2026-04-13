@@ -649,3 +649,18 @@ class SupportTicketResponse(BaseModel):
 
 class TicketMessageCreate(BaseModel):
     message: str
+
+
+class StaffCreate(BaseModel):
+    email: EmailStr
+    password: str
+    full_name: str
+    role_label: str = "staff"
+    permissions: List[str] = []
+
+
+class StaffUpdate(BaseModel):
+    full_name: Optional[str] = None
+    role_label: Optional[str] = None
+    permissions: Optional[List[str]] = None
+    active: Optional[bool] = None

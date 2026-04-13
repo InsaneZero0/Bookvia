@@ -24,7 +24,7 @@ import {
   Eye, Star, Wallet, BarChart3, Loader2, MapPin, Phone, Mail, Globe,
   CreditCard, Briefcase, MessageSquare, Trash2, ExternalLink, TrendingUp,
   Tags, Settings, LifeBuoy, Plus, Pencil, Send, X, AlertCircle,
-  Trophy, Bell, Map, ToggleLeft, ToggleRight, FileBarChart
+  Trophy, Bell, Map, ToggleLeft, ToggleRight, FileBarChart, UserPlus, Key
 } from 'lucide-react';
 
 const STATUS_COLORS = {
@@ -244,7 +244,7 @@ function BusinessDetailDialog({ businessId, open, onClose, onApprove, onReject, 
 /* ─── Main Admin Page ─── */
 export default function AdminDashboardPage() {
   const { t, language } = useI18n();
-  const { user, isAuthenticated, isAdmin } = useAuth();
+  const { user, isAuthenticated, isAdmin, isSuperAdmin } = useAuth();
   const navigate = useNavigate();
 
   const [activeTab, setActiveTab] = useState('overview');
@@ -347,11 +347,28 @@ export default function AdminDashboardPage() {
   const [reportCity, setReportCity] = useState('');
   const [reportCategory, setReportCategory] = useState('');
 
+  // Staff tab
+  const [staffList, setStaffList] = useState([]);
+  const [staffLoading, setStaffLoading] = useState(false);
+  const [showStaffForm, setShowStaffForm] = useState(false);
+  const [editingStaff, setEditingStaff] = useState(null);
+  const [staffForm, setStaffForm] = useState({ email: '', password: '', full_name: '', role_label: '', permissions: [] });
+  const [myPermissions, setMyPermissions] = useState(null);
+
   useEffect(() => {
     if (!isAuthenticated || !isAdmin) { navigate('/admin/login'); return; }
-    if (!user?.totp_enabled) { navigate('/admin/login'); return; }
+    // Super admin (role=admin) requires 2FA, staff does not
+    if (isSuperAdmin && !user?.totp_enabled) { navigate('/admin/login'); return; }
     loadOverview();
-  }, [isAuthenticated, isAdmin, user]);
+    loadMyPermissions();
+  }, [isAuthenticated, isAdmin, isSuperAdmin, user]);
+
+  const loadMyPermissions = async () => {
+    try {
+      const res = await adminAPI.getMyPermissions();
+      setMyPermissions(res.data);
+    } catch { /* silent */ }
+  };
 
   const loadOverview = async () => {
     try {
@@ -509,6 +526,7 @@ export default function AdminDashboardPage() {
     if (activeTab === 'rankings') loadRankings();
     if (activeTab === 'cities') loadCities(1);
     if (activeTab === 'reports') loadReport();
+    if (activeTab === 'staff') loadStaff();
   }, [activeTab]);
 
   const loadReport = async () => {
@@ -518,6 +536,50 @@ export default function AdminDashboardPage() {
       setReportData(res.data);
     } catch { /* silent */ }
     setReportLoading(false);
+  };
+
+  const loadStaff = async () => {
+    setStaffLoading(true);
+    try {
+      const res = await adminAPI.getStaff();
+      setStaffList(res.data.staff);
+    } catch { /* silent */ }
+    setStaffLoading(false);
+  };
+
+  const resetStaffForm = () => { setStaffForm({ email: '', password: '', full_name: '', role_label: '', permissions: [] }); setEditingStaff(null); setShowStaffForm(false); };
+  const handleSaveStaff = async () => {
+    try {
+      if (editingStaff) {
+        await adminAPI.updateStaff(editingStaff, { full_name: staffForm.full_name, role_label: staffForm.role_label, permissions: staffForm.permissions });
+        toast.success(t('Staff actualizado', 'Staff updated'));
+      } else {
+        await adminAPI.createStaff(staffForm);
+        toast.success(t('Staff creado', 'Staff created'));
+      }
+      resetStaffForm();
+      loadStaff();
+    } catch (e) { toast.error(e.response?.data?.detail || 'Error'); }
+  };
+  const handleDeleteStaff = async (id, name) => {
+    if (!window.confirm(t(`Eliminar a "${name}"?`, `Delete "${name}"?`))) return;
+    try {
+      await adminAPI.deleteStaff(id);
+      toast.success(t('Staff eliminado', 'Staff deleted'));
+      loadStaff();
+    } catch (e) { toast.error(e.response?.data?.detail || 'Error'); }
+  };
+  const handleResetStaffPassword = async (id) => {
+    try {
+      const res = await adminAPI.resetStaffPassword(id);
+      toast.success(`${t('Contrasena temporal', 'Temp password')}: ${res.data.temporary_password}`);
+    } catch { toast.error('Error'); }
+  };
+  const toggleStaffPerm = (perm) => {
+    setStaffForm(f => ({
+      ...f,
+      permissions: f.permissions.includes(perm) ? f.permissions.filter(p => p !== perm) : [...f.permissions, perm]
+    }));
   };
 
   const openDetail = (id) => { setDetailBizId(id); setDetailOpen(true); };
@@ -675,7 +737,14 @@ export default function AdminDashboardPage() {
     } catch { toast.error('Error'); }
   };
 
-  const tabs = [
+  const hasTabPerm = (tabId) => {
+    if (!myPermissions) return true; // Loading state
+    if (myPermissions.is_super_admin) return true;
+    if (tabId === 'staff') return false; // Only super admin
+    return myPermissions.permissions?.includes(tabId);
+  };
+
+  const allTabs = [
     { id: 'overview', label: t('Resumen', 'Overview'), icon: BarChart3 },
     { id: 'businesses', label: t('Negocios', 'Businesses'), icon: Building2 },
     { id: 'users', label: t('Usuarios', 'Users'), icon: Users },
@@ -688,7 +757,9 @@ export default function AdminDashboardPage() {
     { id: 'reports', label: t('Reportes', 'Reports'), icon: FileBarChart },
     { id: 'subscriptions', label: t('Suscripciones', 'Subscriptions'), icon: CreditCard },
     { id: 'finance', label: t('Finanzas', 'Finance'), icon: Wallet },
+    ...(isSuperAdmin ? [{ id: 'staff', label: t('Equipo', 'Team'), icon: UserPlus }] : []),
   ];
+  const tabs = allTabs.filter(tab => hasTabPerm(tab.id));
 
   if (loading) return (
     <div className="min-h-screen pt-20 bg-background">
@@ -2031,6 +2102,159 @@ export default function AdminDashboardPage() {
                   <p>{t('Selecciona un rango de fechas y genera un reporte', 'Select a date range and generate a report')}</p>
                 </CardContent>
               </Card>
+            )}
+          </div>
+        )}
+
+        {/* ============ STAFF TAB ============ */}
+        {activeTab === 'staff' && isSuperAdmin && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-heading font-semibold flex items-center gap-2">
+                <UserPlus className="h-5 w-5 text-blue-500" />{t('Gestion de Equipo', 'Team Management')}
+              </h3>
+              <Button onClick={() => { resetStaffForm(); setShowStaffForm(true); }} data-testid="add-staff-btn">
+                <Plus className="h-4 w-4 mr-2" />{t('Nuevo miembro', 'New member')}
+              </Button>
+            </div>
+
+            {/* Staff form */}
+            {showStaffForm && (
+              <Card data-testid="staff-form">
+                <CardContent className="p-4 space-y-4">
+                  <h4 className="font-medium">{editingStaff ? t('Editar miembro', 'Edit member') : t('Nuevo miembro de equipo', 'New team member')}</h4>
+                  <div className="grid md:grid-cols-3 gap-3">
+                    {!editingStaff && (
+                      <>
+                        <div>
+                          <label className="text-sm font-medium mb-1 block">Email</label>
+                          <Input type="email" value={staffForm.email} onChange={e => setStaffForm(f => ({ ...f, email: e.target.value }))} data-testid="staff-email" />
+                        </div>
+                        <div>
+                          <label className="text-sm font-medium mb-1 block">{t('Contrasena', 'Password')}</label>
+                          <Input type="password" value={staffForm.password} onChange={e => setStaffForm(f => ({ ...f, password: e.target.value }))} data-testid="staff-password" />
+                        </div>
+                      </>
+                    )}
+                    <div>
+                      <label className="text-sm font-medium mb-1 block">{t('Nombre completo', 'Full name')}</label>
+                      <Input value={staffForm.full_name} onChange={e => setStaffForm(f => ({ ...f, full_name: e.target.value }))} data-testid="staff-name" />
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium mb-1 block">{t('Rol', 'Role')}</label>
+                      <Select value={staffForm.role_label} onValueChange={v => setStaffForm(f => ({ ...f, role_label: v }))}>
+                        <SelectTrigger data-testid="staff-role"><SelectValue placeholder={t('Seleccionar', 'Select')} /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="moderador">{t('Moderador', 'Moderator')}</SelectItem>
+                          <SelectItem value="operaciones">{t('Operaciones', 'Operations')}</SelectItem>
+                          <SelectItem value="finanzas">{t('Finanzas', 'Finance')}</SelectItem>
+                          <SelectItem value="soporte">{t('Soporte', 'Support')}</SelectItem>
+                          <SelectItem value="personalizado">{t('Personalizado', 'Custom')}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  {/* Permissions grid */}
+                  <div>
+                    <label className="text-sm font-medium mb-2 block">{t('Permisos (tabs accesibles)', 'Permissions (accessible tabs)')}</label>
+                    <div className="grid grid-cols-3 md:grid-cols-4 gap-2">
+                      {['overview','businesses','users','reviews','categories','rankings','cities','config','support','reports','subscriptions','finance'].map(perm => (
+                        <label key={perm} className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer transition-colors text-sm ${
+                          staffForm.permissions.includes(perm) ? 'bg-blue-50 border border-blue-200 text-blue-700' : 'bg-muted/50 border border-transparent'
+                        }`}>
+                          <input type="checkbox" className="rounded" checked={staffForm.permissions.includes(perm)}
+                            onChange={() => toggleStaffPerm(perm)} />
+                          {perm === 'overview' ? t('Resumen', 'Overview') :
+                           perm === 'businesses' ? t('Negocios', 'Businesses') :
+                           perm === 'users' ? t('Usuarios', 'Users') :
+                           perm === 'reviews' ? t('Resenas', 'Reviews') :
+                           perm === 'categories' ? t('Categorias', 'Categories') :
+                           perm === 'rankings' ? 'Rankings' :
+                           perm === 'cities' ? t('Ciudades', 'Cities') :
+                           perm === 'config' ? t('Config', 'Config') :
+                           perm === 'support' ? t('Soporte', 'Support') :
+                           perm === 'reports' ? t('Reportes', 'Reports') :
+                           perm === 'subscriptions' ? t('Suscripciones', 'Subscriptions') :
+                           t('Finanzas', 'Finance')}
+                        </label>
+                      ))}
+                    </div>
+                    <div className="flex gap-2 mt-2">
+                      <Button size="sm" variant="ghost" className="text-xs" onClick={() => setStaffForm(f => ({ ...f, permissions: ['overview','businesses','users','reviews','categories','rankings','cities','config','support','reports','subscriptions','finance'] }))}>
+                        {t('Seleccionar todos', 'Select all')}
+                      </Button>
+                      <Button size="sm" variant="ghost" className="text-xs" onClick={() => setStaffForm(f => ({ ...f, permissions: [] }))}>
+                        {t('Quitar todos', 'Deselect all')}
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2 pt-2">
+                    <Button onClick={handleSaveStaff} disabled={!staffForm.full_name || (!editingStaff && (!staffForm.email || !staffForm.password))} data-testid="save-staff-btn">
+                      <CheckCircle2 className="h-4 w-4 mr-2" />{editingStaff ? t('Guardar', 'Save') : t('Crear', 'Create')}
+                    </Button>
+                    <Button variant="outline" onClick={resetStaffForm}><X className="h-4 w-4 mr-2" />{t('Cancelar', 'Cancel')}</Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Staff list */}
+            {staffLoading ? (
+              <div className="space-y-3">{[1,2,3].map(i => <Skeleton key={i} className="h-20" />)}</div>
+            ) : (
+              <div className="space-y-3">
+                {staffList.map(s => (
+                  <Card key={s.id} data-testid={`staff-row-${s.id}`}>
+                    <CardContent className="p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-semibold">{s.full_name}</span>
+                            <Badge variant="outline" className="text-xs capitalize">{s.role_label || 'staff'}</Badge>
+                            {s.active === false && <Badge className="bg-red-100 text-red-700 text-xs">{t('Inactivo', 'Inactive')}</Badge>}
+                            {s.totp_enabled && <Badge className="bg-green-100 text-green-700 text-xs">2FA</Badge>}
+                          </div>
+                          <p className="text-sm text-muted-foreground mt-1">{s.email}</p>
+                          <div className="flex flex-wrap gap-1 mt-2">
+                            {(s.staff_permissions || []).map(p => (
+                              <Badge key={p} variant="outline" className="text-xs">{p}</Badge>
+                            ))}
+                            {(!s.staff_permissions || s.staff_permissions.length === 0) && (
+                              <span className="text-xs text-muted-foreground">{t('Sin permisos asignados', 'No permissions assigned')}</span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex gap-2 shrink-0">
+                          <Button size="sm" variant="outline" onClick={() => {
+                            setEditingStaff(s.id);
+                            setStaffForm({ email: s.email, password: '', full_name: s.full_name, role_label: s.role_label || 'personalizado', permissions: s.staff_permissions || [] });
+                            setShowStaffForm(true);
+                          }} data-testid={`edit-staff-${s.id}`}>
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button size="sm" variant="outline" onClick={() => handleResetStaffPassword(s.id)} data-testid={`reset-pw-${s.id}`}>
+                            <Key className="h-4 w-4" />
+                          </Button>
+                          <Button size="sm" variant="outline" className="text-red-600 hover:bg-red-50"
+                            onClick={() => handleDeleteStaff(s.id, s.full_name)} data-testid={`delete-staff-${s.id}`}>
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+                {staffList.length === 0 && (
+                  <Card>
+                    <CardContent className="py-12 text-center text-muted-foreground">
+                      <UserPlus className="h-10 w-10 mx-auto mb-3 opacity-30" />
+                      <p>{t('No hay miembros de equipo. Crea uno para delegar acceso al panel.', 'No team members. Create one to delegate panel access.')}</p>
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
             )}
           </div>
         )}

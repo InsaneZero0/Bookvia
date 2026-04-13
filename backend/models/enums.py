@@ -9,6 +9,7 @@ class UserRole(str, Enum):
     USER = "user"
     BUSINESS = "business"
     ADMIN = "admin"
+    STAFF = "staff"
 
 
 class AppointmentStatus(str, Enum):
@@ -92,6 +93,9 @@ class AuditAction(str, Enum):
     TICKET_CLOSE = "ticket_close"
     CITY_ACTIVATE = "city_activate"
     CITY_DEACTIVATE = "city_deactivate"
+    STAFF_CREATE = "staff_create"
+    STAFF_UPDATE = "staff_update"
+    STAFF_DELETE = "staff_delete"
 
 
 # ========================== CONSTANTS ==========================

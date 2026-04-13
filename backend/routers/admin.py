@@ -24,7 +24,8 @@ from core.security import (
     generate_totp_secret, verify_totp, generate_totp_qr
 )
 from core.dependencies import (
-    security, get_current_user, require_auth, require_business, require_admin
+    security, get_current_user, require_auth, require_business, require_admin,
+    require_super_admin, check_staff_permission
 )
 from core.helpers import (
     generate_id, generate_slug, calculate_bayesian_rating,
@@ -1421,4 +1422,150 @@ async def get_custom_report(
         "daily_chart": daily_chart,
         "top_businesses": top_biz,
         "top_cities": top_cities_report,
+    }
+
+
+
+# ============ STAFF MANAGEMENT ============
+
+AVAILABLE_PERMISSIONS = [
+    "overview", "businesses", "users", "reviews", "categories",
+    "rankings", "cities", "config", "support", "reports",
+    "subscriptions", "finance",
+]
+
+@router.get("/staff")
+async def get_staff_list(token_data: TokenData = Depends(require_super_admin)):
+    """List all staff members (Super Admin only)."""
+    staff = await db.users.find(
+        {"role": UserRole.STAFF},
+        {"_id": 0, "password_hash": 0, "totp_secret": 0, "backup_codes": 0}
+    ).sort("created_at", -1).to_list(100)
+    return {"staff": staff, "available_permissions": AVAILABLE_PERMISSIONS}
+
+
+@router.post("/staff")
+async def create_staff(body: StaffCreate, request: Request, token_data: TokenData = Depends(require_super_admin)):
+    """Create a new staff member (Super Admin only)."""
+    existing = await db.users.find_one({"email": body.email})
+    if existing:
+        raise HTTPException(status_code=400, detail="Email already in use")
+
+    # Validate permissions
+    invalid = [p for p in body.permissions if p not in AVAILABLE_PERMISSIONS]
+    if invalid:
+        raise HTTPException(status_code=400, detail=f"Invalid permissions: {invalid}")
+
+    now = datetime.now(timezone.utc).isoformat()
+    staff_doc = {
+        "id": generate_id(),
+        "email": body.email,
+        "password_hash": hash_password(body.password),
+        "full_name": body.full_name,
+        "role": UserRole.STAFF,
+        "role_label": body.role_label,
+        "staff_permissions": body.permissions,
+        "active": True,
+        "totp_enabled": False,
+        "email_verified": True,
+        "created_at": now,
+        "created_by": token_data.email,
+    }
+    await db.users.insert_one(staff_doc)
+
+    await create_audit_log(
+        admin_id=token_data.user_id, admin_email=token_data.email,
+        action=AuditAction.STAFF_CREATE, target_type="staff",
+        target_id=staff_doc["id"],
+        details={"email": body.email, "permissions": body.permissions, "role_label": body.role_label},
+        request=request
+    )
+
+    staff_doc.pop("_id", None)
+    staff_doc.pop("password_hash", None)
+    return staff_doc
+
+
+@router.put("/staff/{staff_id}")
+async def update_staff(staff_id: str, body: StaffUpdate, request: Request, token_data: TokenData = Depends(require_super_admin)):
+    """Update a staff member (Super Admin only)."""
+    staff = await db.users.find_one({"id": staff_id, "role": UserRole.STAFF})
+    if not staff:
+        raise HTTPException(status_code=404, detail="Staff member not found")
+
+    changes = {}
+    if body.full_name is not None:
+        changes["full_name"] = body.full_name
+    if body.role_label is not None:
+        changes["role_label"] = body.role_label
+    if body.active is not None:
+        changes["active"] = body.active
+    if body.permissions is not None:
+        invalid = [p for p in body.permissions if p not in AVAILABLE_PERMISSIONS]
+        if invalid:
+            raise HTTPException(status_code=400, detail=f"Invalid permissions: {invalid}")
+        changes["staff_permissions"] = body.permissions
+
+    if not changes:
+        raise HTTPException(status_code=400, detail="No changes provided")
+
+    await db.users.update_one({"id": staff_id}, {"$set": changes})
+
+    await create_audit_log(
+        admin_id=token_data.user_id, admin_email=token_data.email,
+        action=AuditAction.STAFF_UPDATE, target_type="staff",
+        target_id=staff_id, details=changes, request=request
+    )
+
+    updated = await db.users.find_one({"id": staff_id}, {"_id": 0, "password_hash": 0, "totp_secret": 0, "backup_codes": 0})
+    return updated
+
+
+@router.delete("/staff/{staff_id}")
+async def delete_staff(staff_id: str, request: Request, token_data: TokenData = Depends(require_super_admin)):
+    """Delete a staff member (Super Admin only)."""
+    staff = await db.users.find_one({"id": staff_id, "role": UserRole.STAFF})
+    if not staff:
+        raise HTTPException(status_code=404, detail="Staff member not found")
+
+    await db.users.delete_one({"id": staff_id})
+
+    await create_audit_log(
+        admin_id=token_data.user_id, admin_email=token_data.email,
+        action=AuditAction.STAFF_DELETE, target_type="staff",
+        target_id=staff_id, details={"email": staff.get("email")}, request=request
+    )
+    return {"message": "Staff member deleted"}
+
+
+@router.put("/staff/{staff_id}/reset-password")
+async def reset_staff_password(staff_id: str, request: Request, token_data: TokenData = Depends(require_super_admin)):
+    """Reset staff password to a temporary one (Super Admin only)."""
+    staff = await db.users.find_one({"id": staff_id, "role": UserRole.STAFF})
+    if not staff:
+        raise HTTPException(status_code=404, detail="Staff member not found")
+
+    temp_password = f"Staff{generate_id()[:8]}!"
+    await db.users.update_one({"id": staff_id}, {"$set": {"password_hash": hash_password(temp_password)}})
+
+    return {"message": "Password reset", "temporary_password": temp_password}
+
+
+@router.get("/staff/permissions")
+async def get_available_permissions(token_data: TokenData = Depends(require_admin)):
+    """Get list of available permissions."""
+    return {"permissions": AVAILABLE_PERMISSIONS}
+
+
+@router.get("/my-permissions")
+async def get_my_permissions(token_data: TokenData = Depends(require_admin)):
+    """Get current user's permissions (for staff UI rendering)."""
+    if token_data.role == UserRole.ADMIN:
+        return {"role": "admin", "permissions": AVAILABLE_PERMISSIONS + ["staff"], "is_super_admin": True}
+    user = await db.users.find_one({"id": token_data.user_id}, {"_id": 0, "staff_permissions": 1, "role_label": 1})
+    return {
+        "role": "staff",
+        "permissions": user.get("staff_permissions", []) if user else [],
+        "role_label": user.get("role_label", "staff") if user else "staff",
+        "is_super_admin": False,
     }
