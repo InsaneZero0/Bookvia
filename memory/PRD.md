@@ -73,7 +73,7 @@ Auth Social: Emergent-managed Google Auth (solo clientes)
 - [x] Campo separado de "Num. ext." en registro para direcciones mas precisas
 
 ### Panel Admin (2FA con TOTP)
-- [x] 9 tabs: Resumen, Negocios, Usuarios, Resenas, Categorias, Configuracion, Soporte, Suscripciones, Finanzas
+- [x] 11 tabs: Resumen, Negocios, Usuarios, Resenas, Categorias, Rankings, Ciudades, Configuracion, Soporte, Suscripciones, Finanzas
 - [x] Vista Detalle de Negocio (Dialog): info general, documentos legales (RFC, CLABE, INE, CURP), suscripcion, propietario, servicios, trabajadores, resenas
 - [x] Aprobar/Rechazar/Suspender negocios desde detalle o listado
 - [x] Moderacion de resenas: buscar, paginar y eliminar resenas inapropiadas
@@ -85,6 +85,9 @@ Auth Social: Emergent-managed Google Auth (solo clientes)
 - [x] Gestion de Categorias CRUD: crear, editar, eliminar categorias con auto-slug, validacion de slug duplicado, bloqueo de eliminacion si negocios la usan
 - [x] Configuracion de Plataforma: comision %, precio suscripcion, dias prueba, deposito minimo (con validacion de rangos)
 - [x] Panel de Soporte: lista de tickets con stats, filtros, busqueda, conversacion admin-usuario, responder y cerrar tickets
+- [x] Rankings: top negocios por reservas, mejor calificados, ciudades mas activas, categorias populares (solo negocios aprobados)
+- [x] Alertas Admin: seccion en Resumen con alertas automaticas (pendientes, tickets abiertos, resenas negativas, suscripciones vencidas, negocios sin suscripcion, pagos retenidos)
+- [x] Gestion de Ciudades: listar 162 ciudades con busqueda, filtro activa/inactiva, toggle activar/desactivar con audit log
 
 ### Tecnico
 - [x] Refactorizacion backend: server.py ~7000 lineas -> 235 lineas + 12 routers modulares
