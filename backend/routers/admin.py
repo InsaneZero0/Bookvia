@@ -395,6 +395,72 @@ async def get_admin_stats(token_data: TokenData = Depends(require_admin)):
 
 
 
+@router.get("/businesses/all")
+async def get_all_businesses(
+    search: str = "", status: str = "", city: str = "",
+    page: int = 1, limit: int = 50,
+    token_data: TokenData = Depends(require_admin)
+):
+    """List all businesses with search and filters."""
+    query = {}
+    if status:
+        query["status"] = status
+    if city:
+        query["city"] = {"$regex": city, "$options": "i"}
+    if search:
+        query["$or"] = [
+            {"name": {"$regex": search, "$options": "i"}},
+            {"email": {"$regex": search, "$options": "i"}},
+            {"phone": {"$regex": search, "$options": "i"}},
+        ]
+    total = await db.businesses.count_documents(query)
+    businesses = await db.businesses.find(
+        query, {"_id": 0, "password_hash": 0}
+    ).sort("created_at", -1).skip((page - 1) * limit).limit(limit).to_list(limit)
+
+    # Get owner info and booking counts for each business
+    results = []
+    for b in businesses:
+        owner = await db.users.find_one({"business_id": b["id"]}, {"_id": 0, "email": 1, "full_name": 1})
+        booking_count = await db.bookings.count_documents({"business_id": b["id"]})
+        review_count = await db.reviews.count_documents({"business_id": b["id"]})
+        b["owner_email"] = owner.get("email", "") if owner else ""
+        b["owner_name"] = owner.get("full_name", "") if owner else ""
+        b["booking_count"] = booking_count
+        b["review_count"] = review_count
+        results.append(b)
+
+    return {"businesses": results, "total": total, "page": page, "pages": (total + limit - 1) // limit}
+
+
+@router.get("/users/all")
+async def get_all_users(
+    search: str = "", page: int = 1, limit: int = 50,
+    token_data: TokenData = Depends(require_admin)
+):
+    """List all users with search."""
+    query = {"role": {"$ne": "admin"}}
+    if search:
+        query["$or"] = [
+            {"full_name": {"$regex": search, "$options": "i"}},
+            {"email": {"$regex": search, "$options": "i"}},
+            {"phone": {"$regex": search, "$options": "i"}},
+        ]
+    total = await db.users.count_documents(query)
+    users = await db.users.find(
+        query, {"_id": 0, "password_hash": 0, "totp_secret": 0}
+    ).sort("created_at", -1).skip((page - 1) * limit).limit(limit).to_list(limit)
+
+    results = []
+    for u in users:
+        booking_count = await db.bookings.count_documents({"user_id": u["id"]})
+        u["booking_count"] = booking_count
+        results.append(u)
+
+    return {"users": results, "total": total, "page": page, "pages": (total + limit - 1) // limit}
+
+
+
 @router.get("/businesses/pending", response_model=List[BusinessResponse])
 async def get_pending_businesses(token_data: TokenData = Depends(require_admin)):
     # Only show businesses whose owner has verified their email

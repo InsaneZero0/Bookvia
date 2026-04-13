@@ -64,6 +64,7 @@ Auth Social: Emergent-managed Google Auth (solo clientes)
 - [x] Carrusel de fotos en perfil publico
 - [x] Dashboard de negocio con modales de reagendar, detalles cliente
 - [x] Panel admin con 2FA, aprobaciones, estadisticas
+- [x] Panel admin mejorado: 4 tabs (Resumen, Negocios, Usuarios, Finanzas) con busqueda, filtros, paginacion, exportar Excel, liquidaciones
 - [x] Pagina de Recepcion: crear citas walk-in, panel de citas del dia
 - [x] Busqueda de clientes existentes en Recepcion (por nombre/telefono)
 - [x] Badges "Recepcion" + "Pago en negocio" en citas creadas por el negocio
@@ -83,6 +84,8 @@ Auth Social: Emergent-managed Google Auth (solo clientes)
 - [x] Fix is_exception_blocking perdida (motor de disponibilidad de citas bloqueaba incorrectamente)
 - [x] Fix send_pending_reminders, expire_holds_task y generate_monthly_settlements perdidas (admin endpoints rotos)
 - [x] Auditoria completa AST: 0 funciones indefinidas en todos los routers
+- [x] Fix ADMIN_INITIAL_PASSWORD no importado en system.py
+- [x] Fix pyotp no importado en auth.py (login admin fallaba)
 
 ## Tareas Pendientes
 

@@ -18,7 +18,7 @@ import pytz
 from bson import ObjectId
 
 from core.database import db
-from core.config import ENV, BASE_URL, ADMIN_EMAIL
+from core.config import ENV, BASE_URL, ADMIN_EMAIL, ADMIN_INITIAL_PASSWORD
 from core.security import (
     TokenData, create_token, decode_token,
     hash_password, verify_password,

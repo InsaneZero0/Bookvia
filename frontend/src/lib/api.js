@@ -269,6 +269,8 @@ export const notificationsAPI = {
 export const adminAPI = {
   getStats: () => api.get('/admin/stats'),
   getPendingBusinesses: () => api.get('/admin/businesses/pending'),
+  getAllBusinesses: (params) => api.get('/admin/businesses/all', { params }),
+  getAllUsers: (params) => api.get('/admin/users/all', { params }),
   approveBusiness: (id) => api.put(`/admin/businesses/${id}/approve`),
   rejectBusiness: (id, reason) => api.put(`/admin/businesses/${id}/reject`, null, { params: { reason } }),
   suspendBusiness: (id, reason) => api.put(`/admin/businesses/${id}/suspend`, null, { params: { reason } }),
@@ -277,16 +279,13 @@ export const adminAPI = {
   getAuditLogs: (params) => api.get('/admin/audit-logs', { params }),
   toggleFeatured: (id, featured) => api.put(`/admin/businesses/${id}/feature`, null, { params: { featured } }),
   getSentEmails: (params) => api.get('/admin/emails', { params }),
-  // Payment management
   holdPayment: (id, reason) => api.put(`/admin/payments/${id}/hold`, null, { params: { reason } }),
   releasePayment: (id) => api.put(`/admin/payments/${id}/release`),
   getHeldPayments: (params) => api.get('/admin/payments/held', { params }),
-  // Settlements
   getSettlements: (params) => api.get('/admin/settlements', { params }),
   generateSettlements: (year, month) => api.post(`/admin/settlements/generate?year=${year}&month=${month}`),
   markSettlementPaid: (id, payout_reference) => api.put(`/admin/settlements/${id}/pay`, { payout_reference }),
   togglePayoutHold: (businessId, hold, reason) => api.put(`/admin/businesses/${businessId}/payout-hold`, { hold, reason }),
-  // Export
   exportTransactions: (year, month) => api.get(`/admin/export/transactions?year=${year}&month=${month}`, { responseType: 'blob' }),
   exportSettlements: (year, month) => api.get(`/admin/export/settlements?year=${year}&month=${month}`, { responseType: 'blob' }),
 };
