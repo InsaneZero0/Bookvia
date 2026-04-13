@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -6,6 +6,9 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter
+} from '@/components/ui/dialog';
 import { useAuth } from '@/lib/auth';
 import { useI18n } from '@/lib/i18n';
 import { adminAPI } from '@/lib/api';
@@ -14,7 +17,8 @@ import { toast } from 'sonner';
 import {
   Users, Building2, Calendar, DollarSign, CheckCircle2, XCircle, Clock,
   Shield, FileText, Search, Ban, ChevronLeft, ChevronRight, Download,
-  Eye, Star, Wallet, BarChart3, AlertTriangle, Loader2
+  Eye, Star, Wallet, BarChart3, Loader2, MapPin, Phone, Mail, Globe,
+  CreditCard, Briefcase, MessageSquare, Trash2, ExternalLink
 } from 'lucide-react';
 
 const STATUS_COLORS = {
@@ -28,6 +32,210 @@ const STATUS_COLORS = {
   past_due: 'bg-red-100 text-red-700',
 };
 
+/* ─── Small reusable pieces ─── */
+function InfoRow({ label, value, icon: Icon }) {
+  if (!value) return null;
+  return (
+    <div className="flex items-start gap-2 py-1.5">
+      {Icon && <Icon className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />}
+      <span className="text-sm text-muted-foreground w-28 shrink-0">{label}</span>
+      <span className="text-sm font-medium break-all">{value}</span>
+    </div>
+  );
+}
+
+function SectionTitle({ children }) {
+  return <h4 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mt-5 mb-2 border-b pb-1">{children}</h4>;
+}
+
+/* ─── Business Detail Dialog ─── */
+function BusinessDetailDialog({ businessId, open, onClose, onApprove, onReject, t, language }) {
+  const [detail, setDetail] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!open || !businessId) return;
+    setLoading(true);
+    adminAPI.getBusinessDetail(businessId)
+      .then(res => setDetail(res.data))
+      .catch(() => toast.error('Error loading detail'))
+      .finally(() => setLoading(false));
+  }, [open, businessId]);
+
+  const biz = detail?.business;
+  const owner = detail?.owner;
+  const stats = detail?.stats;
+
+  return (
+    <Dialog open={open} onOpenChange={v => { if (!v) onClose(); }}>
+      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto" data-testid="business-detail-dialog">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Building2 className="h-5 w-5" />
+            {loading ? t('Cargando...', 'Loading...') : biz?.name || 'Detalle'}
+          </DialogTitle>
+          <DialogDescription>
+            {t('Revision completa del negocio antes de aprobar o rechazar', 'Full business review before approval or rejection')}
+          </DialogDescription>
+        </DialogHeader>
+
+        {loading ? (
+          <div className="flex items-center justify-center py-12"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>
+        ) : biz ? (
+          <div className="space-y-1" data-testid="business-detail-content">
+            {/* Status badges */}
+            <div className="flex flex-wrap gap-2">
+              <Badge className={STATUS_COLORS[biz.status] || 'bg-gray-100'}>{biz.status}</Badge>
+              {biz.subscription_status && <Badge variant="outline">{biz.subscription_status}</Badge>}
+              {biz.is_featured && <Badge className="bg-amber-100 text-amber-700"><Star className="h-3 w-3 mr-1" />Destacado</Badge>}
+            </div>
+
+            {/* Stats row */}
+            <div className="grid grid-cols-3 gap-3 mt-3">
+              {[
+                { label: t('Reservas', 'Bookings'), value: stats?.total_bookings || 0, color: 'text-blue-600' },
+                { label: t('Completadas', 'Completed'), value: stats?.completed_bookings || 0, color: 'text-green-600' },
+                { label: t('Ingresos', 'Revenue'), value: formatCurrency(stats?.total_revenue || 0), color: 'text-emerald-600' },
+              ].map((s, i) => (
+                <div key={i} className="text-center p-3 rounded-lg bg-muted/50">
+                  <p className={`text-xl font-bold ${s.color}`}>{s.value}</p>
+                  <p className="text-xs text-muted-foreground">{s.label}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* General info */}
+            <SectionTitle>{t('Informacion General', 'General Information')}</SectionTitle>
+            <InfoRow icon={Building2} label={t('Nombre', 'Name')} value={biz.name} />
+            <InfoRow icon={Mail} label="Email" value={biz.email} />
+            <InfoRow icon={Phone} label={t('Telefono', 'Phone')} value={biz.phone} />
+            <InfoRow icon={Globe} label={t('Sitio web', 'Website')} value={biz.website} />
+            <InfoRow icon={MapPin} label={t('Direccion', 'Address')} value={[biz.address, biz.exterior_number, biz.colony, biz.city, biz.state].filter(Boolean).join(', ')} />
+            <InfoRow icon={Briefcase} label={t('Categoria', 'Category')} value={biz.category} />
+            {biz.description && (
+              <div className="mt-2 p-3 rounded-lg bg-muted/50 text-sm">{biz.description}</div>
+            )}
+
+            {/* Legal documents */}
+            <SectionTitle>{t('Documentos Legales', 'Legal Documents')}</SectionTitle>
+            <InfoRow icon={FileText} label="RFC" value={biz.rfc || t('No proporcionado', 'Not provided')} />
+            <InfoRow icon={FileText} label="CURP" value={biz.curp || t('No proporcionado', 'Not provided')} />
+            <InfoRow icon={CreditCard} label="CLABE" value={biz.clabe || t('No proporcionada', 'Not provided')} />
+            <InfoRow icon={FileText} label={t('Razon Social', 'Legal Name')} value={biz.legal_name || t('No proporcionado', 'Not provided')} />
+            {biz.ine_url && (
+              <div className="flex items-center gap-2 py-1.5">
+                <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
+                <span className="text-sm text-muted-foreground w-28 shrink-0">INE</span>
+                <a href={biz.ine_url} target="_blank" rel="noopener noreferrer"
+                  className="text-sm text-blue-600 hover:underline flex items-center gap-1" data-testid="ine-link">
+                  {t('Ver documento', 'View document')} <ExternalLink className="h-3 w-3" />
+                </a>
+              </div>
+            )}
+            {biz.rfc_document_url && (
+              <div className="flex items-center gap-2 py-1.5">
+                <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
+                <span className="text-sm text-muted-foreground w-28 shrink-0">{t('Doc. RFC', 'RFC Doc')}</span>
+                <a href={biz.rfc_document_url} target="_blank" rel="noopener noreferrer"
+                  className="text-sm text-blue-600 hover:underline flex items-center gap-1" data-testid="rfc-doc-link">
+                  {t('Ver documento', 'View document')} <ExternalLink className="h-3 w-3" />
+                </a>
+              </div>
+            )}
+
+            {/* Subscription */}
+            <SectionTitle>{t('Suscripcion', 'Subscription')}</SectionTitle>
+            <InfoRow icon={CreditCard} label={t('Estado', 'Status')} value={biz.subscription_status || 'none'} />
+            <InfoRow icon={Calendar} label={t('Inicio', 'Started')} value={biz.subscription_started_at ? formatDate(biz.subscription_started_at, language === 'es' ? 'es-MX' : 'en-US') : '-'} />
+            <InfoRow icon={CreditCard} label="Stripe Sub ID" value={biz.subscription_id || '-'} />
+
+            {/* Owner */}
+            {owner && (
+              <>
+                <SectionTitle>{t('Propietario', 'Owner')}</SectionTitle>
+                <InfoRow icon={Users} label={t('Nombre', 'Name')} value={owner.full_name} />
+                <InfoRow icon={Mail} label="Email" value={owner.email} />
+                <InfoRow icon={Phone} label={t('Telefono', 'Phone')} value={owner.phone} />
+                <InfoRow icon={CheckCircle2} label={t('Email verificado', 'Email verified')} value={owner.email_verified ? t('Si', 'Yes') : t('No', 'No')} />
+              </>
+            )}
+
+            {/* Services */}
+            {detail?.services?.length > 0 && (
+              <>
+                <SectionTitle>{t('Servicios', 'Services')} ({detail.services.length})</SectionTitle>
+                <div className="grid gap-2">
+                  {detail.services.map(s => (
+                    <div key={s.id} className="flex items-center justify-between p-2 rounded-lg bg-muted/50 text-sm">
+                      <span>{s.name}</span>
+                      <div className="flex gap-3 text-muted-foreground">
+                        <span>{formatCurrency(s.price)}</span>
+                        <span>{s.duration} min</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+
+            {/* Workers */}
+            {detail?.workers?.length > 0 && (
+              <>
+                <SectionTitle>{t('Trabajadores', 'Workers')} ({detail.workers.length})</SectionTitle>
+                <div className="flex flex-wrap gap-2">
+                  {detail.workers.map(w => (
+                    <Badge key={w.id} variant="outline">{w.name}</Badge>
+                  ))}
+                </div>
+              </>
+            )}
+
+            {/* Recent reviews */}
+            {detail?.reviews?.length > 0 && (
+              <>
+                <SectionTitle>{t('Resenas Recientes', 'Recent Reviews')} ({stats?.review_count})</SectionTitle>
+                <div className="space-y-2 max-h-40 overflow-y-auto">
+                  {detail.reviews.slice(0, 5).map((r, i) => (
+                    <div key={i} className="p-2 rounded-lg bg-muted/50 text-sm">
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium">{r.user_name || 'Anonimo'}</span>
+                        <div className="flex items-center gap-1 text-amber-500">
+                          <Star className="h-3 w-3 fill-current" />{r.rating}
+                        </div>
+                      </div>
+                      {r.comment && <p className="text-muted-foreground mt-1 line-clamp-2">{r.comment}</p>}
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        ) : null}
+
+        {/* Footer actions */}
+        {biz && (
+          <DialogFooter className="gap-2 sm:gap-0">
+            {biz.status === 'pending' && (
+              <>
+                <Button variant="outline" className="text-red-600 hover:bg-red-50" onClick={() => { onReject(biz.id); onClose(); }} data-testid="detail-reject-btn">
+                  <XCircle className="h-4 w-4 mr-2" />{t('Rechazar', 'Reject')}
+                </Button>
+                <Button className="bg-green-600 hover:bg-green-700 text-white" onClick={() => { onApprove(biz.id); onClose(); }} data-testid="detail-approve-btn">
+                  <CheckCircle2 className="h-4 w-4 mr-2" />{t('Aprobar', 'Approve')}
+                </Button>
+              </>
+            )}
+            {biz.status === 'approved' && (
+              <Badge className="bg-green-100 text-green-700 text-sm px-3 py-1">{t('Negocio Activo', 'Active Business')}</Badge>
+            )}
+          </DialogFooter>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/* ─── Main Admin Page ─── */
 export default function AdminDashboardPage() {
   const { t, language } = useI18n();
   const { user, isAuthenticated, isAdmin } = useAuth();
@@ -38,6 +246,10 @@ export default function AdminDashboardPage() {
   const [stats, setStats] = useState(null);
   const [pendingBusinesses, setPendingBusinesses] = useState([]);
   const [auditLogs, setAuditLogs] = useState([]);
+
+  // Business detail dialog
+  const [detailBizId, setDetailBizId] = useState(null);
+  const [detailOpen, setDetailOpen] = useState(false);
 
   // Businesses tab
   const [businesses, setBusinesses] = useState([]);
@@ -62,6 +274,18 @@ export default function AdminDashboardPage() {
   const [exportYear, setExportYear] = useState(new Date().getFullYear());
   const [exportMonth, setExportMonth] = useState(new Date().getMonth() + 1);
 
+  // Reviews tab
+  const [reviews, setReviews] = useState([]);
+  const [reviewsTotal, setReviewsTotal] = useState(0);
+  const [reviewsPage, setReviewsPage] = useState(1);
+  const [reviewsPages, setReviewsPages] = useState(1);
+  const [reviewsSearch, setReviewsSearch] = useState('');
+  const [reviewsLoading, setReviewsLoading] = useState(false);
+
+  // Subscriptions tab
+  const [subData, setSubData] = useState(null);
+  const [subLoading, setSubLoading] = useState(false);
+
   useEffect(() => {
     if (!isAuthenticated || !isAdmin) { navigate('/admin/login'); return; }
     if (!user?.totp_enabled) { navigate('/admin/login'); return; }
@@ -78,11 +302,11 @@ export default function AdminDashboardPage() {
       setStats(statsRes.data);
       setPendingBusinesses(pendingRes.data);
       setAuditLogs(logsRes.data);
-    } catch {}
+    } catch { /* silent */ }
     setLoading(false);
   };
 
-  const loadBusinesses = async (page = 1) => {
+  const loadBusinesses = useCallback(async (page = 1) => {
     setBizLoading(true);
     try {
       const res = await adminAPI.getAllBusinesses({ search: bizSearch, status: bizStatus, page, limit: 20 });
@@ -90,11 +314,11 @@ export default function AdminDashboardPage() {
       setBizTotal(res.data.total);
       setBizPages(res.data.pages);
       setBizPage(page);
-    } catch {}
+    } catch { /* silent */ }
     setBizLoading(false);
-  };
+  }, [bizSearch, bizStatus]);
 
-  const loadUsers = async (page = 1) => {
+  const loadUsers = useCallback(async (page = 1) => {
     setUsersLoading(true);
     try {
       const res = await adminAPI.getAllUsers({ search: usersSearch, page, limit: 20 });
@@ -102,24 +326,49 @@ export default function AdminDashboardPage() {
       setUsersTotal(res.data.total);
       setUsersPages(res.data.pages);
       setUsersPage(page);
-    } catch {}
+    } catch { /* silent */ }
     setUsersLoading(false);
-  };
+  }, [usersSearch]);
 
   const loadFinance = async () => {
     setFinanceLoading(true);
     try {
       const res = await adminAPI.getSettlements({ page: 1, limit: 50 });
       setSettlements(res.data);
-    } catch {}
+    } catch { /* silent */ }
     setFinanceLoading(false);
+  };
+
+  const loadReviews = useCallback(async (page = 1) => {
+    setReviewsLoading(true);
+    try {
+      const res = await adminAPI.getAllReviews({ search: reviewsSearch, page, limit: 20 });
+      setReviews(res.data.reviews);
+      setReviewsTotal(res.data.total);
+      setReviewsPages(res.data.pages);
+      setReviewsPage(page);
+    } catch { /* silent */ }
+    setReviewsLoading(false);
+  }, [reviewsSearch]);
+
+  const loadSubscriptions = async () => {
+    setSubLoading(true);
+    try {
+      const res = await adminAPI.getSubscriptions();
+      setSubData(res.data);
+    } catch { /* silent */ }
+    setSubLoading(false);
   };
 
   useEffect(() => {
     if (activeTab === 'businesses') loadBusinesses(1);
     if (activeTab === 'users') loadUsers(1);
     if (activeTab === 'finance') loadFinance();
+    if (activeTab === 'reviews') loadReviews(1);
+    if (activeTab === 'subscriptions') loadSubscriptions();
   }, [activeTab]);
+
+  const openDetail = (id) => { setDetailBizId(id); setDetailOpen(true); };
 
   const handleApproveBusiness = async (id) => {
     try {
@@ -161,6 +410,16 @@ export default function AdminDashboardPage() {
     } catch { toast.error(t('Error', 'Error')); }
   };
 
+  const handleDeleteReview = async (id) => {
+    const reason = window.prompt(t('Razon de eliminacion:', 'Deletion reason:'));
+    if (reason === null) return;
+    try {
+      await adminAPI.deleteReview(id, reason);
+      toast.success(t('Resena eliminada', 'Review deleted'));
+      loadReviews(reviewsPage);
+    } catch { toast.error(t('Error', 'Error')); }
+  };
+
   const handleExport = async (type) => {
     try {
       const res = type === 'transactions'
@@ -169,7 +428,7 @@ export default function AdminDashboardPage() {
       const url = window.URL.createObjectURL(new Blob([res.data]));
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${type}_${exportYear}_${exportMonth}.xlsx`;
+      a.download = `${type}_${exportYear}_${exportMonth}.csv`;
       a.click();
       window.URL.revokeObjectURL(url);
       toast.success(t('Descargado', 'Downloaded'));
@@ -198,6 +457,8 @@ export default function AdminDashboardPage() {
     { id: 'overview', label: t('Resumen', 'Overview'), icon: BarChart3 },
     { id: 'businesses', label: t('Negocios', 'Businesses'), icon: Building2 },
     { id: 'users', label: t('Usuarios', 'Users'), icon: Users },
+    { id: 'reviews', label: t('Resenas', 'Reviews'), icon: MessageSquare },
+    { id: 'subscriptions', label: t('Suscripciones', 'Subscriptions'), icon: CreditCard },
     { id: 'finance', label: t('Finanzas', 'Finance'), icon: Wallet },
   ];
 
@@ -237,10 +498,20 @@ export default function AdminDashboardPage() {
           ))}
         </div>
 
+        {/* Business Detail Dialog */}
+        <BusinessDetailDialog
+          businessId={detailBizId}
+          open={detailOpen}
+          onClose={() => setDetailOpen(false)}
+          onApprove={handleApproveBusiness}
+          onReject={handleRejectBusiness}
+          t={t}
+          language={language}
+        />
+
         {/* ============ OVERVIEW TAB ============ */}
         {activeTab === 'overview' && (
           <div className="space-y-8">
-            {/* Stats */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {[
                 { icon: Users, color: 'text-blue-500', value: stats?.users?.total || 0, label: t('Usuarios', 'Users') },
@@ -262,7 +533,7 @@ export default function AdminDashboardPage() {
             </div>
 
             <div className="grid lg:grid-cols-2 gap-8">
-              {/* Pending */}
+              {/* Pending Businesses */}
               <Card>
                 <CardHeader className="flex flex-row items-center justify-between">
                   <CardTitle className="font-heading flex items-center gap-2">
@@ -276,19 +547,22 @@ export default function AdminDashboardPage() {
                       {pendingBusinesses.map(biz => (
                         <div key={biz.id} className="p-4 rounded-xl bg-muted/50" data-testid={`pending-business-${biz.id}`}>
                           <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0">
-                              <h4 className="font-medium">{biz.name}</h4>
+                            <div className="min-w-0 cursor-pointer" onClick={() => openDetail(biz.id)}>
+                              <h4 className="font-medium hover:text-primary transition-colors">{biz.name}</h4>
                               <p className="text-sm text-muted-foreground">{biz.email}</p>
                               <p className="text-sm text-muted-foreground">{biz.city}, {biz.state}</p>
                             </div>
                             <div className="flex gap-2 shrink-0">
+                              <Button size="sm" variant="outline" onClick={() => openDetail(biz.id)} data-testid={`view-pending-${biz.id}`}>
+                                <Eye className="h-4 w-4" />
+                              </Button>
                               <Button size="sm" variant="outline" className="text-green-600 hover:bg-green-50"
                                 onClick={() => handleApproveBusiness(biz.id)} data-testid={`approve-${biz.id}`}>
-                                <CheckCircle2 className="h-4 w-4 mr-1" />{t('Aprobar', 'Approve')}
+                                <CheckCircle2 className="h-4 w-4" />
                               </Button>
                               <Button size="sm" variant="outline" className="text-red-600 hover:bg-red-50"
                                 onClick={() => handleRejectBusiness(biz.id)} data-testid={`reject-${biz.id}`}>
-                                <XCircle className="h-4 w-4 mr-1" />{t('Rechazar', 'Reject')}
+                                <XCircle className="h-4 w-4" />
                               </Button>
                             </div>
                           </div>
@@ -301,7 +575,7 @@ export default function AdminDashboardPage() {
                 </CardContent>
               </Card>
 
-              {/* Audit */}
+              {/* Audit Logs */}
               <Card>
                 <CardHeader>
                   <CardTitle className="font-heading flex items-center gap-2">
@@ -338,7 +612,6 @@ export default function AdminDashboardPage() {
               </Card>
             </div>
 
-            {/* Quick Stats */}
             <div className="grid md:grid-cols-3 gap-4">
               <Card className="bg-blue-50 dark:bg-blue-900/20 border-blue-200">
                 <CardContent className="p-4">
@@ -365,7 +638,6 @@ export default function AdminDashboardPage() {
         {/* ============ BUSINESSES TAB ============ */}
         {activeTab === 'businesses' && (
           <div className="space-y-4">
-            {/* Search & Filters */}
             <div className="flex flex-col sm:flex-row gap-3">
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -391,10 +663,8 @@ export default function AdminDashboardPage() {
               </Button>
             </div>
 
-            {/* Results count */}
             <p className="text-sm text-muted-foreground">{bizTotal} {t('negocios encontrados', 'businesses found')}</p>
 
-            {/* Table */}
             {bizLoading ? (
               <div className="space-y-3">{[1,2,3].map(i => <Skeleton key={i} className="h-20" />)}</div>
             ) : (
@@ -403,9 +673,9 @@ export default function AdminDashboardPage() {
                   <Card key={biz.id} className="hover:shadow-md transition-shadow" data-testid={`biz-row-${biz.id}`}>
                     <CardContent className="p-4">
                       <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0 flex-1">
+                        <div className="min-w-0 flex-1 cursor-pointer" onClick={() => openDetail(biz.id)}>
                           <div className="flex items-center gap-2 flex-wrap">
-                            <h4 className="font-semibold">{biz.name}</h4>
+                            <h4 className="font-semibold hover:text-primary transition-colors">{biz.name}</h4>
                             <Badge className={STATUS_COLORS[biz.status] || 'bg-gray-100'}>{biz.status}</Badge>
                             {biz.subscription_status && (
                               <Badge variant="outline" className={STATUS_COLORS[biz.subscription_status] || ''}>
@@ -428,6 +698,9 @@ export default function AdminDashboardPage() {
                           )}
                         </div>
                         <div className="flex gap-2 shrink-0">
+                          <Button size="sm" variant="outline" onClick={() => openDetail(biz.id)} data-testid={`view-biz-${biz.id}`}>
+                            <Eye className="h-4 w-4" />
+                          </Button>
                           {biz.status === 'pending' && (
                             <>
                               <Button size="sm" variant="outline" className="text-green-600 hover:bg-green-50"
@@ -457,7 +730,6 @@ export default function AdminDashboardPage() {
               </div>
             )}
 
-            {/* Pagination */}
             {bizPages > 1 && (
               <div className="flex items-center justify-center gap-3 pt-4">
                 <Button variant="outline" size="sm" disabled={bizPage <= 1} onClick={() => loadBusinesses(bizPage - 1)}>
@@ -544,10 +816,145 @@ export default function AdminDashboardPage() {
           </div>
         )}
 
+        {/* ============ REVIEWS TAB ============ */}
+        {activeTab === 'reviews' && (
+          <div className="space-y-4">
+            <div className="flex gap-3">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input placeholder={t('Buscar por comentario o nombre...', 'Search by comment or name...')}
+                  value={reviewsSearch} onChange={e => setReviewsSearch(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && loadReviews(1)}
+                  className="pl-10" data-testid="reviews-search-input" />
+              </div>
+              <Button onClick={() => loadReviews(1)} data-testid="reviews-search-btn">
+                <Search className="h-4 w-4 mr-2" />{t('Buscar', 'Search')}
+              </Button>
+            </div>
+
+            <p className="text-sm text-muted-foreground">{reviewsTotal} {t('resenas encontradas', 'reviews found')}</p>
+
+            {reviewsLoading ? (
+              <div className="space-y-3">{[1,2,3].map(i => <Skeleton key={i} className="h-20" />)}</div>
+            ) : (
+              <div className="space-y-3">
+                {reviews.map(r => (
+                  <Card key={r.id} data-testid={`review-row-${r.id}`}>
+                    <CardContent className="p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-medium">{r.user_name || t('Anonimo', 'Anonymous')}</span>
+                            <div className="flex items-center gap-1 text-amber-500">
+                              <Star className="h-4 w-4 fill-current" /><span className="font-bold">{r.rating}</span>
+                            </div>
+                            <Badge variant="outline" className="text-xs">{r.business_name}</Badge>
+                          </div>
+                          {r.comment && <p className="text-sm text-muted-foreground mt-2 line-clamp-3">{r.comment}</p>}
+                          <p className="text-xs text-muted-foreground mt-1">{formatDate(r.created_at, language === 'es' ? 'es-MX' : 'en-US')}</p>
+                        </div>
+                        <Button size="sm" variant="outline" className="text-red-600 hover:bg-red-50 shrink-0"
+                          onClick={() => handleDeleteReview(r.id)} data-testid={`delete-review-${r.id}`}>
+                          <Trash2 className="h-4 w-4 mr-1" />{t('Eliminar', 'Delete')}
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+                {reviews.length === 0 && (
+                  <div className="text-center py-12">
+                    <MessageSquare className="h-12 w-12 text-muted-foreground/30 mx-auto mb-3" />
+                    <p className="text-muted-foreground">{t('No se encontraron resenas', 'No reviews found')}</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {reviewsPages > 1 && (
+              <div className="flex items-center justify-center gap-3 pt-4">
+                <Button variant="outline" size="sm" disabled={reviewsPage <= 1} onClick={() => loadReviews(reviewsPage - 1)}>
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <span className="text-sm text-muted-foreground">{reviewsPage} / {reviewsPages}</span>
+                <Button variant="outline" size="sm" disabled={reviewsPage >= reviewsPages} onClick={() => loadReviews(reviewsPage + 1)}>
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ============ SUBSCRIPTIONS TAB ============ */}
+        {activeTab === 'subscriptions' && (
+          <div className="space-y-6">
+            {subLoading ? (
+              <div className="space-y-3">{[1,2,3].map(i => <Skeleton key={i} className="h-20" />)}</div>
+            ) : subData ? (
+              <>
+                {/* Summary cards */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  {[
+                    { label: t('Activas', 'Active'), value: subData.summary?.active || 0, color: 'text-green-600 bg-green-50' },
+                    { label: t('Prueba', 'Trial'), value: subData.summary?.trialing || 0, color: 'text-blue-600 bg-blue-50' },
+                    { label: t('Sin suscripcion', 'None'), value: subData.summary?.none || 0, color: 'text-gray-600 bg-gray-50' },
+                    { label: t('Vencidas', 'Past due'), value: subData.summary?.past_due || 0, color: 'text-red-600 bg-red-50' },
+                  ].map((s, i) => (
+                    <Card key={i} className={s.color.split(' ')[1]}>
+                      <CardContent className="p-4 text-center">
+                        <p className={`text-3xl font-bold ${s.color.split(' ')[0]}`}>{s.value}</p>
+                        <p className="text-sm text-muted-foreground mt-1">{s.label}</p>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+
+                {/* List */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="font-heading flex items-center gap-2">
+                      <CreditCard className="h-5 w-5 text-purple-500" />{t('Negocios con Suscripcion', 'Businesses with Subscription')}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {subData.businesses?.length > 0 ? (
+                      <div className="space-y-2 max-h-[500px] overflow-y-auto">
+                        {subData.businesses.map(b => (
+                          <div key={b.id} className="flex items-center justify-between p-3 rounded-lg bg-muted/50 gap-3 cursor-pointer hover:bg-muted/80 transition-colors"
+                            onClick={() => openDetail(b.id)} data-testid={`sub-row-${b.id}`}>
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2">
+                                <span className="font-medium">{b.name}</span>
+                                <Badge className={STATUS_COLORS[b.subscription_status] || 'bg-gray-100'}>
+                                  {b.subscription_status}
+                                </Badge>
+                              </div>
+                              <div className="flex gap-3 text-sm text-muted-foreground mt-1">
+                                <span>{b.email}</span>
+                                {b.city && <span>{b.city}</span>}
+                                {b.subscription_started_at && (
+                                  <span>{t('Desde', 'Since')}: {formatDate(b.subscription_started_at, language === 'es' ? 'es-MX' : 'en-US')}</span>
+                                )}
+                              </div>
+                            </div>
+                            <Eye className="h-4 w-4 text-muted-foreground shrink-0" />
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-center text-muted-foreground py-8">{t('No hay suscripciones registradas', 'No subscriptions registered')}</p>
+                    )}
+                  </CardContent>
+                </Card>
+              </>
+            ) : (
+              <p className="text-center text-muted-foreground py-12">{t('Error al cargar suscripciones', 'Error loading subscriptions')}</p>
+            )}
+          </div>
+        )}
+
         {/* ============ FINANCE TAB ============ */}
         {activeTab === 'finance' && (
           <div className="space-y-6">
-            {/* Controls */}
             <Card>
               <CardContent className="p-4">
                 <div className="flex flex-wrap items-end gap-4">
@@ -579,7 +986,6 @@ export default function AdminDashboardPage() {
               </CardContent>
             </Card>
 
-            {/* Settlements list */}
             <Card>
               <CardHeader>
                 <CardTitle className="font-heading flex items-center gap-2">

@@ -461,6 +461,102 @@ async def get_all_users(
 
 
 
+@router.get("/businesses/{business_id}/detail")
+async def get_business_detail(business_id: str, token_data: TokenData = Depends(require_admin)):
+    """Get complete business detail for admin review including legal documents."""
+    business = await db.businesses.find_one({"id": business_id}, {"_id": 0, "password_hash": 0})
+    if not business:
+        raise HTTPException(status_code=404, detail="Business not found")
+
+    # Get owner info
+    owner = await db.users.find_one({"business_id": business_id}, {"_id": 0, "password_hash": 0, "totp_secret": 0})
+
+    # Get booking stats
+    total_bookings = await db.bookings.count_documents({"business_id": business_id})
+    completed_bookings = await db.bookings.count_documents({"business_id": business_id, "status": "completed"})
+    cancelled_bookings = await db.bookings.count_documents({"business_id": business_id, "status": "cancelled"})
+
+    # Get revenue
+    pipeline = [
+        {"$match": {"business_id": business_id, "status": "completed", "deposit_paid": True}},
+        {"$group": {"_id": None, "total": {"$sum": "$deposit_amount"}}}
+    ]
+    revenue_result = await db.bookings.aggregate(pipeline).to_list(1)
+    total_revenue = revenue_result[0]["total"] if revenue_result else 0
+
+    # Get reviews
+    reviews = await db.reviews.find({"business_id": business_id}, {"_id": 0}).sort("created_at", -1).to_list(20)
+    avg_rating = sum(r.get("rating", 0) for r in reviews) / len(reviews) if reviews else 0
+
+    # Get workers
+    workers = await db.workers.find({"business_id": business_id, "active": True}, {"_id": 0, "id": 1, "name": 1}).to_list(50)
+
+    # Get services
+    services = await db.services.find({"business_id": business_id, "active": True}, {"_id": 0, "id": 1, "name": 1, "price": 1, "duration": 1}).to_list(50)
+
+    return {
+        "business": business,
+        "owner": owner,
+        "stats": {
+            "total_bookings": total_bookings,
+            "completed_bookings": completed_bookings,
+            "cancelled_bookings": cancelled_bookings,
+            "total_revenue": total_revenue,
+            "avg_rating": round(avg_rating, 1),
+            "review_count": len(reviews),
+        },
+        "workers": workers,
+        "services": services,
+        "reviews": reviews,
+    }
+
+
+@router.get("/reviews/all")
+async def get_all_reviews(
+    search: str = "", page: int = 1, limit: int = 30,
+    token_data: TokenData = Depends(require_admin)
+):
+    """List all reviews for moderation."""
+    query = {}
+    if search:
+        query["$or"] = [
+            {"comment": {"$regex": search, "$options": "i"}},
+            {"user_name": {"$regex": search, "$options": "i"}},
+        ]
+    total = await db.reviews.count_documents(query)
+    reviews = await db.reviews.find(query, {"_id": 0}).sort("created_at", -1).skip((page - 1) * limit).limit(limit).to_list(limit)
+
+    # Enrich with business name
+    for r in reviews:
+        biz = await db.businesses.find_one({"id": r.get("business_id")}, {"_id": 0, "name": 1})
+        r["business_name"] = biz.get("name", "?") if biz else "?"
+
+    return {"reviews": reviews, "total": total, "page": page, "pages": (total + limit - 1) // limit}
+
+
+@router.get("/subscriptions")
+async def get_subscription_overview(token_data: TokenData = Depends(require_admin)):
+    """Get subscription overview for all businesses."""
+    pipeline = [
+        {"$group": {
+            "_id": "$subscription_status",
+            "count": {"$sum": 1}
+        }}
+    ]
+    status_counts = await db.businesses.aggregate(pipeline).to_list(10)
+    summary = {item["_id"]: item["count"] for item in status_counts if item["_id"]}
+
+    # Get businesses with subscription details
+    businesses = await db.businesses.find(
+        {"subscription_status": {"$exists": True, "$ne": None}},
+        {"_id": 0, "id": 1, "name": 1, "email": 1, "city": 1, "subscription_status": 1,
+         "subscription_id": 1, "subscription_started_at": 1, "created_at": 1}
+    ).sort("created_at", -1).to_list(500)
+
+    return {"summary": summary, "businesses": businesses}
+
+
+
 @router.get("/businesses/pending", response_model=List[BusinessResponse])
 async def get_pending_businesses(token_data: TokenData = Depends(require_admin)):
     # Only show businesses whose owner has verified their email

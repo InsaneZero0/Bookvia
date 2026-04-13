@@ -288,6 +288,9 @@ export const adminAPI = {
   togglePayoutHold: (businessId, hold, reason) => api.put(`/admin/businesses/${businessId}/payout-hold`, { hold, reason }),
   exportTransactions: (year, month) => api.get(`/admin/export/transactions?year=${year}&month=${month}`, { responseType: 'blob' }),
   exportSettlements: (year, month) => api.get(`/admin/export/settlements?year=${year}&month=${month}`, { responseType: 'blob' }),
+  getBusinessDetail: (id) => api.get(`/admin/businesses/${id}/detail`),
+  getAllReviews: (params) => api.get('/admin/reviews/all', { params }),
+  getSubscriptions: () => api.get('/admin/subscriptions'),
 };
 
 // Utility API
