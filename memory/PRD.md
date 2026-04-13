@@ -73,7 +73,7 @@ Auth Social: Emergent-managed Google Auth (solo clientes)
 - [x] Campo separado de "Num. ext." en registro para direcciones mas precisas
 
 ### Panel Admin (2FA con TOTP)
-- [x] 12 tabs: Resumen, Negocios, Usuarios, Resenas, Categorias, Rankings, Ciudades, Configuracion, Soporte, Reportes, Suscripciones, Finanzas
+- [x] 12 tabs: Resumen, Negocios, Usuarios, Resenas, Categorias, Rankings, Ciudades, Configuracion, Soporte, Reportes, Suscripciones, Finanzas (+1 Equipo solo Super Admin = 13 total)
 - [x] Vista Detalle de Negocio (Dialog): info general, documentos legales (RFC, CLABE, INE, CURP), suscripcion, propietario, servicios, trabajadores, resenas
 - [x] Aprobar/Rechazar/Suspender negocios desde detalle o listado
 - [x] Moderacion de resenas: buscar, paginar y eliminar resenas inapropiadas
@@ -89,6 +89,7 @@ Auth Social: Emergent-managed Google Auth (solo clientes)
 - [x] Alertas Admin: seccion en Resumen con alertas automaticas (pendientes, tickets abiertos, resenas negativas, suscripciones vencidas, negocios sin suscripcion, pagos retenidos)
 - [x] Gestion de Ciudades: listar 162 ciudades con busqueda, filtro activa/inactiva, toggle activar/desactivar con audit log
 - [x] Reportes Personalizados: filtros por fecha, ciudad, categoria. Resumen (reservas, ingresos, cancelaciones, usuarios), grafica diaria, top negocios y ciudades del periodo
+- [x] Sistema de Staff/Sub-Admin: crear, editar, eliminar miembros de equipo con permisos granulares por tab. Staff login sin 2FA. Super Admin tiene acceso total + tab Equipo exclusivo. Reseteo de contrasena.
 
 ### Experiencia del Cliente
 - [x] Stats del usuario en dashboard: total reservas, gasto total, citas pendientes, rating promedio dado, resenas
