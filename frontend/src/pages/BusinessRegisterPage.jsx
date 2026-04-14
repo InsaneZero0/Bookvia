@@ -17,7 +17,7 @@ import { countries, getCountryByCode } from '@/lib/countries';
 import { getDetectedCountry } from '@/lib/detectCountry';
 import { AgeVerification } from '@/components/AgeVerification';
 import { CitySelector } from '@/components/CitySelector';
-import DraggableMap from '@/components/DraggableMap';
+import GoogleMapDraggable, { GooglePlacesAutocomplete } from '@/components/GoogleMapComponents';
 import { toast } from 'sonner';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { 
@@ -120,34 +120,24 @@ export default function BusinessRegisterPage() {
     loadCategories();
   }, []);
 
-  // Debounced location search
-  const searchLocation = async (query) => {
-    if (!query || query.length < 3) { setLocationResults([]); return; }
-    setLocationSearching(true);
-    try {
-      const countryCode = formData.country?.toLowerCase() || 'mx';
-      const res = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5&countrycodes=${countryCode}&addressdetails=1`,
-        { headers: { 'Accept-Language': language === 'es' ? 'es' : 'en' } }
-      );
-      const data = await res.json();
-      setLocationResults(data.map(r => ({
-        display: r.display_name,
-        lat: parseFloat(r.lat),
-        lng: parseFloat(r.lon),
-        address: r.address?.road ? `${r.address.road}${r.address.house_number ? ' ' + r.address.house_number : ''}` : r.display_name.split(',')[0],
-        city: r.address?.city || r.address?.town || r.address?.municipality || r.address?.village || '',
-        state: r.address?.state || '',
-        zip: r.address?.postcode || '',
-      })));
-    } catch { setLocationResults([]); }
-    setLocationSearching(false);
+  // Google Places selection handler
+  const handlePlaceSelect = (place) => {
+    setFormData(prev => ({
+      ...prev,
+      address: [place.street, place.street_number].filter(Boolean).join(' ') || place.formatted_address?.split(',')[0] || '',
+      city: place.city || prev.city,
+      state: place.state || prev.state,
+      zip_code: place.zip || prev.zip_code,
+      latitude: place.lat,
+      longitude: place.lng,
+      colony: place.colony || prev.colony,
+    }));
+    setLocationQuery(place.formatted_address || '');
+    toast.success(language === 'es' ? 'Ubicacion seleccionada' : 'Location selected');
   };
 
   const handleLocationQueryChange = (value) => {
     setLocationQuery(value);
-    if (locationDebounceRef.current) clearTimeout(locationDebounceRef.current);
-    locationDebounceRef.current = setTimeout(() => searchLocation(value), 400);
   };
 
   const selectLocationResult = (loc) => {
@@ -724,49 +714,35 @@ export default function BusinessRegisterPage() {
               {/* Step 2: Location */}
               {currentStep === 1 && (
                 <div className="space-y-4" data-testid="step-location">
-                  {/* Address search with Nominatim */}
+                  {/* Google Places Autocomplete */}
                   <div className="space-y-2">
-                    <Label>{language === 'es' ? 'Buscar dirección' : 'Search address'}</Label>
+                    <Label>{language === 'es' ? 'Buscar direccion' : 'Search address'}</Label>
                     <div className="relative">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-                      <Input
-                        placeholder={language === 'es' ? 'Escribe tu dirección para buscar en el mapa...' : 'Type your address to search on map...'}
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground z-10" />
+                      <GooglePlacesAutocomplete
                         value={locationQuery}
-                        onChange={e => handleLocationQueryChange(e.target.value)}
-                        className="pl-10 h-12"
-                        data-testid="location-search-input"
+                        onChange={handleLocationQueryChange}
+                        onSelect={handlePlaceSelect}
+                        placeholder={language === 'es' ? 'Escribe tu direccion para buscar en el mapa...' : 'Type your address to search on map...'}
+                        countryCode={formData.country?.toLowerCase() || 'mx'}
+                        language={language}
+                        className="flex h-12 w-full rounded-md border border-input bg-background pl-10 pr-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                       />
-                      {locationSearching && (
-                        <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                          <div className="h-4 w-4 border-2 border-[#F05D5E] border-t-transparent rounded-full animate-spin" />
-                        </div>
-                      )}
                     </div>
-                    {locationResults.length > 0 && (
-                      <div className="border rounded-lg divide-y max-h-48 overflow-y-auto bg-background shadow-lg" data-testid="location-results">
-                        {locationResults.map((r, i) => (
-                          <button key={i} type="button" className="w-full text-left px-3 py-2.5 hover:bg-muted/50 text-sm flex items-start gap-2 transition-colors"
-                            onClick={() => selectLocationResult(r)} data-testid={`location-result-${i}`}>
-                            <MapPin className="h-4 w-4 text-[#F05D5E] mt-0.5 shrink-0" />
-                            <span className="line-clamp-2">{r.display}</span>
-                          </button>
-                        ))}
-                      </div>
-                    )}
                   </div>
 
-                  {/* Interactive map - always visible */}
+                  {/* Interactive Google Map */}
                   <div className="rounded-xl border overflow-hidden" data-testid="registration-map-preview">
-                    <DraggableMap
+                    <GoogleMapDraggable
                       lat={formData.latitude}
                       lng={formData.longitude}
-                      height="200px"
+                      height="220px"
                       onPositionChange={(lat, lng) => {
                         setFormData(prev => ({ ...prev, latitude: lat, longitude: lng }));
                       }}
                     />
                     <p className="text-xs text-muted-foreground px-3 py-1.5 bg-muted/30 text-center">
-                      {language === 'es' ? 'Arrastra el marcador para ajustar la ubicación exacta' : 'Drag the marker to adjust the exact location'}
+                      {language === 'es' ? 'Arrastra el marcador o haz clic para ajustar la ubicacion exacta' : 'Drag the marker or click to adjust the exact location'}
                     </p>
                   </div>
 

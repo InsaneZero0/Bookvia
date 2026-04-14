@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -17,43 +17,70 @@ import { businessesAPI, categoriesAPI, usersAPI } from '@/lib/api';
 import { Search, SlidersHorizontal, MapPin, X, Filter, List, Map as MapIcon, Star, ArrowRight } from 'lucide-react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { toast } from 'sonner';
+import { GoogleMap, Marker, useJsApiLoader } from '@react-google-maps/api';
 
-// Lazy load map to avoid SSR issues
-let MapContainer, TileLayer, Marker, Popup, useMap;
-try {
-  const RL = require('react-leaflet');
-  MapContainer = RL.MapContainer;
-  TileLayer = RL.TileLayer;
-  Marker = RL.Marker;
-  Popup = RL.Popup;
-  useMap = RL.useMap;
-} catch { /* Leaflet not available */ }
+const GMAP_LIBRARIES = ['places'];
 
-// Import leaflet CSS
-try { require('leaflet/dist/leaflet.css'); } catch {}
-
-// Fix leaflet default icon issue
-try {
-  const L = require('leaflet');
-  delete L.Icon.Default.prototype._getIconUrl;
-  L.Icon.Default.mergeOptions({
-    iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
-    iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
-    shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+function SearchGoogleMap({ businesses, navigate, language }) {
+  const { isLoaded } = useJsApiLoader({
+    googleMapsApiKey: process.env.REACT_APP_GOOGLE_MAPS_KEY,
+    libraries: GMAP_LIBRARIES,
   });
-} catch {}
+  const [selectedBiz, setSelectedBiz] = useState(null);
+  const mapRef = useRef(null);
 
-// Map bounds updater component
-function MapBoundsUpdater({ businesses }) {
-  const map = useMap();
   useEffect(() => {
-    const coords = businesses.filter(b => b.latitude && b.longitude).map(b => [b.latitude, b.longitude]);
-    if (coords.length > 0) {
-      const L = require('leaflet');
-      map.fitBounds(L.latLngBounds(coords).pad(0.1));
-    }
-  }, [businesses, map]);
-  return null;
+    if (!isLoaded || !mapRef.current || businesses.length === 0) return;
+    const bounds = new window.google.maps.LatLngBounds();
+    businesses.forEach(b => {
+      if (b.latitude && b.longitude) bounds.extend({ lat: b.latitude, lng: b.longitude });
+    });
+    if (!bounds.isEmpty()) mapRef.current.fitBounds(bounds, { padding: 50 });
+  }, [isLoaded, businesses]);
+
+  if (!isLoaded) {
+    return <div className="h-full flex items-center justify-center bg-muted"><p className="text-sm text-muted-foreground">Cargando mapa...</p></div>;
+  }
+
+  return (
+    <GoogleMap
+      mapContainerStyle={{ height: '100%', width: '100%' }}
+      center={{ lat: 23.6345, lng: -102.5528 }}
+      zoom={5}
+      onLoad={map => { mapRef.current = map; }}
+      options={{ streetViewControl: false, mapTypeControl: false, fullscreenControl: false }}
+    >
+      {businesses.map(biz => (
+        <Marker
+          key={biz.id}
+          position={{ lat: biz.latitude, lng: biz.longitude }}
+          onClick={() => setSelectedBiz(biz)}
+        />
+      ))}
+      {selectedBiz && (
+        <div style={{
+          position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)',
+          background: 'white', borderRadius: 12, padding: '12px 16px', boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
+          minWidth: 220, zIndex: 10,
+        }}>
+          <button onClick={() => setSelectedBiz(null)} style={{ position: 'absolute', top: 6, right: 8, background: 'none', border: 'none', cursor: 'pointer', fontSize: 16 }}>x</button>
+          <p style={{ fontWeight: 600, fontSize: 14 }}>{selectedBiz.name}</p>
+          <p style={{ fontSize: 12, color: '#666' }}>{selectedBiz.address}, {selectedBiz.city}</p>
+          {selectedBiz.rating > 0 && (
+            <p style={{ fontSize: 12, marginTop: 4 }}>
+              <Star style={{ width: 12, height: 12, display: 'inline', fill: '#facc15', color: '#facc15' }} /> {selectedBiz.rating.toFixed(1)}
+            </p>
+          )}
+          <button
+            onClick={() => navigate(`/business/${selectedBiz.slug}`)}
+            style={{ fontSize: 12, color: '#F05D5E', fontWeight: 600, marginTop: 6, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+          >
+            {language === 'es' ? 'Ver perfil' : 'View profile'} →
+          </button>
+        </div>
+      )}
+    </GoogleMap>
+  );
 }
 
 export default function SearchPage() {
@@ -557,46 +584,7 @@ export default function SearchPage() {
               <div className="grid lg:grid-cols-2 gap-4" data-testid="results-map-view">
                 {/* Map */}
                 <div className="h-[500px] lg:h-[calc(100vh-200px)] rounded-xl overflow-hidden border sticky top-24" data-testid="search-map">
-                  {MapContainer ? (
-                    <MapContainer
-                      center={[23.6345, -102.5528]} // Mexico center
-                      zoom={5}
-                      style={{ height: '100%', width: '100%' }}
-                      scrollWheelZoom={true}
-                    >
-                      <TileLayer
-                        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                      />
-                      {mappableBusinesses.map(biz => (
-                        <Marker key={biz.id} position={[biz.latitude, biz.longitude]}>
-                          <Popup>
-                            <div className="min-w-[180px]">
-                              <p className="font-bold text-sm">{biz.name}</p>
-                              <p className="text-xs text-gray-500">{biz.address}, {biz.city}</p>
-                              {biz.rating > 0 && (
-                                <div className="flex items-center gap-1 mt-1">
-                                  <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
-                                  <span className="text-xs font-medium">{biz.rating.toFixed(1)}</span>
-                                </div>
-                              )}
-                              <button
-                                className="text-xs text-[#F05D5E] font-medium mt-2 hover:underline"
-                                onClick={() => navigate(`/business/${biz.slug}`)}
-                              >
-                                {language === 'es' ? 'Ver perfil' : 'View profile'} →
-                              </button>
-                            </div>
-                          </Popup>
-                        </Marker>
-                      ))}
-                      <MapBoundsUpdater businesses={mappableBusinesses} />
-                    </MapContainer>
-                  ) : (
-                    <div className="h-full flex items-center justify-center bg-muted">
-                      <p className="text-sm text-muted-foreground">{language === 'es' ? 'Mapa no disponible' : 'Map not available'}</p>
-                    </div>
-                  )}
+                  <SearchGoogleMap businesses={mappableBusinesses} navigate={navigate} language={language} />
                 </div>
 
                 {/* Side List */}

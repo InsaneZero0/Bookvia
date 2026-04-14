@@ -70,6 +70,7 @@ Auth Social: Emergent-managed Google Auth (solo clientes)
 - [x] Edicion de horarios de apertura/cierre por dia del negocio (sincroniza con horarios de trabajadores)
 - [x] Buscador de direccion con mapa en registro de negocio (Nominatim + OpenStreetMap, auto-rellena campos, guarda lat/lng)
 - [x] Mapa interactivo Leaflet con marcador arrastrable en registro y configuracion (reemplaza iframe estatico)
+- [x] Google Maps integrado: mapa interactivo con marcador arrastrable (registro, configuracion), mapa estatico (perfil publico), busqueda de direcciones con Google Places Autocomplete, mapa de resultados de busqueda
 - [x] Campo separado de "Num. ext." en registro para direcciones mas precisas
 
 ### Panel Admin (2FA con TOTP)
