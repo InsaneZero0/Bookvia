@@ -11,7 +11,7 @@ import { Separator } from '@/components/ui/separator';
 import { useAuth } from '@/lib/auth';
 import { useI18n } from '@/lib/i18n';
 import { businessesAPI } from '@/lib/api';
-import DraggableMap from '@/components/DraggableMap';
+import GoogleMapDraggable from '@/components/GoogleMapComponents';
 import { toast } from 'sonner';
 import {
   ArrowLeft, Mail, Phone, User, ShieldX, MapPin, Search, Loader2,
@@ -571,7 +571,7 @@ export default function BusinessSettingsPage() {
 
               {currentLocation ? (
                 <div className="space-y-1" data-testid="current-location-map">
-                  <DraggableMap
+                  <GoogleMapDraggable
                     lat={currentLocation.lat}
                     lng={currentLocation.lng}
                     height="220px"

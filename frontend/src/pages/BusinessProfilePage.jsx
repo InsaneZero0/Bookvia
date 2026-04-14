@@ -8,6 +8,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
+import { GoogleMapStatic } from '@/components/GoogleMapComponents';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
@@ -920,13 +921,10 @@ export default function BusinessProfilePage() {
               </h2>
               <div className="rounded-xl border overflow-hidden">
                 {business.latitude && business.longitude ? (
-                  <iframe
-                    title="map"
-                    width="100%"
-                    height="250"
-                    style={{ border: 0 }}
-                    loading="lazy"
-                    src={`https://www.openstreetmap.org/export/embed.html?bbox=${business.longitude - 0.008}%2C${business.latitude - 0.005}%2C${business.longitude + 0.008}%2C${business.latitude + 0.005}&layer=mapnik&marker=${business.latitude}%2C${business.longitude}`}
+                  <GoogleMapStatic
+                    lat={business.latitude}
+                    lng={business.longitude}
+                    height="250px"
                   />
                 ) : (
                   <div className="h-[200px] bg-muted flex items-center justify-center">
