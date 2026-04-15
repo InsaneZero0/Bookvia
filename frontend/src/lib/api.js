@@ -71,6 +71,7 @@ api.interceptors.response.use(
 export const authAPI = {
   register: (data) => api.post('/auth/register', data),
   login: (data) => api.post('/auth/login', data),
+  unifiedLogin: (data) => api.post('/auth/unified-login', data),
   businessRegister: (data) => api.post('/auth/business/register', data),
   businessLogin: (data) => api.post('/auth/business/login', data),
   managerLogin: (data) => api.post('/auth/business/manager-login', data),

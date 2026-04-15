@@ -1,443 +1,187 @@
-import { useState } from 'react';
-import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { useAuth } from '@/lib/auth';
 import { useI18n } from '@/lib/i18n';
-import { authAPI } from '@/lib/api';
-import { BookviaLogo } from '@/components/BookviaLogo';
 import { toast } from 'sonner';
-import { Eye, EyeOff, ArrowLeft, Mail, Lock, Building2, UserCog, Shield, User, Loader2, CreditCard } from 'lucide-react';
+import { LogIn, Loader2, Mail, Lock, Eye, EyeOff } from 'lucide-react';
 
 export default function LoginPage() {
   const { t, language } = useI18n();
-  const { login, businessLogin, managerLogin } = useAuth();
+  const { unifiedLogin, isAuthenticated, user, googleLogin } = useAuth();
   const navigate = useNavigate();
-  const location = useLocation();
-  const from = location.state?.from?.pathname || '/';
-
+  const [searchParams] = useSearchParams();
+  const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [loginMode, setLoginMode] = useState('user'); // 'user' | 'business_owner' | 'business_admin'
-  const [subscriptionRequired, setSubscriptionRequired] = useState(false);
-  const [subscriptionLoading, setSubscriptionLoading] = useState(false);
 
-  // Manager login state
-  const [managers, setManagers] = useState([]);
-  const [selectedManagerId, setSelectedManagerId] = useState('');
-  const [pin, setPin] = useState('');
-  const [loadingManagers, setLoadingManagers] = useState(false);
-  const [managersLoaded, setManagersLoaded] = useState(false);
+  useEffect(() => {
+    if (isAuthenticated && user) {
+      if (user.role === 'business') navigate('/business/dashboard');
+      else navigate('/dashboard');
+    }
+  }, [isAuthenticated, user, navigate]);
 
-  const isBusinessTab = loginMode === 'business_owner' || loginMode === 'business_admin';
+  // Google OAuth callback
+  useEffect(() => {
+    const sessionId = searchParams.get('session_id');
+    if (sessionId) {
+      handleGoogleCallback(sessionId);
+    }
+  }, [searchParams]);
 
-  const fetchManagers = async (businessEmail) => {
-    if (!businessEmail) return;
-    setLoadingManagers(true);
+  const handleGoogleCallback = async (sessionId) => {
+    setLoading(true);
     try {
-      const res = await authAPI.getBusinessManagers(businessEmail);
-      const list = Array.isArray(res.data) ? res.data : [];
-      setManagers(list);
-      setManagersLoaded(true);
-      if (list.length === 0) {
-        toast.info(language === 'es' ? 'No hay administradores registrados para este negocio' : 'No administrators registered for this business');
-      }
+      await googleLogin(sessionId);
+      toast.success(language === 'es' ? 'Sesion iniciada con Google' : 'Logged in with Google');
+      navigate('/dashboard');
     } catch {
-      setManagers([]);
-      setManagersLoaded(true);
-    } finally {
-      setLoadingManagers(false);
+      toast.error(language === 'es' ? 'Error al iniciar con Google' : 'Google login error');
     }
+    setLoading(false);
   };
-
-  const handlePaySubscription = async () => {
-    setSubscriptionLoading(true);
-    try {
-      const originUrl = window.location.origin;
-      const res = await authAPI.createRegistrationSubscription({ email, origin_url: originUrl });
-      if (res.data?.url) {
-        window.location.href = res.data.url;
-      } else {
-        throw new Error('No checkout URL');
-      }
-    } catch (error) {
-      toast.error(language === 'es' ? 'Error al conectar con el procesador de pagos.' : 'Error connecting to payment processor.');
-      setSubscriptionLoading(false);
-    }
-  };
-
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!email || !password) {
+      toast.error(language === 'es' ? 'Completa todos los campos' : 'Fill in all fields');
+      return;
+    }
     setLoading(true);
-
     try {
-      if (loginMode === 'business_admin') {
-        if (!selectedManagerId) {
-          toast.error(language === 'es' ? 'Selecciona un administrador' : 'Select an administrator');
-          setLoading(false);
-          return;
-        }
-        if (!pin) {
-          toast.error(language === 'es' ? 'Ingresa tu PIN' : 'Enter your PIN');
-          setLoading(false);
-          return;
-        }
-        await managerLogin(email, selectedManagerId, pin);
-        navigate('/business/dashboard');
-      } else if (loginMode === 'business_owner') {
-        await businessLogin(email, password);
+      const result = await unifiedLogin(email, password);
+      toast.success(language === 'es' ? 'Bienvenido!' : 'Welcome!');
+      if (result.account_type === 'business') {
         navigate('/business/dashboard');
       } else {
-        await login(email, password);
-        navigate(from);
+        navigate('/dashboard');
       }
-      toast.success(language === 'es' ? '¡Bienvenido!' : 'Welcome!');
     } catch (error) {
       const detail = error.response?.data?.detail;
-      if (detail === 'subscription_required') {
-        setSubscriptionRequired(true);
-        toast.error(language === 'es' 
-          ? 'Debes completar el pago de tu suscripción para activar tu cuenta.' 
-          : 'You must complete your subscription payment to activate your account.');
-      } else if (detail === 'email_not_verified') {
-        toast.error(language === 'es' ? 'Debes verificar tu correo electrónico primero. Revisa tu bandeja de entrada.' : 'You must verify your email first. Check your inbox.');
-        // Offer to resend
-        try {
-          await authAPI.resendVerification({ email });
-          toast.info(language === 'es' ? 'Te hemos reenviado el correo de verificación' : 'We resent the verification email');
-        } catch {}
+      if (detail === 'email_not_verified') {
+        toast.error(language === 'es' ? 'Verifica tu correo antes de iniciar sesion' : 'Verify your email before logging in');
+      } else if (detail === 'subscription_required') {
+        toast.error(language === 'es' ? 'Necesitas pagar la suscripcion para acceder' : 'You need to pay the subscription to access');
       } else {
-        const message = detail || (language === 'es' ? 'Credenciales inválidas' : 'Invalid credentials');
-        toast.error(message);
+        toast.error(language === 'es' ? 'Credenciales incorrectas' : 'Invalid credentials');
       }
-    } finally {
-      setLoading(false);
     }
+    setLoading(false);
+  };
+
+  const handleGoogleLogin = () => {
+    const redirectUrl = `${window.location.origin}/login`;
+    window.location.href = `https://auth.emergentagent.com/google/login?redirect_url=${encodeURIComponent(redirectUrl)}`;
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4 py-20 bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800" data-testid="login-page">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 px-4 pt-20" data-testid="login-page">
       <div className="w-full max-w-md">
-        <Button
-          variant="ghost"
-          onClick={() => navigate('/')}
-          className="mb-6"
-          data-testid="back-to-home"
-        >
-          <ArrowLeft className="mr-2 h-4 w-4" />
-          {language === 'es' ? 'Volver al inicio' : 'Back to home'}
-        </Button>
-
-        <Card className="border-0 shadow-xl">
+        <Card className="shadow-xl border-0">
           <CardHeader className="text-center pb-2">
-            <Link to="/" className="inline-block mb-4">
-              <BookviaLogo variant="light" size="text-3xl" />
-            </Link>
-            <CardTitle className="text-2xl font-heading">{t('auth.login.title')}</CardTitle>
-            <CardDescription>{t('auth.login.subtitle')}</CardDescription>
+            <CardTitle className="text-2xl font-heading font-bold">
+              {language === 'es' ? 'Iniciar sesion' : 'Log in'}
+            </CardTitle>
+            <CardDescription>
+              {language === 'es' ? 'Accede a tu cuenta de cliente o negocio' : 'Access your client or business account'}
+            </CardDescription>
           </CardHeader>
-
-          <CardContent className="space-y-6">
-            {/* Toggle User/Business */}
-            <div className="flex rounded-xl bg-muted p-1">
-              <button
-                type="button"
-                className={`flex-1 py-2.5 px-3 rounded-lg text-sm font-medium transition-all flex items-center justify-center gap-1.5 ${
-                  loginMode === 'user'
-                    ? 'bg-background shadow-sm text-foreground'
-                    : 'text-muted-foreground hover:text-foreground'
-                }`}
-                onClick={() => { setLoginMode('user'); setManagersLoaded(false); setManagers([]); setSelectedManagerId(''); setPin(''); }}
-                data-testid="user-login-tab"
-              >
-                <User className="h-4 w-4" />
-                {language === 'es' ? 'Usuario' : 'User'}
-              </button>
-              <button
-                type="button"
-                className={`flex-1 py-2.5 px-3 rounded-lg text-sm font-medium transition-all flex items-center justify-center gap-1.5 ${
-                  isBusinessTab
-                    ? 'bg-background shadow-sm text-foreground'
-                    : 'text-muted-foreground hover:text-foreground'
-                }`}
-                onClick={() => { setLoginMode('business_owner'); setManagersLoaded(false); setManagers([]); setSelectedManagerId(''); setPin(''); }}
-                data-testid="business-login-tab"
-              >
-                <Building2 className="h-4 w-4" />
-                {language === 'es' ? 'Negocio' : 'Business'}
-              </button>
-            </div>
-
-            {/* Sub-toggle: Owner / Administrator (only for business) */}
-            {isBusinessTab && (
-              <div className="flex rounded-lg border border-border p-0.5 gap-0.5">
-                <button
-                  type="button"
-                  className={`flex-1 py-2 px-3 rounded-md text-xs font-medium transition-all flex items-center justify-center gap-1.5 ${
-                    loginMode === 'business_owner'
-                      ? 'bg-[#F05D5E] text-white shadow-sm'
-                      : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-                  }`}
-                  onClick={() => { setLoginMode('business_owner'); setPin(''); }}
-                  data-testid="owner-login-tab"
-                >
-                  <Shield className="h-3.5 w-3.5" />
-                  {language === 'es' ? 'Soy el dueño' : "I'm the owner"}
-                </button>
-                <button
-                  type="button"
-                  className={`flex-1 py-2 px-3 rounded-md text-xs font-medium transition-all flex items-center justify-center gap-1.5 ${
-                    loginMode === 'business_admin'
-                      ? 'bg-[#F05D5E] text-white shadow-sm'
-                      : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-                  }`}
-                  onClick={() => { setLoginMode('business_admin'); setPassword(''); }}
-                  data-testid="admin-login-tab"
-                >
-                  <UserCog className="h-3.5 w-3.5" />
-                  {language === 'es' ? 'Soy administrador' : "I'm an administrator"}
-                </button>
-              </div>
-            )}
-
-            {/* Subscription required banner */}
-            {subscriptionRequired && loginMode === 'business_owner' && (
-              <div className="rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 p-4 space-y-3" data-testid="subscription-required-banner">
-                <p className="text-sm text-amber-800 dark:text-amber-200 font-medium leading-relaxed">
-                  {language === 'es'
-                    ? 'Tu registro está casi listo. Solo falta completar el pago de tu suscripción para activar tu cuenta.'
-                    : 'Your registration is almost complete. Just complete your subscription payment to activate your account.'}
-                </p>
-                <Button
-                  type="button"
-                  className="w-full btn-coral h-11 gap-2"
-                  onClick={handlePaySubscription}
-                  disabled={subscriptionLoading}
-                  data-testid="pay-subscription-btn"
-                >
-                  <CreditCard className="h-4 w-4" />
-                  {subscriptionLoading
-                    ? (language === 'es' ? 'Redirigiendo a Stripe...' : 'Redirecting to Stripe...')
-                    : (language === 'es' ? 'Completar pago de suscripción' : 'Complete subscription payment')}
-                </Button>
-              </div>
-            )}
-
+          <CardContent className="space-y-4">
             <form onSubmit={handleSubmit} className="space-y-4">
-              {/* Google Login - Only for regular users */}
-              {loginMode === 'user' && (
-                <>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="w-full h-12 text-base font-medium gap-3 border-slate-300 hover:bg-slate-50"
-                    onClick={() => {
-                      // REMINDER: DO NOT HARDCODE THE URL, OR ADD ANY FALLBACKS OR REDIRECT URLS, THIS BREAKS THE AUTH
-                      const redirectUrl = window.location.origin + '/auth/google/callback';
-                      window.location.href = `https://auth.emergentagent.com/?redirect=${encodeURIComponent(redirectUrl)}`;
-                    }}
-                    data-testid="google-login-btn"
-                  >
-                    <svg width="20" height="20" viewBox="0 0 24 24">
-                      <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/>
-                      <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
-                      <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
-                      <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
-                    </svg>
-                    {language === 'es' ? 'Continuar con Google' : 'Continue with Google'}
-                  </Button>
-
-                  <div className="relative">
-                    <div className="absolute inset-0 flex items-center">
-                      <span className="w-full border-t border-border" />
-                    </div>
-                    <div className="relative flex justify-center text-xs uppercase">
-                      <span className="bg-card px-2 text-muted-foreground">
-                        {language === 'es' ? 'o con email' : 'or with email'}
-                      </span>
-                    </div>
-                  </div>
-                </>
-              )}
-              {/* Email - always shown */}
               <div className="space-y-2">
-                <Label htmlFor="email">
-                  {loginMode === 'business_admin'
-                    ? (language === 'es' ? 'Email del negocio' : 'Business email')
-                    : t('auth.email')}
-                </Label>
+                <Label htmlFor="email">Email</Label>
                 <div className="relative">
-                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input
                     id="email"
                     type="email"
-                    placeholder={loginMode === 'business_admin' ? (language === 'es' ? 'email@delnegocio.com' : 'business@email.com') : 'tu@email.com'}
+                    placeholder="tu@correo.com"
                     value={email}
-                    onChange={(e) => { setEmail(e.target.value); if (loginMode === 'business_admin') { setManagersLoaded(false); setManagers([]); setSelectedManagerId(''); } }}
+                    onChange={e => setEmail(e.target.value)}
                     className="pl-10 h-12"
                     required
-                    data-testid="email-input"
+                    data-testid="login-email-input"
                   />
                 </div>
               </div>
 
-              {/* Manager login: Fetch managers button + select + PIN */}
-              {loginMode === 'business_admin' && (
-                <>
-                  {/* Fetch managers */}
-                  {!managersLoaded && (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="w-full"
-                      onClick={() => fetchManagers(email)}
-                      disabled={!email || loadingManagers}
-                      data-testid="fetch-managers-btn"
-                    >
-                      {loadingManagers ? (
-                        <><Loader2 className="h-4 w-4 mr-2 animate-spin" />{language === 'es' ? 'Buscando...' : 'Searching...'}</>
-                      ) : (
-                        <>{language === 'es' ? 'Buscar mi cuenta' : 'Find my account'}</>
-                      )}
-                    </Button>
-                  )}
-
-                  {/* Manager select dropdown */}
-                  {managersLoaded && managers.length > 0 && (
-                    <div className="space-y-2">
-                      <Label>{language === 'es' ? 'Selecciona tu nombre' : 'Select your name'}</Label>
-                      <Select value={selectedManagerId} onValueChange={setSelectedManagerId}>
-                        <SelectTrigger className="h-12" data-testid="manager-select">
-                          <SelectValue placeholder={language === 'es' ? 'Seleccionar administrador...' : 'Select administrator...'} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {managers.map(m => (
-                            <SelectItem key={m.id} value={m.id} data-testid={`manager-option-${m.id}`}>
-                              <div className="flex items-center gap-2">
-                                <UserCog className="h-4 w-4 text-amber-500" />
-                                {m.name}
-                                {!m.has_pin && (
-                                  <span className="text-[10px] text-red-500 ml-1">{language === 'es' ? '(sin PIN)' : '(no PIN)'}</span>
-                                )}
-                              </div>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  )}
-
-                  {managersLoaded && managers.length === 0 && (
-                    <div className="text-center py-4 border border-dashed rounded-lg">
-                      <UserCog className="h-8 w-8 text-muted-foreground/40 mx-auto mb-2" />
-                      <p className="text-sm text-muted-foreground">
-                        {language === 'es' ? 'No se encontraron administradores para este negocio' : 'No administrators found for this business'}
-                      </p>
-                      <Button type="button" variant="link" size="sm" onClick={() => { setManagersLoaded(false); setEmail(''); }} className="mt-1 text-[#F05D5E]">
-                        {language === 'es' ? 'Intentar con otro email' : 'Try another email'}
-                      </Button>
-                    </div>
-                  )}
-
-                  {/* PIN input */}
-                  {selectedManagerId && (
-                    <div className="space-y-2">
-                      <Label htmlFor="pin">{language === 'es' ? 'Tu PIN de acceso' : 'Your access PIN'}</Label>
-                      <div className="relative">
-                        <Shield className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-                        <Input
-                          id="pin"
-                          type="password"
-                          inputMode="numeric"
-                          maxLength={6}
-                          placeholder="••••"
-                          value={pin}
-                          onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                          className="pl-10 h-12"
-                          required
-                          data-testid="pin-input"
-                          data-no-capitalize="true"
-                        />
-                      </div>
-                    </div>
-                  )}
-                </>
-              )}
-
-              {/* Password - only for user and owner */}
-              {loginMode !== 'business_admin' && (
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <Label htmlFor="password">{t('auth.password')}</Label>
-                    <Link
-                      to="/forgot-password"
-                      className="text-sm text-[#F05D5E] hover:underline"
-                    >
-                      {t('auth.forgotPassword')}
-                    </Link>
-                  </div>
-                  <div className="relative">
-                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-                    <Input
-                      id="password"
-                      type={showPassword ? 'text' : 'password'}
-                      placeholder="••••••••"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      className="pl-10 pr-10 h-12"
-                      required
-                      data-testid="password-input"
-                      data-no-capitalize="true"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                    >
-                      {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
-                    </button>
-                  </div>
+              <div className="space-y-2">
+                <div className="flex justify-between items-center">
+                  <Label htmlFor="password">{language === 'es' ? 'Contrasena' : 'Password'}</Label>
+                  <Link to="/forgot-password" className="text-xs text-[#F05D5E] hover:underline" data-testid="forgot-password-link">
+                    {language === 'es' ? 'Olvidaste tu contrasena?' : 'Forgot password?'}
+                  </Link>
                 </div>
-              )}
+                <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    id="password"
+                    type={showPassword ? 'text' : 'password'}
+                    placeholder="••••••••"
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    className="pl-10 pr-10 h-12"
+                    required
+                    data-testid="login-password-input"
+                  />
+                  <button type="button" onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+              </div>
 
-              <Button
-                type="submit"
-                className="w-full h-12 btn-coral text-lg"
-                disabled={loading || (loginMode === 'business_admin' && (!selectedManagerId || !pin))}
-                data-testid="login-submit"
-              >
-                {loading ? (language === 'es' ? 'Ingresando...' : 'Signing in...') : t('auth.login.button')}
+              <Button type="submit" className="w-full h-12 btn-coral text-base" disabled={loading} data-testid="login-submit-button">
+                {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : (
+                  <><LogIn className="h-5 w-5 mr-2" />{language === 'es' ? 'Iniciar sesion' : 'Log in'}</>
+                )}
               </Button>
             </form>
 
-            <div className="text-center text-sm">
-              <span className="text-muted-foreground">{t('auth.noAccount')} </span>
-              <Link
-                to={isBusinessTab ? '/business/register' : '/register'}
-                className="text-[#F05D5E] font-medium hover:underline"
-                data-testid="register-link"
-              >
-                {t('nav.register')}
-              </Link>
+            {/* Divider */}
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center"><span className="w-full border-t" /></div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-card px-2 text-muted-foreground">{language === 'es' ? 'o continua con' : 'or continue with'}</span>
+              </div>
             </div>
 
-            {/* Admin login link */}
-            {loginMode === 'user' && (
-              <div className="text-center text-sm border-t border-border pt-4">
-                <Link
-                  to="/bv-ctrl/login"
-                  className="text-muted-foreground hover:text-foreground"
-                >
+            {/* Google Login */}
+            <Button type="button" variant="outline" className="w-full h-12" onClick={handleGoogleLogin} disabled={loading} data-testid="google-login-button">
+              <svg className="h-5 w-5 mr-2" viewBox="0 0 24 24">
+                <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/>
+                <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+                <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+                <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+              </svg>
+              Google
+            </Button>
+
+            {/* Links */}
+            <div className="text-center space-y-3 pt-2">
+              <p className="text-sm text-muted-foreground">
+                {language === 'es' ? 'No tienes cuenta?' : "Don't have an account?"}{' '}
+                <Link to="/register" className="text-[#F05D5E] font-medium hover:underline" data-testid="register-link">
+                  {language === 'es' ? 'Registrate' : 'Sign up'}
+                </Link>
+              </p>
+              <p className="text-sm text-muted-foreground">
+                {language === 'es' ? 'Tienes un negocio?' : 'Have a business?'}{' '}
+                <Link to="/for-business" className="text-[#F05D5E] font-medium hover:underline" data-testid="business-register-link">
+                  {language === 'es' ? 'Registralo aqui' : 'Register it here'}
+                </Link>
+              </p>
+              <div className="border-t border-border pt-3">
+                <Link to="/bv-ctrl/login" className="text-xs text-muted-foreground hover:text-foreground" data-testid="admin-login-link">
                   {language === 'es' ? 'Acceso administrador' : 'Admin access'}
                 </Link>
               </div>
-            )}
+            </div>
           </CardContent>
         </Card>
       </div>
