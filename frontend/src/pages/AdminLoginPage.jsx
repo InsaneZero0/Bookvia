@@ -46,7 +46,7 @@ export default function AdminLoginPage() {
         setShowSetup2FA(true);
       } else {
         toast.success(language === 'es' ? '¡Bienvenido Admin!' : 'Welcome Admin!');
-        navigate('/admin');
+        navigate('/bv-ctrl');
       }
     } catch (error) {
       const message = error.response?.data?.detail || (language === 'es' ? 'Credenciales inválidas' : 'Invalid credentials');

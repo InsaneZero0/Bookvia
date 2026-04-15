@@ -356,9 +356,9 @@ export default function AdminDashboardPage() {
   const [myPermissions, setMyPermissions] = useState(null);
 
   useEffect(() => {
-    if (!isAuthenticated || !isAdmin) { navigate('/admin/login'); return; }
+    if (!isAuthenticated || !isAdmin) { navigate('/bv-ctrl/login'); return; }
     // Super admin (role=admin) requires 2FA, staff does not
-    if (isSuperAdmin && !user?.totp_enabled) { navigate('/admin/login'); return; }
+    if (isSuperAdmin && !user?.totp_enabled) { navigate('/bv-ctrl/login'); return; }
     loadOverview();
     loadMyPermissions();
   }, [isAuthenticated, isAdmin, isSuperAdmin, user]);

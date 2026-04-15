@@ -117,11 +117,10 @@ function App() {
               <Route path="/nosotros" element={<Layout><AboutPage /></Layout>} />
               <Route path="/about" element={<Layout><AboutPage /></Layout>} />
               
-              {/* Admin Pages - MUST be before dynamic SEO routes */}
-              <Route path="/admin/login" element={<AdminLoginPage />} />
-              <Route path="/admin" element={<Layout showFooter={false}><AdminDashboardPage /></Layout>} />
-              {/* Catch-all for any undefined admin sub-routes */}
-              <Route path="/admin/*" element={<AdminLoginPage />} />
+              {/* Admin Pages */}
+              <Route path="/bv-ctrl/login" element={<AdminLoginPage />} />
+              <Route path="/bv-ctrl" element={<Layout showFooter={false}><AdminDashboardPage /></Layout>} />
+              <Route path="/bv-ctrl/*" element={<AdminLoginPage />} />
               
               {/* SEO Pages - Dynamic country/city/category routes */}
               {/* Order matters: more specific routes first */}
