@@ -61,11 +61,18 @@ function BusinessDetailDialog({ businessId, open, onClose, onApprove, onReject, 
   const [allCategories, setAllCategories] = useState([]);
   const [reassignCatId, setReassignCatId] = useState('');
   const [reassigning, setReassigning] = useState(false);
+  const [showNewCat, setShowNewCat] = useState(false);
+  const [newCatName, setNewCatName] = useState('');
+  const [newCatNameEn, setNewCatNameEn] = useState('');
+  const [creatingCat, setCreatingCat] = useState(false);
 
   useEffect(() => {
     if (!open || !businessId) return;
     setLoading(true);
     setReassignCatId('');
+    setShowNewCat(false);
+    setNewCatName('');
+    setNewCatNameEn('');
     Promise.all([
       adminAPI.getBusinessDetail(businessId),
       adminAPI.getCategories(),
@@ -75,6 +82,13 @@ function BusinessDetailDialog({ businessId, open, onClose, onApprove, onReject, 
     }).catch(() => toast.error('Error loading detail'))
       .finally(() => setLoading(false));
   }, [open, businessId]);
+
+  const reloadCategories = async () => {
+    try {
+      const res = await adminAPI.getCategories();
+      setAllCategories(res.data || []);
+    } catch { /* silent */ }
+  };
 
   const handleReassign = async () => {
     if (!reassignCatId || !businessId) return;
@@ -87,6 +101,25 @@ function BusinessDetailDialog({ businessId, open, onClose, onApprove, onReject, 
       setReassignCatId('');
     } catch { toast.error('Error'); }
     setReassigning(false);
+  };
+
+  const handleCreateAndAssign = async () => {
+    if (!newCatName.trim() || !businessId) return;
+    setCreatingCat(true);
+    try {
+      const slug = newCatName.toLowerCase().replace(/[áàä]/g,'a').replace(/[éèë]/g,'e').replace(/[íìï]/g,'i').replace(/[óòö]/g,'o').replace(/[úùü]/g,'u').replace(/ñ/g,'n').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      const catRes = await adminAPI.createCategory({ name_es: newCatName, name_en: newCatNameEn || newCatName, slug, icon: 'Sparkles' });
+      const newCatId = catRes.data.id;
+      await adminAPI.reassignCategory(businessId, newCatId);
+      toast.success(t('Categoria creada y asignada', 'Category created and assigned'));
+      const detailRes = await adminAPI.getBusinessDetail(businessId);
+      setDetail(detailRes.data);
+      await reloadCategories();
+      setShowNewCat(false);
+      setNewCatName('');
+      setNewCatNameEn('');
+    } catch (e) { toast.error(e.response?.data?.detail || 'Error'); }
+    setCreatingCat(false);
   };
 
   const biz = detail?.business;
@@ -149,24 +182,61 @@ function BusinessDetailDialog({ businessId, open, onClose, onApprove, onReject, 
             )}
 
             {/* Reassign category */}
-            <div className="flex items-end gap-2 mt-2">
-              <div className="flex-1">
-                <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('Reasignar categoria', 'Reassign category')}</label>
-                <select
-                  value={reassignCatId}
-                  onChange={e => setReassignCatId(e.target.value)}
-                  className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm"
-                  data-testid="reassign-category-select"
-                >
-                  <option value="">{t('Seleccionar...', 'Select...')}</option>
-                  {allCategories.filter(c => c.id !== biz.category_id).map(c => (
-                    <option key={c.id} value={c.id}>{c.name_es} ({c.name_en})</option>
-                  ))}
-                </select>
+            <div className="mt-2 space-y-2">
+              <div className="flex items-end gap-2">
+                <div className="flex-1">
+                  <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('Asignar categoria', 'Assign category')}</label>
+                  <select
+                    value={reassignCatId}
+                    onChange={e => setReassignCatId(e.target.value)}
+                    className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm"
+                    data-testid="reassign-category-select"
+                  >
+                    <option value="">{t('Seleccionar existente...', 'Select existing...')}</option>
+                    {allCategories.filter(c => c.id !== biz.category_id).map(c => (
+                      <option key={c.id} value={c.id}>{c.name_es} ({c.name_en})</option>
+                    ))}
+                  </select>
+                </div>
+                <Button size="sm" onClick={handleReassign} disabled={!reassignCatId || reassigning} data-testid="reassign-category-btn">
+                  {reassigning ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                </Button>
               </div>
-              <Button size="sm" onClick={handleReassign} disabled={!reassignCatId || reassigning} data-testid="reassign-category-btn">
-                {reassigning ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-              </Button>
+              
+              {/* Create new category inline */}
+              {!showNewCat ? (
+                <Button size="sm" variant="outline" className="w-full text-xs" onClick={() => setShowNewCat(true)} data-testid="new-category-inline-btn">
+                  <Plus className="h-3 w-3 mr-1" />{t('Crear nueva categoria y asignar', 'Create new category and assign')}
+                </Button>
+              ) : (
+                <div className="p-3 rounded-lg border bg-muted/30 space-y-2" data-testid="new-category-inline-form">
+                  <div className="grid grid-cols-2 gap-2">
+                    <Input
+                      placeholder={t('Nombre ES', 'Name ES')}
+                      value={newCatName}
+                      onChange={e => setNewCatName(e.target.value)}
+                      className="h-8 text-sm"
+                      data-testid="new-cat-name-es"
+                    />
+                    <Input
+                      placeholder={t('Nombre EN', 'Name EN')}
+                      value={newCatNameEn}
+                      onChange={e => setNewCatNameEn(e.target.value)}
+                      className="h-8 text-sm"
+                      data-testid="new-cat-name-en"
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <Button size="sm" onClick={handleCreateAndAssign} disabled={!newCatName.trim() || creatingCat} className="flex-1 text-xs" data-testid="create-assign-btn">
+                      {creatingCat ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Plus className="h-3 w-3 mr-1" />}
+                      {t('Crear y asignar', 'Create & assign')}
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => { setShowNewCat(false); setNewCatName(''); setNewCatNameEn(''); }} className="text-xs">
+                      {t('Cancelar', 'Cancel')}
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
             {biz.description && (
               <div className="mt-2 p-3 rounded-lg bg-muted/50 text-sm">{biz.description}</div>

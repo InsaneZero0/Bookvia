@@ -285,6 +285,7 @@ async def seed_data():
         {"id": generate_id(), "name_es": "Automotriz", "name_en": "Automotive", "slug": "automotriz", "icon": "Car", "image_url": "https://images.unsplash.com/photo-1487754180451-c456f719a1fc?auto=format&fit=crop&q=80&w=2070"},
         {"id": generate_id(), "name_es": "Veterinaria", "name_en": "Veterinary", "slug": "veterinaria", "icon": "PawPrint", "image_url": "https://images.unsplash.com/photo-1628009368231-7bb7cfcb0def?auto=format&fit=crop&q=80&w=2070"},
         {"id": generate_id(), "name_es": "Salones, Servicios y Eventos", "name_en": "Venues, Services & Events", "slug": "salones-servicios-eventos", "icon": "PartyPopper", "image_url": "https://images.unsplash.com/photo-1519167758481-83f550bb49b3?auto=format&fit=crop&q=80&w=2070"},
+        {"id": generate_id(), "name_es": "Otro", "name_en": "Other", "slug": "otro", "icon": "HelpCircle", "image_url": ""},
     ]
     
     # Upsert categories by slug (idempotent - adds new ones, updates existing)

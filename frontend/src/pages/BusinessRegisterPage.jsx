@@ -614,7 +614,7 @@ export default function BusinessRegisterPage() {
                   </div>
 
                   {/* Custom category description when "Otro" is selected */}
-                  {categories.find(c => c.id === formData.category_id && c.slug === 'otro') && (
+                  {categories.find(c => c.id === formData.category_id && (c.slug === 'otro' || c.name_es?.toLowerCase() === 'otro' || c.name_en?.toLowerCase() === 'other')) && (
                     <div className="space-y-2 p-3 rounded-lg bg-amber-50 dark:bg-amber-900/10 border border-amber-200" data-testid="custom-category-field">
                       <Label>{language === 'es' ? 'Describe tu tipo de negocio' : 'Describe your business type'} *</Label>
                       <Input
