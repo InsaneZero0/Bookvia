@@ -77,6 +77,7 @@ export default function BusinessRegisterPage() {
     phone: '',
     description: '',
     category_id: '',
+    custom_category_description: '',
     // Location
     address: '',
     address_number: '',
@@ -385,6 +386,7 @@ export default function BusinessRegisterPage() {
         cover_photo: coverUrl,
         latitude: formData.latitude,
         longitude: formData.longitude,
+        custom_category_description: formData.custom_category_description || '',
       };
       
       await businessRegister(registerData);
@@ -609,8 +611,26 @@ export default function BusinessRegisterPage() {
                     </Select>
                   </div>
 
+                  {/* Custom category description when "Otro" is selected */}
+                  {categories.find(c => c.id === formData.category_id && c.slug === 'otro') && (
+                    <div className="space-y-2 p-3 rounded-lg bg-amber-50 dark:bg-amber-900/10 border border-amber-200" data-testid="custom-category-field">
+                      <Label>{language === 'es' ? 'Describe tu tipo de negocio' : 'Describe your business type'} *</Label>
+                      <Input
+                        placeholder={language === 'es' ? 'Ej: Tatuajes y piercings, Cerrajeria, etc.' : 'Ex: Tattoos and piercings, Locksmith, etc.'}
+                        value={formData.custom_category_description}
+                        onChange={e => setFormData(prev => ({ ...prev, custom_category_description: e.target.value }))}
+                        data-testid="custom-category-input"
+                      />
+                      <p className="text-xs text-amber-700 dark:text-amber-400">
+                        {language === 'es'
+                          ? 'Tu solicitud sera revisada y se te asignara la categoria correcta.'
+                          : 'Your request will be reviewed and you will be assigned the correct category.'}
+                      </p>
+                    </div>
+                  )}
+
                   <div className="space-y-2">
-                    <Label htmlFor="description">{language === 'es' ? 'Descripción' : 'Description'} *</Label>
+                    <Label htmlFor="description">{language === 'es' ? 'Descripcion' : 'Description'} *</Label>
                     <Textarea
                       id="description"
                       name="description"

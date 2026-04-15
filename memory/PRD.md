@@ -84,6 +84,7 @@ Auth Social: Emergent-managed Google Auth (solo clientes)
 - [x] Audit logs
 - [x] Estadisticas de Crecimiento: 3 graficas interactivas (Registros por mes, Reservas por mes, Ingresos por mes) con recharts
 - [x] Gestion de Categorias CRUD: crear, editar, eliminar categorias con auto-slug, validacion de slug duplicado, bloqueo de eliminacion si negocios la usan
+- [x] Categoria "Otro": cuando un negocio no encuentra su categoria, selecciona "Otro" + describe su tipo de negocio. Admin puede reasignar la categoria desde el detalle del negocio
 - [x] Configuracion de Plataforma: comision %, precio suscripcion, dias prueba, deposito minimo (con validacion de rangos)
 - [x] Panel de Soporte: lista de tickets con stats, filtros, busqueda, conversacion admin-usuario, responder y cerrar tickets
 - [x] Rankings: top negocios por reservas, mejor calificados, ciudades mas activas, categorias populares (solo negocios aprobados)

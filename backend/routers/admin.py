@@ -1569,3 +1569,37 @@ async def get_my_permissions(token_data: TokenData = Depends(require_admin)):
         "role_label": user.get("role_label", "staff") if user else "staff",
         "is_super_admin": False,
     }
+
+
+
+# ============ REASSIGN CATEGORY ============
+
+@router.put("/businesses/{business_id}/reassign-category")
+async def reassign_business_category(
+    business_id: str, category_id: str, request: Request,
+    token_data: TokenData = Depends(require_admin)
+):
+    """Reassign a business to a different category."""
+    business = await db.businesses.find_one({"id": business_id})
+    if not business:
+        raise HTTPException(status_code=404, detail="Business not found")
+    category = await db.categories.find_one({"id": category_id}, {"_id": 0})
+    if not category:
+        raise HTTPException(status_code=404, detail="Category not found")
+
+    old_cat_id = business.get("category_id", "")
+    await db.businesses.update_one(
+        {"id": business_id},
+        {"$set": {
+            "category_id": category_id,
+            "category": category.get("name_es", ""),
+        }}
+    )
+    await create_audit_log(
+        admin_id=token_data.user_id, admin_email=token_data.email,
+        action=AuditAction.BUSINESS_APPROVE, target_type="business",
+        target_id=business_id,
+        details={"action": "reassign_category", "old_category_id": old_cat_id, "new_category_id": category_id, "new_category_name": category.get("name_es")},
+        request=request
+    )
+    return {"message": "Category reassigned", "new_category": category.get("name_es")}

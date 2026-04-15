@@ -104,6 +104,7 @@ class BusinessCreate(BaseModel):
     plan_type: str = "basic"
     logo_url: Optional[str] = None
     cover_photo: Optional[str] = None
+    custom_category_description: Optional[str] = None
 
 class BusinessResponse(BaseModel):
     model_config = ConfigDict(extra="ignore")
