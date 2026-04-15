@@ -381,12 +381,12 @@ export default function HomePage() {
           <div className="grid lg:grid-cols-2 gap-10 items-center">
             <div className="space-y-5">
               <Badge className="bg-[#F05D5E]/20 text-[#F05D5E] border-[#F05D5E]/30">
-                {language === 'es' ? 'Para negocios' : 'For businesses'}
+                {language === 'es' ? 'Tienes un negocio?' : 'Have a business?'}
               </Badge>
               <h2 className="text-2xl sm:text-3xl lg:text-4xl font-heading font-bold tracking-tight leading-tight">
                 {language === 'es'
-                  ? 'Tienes un negocio? Unete a Bookvia'
-                  : 'Have a business? Join Bookvia'}
+                  ? 'Haz crecer tu negocio con Bookvia'
+                  : 'Grow your business with Bookvia'}
               </h2>
               <p className="text-slate-400 leading-relaxed">
                 {language === 'es'
@@ -407,8 +407,8 @@ export default function HomePage() {
                 ))}
               </div>
               <div className="flex flex-col sm:flex-row gap-3 pt-2">
-                <Button size="lg" className="btn-coral" onClick={() => navigate('/business/register')} data-testid="register-business-cta">
-                  {language === 'es' ? 'Registrar mi negocio' : 'Register my business'}
+                <Button size="lg" className="btn-coral" onClick={() => navigate('/for-business')} data-testid="register-business-cta">
+                  {language === 'es' ? 'Conocer mas' : 'Learn more'}
                   <ArrowRight className="ml-2 h-5 w-5" />
                 </Button>
               </div>
