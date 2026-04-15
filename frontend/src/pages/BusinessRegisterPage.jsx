@@ -582,10 +582,10 @@ export default function BusinessRegisterPage() {
                         name="phone"
                         type="tel"
                         inputMode="numeric"
-                        placeholder="55 1234 5678"
+                        placeholder={formData.country === 'US' ? '(555) 123-4567' : '55 1234 5678'}
                         value={phoneNumber}
                         onChange={handlePhoneChange}
-                        maxLength={10}
+                        maxLength={formData.country === 'US' ? 10 : 10}
                         className="flex-1 h-full px-3 text-sm bg-transparent outline-none placeholder:text-muted-foreground"
                         required
                         data-testid="business-phone-input"
@@ -786,7 +786,7 @@ export default function BusinessRegisterPage() {
                       </div>
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="address_number">{language === 'es' ? 'Núm. ext.' : 'Number'}</Label>
+                      <Label htmlFor="address_number">{formData.country === 'US' ? 'Suite / Apt' : (language === 'es' ? 'Num. ext.' : 'Number')}</Label>
                       <Input
                         id="address_number"
                         name="address_number"
@@ -816,11 +816,11 @@ export default function BusinessRegisterPage() {
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="state">{language === 'es' ? 'Estado / Región' : 'State / Region'} *</Label>
+                      <Label htmlFor="state">{language === 'es' ? 'Estado / Region' : 'State'} *</Label>
                       <Input
                         id="state"
                         name="state"
-                        placeholder={language === 'es' ? 'Ej: Jalisco' : 'E.g.: California'}
+                        placeholder={formData.country === 'US' ? 'California' : (language === 'es' ? 'Ej: Jalisco' : 'E.g.: California')}
                         value={formData.state}
                         onChange={handleChange}
                         className="h-12"
@@ -832,14 +832,15 @@ export default function BusinessRegisterPage() {
 
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <Label htmlFor="zip_code">{language === 'es' ? 'Código postal' : 'ZIP code'} *</Label>
+                      <Label htmlFor="zip_code">{language === 'es' ? 'Codigo postal' : 'ZIP code'} *</Label>
                       <Input
                         id="zip_code"
                         name="zip_code"
-                        placeholder="01234"
+                        placeholder={formData.country === 'US' ? '90210' : '01234'}
                         value={formData.zip_code}
                         onChange={handleChange}
                         className="h-12"
+                        maxLength={formData.country === 'US' ? 5 : 5}
                         required
                         data-testid="zipcode-input"
                       />
@@ -904,17 +905,17 @@ export default function BusinessRegisterPage() {
                     <AlertTriangle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
                     <p className="text-sm text-amber-700 dark:text-amber-300">
                       {language === 'es'
-                        ? 'Estos documentos son necesarios para verificar tu negocio. Tu información está protegida.'
+                        ? 'Estos documentos son necesarios para verificar tu negocio. Tu informacion esta protegida.'
                         : 'These documents are required to verify your business. Your information is protected.'}
                     </p>
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="legal_name">{language === 'es' ? 'Razón social' : 'Legal name'} *</Label>
+                    <Label htmlFor="legal_name">{language === 'es' ? 'Razon social' : 'Legal / Business name'} *</Label>
                     <Input
                       id="legal_name"
                       name="legal_name"
-                      placeholder={language === 'es' ? 'Spa Relax SA de CV' : 'Relax Spa LLC'}
+                      placeholder={formData.country === 'US' ? 'Relax Spa LLC' : (language === 'es' ? 'Spa Relax SA de CV' : 'Relax Spa LLC')}
                       value={formData.legal_name}
                       onChange={handleChange}
                       className="h-12"
@@ -923,29 +924,36 @@ export default function BusinessRegisterPage() {
                     />
                   </div>
 
+                  {/* Tax ID: RFC for MX, EIN/SSN for US */}
                   <div className="space-y-2">
-                    <Label htmlFor="rfc">RFC *</Label>
+                    <Label htmlFor="rfc">{formData.country === 'US' ? 'EIN or SSN' : 'RFC'} *</Label>
                     <Input
                       id="rfc"
                       name="rfc"
-                      placeholder="XAXX010101000"
+                      placeholder={formData.country === 'US' ? '12-3456789' : 'XAXX010101000'}
                       value={formData.rfc}
-                      onChange={(e) => setFormData(prev => ({ ...prev, rfc: e.target.value.toUpperCase() }))}
-                      className="h-12 uppercase"
-                      maxLength={13}
+                      onChange={(e) => setFormData(prev => ({ ...prev, rfc: formData.country === 'US' ? e.target.value : e.target.value.toUpperCase() }))}
+                      className={`h-12 ${formData.country !== 'US' ? 'uppercase' : ''}`}
+                      maxLength={formData.country === 'US' ? 11 : 13}
                       required
                       data-testid="rfc-input"
                     />
                     <p className="text-xs text-muted-foreground">
-                      {language === 'es' 
-                        ? '12 caracteres para personas morales, 13 para personas físicas'
-                        : '12 characters for companies, 13 for individuals'}
+                      {formData.country === 'US'
+                        ? 'EIN (9 digits, XX-XXXXXXX) or SSN for sole proprietors'
+                        : (language === 'es' 
+                          ? '12 caracteres para personas morales, 13 para personas fisicas'
+                          : '12 characters for companies, 13 for individuals')}
                     </p>
                   </div>
 
-                  {/* INE Upload */}
+                  {/* ID Upload: INE for MX, Driver's License/ID for US */}
                   <div className="space-y-2">
-                    <Label>{language === 'es' ? 'Identificación oficial (INE/Pasaporte)' : 'Official ID (INE/Passport)'} *</Label>
+                    <Label>
+                      {formData.country === 'US'
+                        ? "Driver's License or State ID *"
+                        : (language === 'es' ? 'Identificacion oficial (INE/Pasaporte)' : 'Official ID (INE/Passport)')} *
+                    </Label>
                     <div 
                       className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors
                         ${ineFile ? 'border-green-500 bg-green-50 dark:bg-green-900/20' : 'border-muted-foreground/25 hover:border-[#F05D5E]'}`}
@@ -1091,25 +1099,29 @@ export default function BusinessRegisterPage() {
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="clabe">CLABE {language === 'es' ? 'interbancaria' : 'number'} *</Label>
+                    <Label htmlFor="clabe">
+                      {formData.country === 'US' ? 'Routing number + Account number' : (language === 'es' ? 'CLABE interbancaria' : 'CLABE number')} *
+                    </Label>
                     <div className="relative">
                       <CreditCard className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
                       <Input
                         id="clabe"
                         name="clabe"
-                        placeholder="012345678901234567"
+                        placeholder={formData.country === 'US' ? '021000021 / 123456789' : '012345678901234567'}
                         value={formData.clabe}
-                        onChange={(e) => setFormData(prev => ({ ...prev, clabe: e.target.value.replace(/\D/g, '') }))}
+                        onChange={(e) => setFormData(prev => ({ ...prev, clabe: formData.country === 'US' ? e.target.value : e.target.value.replace(/\D/g, '') }))}
                         className="pl-10 h-12"
-                        maxLength={18}
+                        maxLength={formData.country === 'US' ? 25 : 18}
                         required
                         data-testid="clabe-input"
                       />
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      {language === 'es' 
-                        ? 'Aquí recibirás tus pagos (18 dígitos)'
-                        : 'This is where you\'ll receive payments (18 digits)'}
+                      {formData.country === 'US'
+                        ? 'Routing number (9 digits) / Account number - where you\'ll receive payments'
+                        : (language === 'es' 
+                          ? 'Aqui recibiras tus pagos (18 digitos)'
+                          : 'This is where you\'ll receive payments (18 digits)')}
                     </p>
                   </div>
 
