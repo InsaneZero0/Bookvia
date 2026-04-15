@@ -249,32 +249,19 @@ export default function HomePage() {
               </div>
             </form>
 
-            {/* Real Stats */}
-            {platformStats && (platformStats.businesses > 0 || platformStats.bookings > 0) && (
-              <div className="flex flex-wrap justify-center gap-6 sm:gap-10 mt-8 pt-6">
-                {platformStats.businesses > 0 && (
-                  <div className="text-center">
-                    <p className="text-2xl sm:text-3xl font-bold">{platformStats.businesses}+</p>
-                    <p className="text-xs sm:text-sm text-white/50">{language === 'es' ? 'Negocios' : 'Businesses'}</p>
-                  </div>
-                )}
-                {platformStats.bookings > 0 && (
-                  <div className="text-center">
-                    <p className="text-2xl sm:text-3xl font-bold">{platformStats.bookings}+</p>
-                    <p className="text-xs sm:text-sm text-white/50">{language === 'es' ? 'Reservas' : 'Bookings'}</p>
-                  </div>
-                )}
-                {platformStats.avg_rating > 0 && (
-                  <div className="text-center">
-                    <p className="text-2xl sm:text-3xl font-bold flex items-center justify-center gap-1">
-                      <Star className="h-5 w-5 fill-yellow-400 text-yellow-400" />
-                      {platformStats.avg_rating}
-                    </p>
-                    <p className="text-xs sm:text-sm text-white/50">{language === 'es' ? 'Calificacion promedio' : 'Avg rating'}</p>
-                  </div>
-                )}
-              </div>
-            )}
+            {/* Quick trust indicators */}
+            <div className="flex flex-wrap justify-center gap-4 sm:gap-6 mt-8 pt-6">
+              {[
+                { icon: Shield, text: language === 'es' ? 'Pagos seguros' : 'Secure payments' },
+                { icon: Clock, text: language === 'es' ? 'Reserva 24/7' : 'Book 24/7' },
+                { icon: CheckCircle2, text: language === 'es' ? 'Confirmacion inmediata' : 'Instant confirmation' },
+              ].map(item => (
+                <div key={item.text} className="flex items-center gap-2 text-white/60 text-sm">
+                  <item.icon className="h-4 w-4 text-[#F05D5E]" />
+                  <span>{item.text}</span>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
 
