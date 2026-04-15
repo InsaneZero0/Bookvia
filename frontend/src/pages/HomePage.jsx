@@ -434,32 +434,31 @@ export default function HomePage() {
       </section>
 
       {/* ═══ Popular Cities ═════════════════════════════ */}
-      {cities.length > 0 && (
+      {cities.filter(c => c.business_count > 0).length > 0 && (
         <section className="section-padding bg-muted/30" data-testid="cities-section">
           <div className="container-app">
-            <div className="text-center mb-10">
+            <div className="text-center mb-8">
               <h2 className="text-2xl sm:text-3xl font-heading font-bold tracking-tight">
-                {language === 'es' ? `Ciudades en ${countryName}` : `Cities in ${countryName}`}
+                {language === 'es' ? 'Ciudades disponibles' : 'Available cities'}
               </h2>
               <p className="text-muted-foreground mt-2 text-sm">
                 {language === 'es' ? 'Descubre los mejores servicios en tu ciudad' : 'Discover the best services in your city'}
               </p>
             </div>
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 md:gap-4">
-              {cities.map(c => (
+            <div className="flex flex-wrap justify-center gap-3">
+              {cities.filter(c => c.business_count > 0).slice(0, 8).map(c => (
                 <Card key={c.slug || c.name}
-                  className="group cursor-pointer overflow-hidden border-0 shadow-sm hover:shadow-lg transition-all duration-300 hover:-translate-y-1"
+                  className="group cursor-pointer border-0 shadow-sm hover:shadow-lg transition-all duration-300 hover:-translate-y-1"
                   onClick={() => navigate(`/search?city=${c.name}`)}
                   data-testid={`city-card-${c.slug || c.name}`}>
-                  <div className="p-4 text-center space-y-1">
-                    <div className="w-10 h-10 mx-auto rounded-full bg-[#F05D5E]/10 flex items-center justify-center mb-2">
-                      <MapPin className="h-5 w-5 text-[#F05D5E]" />
+                  <div className="px-5 py-3 flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-full bg-[#F05D5E]/10 flex items-center justify-center shrink-0">
+                      <MapPin className="h-4 w-4 text-[#F05D5E]" />
                     </div>
-                    <h3 className="font-heading font-bold text-sm">{c.name}</h3>
-                    {c.state && <p className="text-xs text-muted-foreground">{c.state}</p>}
-                    {c.business_count > 0 && (
-                      <p className="text-xs text-[#F05D5E] font-medium">{c.business_count}+ {language === 'es' ? 'negocios' : 'businesses'}</p>
-                    )}
+                    <div>
+                      <h3 className="font-heading font-bold text-sm">{c.name}</h3>
+                      <p className="text-xs text-muted-foreground">{c.business_count} {language === 'es' ? 'negocios' : 'businesses'}</p>
+                    </div>
                   </div>
                 </Card>
               ))}
