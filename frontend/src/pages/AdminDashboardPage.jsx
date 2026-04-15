@@ -58,15 +58,36 @@ function SectionTitle({ children }) {
 function BusinessDetailDialog({ businessId, open, onClose, onApprove, onReject, t, language }) {
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [allCategories, setAllCategories] = useState([]);
+  const [reassignCatId, setReassignCatId] = useState('');
+  const [reassigning, setReassigning] = useState(false);
 
   useEffect(() => {
     if (!open || !businessId) return;
     setLoading(true);
-    adminAPI.getBusinessDetail(businessId)
-      .then(res => setDetail(res.data))
-      .catch(() => toast.error('Error loading detail'))
+    setReassignCatId('');
+    Promise.all([
+      adminAPI.getBusinessDetail(businessId),
+      adminAPI.getCategories(),
+    ]).then(([detailRes, catsRes]) => {
+      setDetail(detailRes.data);
+      setAllCategories(catsRes.data || []);
+    }).catch(() => toast.error('Error loading detail'))
       .finally(() => setLoading(false));
   }, [open, businessId]);
+
+  const handleReassign = async () => {
+    if (!reassignCatId || !businessId) return;
+    setReassigning(true);
+    try {
+      await adminAPI.reassignCategory(businessId, reassignCatId);
+      toast.success(t('Categoria reasignada', 'Category reassigned'));
+      const res = await adminAPI.getBusinessDetail(businessId);
+      setDetail(res.data);
+      setReassignCatId('');
+    } catch { toast.error('Error'); }
+    setReassigning(false);
+  };
 
   const biz = detail?.business;
   const owner = detail?.owner;
@@ -118,6 +139,35 @@ function BusinessDetailDialog({ businessId, open, onClose, onApprove, onReject, 
             <InfoRow icon={Globe} label={t('Sitio web', 'Website')} value={biz.website} />
             <InfoRow icon={MapPin} label={t('Direccion', 'Address')} value={[biz.address, biz.exterior_number, biz.colony, biz.city, biz.state].filter(Boolean).join(', ')} />
             <InfoRow icon={Briefcase} label={t('Categoria', 'Category')} value={biz.category} />
+
+            {/* Custom category description + reassign */}
+            {biz.custom_category_description && (
+              <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-900/10 border border-amber-200 mt-2">
+                <p className="text-xs font-medium text-amber-800 mb-1">{t('Tipo de negocio solicitado', 'Requested business type')}:</p>
+                <p className="text-sm font-semibold text-amber-900">{biz.custom_category_description}</p>
+              </div>
+            )}
+
+            {/* Reassign category */}
+            <div className="flex items-end gap-2 mt-2">
+              <div className="flex-1">
+                <label className="text-xs font-medium text-muted-foreground mb-1 block">{t('Reasignar categoria', 'Reassign category')}</label>
+                <select
+                  value={reassignCatId}
+                  onChange={e => setReassignCatId(e.target.value)}
+                  className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm"
+                  data-testid="reassign-category-select"
+                >
+                  <option value="">{t('Seleccionar...', 'Select...')}</option>
+                  {allCategories.filter(c => c.id !== biz.category_id).map(c => (
+                    <option key={c.id} value={c.id}>{c.name_es} ({c.name_en})</option>
+                  ))}
+                </select>
+              </div>
+              <Button size="sm" onClick={handleReassign} disabled={!reassignCatId || reassigning} data-testid="reassign-category-btn">
+                {reassigning ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+              </Button>
+            </div>
             {biz.description && (
               <div className="mt-2 p-3 rounded-lg bg-muted/50 text-sm">{biz.description}</div>
             )}

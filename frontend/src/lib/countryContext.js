@@ -13,12 +13,20 @@ export function CountryProvider({ children }) {
   });
 
   useEffect(() => {
-    // Auto-detect on first visit (only if user hasn't manually selected)
     const hasManual = localStorage.getItem(STORAGE_KEY + '_manual');
     if (!hasManual) {
       detectCountry().then(code => {
-        setCountryCode(code);
-        try { localStorage.setItem(STORAGE_KEY, code); } catch {}
+        // Only accept MX or US
+        const validCode = (code === 'US' || code === 'MX') ? code : 'MX';
+        setCountryCode(validCode);
+        try { localStorage.setItem(STORAGE_KEY, validCode); } catch {}
+        // Auto-set language based on detected country
+        const langKey = 'bookvia-language';
+        const hasManualLang = localStorage.getItem(langKey + '_manual');
+        if (!hasManualLang) {
+          const lang = validCode === 'US' ? 'en' : 'es';
+          try { localStorage.setItem(langKey, lang); } catch {}
+        }
       });
     }
   }, []);
@@ -29,6 +37,11 @@ export function CountryProvider({ children }) {
       localStorage.setItem(STORAGE_KEY, code);
       localStorage.setItem(STORAGE_KEY + '_manual', 'true');
     } catch {}
+    // Also switch language when manually changing country
+    const lang = code === 'US' ? 'en' : 'es';
+    try { localStorage.setItem('bookvia-language', lang); } catch {}
+    // Reload to apply language change
+    window.location.reload();
   };
 
   const country = getCountryByCode(countryCode) || getCountryByCode('MX');

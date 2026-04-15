@@ -5,172 +5,97 @@ import { useI18n } from '@/lib/i18n';
 
 export default function TermsPage() {
   const { language } = useI18n();
+  const t = (es, en) => language === 'es' ? es : en;
 
-  useEffect(() => {
-    window.scrollTo(0, 0);
-  }, []);
+  useEffect(() => { window.scrollTo(0, 0); }, []);
 
   return (
     <div className="min-h-screen pt-20 bg-background">
-      {/* Header */}
       <section className="bg-gradient-to-br from-slate-900 to-slate-800 text-white py-16">
         <div className="container-app">
           <nav className="flex items-center text-sm text-slate-400 mb-4">
-            <Link to="/" className="hover:text-white">Inicio</Link>
+            <Link to="/" className="hover:text-white">{t('Inicio', 'Home')}</Link>
             <ChevronRight className="w-4 h-4 mx-2" />
-            <span className="text-white">Términos y Condiciones</span>
+            <span className="text-white">{t('Terminos y Condiciones', 'Terms & Conditions')}</span>
           </nav>
           <div className="flex items-center gap-4">
-            <div className="w-16 h-16 bg-coral/20 rounded-full flex items-center justify-center">
-              <FileText className="w-8 h-8 text-coral" />
+            <div className="w-16 h-16 bg-[#F05D5E]/20 rounded-full flex items-center justify-center">
+              <FileText className="w-8 h-8 text-[#F05D5E]" />
             </div>
             <div>
-              <h1 className="text-3xl md:text-4xl font-heading font-bold">
-                Términos y Condiciones
-              </h1>
-              <p className="text-slate-400 mt-1">
-                Última actualización: Marzo 2026
-              </p>
+              <h1 className="text-3xl md:text-4xl font-heading font-bold">{t('Terminos y Condiciones', 'Terms & Conditions')}</h1>
+              <p className="text-slate-400 mt-1">{t('Ultima actualizacion: Abril 2026', 'Last updated: April 2026')}</p>
             </div>
           </div>
         </div>
       </section>
+      <section className="container-app py-12">
+        <div className="prose prose-slate dark:prose-invert max-w-3xl">
+          <h2>{t('1. Aceptacion de los Terminos', '1. Acceptance of Terms')}</h2>
+          <p>{t(
+            'Al acceder y utilizar la plataforma Bookvia ("la Plataforma"), usted acepta cumplir con estos Terminos y Condiciones. Si no esta de acuerdo con alguna parte de estos terminos, no debera utilizar nuestros servicios.',
+            'By accessing and using the Bookvia platform ("the Platform"), you agree to comply with these Terms and Conditions. If you do not agree with any part of these terms, you should not use our services.'
+          )}</p>
 
-      {/* Content */}
-      <section className="py-12">
-        <div className="container-app max-w-4xl">
-          <div className="prose prose-slate dark:prose-invert max-w-none">
-            
-            <h2>1. Aceptación de los Términos</h2>
-            <p>
-              Al acceder y utilizar la plataforma Bookvia ("la Plataforma"), usted acepta estar sujeto a estos 
-              Términos y Condiciones de Uso. Si no está de acuerdo con alguna parte de estos términos, 
-              no podrá acceder al servicio.
-            </p>
+          <h2>{t('2. Descripcion del Servicio', '2. Description of Service')}</h2>
+          <p>{t(
+            'Bookvia es una plataforma de reservas en linea que conecta a usuarios con negocios de servicios profesionales. La Plataforma facilita la busqueda, comparacion y reserva de servicios en Mexico y Estados Unidos.',
+            'Bookvia is an online booking platform that connects users with professional service businesses. The Platform facilitates searching, comparing, and booking services in Mexico and the United States.'
+          )}</p>
 
-            <h2>2. Descripción del Servicio</h2>
-            <p>
-              Bookvia es una plataforma de marketplace que conecta a usuarios con proveedores de servicios 
-              profesionales. Facilitamos la reservación de citas y el procesamiento de pagos, pero no somos 
-              responsables directos de los servicios prestados por los negocios registrados.
-            </p>
+          <h2>{t('3. Registro y Cuentas', '3. Registration and Accounts')}</h2>
+          <p>{t(
+            'Los usuarios deben proporcionar informacion veraz y actualizada al registrarse. Cada usuario es responsable de mantener la confidencialidad de su cuenta y contrasena. Los negocios deben proporcionar documentacion legal valida para su verificacion.',
+            'Users must provide truthful and up-to-date information when registering. Each user is responsible for maintaining the confidentiality of their account and password. Businesses must provide valid legal documentation for verification.'
+          )}</p>
 
-            <h2>3. Registro de Cuenta</h2>
-            <p>Para utilizar ciertos servicios de la Plataforma, debe:</p>
-            <ul>
-              <li>Ser mayor de 18 años o contar con autorización de un tutor legal</li>
-              <li>Proporcionar información veraz, precisa y actualizada</li>
-              <li>Mantener la confidencialidad de su contraseña</li>
-              <li>Notificarnos inmediatamente sobre cualquier uso no autorizado de su cuenta</li>
-            </ul>
+          <h2>{t('4. Reservas y Pagos', '4. Bookings and Payments')}</h2>
+          <p>{t(
+            'Las reservas estan sujetas a la disponibilidad del negocio. Los anticipos se procesan a traves de Stripe y estan sujetos a las politicas de cancelacion de cada negocio. Bookvia cobra una comision por cada transaccion procesada.',
+            'Bookings are subject to business availability. Deposits are processed through Stripe and are subject to each business\'s cancellation policy. Bookvia charges a commission on each processed transaction.'
+          )}</p>
 
-            <h2>4. Reservaciones y Pagos</h2>
-            <h3>4.1 Proceso de Reservación</h3>
-            <p>
-              Al realizar una reservación a través de Bookvia, usted acepta las políticas específicas del 
-              negocio seleccionado, incluyendo sus políticas de cancelación y reembolso.
-            </p>
-            
-            <h3>4.2 Anticipos y Depósitos</h3>
-            <p>
-              Algunos negocios requieren un anticipo para confirmar la reservación. Este anticipo será 
-              procesado a través de Stripe, nuestro procesador de pagos seguro. Las políticas de reembolso 
-              del anticipo varían según cada negocio.
-            </p>
-            
-            <h3>4.3 Comisiones</h3>
-            <p>
-              Bookvia cobra una comisión del 8% sobre las transacciones procesadas a través de la plataforma. 
-              Esta comisión es asumida por los negocios, no por los usuarios finales.
-            </p>
+          <h2>{t('5. Cancelaciones y Reembolsos', '5. Cancellations and Refunds')}</h2>
+          <p>{t(
+            'Las politicas de cancelacion varian segun cada negocio. Los reembolsos se procesan de acuerdo con la politica establecida por el negocio al momento de la reserva. Bookvia no es responsable de disputas entre usuarios y negocios.',
+            'Cancellation policies vary by business. Refunds are processed according to the policy established by the business at the time of booking. Bookvia is not responsible for disputes between users and businesses.'
+          )}</p>
 
-            <h2>5. Cancelaciones y Reembolsos</h2>
-            <p>
-              Las políticas de cancelación son establecidas por cada negocio individual. Le recomendamos 
-              revisar estas políticas antes de confirmar su reservación. En general:
-            </p>
-            <ul>
-              <li>Cancelaciones con más de 24 horas de anticipación: reembolso completo del anticipo</li>
-              <li>Cancelaciones con menos de 24 horas: sujeto a la política del negocio</li>
-              <li>No presentarse (no-show): el anticipo generalmente no es reembolsable</li>
-            </ul>
+          <h2>{t('6. Suscripciones para Negocios', '6. Business Subscriptions')}</h2>
+          <p>{t(
+            'Los negocios registrados pagan una suscripcion mensual para acceder a la plataforma. La suscripcion se renueva automaticamente y puede ser cancelada en cualquier momento. No hay contratos a largo plazo.',
+            'Registered businesses pay a monthly subscription to access the platform. The subscription renews automatically and can be cancelled at any time. There are no long-term contracts.'
+          )}</p>
 
-            <h2>6. Obligaciones de los Negocios</h2>
-            <p>Los negocios registrados en Bookvia se comprometen a:</p>
-            <ul>
-              <li>Proporcionar información precisa sobre sus servicios y precios</li>
-              <li>Cumplir con las citas reservadas</li>
-              <li>Mantener los estándares de calidad y profesionalismo</li>
-              <li>Cumplir con todas las leyes y regulaciones aplicables</li>
-              <li>Contar con los permisos y licencias necesarios para operar</li>
-            </ul>
+          <h2>{t('7. Conducta del Usuario', '7. User Conduct')}</h2>
+          <p>{t(
+            'Los usuarios se comprometen a: no publicar contenido falso o enganoso, no hacer reservas fraudulentas, respetar a los profesionales y otros usuarios, y no utilizar la plataforma para fines ilegales.',
+            'Users agree to: not publish false or misleading content, not make fraudulent bookings, respect professionals and other users, and not use the platform for illegal purposes.'
+          )}</p>
 
-            <h2>7. Conducta del Usuario</h2>
-            <p>Al usar la Plataforma, usted acepta no:</p>
-            <ul>
-              <li>Violar ninguna ley o regulación aplicable</li>
-              <li>Proporcionar información falsa o engañosa</li>
-              <li>Interferir con el funcionamiento de la Plataforma</li>
-              <li>Acosar, amenazar o discriminar a otros usuarios o negocios</li>
-              <li>Utilizar la Plataforma para fines fraudulentos</li>
-            </ul>
+          <h2>{t('8. Propiedad Intelectual', '8. Intellectual Property')}</h2>
+          <p>{t(
+            'Todo el contenido de Bookvia, incluyendo marca, logotipo, diseno y codigo, es propiedad de Bookvia. Los negocios conservan los derechos sobre su contenido publicado.',
+            'All Bookvia content, including brand, logo, design, and code, is the property of Bookvia. Businesses retain rights to their published content.'
+          )}</p>
 
-            <h2>8. Propiedad Intelectual</h2>
-            <p>
-              Todo el contenido de la Plataforma, incluyendo pero no limitado a textos, gráficos, logos, 
-              imágenes y software, es propiedad de Bookvia o sus licenciantes y está protegido por las 
-              leyes de propiedad intelectual.
-            </p>
+          <h2>{t('9. Limitacion de Responsabilidad', '9. Limitation of Liability')}</h2>
+          <p>{t(
+            'Bookvia actua como intermediario entre usuarios y negocios. No somos responsables de la calidad de los servicios prestados por los negocios, ni de danos directos o indirectos derivados del uso de la plataforma.',
+            'Bookvia acts as an intermediary between users and businesses. We are not responsible for the quality of services provided by businesses, nor for direct or indirect damages resulting from the use of the platform.'
+          )}</p>
 
-            <h2>9. Limitación de Responsabilidad</h2>
-            <p>
-              Bookvia actúa únicamente como intermediario entre usuarios y negocios. No somos responsables de:
-            </p>
-            <ul>
-              <li>La calidad de los servicios prestados por los negocios</li>
-              <li>Disputas entre usuarios y negocios</li>
-              <li>Daños directos, indirectos o consecuentes derivados del uso de la Plataforma</li>
-              <li>Interrupciones del servicio por causas ajenas a nuestro control</li>
-            </ul>
+          <h2>{t('10. Modificaciones', '10. Modifications')}</h2>
+          <p>{t(
+            'Bookvia se reserva el derecho de modificar estos terminos en cualquier momento. Los cambios seran notificados a los usuarios registrados por correo electronico.',
+            'Bookvia reserves the right to modify these terms at any time. Changes will be notified to registered users via email.'
+          )}</p>
 
-            <h2>10. Resolución de Disputas</h2>
-            <p>
-              En caso de disputas entre usuarios y negocios, Bookvia puede actuar como mediador, pero 
-              la resolución final es responsabilidad de las partes involucradas. Para disputas con Bookvia, 
-              se aplicará la jurisdicción de los tribunales de la Ciudad de México.
-            </p>
-
-            <h2>11. Modificaciones</h2>
-            <p>
-              Nos reservamos el derecho de modificar estos Términos y Condiciones en cualquier momento. 
-              Los cambios entrarán en vigor inmediatamente después de su publicación en la Plataforma. 
-              Su uso continuado constituye la aceptación de los términos modificados.
-            </p>
-
-            <h2>12. Terminación</h2>
-            <p>
-              Podemos suspender o terminar su acceso a la Plataforma en cualquier momento, con o sin causa, 
-              con o sin previo aviso. Usted puede cancelar su cuenta en cualquier momento contactándonos.
-            </p>
-
-            <h2>13. Contacto</h2>
-            <p>
-              Para preguntas sobre estos Términos y Condiciones, contáctenos en:
-            </p>
-            <ul>
-              <li>Email: <a href="mailto:legal@bookvia.com" className="text-coral hover:underline">legal@bookvia.com</a></li>
-              <li>Teléfono: +52 55 1234 5678</li>
-              <li>Dirección: Ciudad de México, México</li>
-            </ul>
-
-            <div className="mt-12 p-6 bg-muted/50 rounded-xl">
-              <p className="text-sm text-muted-foreground">
-                Al utilizar Bookvia, usted reconoce haber leído, entendido y aceptado estos 
-                Términos y Condiciones en su totalidad.
-              </p>
-            </div>
-
-          </div>
+          <h2>{t('11. Contacto', '11. Contact')}</h2>
+          <p>{t(
+            'Para cualquier consulta sobre estos terminos, contactanos en: hola@bookvia.app',
+            'For any questions about these terms, contact us at: hola@bookvia.app'
+          )}</p>
         </div>
       </section>
     </div>

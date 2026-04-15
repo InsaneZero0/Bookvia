@@ -324,6 +324,7 @@ export const adminAPI = {
   deleteStaff: (id) => api.delete(`/admin/staff/${id}`),
   resetStaffPassword: (id) => api.put(`/admin/staff/${id}/reset-password`),
   getMyPermissions: () => api.get('/admin/my-permissions'),
+  reassignCategory: (bizId, categoryId) => api.put(`/admin/businesses/${bizId}/reassign-category`, null, { params: { category_id: categoryId } }),
 };
 
 // Utility API

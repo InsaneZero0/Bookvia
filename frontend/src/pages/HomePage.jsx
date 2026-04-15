@@ -9,12 +9,12 @@ import { useCountry } from '@/lib/countryContext';
 import { categoriesAPI, businessesAPI, utilityAPI } from '@/lib/api';
 import {
   Search, MapPin, ArrowRight, CheckCircle2,
-  Sparkles, Heart, Dumbbell, Flower2, Scale, Briefcase, Car, PawPrint, PartyPopper,
+  Sparkles, Heart, Dumbbell, Flower2, Scale, Briefcase, Car, PawPrint, PartyPopper, HelpCircle,
   Star, Shield, Clock, Users, CalendarIcon, ChevronDown, Building2, Zap
 } from 'lucide-react';
 
 const iconMap = {
-  Sparkles, Heart, Dumbbell, Flower2, Scale, Briefcase, Car, PawPrint, PartyPopper,
+  Sparkles, Heart, Dumbbell, Flower2, Scale, Briefcase, Car, PawPrint, PartyPopper, HelpCircle,
 };
 
 export default function HomePage() {
