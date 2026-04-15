@@ -87,6 +87,7 @@ export default function BusinessRegisterPage() {
     zip_code: '',
     latitude: null,
     longitude: null,
+    timezone: '',
     // Documents
     rfc: '',
     legal_name: '',
@@ -387,6 +388,7 @@ export default function BusinessRegisterPage() {
         latitude: formData.latitude,
         longitude: formData.longitude,
         custom_category_description: formData.custom_category_description || '',
+        timezone: formData.timezone || (formData.country === 'US' ? 'America/New_York' : 'America/Mexico_City'),
       };
       
       await businessRegister(registerData);
@@ -869,6 +871,29 @@ export default function BusinessRegisterPage() {
                       </Select>
                     </div>
                   </div>
+
+                  {/* Timezone selector for USA */}
+                  {formData.country === 'US' && (
+                    <div className="space-y-2">
+                      <Label>{language === 'es' ? 'Zona horaria' : 'Timezone'} *</Label>
+                      <Select
+                        value={formData.timezone}
+                        onValueChange={(value) => setFormData(prev => ({ ...prev, timezone: value }))}
+                      >
+                        <SelectTrigger className="h-12" data-testid="timezone-select">
+                          <SelectValue placeholder={language === 'es' ? 'Selecciona zona horaria' : 'Select timezone'} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="America/New_York">Eastern (New York, Miami, Atlanta)</SelectItem>
+                          <SelectItem value="America/Chicago">Central (Chicago, Houston, Dallas)</SelectItem>
+                          <SelectItem value="America/Denver">Mountain (Denver, Phoenix, Salt Lake)</SelectItem>
+                          <SelectItem value="America/Los_Angeles">Pacific (Los Angeles, San Francisco, Seattle)</SelectItem>
+                          <SelectItem value="America/Anchorage">Alaska</SelectItem>
+                          <SelectItem value="Pacific/Honolulu">Hawaii</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
                 </div>
               )}
 
