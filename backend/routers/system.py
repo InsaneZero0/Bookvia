@@ -59,6 +59,22 @@ from services.storage import init_storage, put_object, get_object, generate_uplo
 
 router = APIRouter(tags=["System"])
 
+
+@router.get("/platform-stats")
+async def get_platform_stats():
+    """Public platform stats for homepage."""
+    businesses = await db.businesses.count_documents({"status": "approved"})
+    bookings = await db.bookings.count_documents({})
+    reviews = await db.reviews.count_documents({})
+    if reviews > 0:
+        avg_pipe = [{"$group": {"_id": None, "avg": {"$avg": "$rating"}}}]
+        avg_res = await db.reviews.aggregate(avg_pipe).to_list(1)
+        avg_rating = round(avg_res[0]["avg"], 1) if avg_res else 0
+    else:
+        avg_rating = 0
+    return {"businesses": businesses, "bookings": bookings, "reviews": reviews, "avg_rating": avg_rating}
+
+
 @router.get("/health", tags=["System"])
 async def health_check():
     """Health check endpoint with configuration status"""

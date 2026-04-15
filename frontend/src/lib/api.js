@@ -333,6 +333,7 @@ export const utilityAPI = {
   seedCountries: () => api.post('/seed/countries'),
   createSupportTicket: (data) => api.post('/support/tickets', data),
   getMyTickets: (params) => api.get('/support/my-tickets', { params }),
+  getPlatformStats: () => api.get('/platform-stats'),
 };
 
 // SEO API

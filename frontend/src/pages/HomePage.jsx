@@ -1,10 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { BusinessCard } from '@/components/BusinessCard';
 import { useI18n } from '@/lib/i18n';
 import { useCountry } from '@/lib/countryContext';
@@ -12,19 +10,12 @@ import { categoriesAPI, businessesAPI, utilityAPI } from '@/lib/api';
 import {
   Search, MapPin, ArrowRight, CheckCircle2,
   Sparkles, Heart, Dumbbell, Flower2, Scale, Briefcase, Car, PawPrint, PartyPopper,
-  Star, Shield, Clock, Users, Quote, CalendarIcon, ChevronDown
+  Star, Shield, Clock, Users, CalendarIcon, ChevronDown, Building2, Zap
 } from 'lucide-react';
 
 const iconMap = {
   Sparkles, Heart, Dumbbell, Flower2, Scale, Briefcase, Car, PawPrint, PartyPopper,
 };
-
-const TESTIMONIALS = [
-  { name: 'Maria Garcia', city: 'CDMX', rating: 5, avatar: 'MG', text: 'Encontre mi estilista ideal en minutos. La reserva fue super facil y el recordatorio automatico me salvo de olvidarla.', service: 'Corte y Color' },
-  { name: 'Carlos Rodriguez', city: 'Guadalajara', rating: 5, avatar: 'CR', text: 'Como dueno de barberia, Bookvia me ayudo a organizar mis citas y reducir las cancelaciones. Mis clientes aman la facilidad.', service: 'Barberia Premium' },
-  { name: 'Ana Martinez', city: 'Monterrey', rating: 5, avatar: 'AM', text: 'La mejor plataforma para reservar servicios de belleza. Puedo ver resenas, precios y disponibilidad todo en un mismo lugar.', service: 'Spa Facial' },
-  { name: 'Roberto Sanchez', city: 'Puebla', rating: 5, avatar: 'RS', text: 'Reserve un masaje a domicilio en 2 minutos. El terapeuta llego puntual y todo fue perfecto. Repetire seguro.', service: 'Masaje Relajante' },
-];
 
 export default function HomePage() {
   const { t, language } = useI18n();
@@ -42,10 +33,10 @@ export default function HomePage() {
   const [citySearch, setCitySearch] = useState('');
   const [heroCities, setHeroCities] = useState([]);
   const [filteredCategories, setFilteredCategories] = useState(null);
+  const [platformStats, setPlatformStats] = useState(null);
   const serviceRef = useRef(null);
   const cityRef = useRef(null);
 
-  // Close dropdowns on outside click
   useEffect(() => {
     const handler = (e) => {
       if (serviceRef.current && !serviceRef.current.contains(e.target)) setServiceOpen(false);
@@ -55,7 +46,6 @@ export default function HomePage() {
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
-  // Load cities with businesses for the hero dropdown
   useEffect(() => {
     const baseUrl = process.env.REACT_APP_BACKEND_URL || '';
     fetch(`${baseUrl}/api/cities?country_code=${countryCode}&with_businesses=true`)
@@ -64,7 +54,6 @@ export default function HomePage() {
       .catch(() => setHeroCities([]));
   }, [countryCode]);
 
-  // When city changes, load categories filtered by that city
   useEffect(() => {
     if (!city) { setFilteredCategories(null); return; }
     const baseUrl = process.env.REACT_APP_BACKEND_URL || '';
@@ -74,22 +63,22 @@ export default function HomePage() {
       .catch(() => setFilteredCategories(null));
   }, [city, countryCode]);
 
-  useEffect(() => {
-    loadData();
-  }, [countryCode]);
+  useEffect(() => { loadData(); }, [countryCode]);
 
   const loadData = async () => {
     try {
       await utilityAPI.seed().catch(() => {});
       const baseUrl = process.env.REACT_APP_BACKEND_URL || '';
-      const [catRes, bizRes, citiesRes] = await Promise.all([
+      const [catRes, bizRes, citiesRes, statsRes] = await Promise.all([
         categoriesAPI.getAll(),
         businessesAPI.getFeatured(8, countryCode),
         fetch(`${baseUrl}/api/cities?country_code=${countryCode}`).then(r => r.ok ? r.json() : []).catch(() => []),
+        utilityAPI.getPlatformStats().catch(() => ({ data: null })),
       ]);
       setCategories(Array.isArray(catRes.data) ? catRes.data : []);
       setFeaturedBusinesses(Array.isArray(bizRes.data) ? bizRes.data : []);
       setCities(Array.isArray(citiesRes) ? citiesRes : []);
+      if (statsRes?.data) setPlatformStats(statsRes.data);
     } catch {
       setCategories([]);
       setFeaturedBusinesses([]);
@@ -102,7 +91,6 @@ export default function HomePage() {
   const handleSearch = (e) => {
     e.preventDefault();
     const params = new URLSearchParams();
-    // If a category was selected from dropdown, use category_id filter (not text search)
     if (selectedCategoryId) {
       params.set('category', selectedCategoryId);
     } else if (searchQuery) {
@@ -116,30 +104,29 @@ export default function HomePage() {
 
   const steps = [
     { icon: Search, title: language === 'es' ? 'Busca' : 'Search', desc: language === 'es' ? 'Encuentra el servicio que necesitas cerca de ti' : 'Find the service you need near you' },
-    { icon: CheckCircle2, title: language === 'es' ? 'Elige' : 'Choose', desc: language === 'es' ? 'Compara precios, reseñas y disponibilidad' : 'Compare prices, reviews and availability' },
+    { icon: CheckCircle2, title: language === 'es' ? 'Elige' : 'Choose', desc: language === 'es' ? 'Compara precios, resenas y disponibilidad' : 'Compare prices, reviews and availability' },
     { icon: CalendarIcon, title: language === 'es' ? 'Reserva' : 'Book', desc: language === 'es' ? 'Selecciona fecha, hora y profesional' : 'Select date, time and professional' },
-    { icon: Sparkles, title: language === 'es' ? 'Disfruta' : 'Enjoy', desc: language === 'es' ? 'Acude a tu cita y deja tu reseña' : 'Attend your appointment and leave a review' },
+    { icon: Sparkles, title: language === 'es' ? 'Disfruta' : 'Enjoy', desc: language === 'es' ? 'Acude a tu cita y deja tu resena' : 'Attend your appointment and leave a review' },
   ];
 
   return (
     <div className="min-h-screen" data-testid="home-page">
 
-      {/* Hero */}
-      <section className="relative min-h-[92vh] flex items-center justify-center overflow-hidden bg-slate-900">
+      {/* ═══ Hero ═══════════════════════════════════ */}
+      <section className="relative min-h-[88vh] flex items-center justify-center overflow-hidden bg-slate-900">
         <div className="absolute inset-0">
           <img
             src="https://images.unsplash.com/photo-1584884013345-88b9cf247c0c?auto=format&fit=crop&q=80&w=2070"
             alt=""
-            className="w-full h-full object-cover opacity-30"
+            className="w-full h-full object-cover opacity-25"
             loading="eager"
           />
           <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-slate-900/90 to-[#F05D5E]/20" />
         </div>
-        {/* Decorative elements */}
         <div className="absolute top-20 left-10 w-72 h-72 bg-[#F05D5E]/10 rounded-full blur-3xl" />
         <div className="absolute bottom-20 right-10 w-96 h-96 bg-[#F05D5E]/5 rounded-full blur-3xl" />
 
-        <div className="relative z-10 container-app text-center text-white py-20">
+        <div className="relative z-10 container-app text-center text-white py-16">
           <div className="max-w-4xl mx-auto space-y-6 animate-fade-in">
             <Badge className="bg-white/10 text-white border-white/20 text-sm px-4 py-1.5 backdrop-blur-sm">
               {language === 'es' ? `La plataforma #1 de reservas en ${countryName}` : `#1 Booking platform in ${countryName}`}
@@ -155,7 +142,7 @@ export default function HomePage() {
 
             <p className="text-base sm:text-lg text-white/70 max-w-2xl mx-auto">
               {language === 'es'
-                ? 'Belleza, salud, fitness y más. Encuentra, compara y reserva con los mejores profesionales de tu ciudad.'
+                ? 'Belleza, salud, fitness y mas. Encuentra, compara y reserva con los mejores profesionales de tu ciudad.'
                 : 'Beauty, health, fitness and more. Find, compare and book with the best professionals in your city.'}
             </p>
 
@@ -163,81 +150,62 @@ export default function HomePage() {
             <form onSubmit={handleSearch} className="mt-10">
               <div className="bg-white/10 backdrop-blur-xl rounded-2xl p-2 max-w-3xl mx-auto border border-white/20">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-                  {/* City Dropdown (first) — Smart: only cities with businesses + search */}
+                  {/* City Dropdown */}
                   <div className="relative" ref={cityRef}>
-                    <button
-                      type="button"
+                    <button type="button"
                       onClick={() => { setCityOpen(!cityOpen); setServiceOpen(false); setTimeout(() => { const el = document.getElementById('hero-city-search'); if (el) el.focus(); }, 100); }}
                       className="flex items-center gap-2 w-full h-14 px-4 bg-white rounded-xl text-left"
-                      data-testid="search-city-input"
-                    >
+                      data-testid="search-city-input">
                       <MapPin className="h-5 w-5 text-slate-400 shrink-0" />
                       <span className={`flex-1 text-sm truncate ${city ? 'text-slate-900' : 'text-slate-400'}`}>
-                        {city || (language === 'es' ? '¿En qué ciudad?' : 'Which city?')}
+                        {city || (language === 'es' ? 'En que ciudad?' : 'Which city?')}
                       </span>
                       <ChevronDown className={`h-4 w-4 text-slate-400 transition-transform ${cityOpen ? 'rotate-180' : ''}`} />
                     </button>
                     {cityOpen && (
                       <div className="absolute z-50 mt-1 w-full bg-white rounded-xl shadow-xl border max-h-72 overflow-hidden animate-in fade-in-0 zoom-in-95">
-                        {/* Search input */}
                         <div className="p-2 border-b sticky top-0 bg-white">
-                          <input
-                            id="hero-city-search"
-                            type="text"
+                          <input id="hero-city-search" type="text"
                             placeholder={language === 'es' ? 'Buscar ciudad...' : 'Search city...'}
-                            value={citySearch}
-                            onChange={e => setCitySearch(e.target.value)}
+                            value={citySearch} onChange={e => setCitySearch(e.target.value)}
                             className="w-full px-3 py-2 text-sm text-slate-900 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#F05D5E]/30"
-                            data-testid="city-search-input"
-                            autoComplete="off"
-                          />
+                            data-testid="city-search-input" autoComplete="off" />
                         </div>
                         <div className="overflow-y-auto max-h-52">
-                          <button
-                            type="button"
+                          <button type="button"
                             onClick={() => { setCity(''); setSearchQuery(''); setCityOpen(false); setCitySearch(''); }}
-                            className={`flex items-center gap-3 w-full px-4 py-3 text-sm hover:bg-slate-50 transition-colors text-left border-b ${!city ? 'bg-slate-50 font-medium' : ''}`}
-                          >
+                            className={`flex items-center gap-3 w-full px-4 py-3 text-sm hover:bg-slate-50 transition-colors text-left border-b ${!city ? 'bg-slate-50 font-medium' : ''}`}>
                             <MapPin className="h-4 w-4 text-slate-400" />
                             <span className="text-slate-700">{language === 'es' ? 'Todas las ciudades' : 'All cities'}</span>
                           </button>
                           {heroCities
                             .filter(c => !citySearch || c.name.toLowerCase().includes(citySearch.toLowerCase()))
                             .map(c => (
-                            <button
-                              key={c.slug || c.name}
-                              type="button"
+                            <button key={c.slug || c.name} type="button"
                               onClick={() => { setCity(c.name); setCityOpen(false); setCitySearch(''); setSearchQuery(''); }}
-                              className={`flex items-center gap-3 w-full px-4 py-3 text-sm hover:bg-slate-50 transition-colors text-left ${
-                                city === c.name ? 'bg-slate-50 font-medium' : ''
-                              }`}
-                              data-testid={`search-city-${c.slug || c.name}`}
-                            >
+                              className={`flex items-center gap-3 w-full px-4 py-3 text-sm hover:bg-slate-50 transition-colors text-left ${city === c.name ? 'bg-slate-50 font-medium' : ''}`}
+                              data-testid={`search-city-${c.slug || c.name}`}>
                               <MapPin className="h-4 w-4 text-[#F05D5E]" />
                               <span className="flex-1 text-slate-700">{c.name}</span>
                               <span className="text-xs text-slate-400">{c.business_count} {language === 'es' ? 'negocios' : 'biz'}</span>
                             </button>
                           ))}
                           {heroCities.filter(c => !citySearch || c.name.toLowerCase().includes(citySearch.toLowerCase())).length === 0 && (
-                            <div className="py-4 text-center text-sm text-slate-400">
-                              {language === 'es' ? 'No se encontraron ciudades' : 'No cities found'}
-                            </div>
+                            <div className="py-4 text-center text-sm text-slate-400">{language === 'es' ? 'No se encontraron ciudades' : 'No cities found'}</div>
                           )}
                         </div>
                       </div>
                     )}
                   </div>
-                  {/* Service Dropdown (second) — Smart: filtered by selected city */}
+                  {/* Service Dropdown */}
                   <div className="relative" ref={serviceRef}>
-                    <button
-                      type="button"
+                    <button type="button"
                       onClick={() => { setServiceOpen(!serviceOpen); setCityOpen(false); }}
                       className="flex items-center gap-2 w-full h-14 px-4 bg-white rounded-xl text-left"
-                      data-testid="search-service-input"
-                    >
+                      data-testid="search-service-input">
                       <Search className="h-5 w-5 text-slate-400 shrink-0" />
                       <span className={`flex-1 text-sm truncate ${searchQuery ? 'text-slate-900' : 'text-slate-400'}`}>
-                        {searchQuery || (language === 'es' ? '¿Qué servicio buscas?' : 'What service?')}
+                        {searchQuery || (language === 'es' ? 'Que servicio buscas?' : 'What service?')}
                       </span>
                       <ChevronDown className={`h-4 w-4 text-slate-400 transition-transform ${serviceOpen ? 'rotate-180' : ''}`} />
                     </button>
@@ -245,26 +213,19 @@ export default function HomePage() {
                       const displayCats = filteredCategories !== null ? filteredCategories : categories;
                       return displayCats.length > 0 ? (
                       <div className="absolute z-50 mt-1 w-full bg-white rounded-xl shadow-xl border max-h-64 overflow-y-auto animate-in fade-in-0 zoom-in-95">
-                        <button
-                          type="button"
+                        <button type="button"
                           onClick={() => { setSearchQuery(''); setSelectedCategoryId(''); setServiceOpen(false); }}
-                          className={`flex items-center gap-3 w-full px-4 py-2.5 text-sm hover:bg-slate-50 transition-colors text-left border-b ${!searchQuery ? 'bg-slate-50 font-medium' : ''}`}
-                        >
+                          className={`flex items-center gap-3 w-full px-4 py-2.5 text-sm hover:bg-slate-50 transition-colors text-left border-b ${!searchQuery ? 'bg-slate-50 font-medium' : ''}`}>
                           <Search className="h-4 w-4 text-slate-400 shrink-0" />
                           <span className="text-slate-700">{language === 'es' ? 'Todos los servicios' : 'All services'}</span>
                         </button>
                         {displayCats.map(cat => {
                           const IconComp = iconMap[cat.icon] || Sparkles;
                           return (
-                          <button
-                            key={cat.id}
-                            type="button"
+                          <button key={cat.id} type="button"
                             onClick={() => { setSearchQuery(language === 'es' ? cat.name_es : cat.name_en); setSelectedCategoryId(cat.id); setServiceOpen(false); }}
-                            className={`flex items-center gap-3 w-full px-4 py-2.5 text-sm hover:bg-slate-50 transition-colors text-left ${
-                              searchQuery === (language === 'es' ? cat.name_es : cat.name_en) ? 'bg-slate-50 font-medium' : ''
-                            }`}
-                            data-testid={`search-cat-${cat.id}`}
-                          >
+                            className={`flex items-center gap-3 w-full px-4 py-2.5 text-sm hover:bg-slate-50 transition-colors text-left ${searchQuery === (language === 'es' ? cat.name_es : cat.name_en) ? 'bg-slate-50 font-medium' : ''}`}
+                            data-testid={`search-cat-${cat.id}`}>
                             <div className="w-7 h-7 rounded-lg bg-[#F05D5E]/10 flex items-center justify-center shrink-0">
                               <IconComp className="h-3.5 w-3.5 text-[#F05D5E]" />
                             </div>
@@ -276,34 +237,28 @@ export default function HomePage() {
                       </div>
                       ) : (
                       <div className="absolute z-50 mt-1 w-full bg-white rounded-xl shadow-xl border animate-in fade-in-0 zoom-in-95">
-                        <div className="py-4 text-center text-sm text-slate-400">
-                          {language === 'es' ? 'No hay servicios en esta ciudad' : 'No services in this city'}
-                        </div>
+                        <div className="py-4 text-center text-sm text-slate-400">{language === 'es' ? 'No hay servicios en esta ciudad' : 'No services in this city'}</div>
                       </div>
                       );
                     })()}
                   </div>
                   <Button type="submit" className="h-14 btn-coral text-base rounded-xl" data-testid="search-submit-button">
-                    {language === 'es' ? 'Buscar' : 'Search'}
-                    <ArrowRight className="ml-2 h-5 w-5" />
+                    {language === 'es' ? 'Buscar' : 'Search'} <ArrowRight className="ml-2 h-5 w-5" />
                   </Button>
                 </div>
               </div>
             </form>
 
-            {/* Trust Stats */}
-            <div className="flex flex-wrap justify-center gap-6 sm:gap-10 mt-8 pt-6">
+            {/* Quick trust indicators */}
+            <div className="flex flex-wrap justify-center gap-4 sm:gap-6 mt-8 pt-6">
               {[
-                { value: '2,500+', label: language === 'es' ? 'Negocios' : 'Businesses' },
-                { value: '50,000+', label: language === 'es' ? 'Reservas' : 'Bookings' },
-                { value: '4.8', label: language === 'es' ? 'Calificación promedio' : 'Avg rating', icon: Star },
-              ].map(stat => (
-                <div key={stat.label} className="text-center">
-                  <p className="text-2xl sm:text-3xl font-bold flex items-center justify-center gap-1">
-                    {stat.icon && <stat.icon className="h-5 w-5 fill-yellow-400 text-yellow-400" />}
-                    {stat.value}
-                  </p>
-                  <p className="text-xs sm:text-sm text-white/50">{stat.label}</p>
+                { icon: Shield, text: language === 'es' ? 'Pagos seguros' : 'Secure payments' },
+                { icon: Clock, text: language === 'es' ? 'Reserva 24/7' : 'Book 24/7' },
+                { icon: CheckCircle2, text: language === 'es' ? 'Confirmacion inmediata' : 'Instant confirmation' },
+              ].map(item => (
+                <div key={item.text} className="flex items-center gap-2 text-white/60 text-sm">
+                  <item.icon className="h-4 w-4 text-[#F05D5E]" />
+                  <span>{item.text}</span>
                 </div>
               ))}
             </div>
@@ -317,61 +272,12 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ═══ Categories ═══════════════════════════════ */}
-      <section className="section-padding bg-background" data-testid="categories-section">
-        <div className="container-app">
-          <div className="text-center mb-10">
-            <h2 className="text-2xl sm:text-3xl font-heading font-bold tracking-tight">
-              {language === 'es' ? 'Explora por categoría' : 'Explore by category'}
-            </h2>
-            <p className="text-muted-foreground mt-2 text-sm">
-              {language === 'es' ? 'Encuentra exactamente lo que necesitas' : 'Find exactly what you need'}
-            </p>
-          </div>
-
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6">
-            {(Array.isArray(categories) ? categories : []).map((category, index) => {
-              const IconComponent = iconMap[category.icon] || Sparkles;
-              return (
-                <Card
-                  key={category.id}
-                  className="group cursor-pointer overflow-hidden border-0 shadow-sm hover:shadow-lg transition-all duration-300 hover:-translate-y-1"
-                  onClick={() => navigate(`/search?category=${category.id}`)}
-                  data-testid={`category-card-${category.slug}`}
-                >
-                  <div className="relative aspect-[4/3] overflow-hidden">
-                    <img
-                      src={category.image_url || 'https://images.unsplash.com/photo-1560066984-138dadb4c035?w=400'}
-                      alt={language === 'es' ? category.name_es : category.name_en}
-                      className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-slate-900/80 via-slate-900/20 to-transparent" />
-                    <div className="absolute bottom-3 left-3 right-3">
-                      <div className="flex items-center gap-2 text-white">
-                        <div className="p-1.5 rounded-lg bg-[#F05D5E]">
-                          <IconComponent className="h-4 w-4" />
-                        </div>
-                        <div>
-                          <h3 className="font-heading font-bold text-sm sm:text-base">
-                            {language === 'es' ? category.name_es : category.name_en}
-                          </h3>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </Card>
-              );
-            })}
-          </div>
-        </div>
-      </section>
-
       {/* ═══ How It Works ═════════════════════════════ */}
-      <section className="section-padding bg-muted/30" data-testid="how-it-works-section">
+      <section className="section-padding bg-background" data-testid="how-it-works-section">
         <div className="container-app">
           <div className="text-center mb-12">
             <h2 className="text-2xl sm:text-3xl font-heading font-bold tracking-tight">
-              {language === 'es' ? '¿Cómo funciona?' : 'How does it work?'}
+              {language === 'es' ? 'Como funciona?' : 'How does it work?'}
             </h2>
             <p className="text-muted-foreground mt-2 text-sm">
               {language === 'es' ? 'Reserva en 4 simples pasos' : 'Book in 4 simple steps'}
@@ -394,6 +300,51 @@ export default function HomePage() {
                 <p className="text-muted-foreground text-xs sm:text-sm leading-relaxed">{step.desc}</p>
               </div>
             ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ═══ Categories ═══════════════════════════════ */}
+      <section className="section-padding bg-muted/30" data-testid="categories-section">
+        <div className="container-app">
+          <div className="text-center mb-10">
+            <h2 className="text-2xl sm:text-3xl font-heading font-bold tracking-tight">
+              {language === 'es' ? 'Explora por categoria' : 'Explore by category'}
+            </h2>
+            <p className="text-muted-foreground mt-2 text-sm">
+              {language === 'es' ? 'Encuentra exactamente lo que necesitas' : 'Find exactly what you need'}
+            </p>
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6">
+            {(Array.isArray(categories) ? categories : []).map((category, index) => {
+              const IconComponent = iconMap[category.icon] || Sparkles;
+              return (
+                <Card key={category.id}
+                  className="group cursor-pointer overflow-hidden border-0 shadow-sm hover:shadow-lg transition-all duration-300 hover:-translate-y-1"
+                  onClick={() => navigate(`/search?category=${category.id}`)}
+                  data-testid={`category-card-${category.slug}`}>
+                  <div className="relative aspect-[4/3] overflow-hidden">
+                    <img
+                      src={category.image_url || 'https://images.unsplash.com/photo-1560066984-138dadb4c035?w=400'}
+                      alt={language === 'es' ? category.name_es : category.name_en}
+                      className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-slate-900/80 via-slate-900/20 to-transparent" />
+                    <div className="absolute bottom-3 left-3 right-3">
+                      <div className="flex items-center gap-2 text-white">
+                        <div className="p-1.5 rounded-lg bg-[#F05D5E]">
+                          <IconComponent className="h-4 w-4" />
+                        </div>
+                        <h3 className="font-heading font-bold text-sm sm:text-base">
+                          {language === 'es' ? category.name_es : category.name_en}
+                        </h3>
+                      </div>
+                    </div>
+                  </div>
+                </Card>
+              );
+            })}
           </div>
         </div>
       </section>
@@ -424,120 +375,38 @@ export default function HomePage() {
         </section>
       )}
 
-      {/* Popular Cities */}
-      {cities.length > 0 && (
-        <section className="section-padding bg-muted/30" data-testid="cities-section">
-          <div className="container-app">
-            <div className="text-center mb-10">
-              <h2 className="text-2xl sm:text-3xl font-heading font-bold tracking-tight">
-                {language === 'es' ? `Ciudades en ${countryName}` : `Cities in ${countryName}`}
-              </h2>
-              <p className="text-muted-foreground mt-2 text-sm">
-                {language === 'es' ? 'Descubre los mejores servicios en tu ciudad' : 'Discover the best services in your city'}
-              </p>
-            </div>
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 md:gap-4">
-              {cities.map(c => (
-                <Card
-                  key={c.slug || c.name}
-                  className="group cursor-pointer overflow-hidden border-0 shadow-sm hover:shadow-lg transition-all duration-300 hover:-translate-y-1"
-                  onClick={() => navigate(`/search?city=${c.name}`)}
-                  data-testid={`city-card-${c.slug || c.name}`}
-                >
-                  <div className="p-4 text-center space-y-1">
-                    <div className="w-10 h-10 mx-auto rounded-full bg-[#F05D5E]/10 flex items-center justify-center mb-2">
-                      <MapPin className="h-5 w-5 text-[#F05D5E]" />
-                    </div>
-                    <h3 className="font-heading font-bold text-sm">{c.name}</h3>
-                    {c.state && <p className="text-xs text-muted-foreground">{c.state}</p>}
-                    {c.business_count > 0 && (
-                      <p className="text-xs text-[#F05D5E] font-medium">{c.business_count}+ {language === 'es' ? 'negocios' : 'businesses'}</p>
-                    )}
-                  </div>
-                </Card>
-              ))}
-            </div>
-          </div>
-        </section>
-      )}
-
-      {/* ═══ Testimonials ═════════════════════════════ */}
-      <section className="section-padding bg-background" data-testid="testimonials-section">
-        <div className="container-app">
-          <div className="text-center mb-10">
-            <h2 className="text-2xl sm:text-3xl font-heading font-bold tracking-tight">
-              {language === 'es' ? 'Lo que dicen nuestros usuarios' : 'What our users say'}
-            </h2>
-            <p className="text-muted-foreground mt-2 text-sm">
-              {language === 'es' ? 'Miles de personas confían en Bookvia' : 'Thousands of people trust Bookvia'}
-            </p>
-          </div>
-
-          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {TESTIMONIALS.map((t, i) => (
-              <Card key={i} className="border-border/60 hover:shadow-md transition-shadow" data-testid={`testimonial-${i}`}>
-                <CardContent className="p-5 space-y-3">
-                  <div className="flex items-center gap-1">
-                    {[...Array(t.rating)].map((_, j) => (
-                      <Star key={j} className="h-3.5 w-3.5 fill-yellow-400 text-yellow-400" />
-                    ))}
-                  </div>
-                  <Quote className="h-5 w-5 text-[#F05D5E]/30" />
-                  <p className="text-sm text-muted-foreground leading-relaxed line-clamp-4">{t.text}</p>
-                  <div className="flex items-center gap-2.5 pt-2 border-t">
-                    <Avatar className="h-8 w-8">
-                      <AvatarFallback className="bg-[#F05D5E]/10 text-[#F05D5E] text-xs font-bold">{t.avatar}</AvatarFallback>
-                    </Avatar>
-                    <div>
-                      <p className="text-xs font-medium">{t.name}</p>
-                      <p className="text-[10px] text-muted-foreground">{t.city} · {t.service}</p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ═══ Trust Badges ═════════════════════════════ */}
-      <section className="py-12 bg-muted/30 border-y" data-testid="trust-section">
-        <div className="container-app">
-          <div className="flex flex-wrap justify-center gap-8 sm:gap-16">
-            {[
-              { icon: Shield, label: language === 'es' ? 'Pagos seguros' : 'Secure payments' },
-              { icon: Star, label: language === 'es' ? 'Reseñas verificadas' : 'Verified reviews' },
-              { icon: Clock, label: language === 'es' ? 'Reserva 24/7' : 'Book 24/7' },
-              { icon: Users, label: language === 'es' ? '+2,500 negocios' : '2,500+ businesses' },
-            ].map(item => (
-              <div key={item.label} className="flex items-center gap-2 text-muted-foreground">
-                <item.icon className="h-5 w-5 text-[#F05D5E]" />
-                <span className="text-sm font-medium">{item.label}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
       {/* ═══ Business CTA ═════════════════════════════ */}
       <section className="section-padding bg-slate-900 text-white" data-testid="business-cta-section">
         <div className="container-app">
           <div className="grid lg:grid-cols-2 gap-10 items-center">
             <div className="space-y-5">
               <Badge className="bg-[#F05D5E]/20 text-[#F05D5E] border-[#F05D5E]/30">
-                {language === 'es' ? 'Gratis para empezar' : 'Free to start'}
+                {language === 'es' ? 'Para negocios' : 'For businesses'}
               </Badge>
               <h2 className="text-2xl sm:text-3xl lg:text-4xl font-heading font-bold tracking-tight leading-tight">
                 {language === 'es'
-                  ? '¿Tienes un negocio? Únete a Bookvia'
+                  ? 'Tienes un negocio? Unete a Bookvia'
                   : 'Have a business? Join Bookvia'}
               </h2>
               <p className="text-slate-400 leading-relaxed">
                 {language === 'es'
-                  ? 'Gestiona tus citas, reduce cancelaciones y haz crecer tu negocio. Miles de profesionales ya confían en nosotros.'
-                  : 'Manage appointments, reduce cancellations and grow your business. Thousands of professionals already trust us.'}
+                  ? 'Gestiona tus citas, reduce cancelaciones y haz crecer tu negocio con la plataforma de reservas mas completa de Mexico.'
+                  : 'Manage appointments, reduce cancellations and grow your business with the most complete booking platform in Mexico.'}
               </p>
-              <div className="flex flex-col sm:flex-row gap-3">
+              <div className="grid grid-cols-2 gap-3 pt-2">
+                {[
+                  { icon: CalendarIcon, text: language === 'es' ? 'Agenda inteligente' : 'Smart scheduling' },
+                  { icon: Users, text: language === 'es' ? 'Gestion de equipo' : 'Team management' },
+                  { icon: Shield, text: language === 'es' ? 'Pagos seguros' : 'Secure payments' },
+                  { icon: Zap, text: language === 'es' ? 'Recordatorios automaticos' : 'Auto reminders' },
+                ].map(feat => (
+                  <div key={feat.text} className="flex items-center gap-2">
+                    <feat.icon className="h-4 w-4 text-[#F05D5E] shrink-0" />
+                    <span className="text-sm text-slate-300">{feat.text}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="flex flex-col sm:flex-row gap-3 pt-2">
                 <Button size="lg" className="btn-coral" onClick={() => navigate('/business/register')} data-testid="register-business-cta">
                   {language === 'es' ? 'Registrar mi negocio' : 'Register my business'}
                   <ArrowRight className="ml-2 h-5 w-5" />
@@ -546,18 +415,60 @@ export default function HomePage() {
             </div>
             <div className="relative hidden lg:block">
               <img src="https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?auto=format&fit=crop&q=80&w=800" alt="" className="rounded-2xl shadow-2xl" />
-              <div className="absolute -bottom-4 -left-4 bg-white rounded-xl p-3 shadow-xl">
-                <div className="flex items-center gap-2">
-                  <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
-                    <CheckCircle2 className="h-5 w-5 text-green-600" />
-                  </div>
-                  <div>
-                    <p className="font-bold text-slate-900 text-sm">+2,500</p>
-                    <p className="text-[10px] text-slate-500">{language === 'es' ? 'Negocios activos' : 'Active businesses'}</p>
-                  </div>
-                </div>
-              </div>
             </div>
+          </div>
+        </div>
+      </section>
+
+      {/* ═══ Popular Cities ═════════════════════════════ */}
+      {cities.filter(c => c.business_count > 0).length > 0 && (
+        <section className="section-padding bg-muted/30" data-testid="cities-section">
+          <div className="container-app">
+            <div className="text-center mb-8">
+              <h2 className="text-2xl sm:text-3xl font-heading font-bold tracking-tight">
+                {language === 'es' ? 'Ciudades disponibles' : 'Available cities'}
+              </h2>
+              <p className="text-muted-foreground mt-2 text-sm">
+                {language === 'es' ? 'Descubre los mejores servicios en tu ciudad' : 'Discover the best services in your city'}
+              </p>
+            </div>
+            <div className="flex flex-wrap justify-center gap-3">
+              {cities.filter(c => c.business_count > 0).slice(0, 8).map(c => (
+                <Card key={c.slug || c.name}
+                  className="group cursor-pointer border-0 shadow-sm hover:shadow-lg transition-all duration-300 hover:-translate-y-1"
+                  onClick={() => navigate(`/search?city=${c.name}`)}
+                  data-testid={`city-card-${c.slug || c.name}`}>
+                  <div className="px-5 py-3 flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-full bg-[#F05D5E]/10 flex items-center justify-center shrink-0">
+                      <MapPin className="h-4 w-4 text-[#F05D5E]" />
+                    </div>
+                    <div>
+                      <h3 className="font-heading font-bold text-sm">{c.name}</h3>
+                      <p className="text-xs text-muted-foreground">{c.business_count} {language === 'es' ? 'negocios' : 'businesses'}</p>
+                    </div>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* ═══ Trust Badges ═════════════════════════════ */}
+      <section className="py-12 bg-background border-y" data-testid="trust-section">
+        <div className="container-app">
+          <div className="flex flex-wrap justify-center gap-8 sm:gap-16">
+            {[
+              { icon: Shield, label: language === 'es' ? 'Pagos seguros con Stripe' : 'Secure Stripe payments' },
+              { icon: Star, label: language === 'es' ? 'Resenas verificadas' : 'Verified reviews' },
+              { icon: Clock, label: language === 'es' ? 'Reserva 24/7' : 'Book 24/7' },
+              { icon: Building2, label: language === 'es' ? 'Negocios verificados' : 'Verified businesses' },
+            ].map(item => (
+              <div key={item.label} className="flex items-center gap-2 text-muted-foreground">
+                <item.icon className="h-5 w-5 text-[#F05D5E]" />
+                <span className="text-sm font-medium">{item.label}</span>
+              </div>
+            ))}
           </div>
         </div>
       </section>
