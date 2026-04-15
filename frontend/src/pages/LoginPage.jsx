@@ -426,6 +426,18 @@ export default function LoginPage() {
                 {t('nav.register')}
               </Link>
             </div>
+
+            {/* Admin login link */}
+            {loginMode === 'user' && (
+              <div className="text-center text-sm border-t border-border pt-4">
+                <Link
+                  to="/bv-ctrl/login"
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  {language === 'es' ? 'Acceso administrador' : 'Admin access'}
+                </Link>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
