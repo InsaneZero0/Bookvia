@@ -104,7 +104,7 @@ export default function HomePage() {
     { icon: Search, title: language === 'es' ? 'Busca' : 'Search', desc: language === 'es' ? 'Encuentra el servicio que necesitas cerca de ti' : 'Find the service you need near you' },
     { icon: CheckCircle2, title: language === 'es' ? 'Elige' : 'Choose', desc: language === 'es' ? 'Compara precios, resenas y disponibilidad' : 'Compare prices, reviews and availability' },
     { icon: CalendarIcon, title: language === 'es' ? 'Reserva' : 'Book', desc: language === 'es' ? 'Selecciona fecha, hora y profesional' : 'Select date, time and professional' },
-    { icon: Sparkles, title: language === 'es' ? 'Disfruta' : 'Enjoy', desc: language === 'es' ? 'Acude a tu cita y deja tu resena' : 'Attend your appointment and leave a review' },
+    { icon: LucideIcons.Sparkles, title: language === 'es' ? 'Disfruta' : 'Enjoy', desc: language === 'es' ? 'Acude a tu cita y deja tu resena' : 'Attend your appointment and leave a review' },
   ];
 
   return (
