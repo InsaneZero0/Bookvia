@@ -14,6 +14,7 @@ import {
 import * as LucideIcons from 'lucide-react';
 
 const getIcon = (name) => LucideIcons[name] || LucideIcons.Sparkles;
+const iconMap = new Proxy({}, { get: (_, name) => getIcon(name) });
 
 export default function HomePage() {
   const { t, language } = useI18n();
