@@ -65,6 +65,31 @@ export function AuthProvider({ children }) {
     return businessData;
   };
 
+  const unifiedLogin = async (email, password) => {
+    const response = await authAPI.unifiedLogin({ email, password });
+    const { token, account_type } = response.data;
+
+    if (account_type === 'business') {
+      const businessData = response.data.business;
+      localStorage.setItem('bookvia-token', token);
+      localStorage.setItem('bookvia-business', JSON.stringify(businessData));
+      localStorage.removeItem('bookvia-manager');
+      const userData = { role: 'business', email, business_id: businessData.id, is_manager: false };
+      localStorage.setItem('bookvia-user', JSON.stringify(userData));
+      setBusiness(businessData);
+      setUser(userData);
+      setIsAuthenticated(true);
+      return { account_type: 'business', data: businessData };
+    } else {
+      const userData = response.data.user;
+      localStorage.setItem('bookvia-token', token);
+      localStorage.setItem('bookvia-user', JSON.stringify(userData));
+      setUser(userData);
+      setIsAuthenticated(true);
+      return { account_type: 'user', data: userData };
+    }
+  };
+
   const managerLogin = async (businessEmail, workerId, pin) => {
     const response = await authAPI.managerLogin({ business_email: businessEmail, worker_id: workerId, pin });
     const { token, business: businessData, manager } = response.data;
@@ -185,6 +210,7 @@ export function AuthProvider({ children }) {
       login,
       register,
       businessLogin,
+      unifiedLogin,
       managerLogin,
       businessRegister,
       adminLogin,

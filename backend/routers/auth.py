@@ -125,7 +125,52 @@ async def login_user(credentials: UserLogin):
     return {"token": token, "user": UserResponse(**user).model_dump()}
 
 
+@router.post("/unified-login", response_model=dict)
+async def unified_login(credentials: UserLogin):
+    """Unified login - auto detects if user or business owner."""
+    email = credentials.email
+    password = credentials.password
 
+    # 1. Try as regular user first
+    user = await db.users.find_one({"email": email, "role": UserRole.USER})
+    if user:
+        if not verify_password(password, user["password_hash"]):
+            raise HTTPException(status_code=401, detail="Invalid credentials")
+        if not user.get("email_verified", True):
+            raise HTTPException(status_code=403, detail="email_not_verified")
+        if user.get("suspended_until"):
+            suspended_until = datetime.fromisoformat(user["suspended_until"])
+            if suspended_until > datetime.now(timezone.utc):
+                raise HTTPException(status_code=403, detail=f"Account suspended until {user['suspended_until']}")
+        token = create_token(user["id"], user["role"], user["email"])
+        return {"token": token, "user": UserResponse(**user).model_dump(), "account_type": "user"}
+
+    # 2. Try as business owner
+    business = await db.businesses.find_one({"email": email})
+    if business:
+        if not verify_password(password, business["password_hash"]):
+            raise HTTPException(status_code=401, detail="Invalid credentials")
+        biz_user = await db.users.find_one({"business_id": business["id"]})
+        if not biz_user:
+            raise HTTPException(status_code=500, detail="User account not found")
+        sub_status = business.get("subscription_status", "none")
+        if sub_status == "none":
+            raise HTTPException(status_code=403, detail="subscription_required")
+        if not biz_user.get("email_verified", True):
+            raise HTTPException(status_code=403, detail="email_not_verified")
+        business.setdefault("description", "")
+        business.setdefault("category_id", "")
+        business.setdefault("address", "")
+        business.setdefault("city", "")
+        business.setdefault("state", "")
+        business.setdefault("country", "MX")
+        business.setdefault("zip_code", "")
+        business.setdefault("subscription_status", "none")
+        business.pop("_id", None)
+        token = create_token(biz_user["id"], UserRole.BUSINESS, business["email"])
+        return {"token": token, "business": BusinessResponse(**business).model_dump(), "account_type": "business"}
+
+    raise HTTPException(status_code=401, detail="Invalid credentials")
 @router.get("/verify-email")
 async def verify_email(token: str):
     """Verify user email address using token from email"""
