@@ -344,7 +344,7 @@ export function Navbar() {
                   <DropdownMenuSeparator />
                   
                   {isAdmin && (
-                    <DropdownMenuItem onClick={() => navigate('/admin')} data-testid="menu-admin">
+                    <DropdownMenuItem onClick={() => navigate('/bv-ctrl')} data-testid="menu-admin">
                       <LayoutDashboard className="mr-2 h-4 w-4" />
                       Admin Panel
                     </DropdownMenuItem>
