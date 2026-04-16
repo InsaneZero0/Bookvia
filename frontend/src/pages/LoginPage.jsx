@@ -122,18 +122,20 @@ export default function LoginPage() {
                 </div>
                 <div className="relative">
                   <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
+                  <input
                     id="password"
                     type={showPassword ? 'text' : 'password'}
                     placeholder="••••••••"
                     value={password}
                     onChange={e => setPassword(e.target.value)}
-                    className="pl-10 pr-10 h-12"
+                    className="flex h-12 w-full rounded-md border border-input bg-transparent pl-10 pr-10 py-1 text-base shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring md:text-sm"
                     required
-                    autoCapitalize="none"
+                    autoCapitalize="off"
                     autoCorrect="off"
                     autoComplete="current-password"
+                    spellCheck="false"
                     data-testid="login-password-input"
+                    style={{ textTransform: 'none' }}
                   />
                   <button type="button" onClick={() => setShowPassword(!showPassword)}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
