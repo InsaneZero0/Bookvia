@@ -314,9 +314,9 @@ export default function HomePage() {
             </p>
           </div>
 
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-4">
-            {categories.map((category) => {
-              const IconComponent = getIcon(category.icon);
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6">
+            {(Array.isArray(categories) ? categories : []).map((category, index) => {
+              const IconComponent = iconMap[category.icon] || Sparkles;
               return (
                 <Card key={category.id}
                   className="group cursor-pointer overflow-hidden border-0 shadow-sm hover:shadow-lg transition-all duration-300 hover:-translate-y-1"
