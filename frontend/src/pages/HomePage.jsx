@@ -9,13 +9,11 @@ import { useCountry } from '@/lib/countryContext';
 import { categoriesAPI, businessesAPI, utilityAPI } from '@/lib/api';
 import {
   Search, MapPin, ArrowRight, CheckCircle2,
-  Sparkles, Heart, Dumbbell, Flower2, Scale, Briefcase, Car, PawPrint, PartyPopper, HelpCircle, Moon,
   Star, Shield, Clock, Users, CalendarIcon, ChevronDown, Building2, Zap
 } from 'lucide-react';
+import * as LucideIcons from 'lucide-react';
 
-const iconMap = {
-  Sparkles, Heart, Dumbbell, Flower2, Scale, Briefcase, Car, PawPrint, PartyPopper, HelpCircle, Moon,
-};
+const getIcon = (name) => LucideIcons[name] || LucideIcons.Sparkles;
 
 export default function HomePage() {
   const { t, language } = useI18n();
@@ -220,7 +218,7 @@ export default function HomePage() {
                           <span className="text-slate-700">{language === 'es' ? 'Todos los servicios' : 'All services'}</span>
                         </button>
                         {displayCats.map(cat => {
-                          const IconComp = iconMap[cat.icon] || Sparkles;
+                          const IconComp = getIcon(cat.icon);
                           return (
                           <button key={cat.id} type="button"
                             onClick={() => { setSearchQuery(language === 'es' ? cat.name_es : cat.name_en); setSelectedCategoryId(cat.id); setServiceOpen(false); }}
@@ -318,7 +316,7 @@ export default function HomePage() {
 
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-4">
             {categories.map((category) => {
-              const IconComponent = iconMap[category.icon] || Sparkles;
+              const IconComponent = getIcon(category.icon);
               return (
                 <Card key={category.id}
                   className="group cursor-pointer overflow-hidden border-0 shadow-sm hover:shadow-lg transition-all duration-300 hover:-translate-y-1"
