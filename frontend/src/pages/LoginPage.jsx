@@ -105,6 +105,9 @@ export default function LoginPage() {
                     onChange={e => setEmail(e.target.value)}
                     className="pl-10 h-12"
                     required
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    autoComplete="email"
                     data-testid="login-email-input"
                   />
                 </div>
@@ -127,6 +130,9 @@ export default function LoginPage() {
                     onChange={e => setPassword(e.target.value)}
                     className="pl-10 pr-10 h-12"
                     required
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    autoComplete="current-password"
                     data-testid="login-password-input"
                   />
                   <button type="button" onClick={() => setShowPassword(!showPassword)}
