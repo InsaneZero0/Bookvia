@@ -1867,6 +1867,11 @@ async def upload_business_photo(file: UploadFile = File(...), token_data: TokenD
 
     business_id = user["business_id"]
 
+    # Check photo limit (max 10)
+    current_photos = await db.business_photos.count_documents({"business_id": business_id, "is_deleted": {"$ne": True}})
+    if current_photos >= 10:
+        raise HTTPException(status_code=400, detail="Maximum 10 photos allowed")
+
     # Try Cloudinary first, fallback to Emergent Storage
     if cloudinary_configured():
         try:
