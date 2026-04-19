@@ -9,12 +9,15 @@ import { useCountry } from '@/lib/countryContext';
 import { categoriesAPI, businessesAPI, utilityAPI } from '@/lib/api';
 import {
   Search, MapPin, ArrowRight, CheckCircle2,
+  Sparkles, Heart, Dumbbell, Flower2, Scale, Briefcase, Car, PawPrint, PartyPopper, HelpCircle, Moon,
+  Scissors, Coffee, Music, Camera, Utensils, Palette, Wrench, Stethoscope, GraduationCap, Plane,
   Star, Shield, Clock, Users, CalendarIcon, ChevronDown, Building2, Zap
 } from 'lucide-react';
-import * as LucideIcons from 'lucide-react';
 
-const getIcon = (name) => LucideIcons[name] || LucideIcons.Sparkles;
-const iconMap = new Proxy({}, { get: (_, name) => getIcon(name) });
+const iconMap = {
+  Sparkles, Heart, Dumbbell, Flower2, Scale, Briefcase, Car, PawPrint, PartyPopper, HelpCircle, Moon,
+  Scissors, Coffee, Music, Camera, Utensils, Palette, Wrench, Stethoscope, GraduationCap, Plane,
+};
 
 export default function HomePage() {
   const { t, language } = useI18n();
@@ -105,7 +108,7 @@ export default function HomePage() {
     { icon: Search, title: language === 'es' ? 'Busca' : 'Search', desc: language === 'es' ? 'Encuentra el servicio que necesitas cerca de ti' : 'Find the service you need near you' },
     { icon: CheckCircle2, title: language === 'es' ? 'Elige' : 'Choose', desc: language === 'es' ? 'Compara precios, resenas y disponibilidad' : 'Compare prices, reviews and availability' },
     { icon: CalendarIcon, title: language === 'es' ? 'Reserva' : 'Book', desc: language === 'es' ? 'Selecciona fecha, hora y profesional' : 'Select date, time and professional' },
-    { icon: LucideIcons.Sparkles, title: language === 'es' ? 'Disfruta' : 'Enjoy', desc: language === 'es' ? 'Acude a tu cita y deja tu resena' : 'Attend your appointment and leave a review' },
+    { icon: Sparkles, title: language === 'es' ? 'Disfruta' : 'Enjoy', desc: language === 'es' ? 'Acude a tu cita y deja tu resena' : 'Attend your appointment and leave a review' },
   ];
 
   return (
@@ -219,7 +222,7 @@ export default function HomePage() {
                           <span className="text-slate-700">{language === 'es' ? 'Todos los servicios' : 'All services'}</span>
                         </button>
                         {displayCats.map(cat => {
-                          const IconComp = getIcon(cat.icon);
+                          const IconComp = iconMap[cat.icon] || Sparkles;
                           return (
                           <button key={cat.id} type="button"
                             onClick={() => { setSearchQuery(language === 'es' ? cat.name_es : cat.name_en); setSelectedCategoryId(cat.id); setServiceOpen(false); }}
@@ -317,7 +320,7 @@ export default function HomePage() {
 
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-4">
             {categories.map((category) => {
-              const IconComponent = getIcon(category.icon);
+              const IconComponent = iconMap[category.icon] || Sparkles;
               return (
                 <Card key={category.id}
                   className="group cursor-pointer overflow-hidden border-0 shadow-sm hover:shadow-lg transition-all duration-300 hover:-translate-y-1"
