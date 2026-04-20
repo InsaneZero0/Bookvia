@@ -104,7 +104,7 @@ export function Footer() {
             <ul className="space-y-3">
               <li className="flex items-center gap-3 text-slate-400 text-sm">
                 <Mail className="h-4 w-4 text-[#F05D5E]" />
-                <span>soporte@bookvia.com</span>
+                <span>contacto@bookvia.com</span>
               </li>
               <li className="flex items-center gap-3 text-slate-400 text-sm">
                 <Phone className="h-4 w-4 text-[#F05D5E]" />
