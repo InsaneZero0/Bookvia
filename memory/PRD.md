@@ -116,7 +116,9 @@ Auth Social: Emergent-managed Google Auth (solo clientes)
 ## Tareas Pendientes
 
 ### P0 - Seguridad (antes de lanzamiento publico)
-- [ ] Cloudflare delante del dominio (DDoS, WAF, oculta IP Railway)
+- [x] Cloudflare delante del dominio (DDoS, WAF, oculta IP Railway) - COMPLETADO Feb 2026
+- [x] Cloudflare Access configurado (solo emails autorizados - beta privada) - COMPLETADO Feb 2026
+- [x] Dominio bookvia.app conectado a Vercel via Cloudflare - COMPLETADO Feb 2026
 - [ ] Rate limiting backend con slowapi (2-3h dev)
 - [ ] Proteccion fuerza bruta login (bloqueo tras 5 intentos + CAPTCHA) (3-4h dev)
 - [ ] reCAPTCHA v3 en formularios criticos (registro, login, contacto) (2-3h dev)
