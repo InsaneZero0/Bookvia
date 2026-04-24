@@ -116,7 +116,7 @@ export default function HomePage() {
 
       {/* ═══ Hero ═══════════════════════════════════ */}
       <section className="relative min-h-[88vh] flex items-center overflow-hidden bg-[#fcf7ba]">
-        <div className="absolute inset-0 bg-gradient-to-l from-[#fcf7ba] via-[#fcf7ba]/80 to-white" />
+        <div className="absolute inset-0 bg-gradient-to-r from-[#fcf7ba] via-[#fcf7ba]/80 to-white" />
         <div className="absolute top-20 left-10 w-72 h-72 bg-[#F05D5E]/10 rounded-full blur-3xl" />
         <div className="absolute bottom-20 right-10 w-96 h-96 bg-[#F05D5E]/10 rounded-full blur-3xl" />
 
