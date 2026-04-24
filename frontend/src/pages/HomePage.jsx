@@ -131,14 +131,14 @@ export default function HomePage() {
         <div className="relative z-10 container-app text-center text-white py-16">
           <div className="max-w-4xl mx-auto space-y-6 animate-fade-in">
             <Badge className="bg-white/10 text-white border-white/20 text-sm px-4 py-1.5 backdrop-blur-sm">
-              {language === 'es' ? `La plataforma #1 de reservas en ${countryName}` : `#1 Booking platform in ${countryName}`}
+              {language === 'es' ? 'Reserva 24/7' : 'Book 24/7'}
             </Badge>
 
             <h1 className="text-4xl sm:text-5xl lg:text-7xl font-heading font-extrabold tracking-tight leading-[1.1]">
               {language === 'es' ? (
-                <>Reserva servicios<br /><span className="text-[#F05D5E]">profesionales</span> al instante</>
+                <>Busca, <span className="text-[#F05D5E]">elige</span>,<br />reserva</>
               ) : (
-                <>Book professional<br /><span className="text-[#F05D5E]">services</span> instantly</>
+                <>Search, <span className="text-[#F05D5E]">choose</span>,<br />book</>
               )}
             </h1>
 
