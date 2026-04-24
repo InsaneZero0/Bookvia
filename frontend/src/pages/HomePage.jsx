@@ -132,7 +132,7 @@ export default function HomePage() {
           <div className="max-w-4xl mx-auto space-y-6 animate-fade-in">
             <Badge className="bg-white/10 text-white border-white/20 text-sm px-4 py-1.5 backdrop-blur-sm inline-flex items-center gap-2">
               <Clock className="h-3.5 w-3.5 text-[#F05D5E]" />
-              {language === 'es' ? 'Reserva 24/7' : 'Book 24/7'}
+              {language === 'es' ? 'Disponible 24/7' : 'Available 24/7'}
             </Badge>
 
             <h1 className="text-5xl sm:text-6xl lg:text-8xl font-heading font-extrabold tracking-tight leading-[0.95]">
