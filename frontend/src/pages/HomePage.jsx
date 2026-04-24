@@ -282,63 +282,39 @@ export default function HomePage() {
                   />
                 </div>
 
-                {/* Floating card 1: Cita confirmada (top-left) */}
-                <div className="absolute -top-4 -left-6 bg-white rounded-2xl shadow-2xl p-4 flex items-center gap-3 animate-fade-in w-[240px]" style={{ animationDelay: '0.9s' }}>
-                  <div className="h-11 w-11 rounded-xl bg-emerald-100 flex items-center justify-center shrink-0">
-                    <CheckCircle2 className="h-6 w-6 text-emerald-600" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-semibold text-slate-900">
-                      {language === 'es' ? 'Cita confirmada' : 'Booking confirmed'}
-                    </div>
-                    <div className="text-xs text-slate-500">
-                      {language === 'es' ? 'Mañana · 3:00 PM' : 'Tomorrow · 3:00 PM'}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Floating card 2: CTA Registrar negocio (bottom-right) */}
+                {/* CTA: Registrar negocio - LLAMATIVO (bottom-right) */}
                 <button
                   type="button"
                   onClick={() => navigate('/for-business')}
-                  className="absolute -bottom-6 -right-6 bg-white hover:bg-slate-50 rounded-2xl shadow-2xl p-4 animate-fade-in w-[260px] text-left transition-all hover:scale-105 hover:shadow-[0_20px_50px_rgba(240,93,94,0.3)] group border border-[#F05D5E]/20"
-                  style={{ animationDelay: '1.1s' }}
+                  className="absolute -bottom-8 -right-8 bg-gradient-to-br from-[#F05D5E] to-[#d94748] hover:from-[#d94748] hover:to-[#c93d3e] rounded-3xl shadow-2xl p-5 animate-fade-in w-[300px] text-left transition-all duration-300 hover:scale-105 hover:-translate-y-1 hover:shadow-[0_25px_60px_-10px_rgba(240,93,94,0.6)] group ring-4 ring-white"
+                  style={{ animationDelay: '0.9s', boxShadow: '0 20px 40px -10px rgba(240, 93, 94, 0.4)' }}
                   data-testid="hero-register-business-cta"
                 >
-                  <div className="flex items-center gap-2 mb-2">
-                    <div className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-bold uppercase tracking-wide">
-                      {language === 'es' ? 'Gratis' : 'Free'}
-                    </div>
-                    <span className="text-[10px] text-slate-500 font-medium">
-                      {language === 'es' ? '30 días de prueba' : '30-day trial'}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="h-11 w-11 rounded-xl bg-gradient-to-br from-[#F05D5E] to-[#d94748] flex items-center justify-center shrink-0 shadow-lg shadow-[#F05D5E]/30">
-                      <Building2 className="h-5 w-5 text-white" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-bold text-slate-900 leading-tight">
-                        {language === 'es' ? 'Registra tu negocio' : 'Register your business'}
+                  {/* Pulse effect */}
+                  <span className="absolute inset-0 rounded-3xl bg-[#F05D5E] opacity-30 animate-ping pointer-events-none" />
+
+                  <div className="relative z-10">
+                    <div className="flex items-center gap-2 mb-3">
+                      <div className="px-2.5 py-1 rounded-full bg-white text-[#F05D5E] text-[10px] font-extrabold uppercase tracking-wider shadow-md">
+                        {language === 'es' ? '🎉 Gratis 30 días' : '🎉 Free 30 days'}
                       </div>
-                      <div className="text-xs text-[#F05D5E] font-semibold mt-0.5 flex items-center gap-1 group-hover:gap-2 transition-all">
-                        {language === 'es' ? 'Prueba gratis' : 'Start free'}
-                        <ArrowRight className="h-3 w-3" />
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <div className="h-14 w-14 rounded-2xl bg-white flex items-center justify-center shrink-0 shadow-lg">
+                        <Building2 className="h-7 w-7 text-[#F05D5E]" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-lg font-extrabold text-white leading-tight">
+                          {language === 'es' ? '¿Tienes un negocio?' : 'Got a business?'}
+                        </div>
+                        <div className="text-sm text-white/95 font-bold mt-1 flex items-center gap-1.5 group-hover:gap-3 transition-all">
+                          {language === 'es' ? 'Regístralo aquí' : 'Register it here'}
+                          <ArrowRight className="h-4 w-4" />
+                        </div>
                       </div>
                     </div>
                   </div>
                 </button>
-
-                {/* Floating card 3: Live booking (middle-right) */}
-                <div className="absolute top-1/2 -right-4 -translate-y-1/2 bg-[#F05D5E] rounded-2xl shadow-2xl p-3 flex items-center gap-2 animate-fade-in" style={{ animationDelay: '1.3s' }}>
-                  <div className="relative h-2 w-2">
-                    <div className="absolute inset-0 bg-white rounded-full animate-ping" />
-                    <div className="relative h-2 w-2 bg-white rounded-full" />
-                  </div>
-                  <span className="text-white text-xs font-semibold whitespace-nowrap">
-                    {language === 'es' ? 'Reservando ahora' : 'Booking now'}
-                  </span>
-                </div>
               </div>
             </div>
           </div>
