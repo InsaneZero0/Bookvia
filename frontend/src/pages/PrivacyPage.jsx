@@ -11,20 +11,21 @@ export default function PrivacyPage() {
 
   return (
     <div className="min-h-screen pt-20 bg-background">
-      <section className="bg-gradient-to-br from-slate-900 to-slate-800 text-white py-16">
-        <div className="container-app">
-          <nav className="flex items-center text-sm text-slate-400 mb-4">
-            <Link to="/" className="hover:text-white">{t('Inicio', 'Home')}</Link>
+      <section className="bg-[#fcf7ba] text-slate-900 py-16 relative overflow-hidden">
+        <div className="absolute top-10 right-10 w-72 h-72 bg-[#F05D5E]/10 rounded-full blur-3xl" />
+        <div className="container-app relative z-10">
+          <nav className="flex items-center text-sm text-slate-600 mb-4">
+            <Link to="/" className="hover:text-slate-900">{t('Inicio', 'Home')}</Link>
             <ChevronRight className="w-4 h-4 mx-2" />
-            <span className="text-white">{t('Politica de Privacidad', 'Privacy Policy')}</span>
+            <span className="text-slate-900 font-medium">{t('Politica de Privacidad', 'Privacy Policy')}</span>
           </nav>
           <div className="flex items-center gap-4">
-            <div className="w-16 h-16 bg-[#F05D5E]/20 rounded-full flex items-center justify-center">
+            <div className="w-16 h-16 bg-[#F05D5E]/15 rounded-full flex items-center justify-center">
               <Shield className="w-8 h-8 text-[#F05D5E]" />
             </div>
             <div>
               <h1 className="text-3xl md:text-4xl font-heading font-bold">{t('Politica de Privacidad', 'Privacy Policy')}</h1>
-              <p className="text-slate-400 mt-1">{t('Ultima actualizacion: Abril 2026', 'Last updated: April 2026')}</p>
+              <p className="text-slate-600 mt-1">{t('Ultima actualizacion: Abril 2026', 'Last updated: April 2026')}</p>
             </div>
           </div>
         </div>

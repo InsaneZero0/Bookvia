@@ -431,11 +431,13 @@ export default function HomePage() {
       )}
 
       {/* ═══ Business CTA ═════════════════════════════ */}
-      <section className="section-padding bg-slate-900 text-white" data-testid="business-cta-section">
-        <div className="container-app">
+      <section className="section-padding bg-[#fcf7ba] text-slate-900 relative overflow-hidden" data-testid="business-cta-section">
+        <div className="absolute top-10 right-10 w-72 h-72 bg-[#F05D5E]/10 rounded-full blur-3xl" />
+        <div className="absolute bottom-10 left-10 w-96 h-96 bg-[#F05D5E]/5 rounded-full blur-3xl" />
+        <div className="container-app relative z-10">
           <div className="grid lg:grid-cols-2 gap-10 items-center">
             <div className="space-y-5">
-              <Badge className="bg-[#F05D5E]/20 text-[#F05D5E] border-[#F05D5E]/30">
+              <Badge className="bg-[#F05D5E]/15 text-[#F05D5E] border-[#F05D5E]/30">
                 {language === 'es' ? 'Tienes un negocio?' : 'Have a business?'}
               </Badge>
               <h2 className="text-2xl sm:text-3xl lg:text-4xl font-heading font-bold tracking-tight leading-tight">
@@ -443,7 +445,7 @@ export default function HomePage() {
                   ? 'Haz crecer tu negocio con Bookvia'
                   : 'Grow your business with Bookvia'}
               </h2>
-              <p className="text-slate-400 leading-relaxed">
+              <p className="text-slate-700 leading-relaxed">
                 {language === 'es'
                   ? 'Gestiona tus citas, reduce cancelaciones y haz crecer tu negocio con la plataforma de reservas mas completa de Mexico.'
                   : 'Manage appointments, reduce cancellations and grow your business with the most complete booking platform in Mexico.'}
@@ -457,7 +459,7 @@ export default function HomePage() {
                 ].map(feat => (
                   <div key={feat.text} className="flex items-center gap-2">
                     <feat.icon className="h-4 w-4 text-[#F05D5E] shrink-0" />
-                    <span className="text-sm text-slate-300">{feat.text}</span>
+                    <span className="text-sm text-slate-700">{feat.text}</span>
                   </div>
                 ))}
               </div>

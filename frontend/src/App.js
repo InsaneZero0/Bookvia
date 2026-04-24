@@ -240,12 +240,13 @@ function ForBusinessPage() {
   return (
     <div className="min-h-screen pt-16 bg-background">
       {/* Hero */}
-      <section className="relative overflow-hidden bg-slate-900 text-white py-20 sm:py-28">
-        <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-slate-900/95 to-[#F05D5E]/20" />
+      <section className="relative overflow-hidden bg-[#fcf7ba] text-slate-900 py-20 sm:py-28">
+        <div className="absolute inset-0 bg-gradient-to-r from-[#fcf7ba] via-[#fcf7ba]/80 to-white" />
         <div className="absolute top-10 right-10 w-72 h-72 bg-[#F05D5E]/10 rounded-full blur-3xl" />
+        <div className="absolute bottom-10 left-10 w-96 h-96 bg-[#F05D5E]/10 rounded-full blur-3xl" />
         <div className="relative z-10 container-app">
           <div className="max-w-3xl mx-auto text-center space-y-6">
-            <span className="inline-block px-4 py-1.5 rounded-full bg-[#F05D5E]/20 text-[#F05D5E] text-sm font-medium border border-[#F05D5E]/30">
+            <span className="inline-block px-4 py-1.5 rounded-full bg-[#F05D5E]/15 text-[#F05D5E] text-sm font-medium border border-[#F05D5E]/30">
               {language === 'es' ? 'Para profesionales y negocios' : 'For professionals & businesses'}
             </span>
             <h1 className="text-4xl sm:text-5xl lg:text-6xl font-heading font-extrabold tracking-tight leading-[1.1]">
@@ -255,7 +256,7 @@ function ForBusinessPage() {
                 <>Grow your business with <span className="text-[#F05D5E]">online bookings</span></>
               )}
             </h1>
-            <p className="text-lg text-white/70 max-w-2xl mx-auto">
+            <p className="text-lg text-slate-700 max-w-2xl mx-auto">
               {language === 'es'
                 ? 'Gestiona tu agenda, reduce cancelaciones y deja que tus clientes reserven 24/7. Todo desde una sola plataforma.'
                 : 'Manage your schedule, reduce cancellations and let your clients book 24/7. All from one platform.'}
@@ -267,7 +268,7 @@ function ForBusinessPage() {
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" /></svg>
               </button>
             </div>
-            <p className="text-xs text-white/40">{language === 'es' ? 'Sin compromiso. Cancela cuando quieras.' : 'No commitment. Cancel anytime.'}</p>
+            <p className="text-xs text-slate-500">{language === 'es' ? 'Sin compromiso. Cancela cuando quieras.' : 'No commitment. Cancel anytime.'}</p>
           </div>
         </div>
       </section>
@@ -358,12 +359,14 @@ function ForBusinessPage() {
       </section>
 
       {/* Final CTA */}
-      <section className="py-16 bg-slate-900 text-white">
-        <div className="container-app text-center space-y-5">
+      <section className="py-16 bg-[#fcf7ba] text-slate-900 relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-72 h-72 bg-[#F05D5E]/10 rounded-full blur-3xl" />
+        <div className="absolute bottom-0 left-0 w-72 h-72 bg-[#F05D5E]/10 rounded-full blur-3xl" />
+        <div className="container-app text-center space-y-5 relative z-10">
           <h2 className="text-2xl sm:text-3xl font-heading font-bold">
             {language === 'es' ? 'Listo para recibir mas clientes?' : 'Ready to get more clients?'}
           </h2>
-          <p className="text-slate-400 max-w-lg mx-auto">
+          <p className="text-slate-700 max-w-lg mx-auto">
             {language === 'es'
               ? 'Unete a Bookvia y empieza a recibir reservas en linea hoy mismo.'
               : 'Join Bookvia and start receiving online bookings today.'}
