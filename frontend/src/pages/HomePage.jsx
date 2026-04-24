@@ -115,52 +115,54 @@ export default function HomePage() {
     <div className="min-h-screen" data-testid="home-page">
 
       {/* ═══ Hero ═══════════════════════════════════ */}
-      <section className="relative min-h-[88vh] flex items-center justify-center overflow-hidden bg-slate-900">
+      <section className="relative min-h-[88vh] flex items-center overflow-hidden bg-slate-900">
         <div className="absolute inset-0">
           <img
             src="https://images.unsplash.com/photo-1584884013345-88b9cf247c0c?auto=format&fit=crop&q=80&w=2070"
             alt=""
-            className="w-full h-full object-cover opacity-25"
+            className="w-full h-full object-cover opacity-15"
             loading="eager"
           />
-          <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-slate-900/90 to-[#F05D5E]/20" />
+          <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-slate-900/95 to-[#F05D5E]/20" />
         </div>
         <div className="absolute top-20 left-10 w-72 h-72 bg-[#F05D5E]/10 rounded-full blur-3xl" />
         <div className="absolute bottom-20 right-10 w-96 h-96 bg-[#F05D5E]/5 rounded-full blur-3xl" />
 
-        <div className="relative z-10 container-app text-center text-white py-16">
-          <div className="max-w-4xl mx-auto space-y-6 animate-fade-in">
-            <Badge className="bg-white/10 text-white border-white/20 text-sm px-4 py-1.5 backdrop-blur-sm inline-flex items-center gap-2">
-              <Clock className="h-3.5 w-3.5 text-[#F05D5E]" />
-              {language === 'es' ? 'Disponible 24/7' : 'Available 24/7'}
-            </Badge>
+        <div className="relative z-10 container-app text-white py-16 lg:py-20">
+          <div className="grid lg:grid-cols-12 gap-12 lg:gap-8 items-center">
+            {/* LEFT: Text + Search */}
+            <div className="lg:col-span-7 space-y-6 text-center lg:text-left animate-fade-in">
+              <Badge className="bg-white/10 text-white border-white/20 text-sm px-4 py-1.5 backdrop-blur-sm inline-flex items-center gap-2">
+                <Clock className="h-3.5 w-3.5 text-[#F05D5E]" />
+                {language === 'es' ? 'Disponible 24/7' : 'Available 24/7'}
+              </Badge>
 
-            <h1 className="text-5xl sm:text-6xl lg:text-8xl font-heading font-extrabold tracking-tight leading-[0.95]">
-              {language === 'es' ? (
-                <span className="inline-flex flex-wrap justify-center gap-x-4 gap-y-2">
-                  <span className="animate-fade-in" style={{ animationDelay: '0.1s' }}>Busca.</span>
-                  <span className="animate-fade-in" style={{ animationDelay: '0.3s' }}>Elige.</span>
-                  <span className="text-[#F05D5E] animate-fade-in" style={{ animationDelay: '0.5s' }}>Reserva.</span>
-                </span>
-              ) : (
-                <span className="inline-flex flex-wrap justify-center gap-x-4 gap-y-2">
-                  <span className="animate-fade-in" style={{ animationDelay: '0.1s' }}>Search.</span>
-                  <span className="animate-fade-in" style={{ animationDelay: '0.3s' }}>Choose.</span>
-                  <span className="text-[#F05D5E] animate-fade-in" style={{ animationDelay: '0.5s' }}>Book.</span>
-                </span>
-              )}
-            </h1>
+              <h1 className="text-5xl sm:text-6xl lg:text-7xl xl:text-8xl font-heading font-extrabold tracking-tight leading-[0.95]">
+                {language === 'es' ? (
+                  <span className="inline-flex flex-wrap justify-center lg:justify-start gap-x-4 gap-y-2">
+                    <span className="animate-fade-in" style={{ animationDelay: '0.1s' }}>Busca.</span>
+                    <span className="animate-fade-in" style={{ animationDelay: '0.3s' }}>Elige.</span>
+                    <span className="text-[#F05D5E] animate-fade-in" style={{ animationDelay: '0.5s' }}>Reserva.</span>
+                  </span>
+                ) : (
+                  <span className="inline-flex flex-wrap justify-center lg:justify-start gap-x-4 gap-y-2">
+                    <span className="animate-fade-in" style={{ animationDelay: '0.1s' }}>Search.</span>
+                    <span className="animate-fade-in" style={{ animationDelay: '0.3s' }}>Choose.</span>
+                    <span className="text-[#F05D5E] animate-fade-in" style={{ animationDelay: '0.5s' }}>Book.</span>
+                  </span>
+                )}
+              </h1>
 
-            <p className="text-base sm:text-lg text-white/70 max-w-2xl mx-auto">
-              {language === 'es'
-                ? 'Encuentra servicios cerca de ti, compara opciones y agenda fácil en un solo lugar.'
-                : 'Find services near you, compare options and book easily in one place.'}
-            </p>
+              <p className="text-base sm:text-lg text-white/70 max-w-2xl lg:mx-0 mx-auto">
+                {language === 'es'
+                  ? 'Encuentra servicios cerca de ti, compara opciones y agenda fácil en un solo lugar.'
+                  : 'Find services near you, compare options and book easily in one place.'}
+              </p>
 
-            {/* Search Bar */}
-            <form onSubmit={handleSearch} className="mt-10">
-              <div className="bg-white/10 backdrop-blur-xl rounded-2xl p-2 max-w-3xl mx-auto border border-white/20">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+              {/* Search Bar */}
+              <form onSubmit={handleSearch} className="mt-8">
+                <div className="bg-white/10 backdrop-blur-xl rounded-2xl p-2 max-w-3xl lg:mx-0 mx-auto border border-white/20">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
                   {/* City Dropdown */}
                   <div className="relative" ref={cityRef}>
                     <button type="button"
@@ -261,7 +263,7 @@ export default function HomePage() {
             </form>
 
             {/* Quick trust indicators */}
-            <div className="flex flex-wrap justify-center gap-4 sm:gap-6 mt-8 pt-6">
+            <div className="flex flex-wrap justify-center lg:justify-start gap-4 sm:gap-6 mt-8 pt-6">
               {[
                 { icon: Shield, text: language === 'es' ? 'Pagos seguros' : 'Secure payments' },
                 { icon: Clock, text: language === 'es' ? 'Reserva 24/7' : 'Book 24/7' },
@@ -272,6 +274,70 @@ export default function HomePage() {
                   <span>{item.text}</span>
                 </div>
               ))}
+            </div>
+          </div>
+
+            {/* RIGHT: Image + Floating cards */}
+            <div className="lg:col-span-5 relative hidden lg:block animate-fade-in" style={{ animationDelay: '0.6s' }}>
+              <div className="relative">
+                {/* Main image */}
+                <div className="relative rounded-3xl overflow-hidden shadow-2xl border border-white/10 aspect-[4/5]">
+                  <img
+                    src="https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&q=80&w=1200"
+                    alt="Servicio profesional Bookvia"
+                    className="w-full h-full object-cover"
+                    loading="eager"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-slate-900/60 via-transparent to-transparent" />
+                </div>
+
+                {/* Floating card 1: Cita confirmada (top-left) */}
+                <div className="absolute -top-4 -left-6 bg-white rounded-2xl shadow-2xl p-4 flex items-center gap-3 animate-fade-in w-[240px]" style={{ animationDelay: '0.9s' }}>
+                  <div className="h-11 w-11 rounded-xl bg-emerald-100 flex items-center justify-center shrink-0">
+                    <CheckCircle2 className="h-6 w-6 text-emerald-600" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-semibold text-slate-900">
+                      {language === 'es' ? 'Cita confirmada' : 'Booking confirmed'}
+                    </div>
+                    <div className="text-xs text-slate-500">
+                      {language === 'es' ? 'Mañana · 3:00 PM' : 'Tomorrow · 3:00 PM'}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Floating card 2: Rating (bottom-right) */}
+                <div className="absolute -bottom-6 -right-6 bg-white rounded-2xl shadow-2xl p-4 animate-fade-in w-[220px]" style={{ animationDelay: '1.1s' }}>
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <div className="flex -space-x-1.5">
+                      {[1,2,3].map(i => (
+                        <div key={i} className="h-7 w-7 rounded-full bg-gradient-to-br from-[#F05D5E] to-amber-400 border-2 border-white" />
+                      ))}
+                    </div>
+                    <span className="text-xs text-slate-500 font-medium">+2.5K</span>
+                  </div>
+                  <div className="flex items-center gap-1 mb-1">
+                    {[1,2,3,4,5].map(i => (
+                      <Star key={i} className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
+                    ))}
+                    <span className="text-xs font-bold text-slate-900 ml-1">4.9</span>
+                  </div>
+                  <div className="text-xs text-slate-500">
+                    {language === 'es' ? 'Clientes felices' : 'Happy clients'}
+                  </div>
+                </div>
+
+                {/* Floating card 3: Live booking (middle-right) */}
+                <div className="absolute top-1/2 -right-4 -translate-y-1/2 bg-[#F05D5E] rounded-2xl shadow-2xl p-3 flex items-center gap-2 animate-fade-in" style={{ animationDelay: '1.3s' }}>
+                  <div className="relative h-2 w-2">
+                    <div className="absolute inset-0 bg-white rounded-full animate-ping" />
+                    <div className="relative h-2 w-2 bg-white rounded-full" />
+                  </div>
+                  <span className="text-white text-xs font-semibold whitespace-nowrap">
+                    {language === 'es' ? 'Reservando ahora' : 'Booking now'}
+                  </span>
+                </div>
+              </div>
             </div>
           </div>
         </div>
