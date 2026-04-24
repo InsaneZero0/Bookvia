@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
 import { useI18n } from '@/lib/i18n';
 import { useCountry } from '@/lib/countryContext';
@@ -37,15 +37,14 @@ export function Navbar() {
   const { country, setCountry } = useCountry();
   const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
-  const location = useLocation();
 
   const handleLogout = () => {
     logout();
     navigate('/');
   };
 
-  const isHomepage = location.pathname === '/';
-  const isTransparent = isHomepage && !scrolled;
+  // Hero ahora tiene fondo claro, el navbar siempre en modo light
+  const isTransparent = false;
 
   const filteredCountries = useMemo(() => {
     if (!countrySearch.trim()) return countries;
