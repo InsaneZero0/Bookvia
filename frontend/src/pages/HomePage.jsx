@@ -297,30 +297,37 @@ export default function HomePage() {
                   </div>
                 </div>
 
-                {/* Floating card 2: Testimonial (bottom-right) */}
-                <div className="absolute -bottom-6 -right-6 bg-white rounded-2xl shadow-2xl p-4 animate-fade-in w-[250px]" style={{ animationDelay: '1.1s' }}>
-                  <div className="flex items-center gap-1 mb-2">
-                    {[1,2,3,4,5].map(i => (
-                      <Star key={i} className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
-                    ))}
-                  </div>
-                  <p className="text-xs text-slate-700 mb-2 leading-snug">
-                    {language === 'es'
-                      ? '"Reservé en 1 minuto. Excelente!"'
-                      : '"Booked in 1 minute. Excellent!"'}
-                  </p>
-                  <div className="flex items-center gap-2">
-                    <div className="h-7 w-7 rounded-full bg-gradient-to-br from-[#F05D5E] to-amber-400 flex items-center justify-center text-white text-xs font-bold">
-                      A
+                {/* Floating card 2: CTA Registrar negocio (bottom-right) */}
+                <button
+                  type="button"
+                  onClick={() => navigate('/for-business')}
+                  className="absolute -bottom-6 -right-6 bg-white hover:bg-slate-50 rounded-2xl shadow-2xl p-4 animate-fade-in w-[260px] text-left transition-all hover:scale-105 hover:shadow-[0_20px_50px_rgba(240,93,94,0.3)] group border border-[#F05D5E]/20"
+                  style={{ animationDelay: '1.1s' }}
+                  data-testid="hero-register-business-cta"
+                >
+                  <div className="flex items-center gap-2 mb-2">
+                    <div className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 text-[10px] font-bold uppercase tracking-wide">
+                      {language === 'es' ? 'Gratis' : 'Free'}
                     </div>
-                    <div>
-                      <div className="text-xs font-semibold text-slate-900">Ana M.</div>
-                      <div className="text-[10px] text-slate-500">
-                        {language === 'es' ? 'Cliente verificado' : 'Verified client'}
+                    <span className="text-[10px] text-slate-500 font-medium">
+                      {language === 'es' ? 'Sin tarjeta' : 'No card needed'}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="h-11 w-11 rounded-xl bg-gradient-to-br from-[#F05D5E] to-[#d94748] flex items-center justify-center shrink-0 shadow-lg shadow-[#F05D5E]/30">
+                      <Building2 className="h-5 w-5 text-white" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-bold text-slate-900 leading-tight">
+                        {language === 'es' ? 'Registra tu negocio' : 'Register your business'}
+                      </div>
+                      <div className="text-xs text-[#F05D5E] font-semibold mt-0.5 flex items-center gap-1 group-hover:gap-2 transition-all">
+                        {language === 'es' ? 'Prueba gratis' : 'Start free'}
+                        <ArrowRight className="h-3 w-3" />
                       </div>
                     </div>
                   </div>
-                </div>
+                </button>
 
                 {/* Floating card 3: Live booking (middle-right) */}
                 <div className="absolute top-1/2 -right-4 -translate-y-1/2 bg-[#F05D5E] rounded-2xl shadow-2xl p-3 flex items-center gap-2 animate-fade-in" style={{ animationDelay: '1.3s' }}>
