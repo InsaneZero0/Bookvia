@@ -330,8 +330,46 @@ function ForBusinessPage() {
       </section>
 
       {/* Pricing */}
-      <section className="py-16 sm:py-24 bg-background">
-        <div className="container-app">
+      <section className="py-16 sm:py-24 bg-background relative overflow-hidden">
+        <div className="absolute top-20 left-10 w-72 h-72 bg-[#fcf7ba]/30 rounded-full blur-3xl" />
+        <div className="absolute bottom-20 right-10 w-96 h-96 bg-[#F05D5E]/5 rounded-full blur-3xl" />
+        <div className="container-app relative z-10">
+
+          {/* Promo banner - 30 dias gratis */}
+          <div className="max-w-4xl mx-auto mb-10">
+            <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-[#F05D5E] via-[#e8504f] to-[#d94748] p-1 shadow-2xl">
+              <div className="absolute inset-0 opacity-20" style={{ background: 'radial-gradient(circle at 20% 50%, #fcf7ba 0%, transparent 50%)' }} />
+              <div className="relative bg-gradient-to-r from-[#F05D5E] to-[#d94748] rounded-3xl px-6 sm:px-10 py-6 sm:py-7 flex flex-col sm:flex-row items-center justify-between gap-5">
+                <div className="flex items-center gap-4 text-white">
+                  <div className="hidden sm:flex h-14 w-14 rounded-2xl bg-white/20 backdrop-blur items-center justify-center text-3xl shrink-0">
+                    🎉
+                  </div>
+                  <div className="text-center sm:text-left">
+                    <div className="inline-block bg-[#fcf7ba] text-[#d94748] text-[10px] font-extrabold uppercase tracking-widest px-2.5 py-1 rounded-full mb-1.5">
+                      {language === 'es' ? 'Oferta de lanzamiento' : 'Launch offer'}
+                    </div>
+                    <h3 className="font-heading font-extrabold text-xl sm:text-2xl lg:text-3xl text-white leading-tight">
+                      {language === 'es' ? '30 días totalmente GRATIS' : '30 days totally FREE'}
+                    </h3>
+                    <p className="text-white/90 text-sm mt-1">
+                      {language === 'es'
+                        ? 'Prueba todas las funciones sin pagar nada el primer mes.'
+                        : 'Try all features without paying anything the first month.'}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => navigate('/business/register')}
+                  className="bg-white text-[#F05D5E] hover:bg-[#fcf7ba] hover:scale-105 transition-all px-6 py-3 rounded-xl font-bold whitespace-nowrap shadow-xl flex items-center gap-2"
+                  data-testid="pricing-promo-cta"
+                >
+                  {language === 'es' ? 'Empezar gratis' : 'Start free'}
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M17 8l4 4m0 0l-4 4m4-4H3" /></svg>
+                </button>
+              </div>
+            </div>
+          </div>
+
           <div className="text-center mb-14">
             <h2 className="text-2xl sm:text-3xl font-heading font-bold tracking-tight">
               {language === 'es' ? 'Simple y accesible' : 'Simple & affordable'}
@@ -341,13 +379,19 @@ function ForBusinessPage() {
             </p>
           </div>
           <div className="max-w-sm mx-auto">
-            <div className="rounded-2xl border-2 border-[#F05D5E] p-8 text-center bg-card shadow-lg">
-              <p className="text-sm font-medium text-[#F05D5E] mb-2">{language === 'es' ? 'Suscripcion mensual' : 'Monthly subscription'}</p>
+            <div className="rounded-2xl border-2 border-[#F05D5E] p-8 text-center bg-card shadow-lg relative">
+              <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-emerald-500 text-white text-xs font-extrabold uppercase tracking-wider px-4 py-1.5 rounded-full shadow-lg whitespace-nowrap">
+                {language === 'es' ? '✨ Primer mes gratis' : '✨ First month free'}
+              </div>
+              <p className="text-sm font-medium text-[#F05D5E] mb-2 mt-2">{language === 'es' ? 'Suscripcion mensual' : 'Monthly subscription'}</p>
               <div className="flex items-end justify-center gap-1 mb-1">
                 <span className="text-5xl font-heading font-extrabold">$39</span>
                 <span className="text-lg text-muted-foreground mb-1">MXN</span>
               </div>
-              <p className="text-sm text-muted-foreground mb-6">{language === 'es' ? '/mes + 8% comision por reserva' : '/month + 8% fee per booking'}</p>
+              <p className="text-sm text-muted-foreground mb-2">{language === 'es' ? '/mes + 8% comision por reserva' : '/month + 8% fee per booking'}</p>
+              <p className="text-xs text-emerald-600 font-semibold mb-6">
+                {language === 'es' ? 'Después de tus 30 días gratis' : 'After your 30 free days'}
+              </p>
               <div className="space-y-3 text-left mb-8">
                 {[
                   language === 'es' ? 'Agenda ilimitada' : 'Unlimited scheduling',
