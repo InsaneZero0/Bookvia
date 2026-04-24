@@ -273,65 +273,56 @@ function ForBusinessPage() {
               <p className="text-xs text-slate-500">{language === 'es' ? 'Sin compromiso. Cancela cuando quieras.' : 'No commitment. Cancel anytime.'}</p>
             </div>
 
-            {/* RIGHT: Promo banner 30 dias gratis */}
+            {/* RIGHT: Promo card estilo pricing */}
             <div className="lg:col-span-5 relative">
-              <div className="relative">
-                {/* Stamp/Badge tipo "sello" rotado */}
-                <div className="hidden lg:block absolute -top-8 -right-4 z-20 transform rotate-12 animate-fade-in" style={{ animationDelay: '0.4s' }}>
-                  <div className="bg-[#F05D5E] text-white text-[10px] font-extrabold uppercase tracking-widest rounded-full h-28 w-28 flex flex-col items-center justify-center shadow-2xl border-4 border-white">
-                    <span className="text-3xl">🎉</span>
-                    <span className="leading-none mt-1">{language === 'es' ? '¡Oferta!' : 'Offer!'}</span>
+              <div className="relative animate-fade-in" style={{ animationDelay: '0.2s' }}>
+                <div className="rounded-2xl border-2 border-[#F05D5E] p-8 bg-white shadow-2xl relative">
+                  {/* Badge verde flotante */}
+                  <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-emerald-500 text-white text-xs font-extrabold uppercase tracking-wider px-4 py-1.5 rounded-full shadow-lg whitespace-nowrap">
+                    {language === 'es' ? '✨ Primer mes gratis' : '✨ First month free'}
                   </div>
-                </div>
 
-                {/* Main promo card */}
-                <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#F05D5E] via-[#e8504f] to-[#d94748] p-1 shadow-2xl animate-fade-in" style={{ animationDelay: '0.2s' }}>
-                  <div className="absolute inset-0 opacity-20" style={{ background: 'radial-gradient(circle at 30% 30%, #fcf7ba 0%, transparent 50%)' }} />
-                  <div className="relative bg-gradient-to-br from-[#F05D5E] to-[#d94748] rounded-3xl p-7 sm:p-9 text-white">
-                    <div className="inline-block bg-[#fcf7ba] text-[#d94748] text-[10px] font-extrabold uppercase tracking-widest px-3 py-1 rounded-full mb-4 shadow-md">
-                      {language === 'es' ? 'Oferta de lanzamiento' : 'Launch offer'}
-                    </div>
-
-                    <div className="mb-5">
-                      <div className="flex items-baseline gap-2 mb-1">
-                        <span className="text-7xl sm:text-8xl font-heading font-black leading-none">30</span>
-                        <span className="text-2xl font-bold">{language === 'es' ? 'días' : 'days'}</span>
-                      </div>
-                      <h3 className="text-3xl sm:text-4xl font-heading font-extrabold leading-tight">
-                        {language === 'es' ? 'totalmente GRATIS' : 'totally FREE'}
-                      </h3>
-                    </div>
-
-                    <p className="text-white/95 text-sm mb-6 leading-relaxed">
-                      {language === 'es'
-                        ? 'Prueba todas las funciones sin pagar nada el primer mes. Sin compromiso, sin sorpresas.'
-                        : 'Try all features without paying anything the first month. No commitment, no surprises.'}
+                  <div className="text-center mt-2">
+                    <p className="text-sm font-medium text-[#F05D5E] mb-2">
+                      {language === 'es' ? 'Suscripcion mensual' : 'Monthly subscription'}
                     </p>
-
-                    <ul className="space-y-2.5 mb-6">
-                      {[
-                        language === 'es' ? 'Acceso a todas las funciones' : 'Access to all features',
-                        language === 'es' ? 'Sin contratos ni penalizaciones' : 'No contracts or penalties',
-                        language === 'es' ? 'Cancela cuando quieras' : 'Cancel anytime',
-                      ].map((item, i) => (
-                        <li key={i} className="flex items-center gap-2.5 text-sm text-white/95 font-medium">
-                          <div className="h-5 w-5 rounded-full bg-white/20 flex items-center justify-center shrink-0">
-                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
-                          </div>
-                          {item}
-                        </li>
-                      ))}
-                    </ul>
-
-                    <button
-                      onClick={() => navigate('/business/register')}
-                      className="w-full bg-white text-[#F05D5E] hover:bg-[#fcf7ba] hover:scale-[1.02] transition-all px-6 py-3.5 rounded-xl font-bold shadow-xl flex items-center justify-center gap-2"
-                      data-testid="hero-promo-cta"
-                    >
-                      {language === 'es' ? 'Activar mi prueba gratis' : 'Activate my free trial'}
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M17 8l4 4m0 0l-4 4m4-4H3" /></svg>
-                    </button>
+                    <div className="flex items-end justify-center gap-1 mb-1">
+                      <span className="text-5xl font-heading font-extrabold text-slate-900">$39</span>
+                      <span className="text-lg text-slate-500 mb-1">MXN</span>
+                    </div>
+                    <p className="text-sm text-slate-500 mb-2">
+                      {language === 'es' ? '/mes' : '/month'}
+                    </p>
+                    <p className="text-xs text-emerald-600 font-semibold mb-6">
+                      {language === 'es' ? 'Después de tus 30 días gratis' : 'After your 30 free days'}
+                    </p>
                   </div>
+
+                  <div className="space-y-2.5 text-left mb-6">
+                    {[
+                      language === 'es' ? 'Agenda ilimitada' : 'Unlimited scheduling',
+                      language === 'es' ? 'Trabajadores ilimitados' : 'Unlimited workers',
+                      language === 'es' ? 'Cobros con Stripe' : 'Stripe payments',
+                      language === 'es' ? 'Recordatorios por email' : 'Email reminders',
+                      language === 'es' ? 'Reportes y metricas' : 'Reports & metrics',
+                      language === 'es' ? 'Perfil publico en Bookvia' : 'Public profile on Bookvia',
+                      language === 'es' ? 'Recepcion digital' : 'Digital reception',
+                      language === 'es' ? 'Soporte incluido' : 'Support included',
+                    ].map((item, i) => (
+                      <div key={i} className="flex items-center gap-2 text-sm text-slate-700">
+                        <svg className="w-4 h-4 text-[#F05D5E] shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>
+                        {item}
+                      </div>
+                    ))}
+                  </div>
+
+                  <button
+                    onClick={() => navigate('/business/register')}
+                    className="w-full btn-coral px-6 py-3.5 rounded-xl text-base font-semibold"
+                    data-testid="hero-pricing-cta"
+                  >
+                    {language === 'es' ? 'Empezar ahora' : 'Start now'}
+                  </button>
                 </div>
               </div>
             </div>
@@ -416,7 +407,7 @@ function ForBusinessPage() {
                 <span className="text-5xl font-heading font-extrabold">$39</span>
                 <span className="text-lg text-muted-foreground mb-1">MXN</span>
               </div>
-              <p className="text-sm text-muted-foreground mb-2">{language === 'es' ? '/mes + 8% comision por reserva' : '/month + 8% fee per booking'}</p>
+              <p className="text-sm text-muted-foreground mb-2">{language === 'es' ? '/mes' : '/month'}</p>
               <p className="text-xs text-emerald-600 font-semibold mb-6">
                 {language === 'es' ? 'Después de tus 30 días gratis' : 'After your 30 free days'}
               </p>
