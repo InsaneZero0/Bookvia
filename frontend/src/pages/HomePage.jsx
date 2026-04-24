@@ -115,24 +115,16 @@ export default function HomePage() {
     <div className="min-h-screen" data-testid="home-page">
 
       {/* ═══ Hero ═══════════════════════════════════ */}
-      <section className="relative min-h-[88vh] flex items-center overflow-hidden bg-slate-900">
-        <div className="absolute inset-0">
-          <img
-            src="https://images.unsplash.com/photo-1584884013345-88b9cf247c0c?auto=format&fit=crop&q=80&w=2070"
-            alt=""
-            className="w-full h-full object-cover opacity-15"
-            loading="eager"
-          />
-          <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-slate-900/95 to-[#F05D5E]/20" />
-        </div>
+      <section className="relative min-h-[88vh] flex items-center overflow-hidden bg-[#fcf7ba]">
+        <div className="absolute inset-0 bg-gradient-to-l from-[#fcf7ba] via-[#fcf7ba]/80 to-white" />
         <div className="absolute top-20 left-10 w-72 h-72 bg-[#F05D5E]/10 rounded-full blur-3xl" />
-        <div className="absolute bottom-20 right-10 w-96 h-96 bg-[#F05D5E]/5 rounded-full blur-3xl" />
+        <div className="absolute bottom-20 right-10 w-96 h-96 bg-[#F05D5E]/10 rounded-full blur-3xl" />
 
-        <div className="relative z-10 container-app text-white py-16 lg:py-20">
+        <div className="relative z-10 container-app text-slate-900 py-16 lg:py-20">
           <div className="grid lg:grid-cols-12 gap-12 lg:gap-8 items-center">
             {/* LEFT: Text + Search */}
             <div className="lg:col-span-7 space-y-6 text-center lg:text-left animate-fade-in">
-              <Badge className="bg-white/10 text-white border-white/20 text-sm px-4 py-1.5 backdrop-blur-sm inline-flex items-center gap-2">
+              <Badge className="bg-slate-900/5 text-slate-900 border-slate-900/10 text-sm px-4 py-1.5 backdrop-blur-sm inline-flex items-center gap-2">
                 <Clock className="h-3.5 w-3.5 text-[#F05D5E]" />
                 {language === 'es' ? 'Disponible 24/7' : 'Available 24/7'}
               </Badge>
@@ -153,7 +145,7 @@ export default function HomePage() {
                 )}
               </h1>
 
-              <p className="text-base sm:text-lg text-white/70 max-w-2xl lg:mx-0 mx-auto">
+              <p className="text-base sm:text-lg text-slate-700 max-w-2xl lg:mx-0 mx-auto">
                 {language === 'es'
                   ? 'Encuentra servicios cerca de ti, compara opciones y agenda fácil en un solo lugar.'
                   : 'Find services near you, compare options and book easily in one place.'}
@@ -161,7 +153,7 @@ export default function HomePage() {
 
               {/* Search Bar */}
               <form onSubmit={handleSearch} className="mt-8">
-                <div className="bg-white/10 backdrop-blur-xl rounded-2xl p-2 max-w-3xl lg:mx-0 mx-auto border border-white/20">
+                <div className="bg-white/80 backdrop-blur-xl rounded-2xl p-2 max-w-3xl lg:mx-0 mx-auto border border-slate-900/10 shadow-xl">
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
                   {/* City Dropdown */}
                   <div className="relative" ref={cityRef}>
@@ -269,7 +261,7 @@ export default function HomePage() {
                 { icon: Clock, text: language === 'es' ? 'Reserva 24/7' : 'Book 24/7' },
                 { icon: CheckCircle2, text: language === 'es' ? 'Confirmacion inmediata' : 'Instant confirmation' },
               ].map(item => (
-                <div key={item.text} className="flex items-center gap-2 text-white/60 text-sm">
+                <div key={item.text} className="flex items-center gap-2 text-slate-700 text-sm">
                   <item.icon className="h-4 w-4 text-[#F05D5E]" />
                   <span>{item.text}</span>
                 </div>
@@ -281,14 +273,13 @@ export default function HomePage() {
             <div className="lg:col-span-5 relative hidden lg:block animate-fade-in" style={{ animationDelay: '0.6s' }}>
               <div className="relative">
                 {/* Main image */}
-                <div className="relative rounded-3xl overflow-hidden shadow-2xl border border-white/10 aspect-[4/5]">
+                <div className="relative rounded-3xl overflow-hidden shadow-2xl border border-slate-900/10 aspect-[4/5]">
                   <img
                     src="https://images.unsplash.com/photo-1522337660859-02fbefca4702?auto=format&fit=crop&q=80&w=1200"
                     alt="Cliente disfrutando servicio profesional en Bookvia"
                     className="w-full h-full object-cover"
                     loading="eager"
                   />
-                  <div className="absolute inset-0 bg-gradient-to-t from-slate-900/60 via-transparent to-transparent" />
                 </div>
 
                 {/* Floating card 1: Cita confirmada (top-left) */}
@@ -347,8 +338,8 @@ export default function HomePage() {
         </div>
 
         <div className="absolute bottom-6 left-1/2 -translate-x-1/2 animate-bounce">
-          <div className="w-5 h-8 border-2 border-white/30 rounded-full flex justify-center pt-1.5">
-            <div className="w-1 h-1.5 bg-white/40 rounded-full" />
+          <div className="w-5 h-8 border-2 border-slate-900/30 rounded-full flex justify-center pt-1.5">
+            <div className="w-1 h-1.5 bg-slate-900/40 rounded-full" />
           </div>
         </div>
       </section>
