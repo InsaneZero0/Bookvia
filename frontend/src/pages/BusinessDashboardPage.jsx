@@ -309,17 +309,33 @@ export default function BusinessDashboardPage() {
   const handlePhotoUpload = async (e) => {
     const files = Array.from(e.target.files);
     if (!files.length) return;
+    const MAX_PHOTOS = 10;
+    if (photos.length >= MAX_PHOTOS) {
+      toast.error(language === 'es' ? `Maximo ${MAX_PHOTOS} fotos permitidas` : `Maximum ${MAX_PHOTOS} photos allowed`);
+      e.target.value = '';
+      return;
+    }
+    const remaining = MAX_PHOTOS - photos.length;
+    const filesToUpload = files.slice(0, remaining);
+    if (files.length > remaining) {
+      toast.warning(language === 'es' ? `Solo puedes subir ${remaining} foto(s) mas` : `You can only upload ${remaining} more photo(s)`);
+    }
     setUploading(true);
     let successCount = 0;
-    for (const file of files) {
+    for (const file of filesToUpload) {
       if (file.size > 5 * 1024 * 1024) {
-        toast.error(`${file.name}: ${language === 'es' ? 'Máximo 5MB' : 'Max 5MB'}`);
+        toast.error(`${file.name}: ${language === 'es' ? 'Maximo 5MB' : 'Max 5MB'}`);
         continue;
       }
       try {
         await businessesAPI.uploadPhoto(file);
         successCount++;
-      } catch {
+      } catch (err) {
+        const detail = err.response?.data?.detail || '';
+        if (detail.includes('Maximum')) {
+          toast.error(language === 'es' ? `Maximo ${MAX_PHOTOS} fotos permitidas` : detail);
+          break;
+        }
         toast.error(`${file.name}: ${language === 'es' ? 'Error al subir' : 'Upload failed'}`);
       }
     }
@@ -1110,15 +1126,15 @@ export default function BusinessDashboardPage() {
                   <CardTitle className="text-base font-heading">{language === 'es' ? 'Galería de fotos' : 'Photo gallery'}</CardTitle>
                   <p className="text-xs text-muted-foreground mt-1">{language === 'es' ? 'Las fotos aparecerán en tu perfil público' : 'Photos will appear on your public profile'}</p>
                 </div>
-                <label className={`inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg cursor-pointer transition-colors ${uploading ? 'bg-muted text-muted-foreground' : 'btn-coral text-white'}`}>
+                <label className={`inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg cursor-pointer transition-colors ${uploading || photos.length >= 10 ? 'bg-muted text-muted-foreground cursor-not-allowed' : 'btn-coral text-white'}`}>
                   <Upload className="h-4 w-4" />
-                  {uploading ? (language === 'es' ? 'Subiendo...' : 'Uploading...') : (language === 'es' ? 'Subir fotos' : 'Upload photos')}
+                  {uploading ? (language === 'es' ? 'Subiendo...' : 'Uploading...') : photos.length >= 10 ? (language === 'es' ? 'Limite alcanzado' : 'Limit reached') : (language === 'es' ? `Subir fotos (${photos.length}/10)` : `Upload photos (${photos.length}/10)`)}
                   <input
                     type="file"
                     accept="image/jpeg,image/png,image/webp,image/gif,.jfif"
                     multiple
                     onChange={handlePhotoUpload}
-                    disabled={uploading}
+                    disabled={uploading || photos.length >= 10}
                     className="hidden"
                     data-testid="photo-upload-input"
                   />

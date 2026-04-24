@@ -223,12 +223,12 @@ function ForBusinessPage() {
   const { t, language } = useI18n();
 
   const features = [
-    { icon: '📅', title: language === 'es' ? 'Agenda inteligente' : 'Smart scheduling', desc: language === 'es' ? 'Calendario visual con vista diaria. Tus clientes reservan en linea y tu agenda se actualiza al instante.' : 'Visual daily calendar. Your clients book online and your schedule updates instantly.' },
-    { icon: '👥', title: language === 'es' ? 'Gestion de equipo' : 'Team management', desc: language === 'es' ? 'Agrega trabajadores, asigna horarios individuales y servicios a cada uno. Cada profesional con su propia agenda.' : 'Add workers, assign individual schedules and services. Each professional with their own agenda.' },
-    { icon: '💳', title: language === 'es' ? 'Cobros automaticos' : 'Auto payments', desc: language === 'es' ? 'Cobra anticipos via Stripe al momento de la reserva. Reduce cancelaciones y asegura tus ingresos.' : 'Collect deposits via Stripe at booking time. Reduce cancellations and secure your income.' },
-    { icon: '📊', title: language === 'es' ? 'Reportes y metricas' : 'Reports & metrics', desc: language === 'es' ? 'Ve cuanto facturas, cuantos clientes tienes y como crece tu negocio con graficas claras.' : 'See your revenue, client count and business growth with clear charts.' },
-    { icon: '🔔', title: language === 'es' ? 'Recordatorios automaticos' : 'Auto reminders', desc: language === 'es' ? 'Tus clientes reciben un recordatorio por email 24h antes de su cita. Menos faltas, mas ingresos.' : 'Your clients get an email reminder 24h before their appointment. Less no-shows, more income.' },
-    { icon: '🏪', title: language === 'es' ? 'Recepcion digital' : 'Digital reception', desc: language === 'es' ? 'Crea citas para clientes que llegan sin reserva. Busca clientes existentes y registra walk-ins.' : 'Create appointments for walk-in clients. Search existing clients and register walk-ins.' },
+    { icon: '🕐', title: language === 'es' ? 'Reservas 24/7' : 'Bookings 24/7', desc: language === 'es' ? 'Tus clientes agendan citas a cualquier hora del día, incluso cuando tu negocio está cerrado. Nunca pierdas una venta por un horario.' : 'Your clients book at any time, even when your business is closed. Never lose a sale due to schedule.' },
+    { icon: '👥', title: language === 'es' ? 'Agenda y equipo organizado' : 'Organized schedule & team', desc: language === 'es' ? 'Organiza tu agenda y la de tus trabajadores en un solo lugar. Cada profesional con sus servicios, horarios y citas.' : 'Organize your schedule and your team in one place. Each professional with their own services, hours and appointments.' },
+    { icon: '📸', title: language === 'es' ? 'Muestra tu trabajo' : 'Showcase your work', desc: language === 'es' ? 'Publica fotos de tus instalaciones y trabajos realizados. Genera confianza antes de que el cliente entre por la puerta.' : 'Publish photos of your facilities and past work. Build trust before the client walks in.' },
+    { icon: '📍', title: language === 'es' ? 'Ubicación con Google Maps' : 'Location with Google Maps', desc: language === 'es' ? 'Tus clientes te encuentran fácil con mapas integrados. Direcciones precisas, ruta y tiempo estimado de llegada.' : 'Clients find you easily with integrated maps. Precise directions, route and ETA.' },
+    { icon: '💳', title: language === 'es' ? 'Anticipos y cero cancelaciones' : 'Deposits & zero cancellations', desc: language === 'es' ? 'Cobra anticipos online al momento de la reserva vía Stripe. Reduce cancelaciones y asegura tus ingresos.' : 'Collect online deposits at booking time via Stripe. Reduce cancellations and secure your income.' },
+    { icon: '⚡', title: language === 'es' ? 'Adios al tiempo perdido' : 'No more wasted time', desc: language === 'es' ? 'Elimina horas atendiendo llamadas, revisando agenda y tomando notas. Bookvia automatiza todo y enfoca tu tiempo en atender clientes.' : 'Stop wasting hours on calls, checking schedules and taking notes. Bookvia automates it all so you focus on clients.' },
   ];
 
   const steps = [
@@ -240,51 +240,125 @@ function ForBusinessPage() {
   return (
     <div className="min-h-screen pt-16 bg-background">
       {/* Hero */}
-      <section className="relative overflow-hidden bg-slate-900 text-white py-20 sm:py-28">
-        <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-slate-900/95 to-[#F05D5E]/20" />
+      <section className="relative overflow-hidden bg-[#fcf7ba] text-slate-900 py-20 sm:py-28">
+        <div className="absolute inset-0 bg-gradient-to-r from-[#fcf7ba] via-[#fcf7ba]/80 to-white" />
         <div className="absolute top-10 right-10 w-72 h-72 bg-[#F05D5E]/10 rounded-full blur-3xl" />
+        <div className="absolute bottom-10 left-10 w-96 h-96 bg-[#F05D5E]/10 rounded-full blur-3xl" />
         <div className="relative z-10 container-app">
-          <div className="max-w-3xl mx-auto text-center space-y-6">
-            <span className="inline-block px-4 py-1.5 rounded-full bg-[#F05D5E]/20 text-[#F05D5E] text-sm font-medium border border-[#F05D5E]/30">
-              {language === 'es' ? 'Para profesionales y negocios' : 'For professionals & businesses'}
-            </span>
-            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-heading font-extrabold tracking-tight leading-[1.1]">
-              {language === 'es' ? (
-                <>Haz crecer tu negocio con <span className="text-[#F05D5E]">reservas en linea</span></>
-              ) : (
-                <>Grow your business with <span className="text-[#F05D5E]">online bookings</span></>
-              )}
-            </h1>
-            <p className="text-lg text-white/70 max-w-2xl mx-auto">
-              {language === 'es'
-                ? 'Gestiona tu agenda, reduce cancelaciones y deja que tus clientes reserven 24/7. Todo desde una sola plataforma.'
-                : 'Manage your schedule, reduce cancellations and let your clients book 24/7. All from one platform.'}
-            </p>
-            <div className="flex flex-col sm:flex-row gap-3 justify-center pt-4">
-              <button onClick={() => navigate('/business/register')}
-                className="btn-coral px-8 py-4 rounded-xl text-base font-semibold flex items-center justify-center gap-2">
-                {language === 'es' ? 'Registrar mi negocio gratis' : 'Register my business free'}
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" /></svg>
-              </button>
+          <div className="grid lg:grid-cols-12 gap-12 items-center">
+            {/* LEFT: Text + CTA */}
+            <div className="lg:col-span-7 space-y-6 text-center lg:text-left">
+              <span className="inline-block px-4 py-1.5 rounded-full bg-[#F05D5E]/15 text-[#F05D5E] text-sm font-medium border border-[#F05D5E]/30">
+                {language === 'es' ? 'Para profesionales y negocios' : 'For professionals & businesses'}
+              </span>
+              <h1 className="text-4xl sm:text-5xl lg:text-6xl font-heading font-extrabold tracking-tight leading-[1.1]">
+                {language === 'es' ? (
+                  <>Haz crecer tu negocio con <span className="text-[#F05D5E]">reservas en linea</span></>
+                ) : (
+                  <>Grow your business with <span className="text-[#F05D5E]">online bookings</span></>
+                )}
+              </h1>
+              <p className="text-lg text-slate-700 max-w-xl lg:mx-0 mx-auto">
+                {language === 'es'
+                  ? 'Gestiona tu agenda, reduce cancelaciones y deja que tus clientes reserven 24/7. Todo desde una sola plataforma.'
+                  : 'Manage your schedule, reduce cancellations and let your clients book 24/7. All from one platform.'}
+              </p>
+              <div className="flex flex-col sm:flex-row gap-3 justify-center lg:justify-start pt-4">
+                <button onClick={() => navigate('/business/register')}
+                  className="btn-coral px-8 py-4 rounded-xl text-base font-semibold flex items-center justify-center gap-2">
+                  {language === 'es' ? 'Registrar mi negocio gratis' : 'Register my business free'}
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" /></svg>
+                </button>
+              </div>
+              <p className="text-xs text-slate-500">{language === 'es' ? 'Sin compromiso. Cancela cuando quieras.' : 'No commitment. Cancel anytime.'}</p>
             </div>
-            <p className="text-xs text-white/40">{language === 'es' ? 'Sin compromiso. Cancela cuando quieras.' : 'No commitment. Cancel anytime.'}</p>
+
+            {/* RIGHT: Promo card estilo pricing */}
+            <div className="lg:col-span-5 relative">
+              <div className="relative animate-fade-in" style={{ animationDelay: '0.2s' }}>
+                <div className="rounded-2xl border-2 border-[#F05D5E] p-8 bg-white shadow-2xl relative">
+                  {/* Badge verde flotante */}
+                  <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-emerald-500 text-white text-xs font-extrabold uppercase tracking-wider px-4 py-1.5 rounded-full shadow-lg whitespace-nowrap">
+                    {language === 'es' ? '✨ Primer mes gratis' : '✨ First month free'}
+                  </div>
+
+                  <div className="text-center mt-2">
+                    <p className="text-sm font-medium text-[#F05D5E] mb-2">
+                      {language === 'es' ? 'Suscripcion mensual' : 'Monthly subscription'}
+                    </p>
+                    <div className="flex items-end justify-center gap-1 mb-1">
+                      <span className="text-5xl font-heading font-extrabold text-slate-900">$39</span>
+                      <span className="text-lg text-slate-500 mb-1">MXN</span>
+                    </div>
+                    <p className="text-sm text-slate-500 mb-2">
+                      {language === 'es' ? '/mes' : '/month'}
+                    </p>
+                    <p className="text-xs text-emerald-600 font-semibold mb-6">
+                      {language === 'es' ? 'Después de tus 30 días gratis' : 'After your 30 free days'}
+                    </p>
+                  </div>
+
+                  <div className="space-y-2.5 text-left mb-6">
+                    {[
+                      language === 'es' ? 'Agenda ilimitada' : 'Unlimited scheduling',
+                      language === 'es' ? 'Trabajadores ilimitados' : 'Unlimited workers',
+                      language === 'es' ? 'Cobros con Stripe' : 'Stripe payments',
+                      language === 'es' ? 'Recordatorios por email' : 'Email reminders',
+                      language === 'es' ? 'Reportes y metricas' : 'Reports & metrics',
+                      language === 'es' ? 'Perfil publico en Bookvia' : 'Public profile on Bookvia',
+                      language === 'es' ? 'Recepcion digital' : 'Digital reception',
+                      language === 'es' ? 'Soporte incluido' : 'Support included',
+                    ].map((item, i) => (
+                      <div key={i} className="flex items-center gap-2 text-sm text-slate-700">
+                        <svg className="w-4 h-4 text-[#F05D5E] shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>
+                        {item}
+                      </div>
+                    ))}
+                  </div>
+
+                  <button
+                    onClick={() => navigate('/business/register')}
+                    className="w-full btn-coral px-6 py-3.5 rounded-xl text-base font-semibold"
+                    data-testid="hero-pricing-cta"
+                  >
+                    {language === 'es' ? 'Empezar ahora' : 'Start now'}
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </section>
 
       {/* Features */}
-      <section className="py-16 sm:py-24 bg-background">
-        <div className="container-app">
-          <div className="text-center mb-14">
-            <h2 className="text-2xl sm:text-3xl font-heading font-bold tracking-tight">
-              {language === 'es' ? 'Todo lo que necesitas para gestionar tu negocio' : 'Everything you need to manage your business'}
+      <section className="py-16 sm:py-24 bg-background relative overflow-hidden">
+        <div className="absolute top-20 right-0 w-72 h-72 bg-[#fcf7ba]/40 rounded-full blur-3xl" />
+        <div className="absolute bottom-20 left-0 w-96 h-96 bg-[#F05D5E]/5 rounded-full blur-3xl" />
+        <div className="container-app relative z-10">
+          <div className="text-center mb-14 max-w-3xl mx-auto">
+            <span className="inline-block px-4 py-1.5 rounded-full bg-[#F05D5E]/10 text-[#F05D5E] text-xs font-bold uppercase tracking-wider mb-4">
+              {language === 'es' ? 'Beneficios de Bookvia' : 'Bookvia benefits'}
+            </span>
+            <h2 className="text-3xl sm:text-4xl lg:text-5xl font-heading font-extrabold tracking-tight leading-tight">
+              {language === 'es' ? (
+                <>Lo que <span className="text-[#F05D5E]">Bookvia</span> hace por ti</>
+              ) : (
+                <>What <span className="text-[#F05D5E]">Bookvia</span> does for you</>
+              )}
             </h2>
+            <p className="text-base sm:text-lg text-muted-foreground mt-4">
+              {language === 'es'
+                ? 'Más reservas, menos pérdidas y todo el control de tu negocio en un solo lugar.'
+                : 'More bookings, fewer losses and full control of your business in one place.'}
+            </p>
           </div>
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {features.map((f, i) => (
-              <div key={i} className="p-6 rounded-2xl border bg-card hover:shadow-lg transition-shadow">
-                <span className="text-3xl">{f.icon}</span>
-                <h3 className="font-heading font-bold text-lg mt-4 mb-2">{f.title}</h3>
+              <div key={i} className="group relative p-7 rounded-2xl border bg-card hover:shadow-xl hover:-translate-y-1 hover:border-[#F05D5E]/30 transition-all duration-300">
+                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-[#fcf7ba] to-[#F05D5E]/15 flex items-center justify-center text-3xl mb-4 group-hover:scale-110 transition-transform">
+                  {f.icon}
+                </div>
+                <h3 className="font-heading font-bold text-lg mb-3 text-foreground">{f.title}</h3>
                 <p className="text-sm text-muted-foreground leading-relaxed">{f.desc}</p>
               </div>
             ))}
@@ -324,13 +398,19 @@ function ForBusinessPage() {
             </p>
           </div>
           <div className="max-w-sm mx-auto">
-            <div className="rounded-2xl border-2 border-[#F05D5E] p-8 text-center bg-card shadow-lg">
-              <p className="text-sm font-medium text-[#F05D5E] mb-2">{language === 'es' ? 'Suscripcion mensual' : 'Monthly subscription'}</p>
+            <div className="rounded-2xl border-2 border-[#F05D5E] p-8 text-center bg-card shadow-lg relative">
+              <div className="absolute -top-4 left-1/2 -translate-x-1/2 bg-emerald-500 text-white text-xs font-extrabold uppercase tracking-wider px-4 py-1.5 rounded-full shadow-lg whitespace-nowrap">
+                {language === 'es' ? '✨ Primer mes gratis' : '✨ First month free'}
+              </div>
+              <p className="text-sm font-medium text-[#F05D5E] mb-2 mt-2">{language === 'es' ? 'Suscripcion mensual' : 'Monthly subscription'}</p>
               <div className="flex items-end justify-center gap-1 mb-1">
                 <span className="text-5xl font-heading font-extrabold">$39</span>
                 <span className="text-lg text-muted-foreground mb-1">MXN</span>
               </div>
-              <p className="text-sm text-muted-foreground mb-6">{language === 'es' ? '/mes + 8% comision por reserva' : '/month + 8% fee per booking'}</p>
+              <p className="text-sm text-muted-foreground mb-2">{language === 'es' ? '/mes' : '/month'}</p>
+              <p className="text-xs text-emerald-600 font-semibold mb-6">
+                {language === 'es' ? 'Después de tus 30 días gratis' : 'After your 30 free days'}
+              </p>
               <div className="space-y-3 text-left mb-8">
                 {[
                   language === 'es' ? 'Agenda ilimitada' : 'Unlimited scheduling',
@@ -358,12 +438,14 @@ function ForBusinessPage() {
       </section>
 
       {/* Final CTA */}
-      <section className="py-16 bg-slate-900 text-white">
-        <div className="container-app text-center space-y-5">
+      <section className="py-16 bg-[#fcf7ba] text-slate-900 relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-72 h-72 bg-[#F05D5E]/10 rounded-full blur-3xl" />
+        <div className="absolute bottom-0 left-0 w-72 h-72 bg-[#F05D5E]/10 rounded-full blur-3xl" />
+        <div className="container-app text-center space-y-5 relative z-10">
           <h2 className="text-2xl sm:text-3xl font-heading font-bold">
             {language === 'es' ? 'Listo para recibir mas clientes?' : 'Ready to get more clients?'}
           </h2>
-          <p className="text-slate-400 max-w-lg mx-auto">
+          <p className="text-slate-700 max-w-lg mx-auto">
             {language === 'es'
               ? 'Unete a Bookvia y empieza a recibir reservas en linea hoy mismo.'
               : 'Join Bookvia and start receiving online bookings today.'}

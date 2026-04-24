@@ -98,7 +98,7 @@ export default function HelpPage() {
     {
       question: language === 'es' ? '¿Cómo contacto al soporte?' : 'How do I contact support?',
       answer: language === 'es'
-        ? 'Puedes usar el formulario en esta página, enviarnos un correo a soporte@bookvia.com, o llamarnos al +52 55 1234 5678.'
+        ? 'Puedes usar el formulario en esta página, enviarnos un correo a contacto@bookvia.com, o llamarnos al +52 55 1234 5678.'
         : 'You can use the form on this page, email us at support@bookvia.com, or call us at +52 55 1234 5678.'
     }
   ];
@@ -180,8 +180,8 @@ export default function HelpPage() {
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground">Email</p>
-                    <a href="mailto:soporte@bookvia.com" className="text-foreground hover:text-coral">
-                      soporte@bookvia.com
+                    <a href="mailto:contacto@bookvia.com" className="text-foreground hover:text-coral">
+                      contacto@bookvia.com
                     </a>
                   </div>
                 </div>

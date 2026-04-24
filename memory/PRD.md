@@ -115,16 +115,36 @@ Auth Social: Emergent-managed Google Auth (solo clientes)
 
 ## Tareas Pendientes
 
-### P2
+### P0 - Seguridad (antes de lanzamiento publico)
+- [x] Cloudflare delante del dominio (DDoS, WAF, oculta IP Railway) - COMPLETADO Feb 2026
+- [x] Cloudflare Access configurado (solo emails autorizados - beta privada) - COMPLETADO Feb 2026
+- [x] Dominio bookvia.app conectado a Vercel via Cloudflare - COMPLETADO Feb 2026
+- [ ] Rate limiting backend con slowapi (2-3h dev)
+- [ ] Proteccion fuerza bruta login (bloqueo tras 5 intentos + CAPTCHA) (3-4h dev)
+- [ ] reCAPTCHA v3 en formularios criticos (registro, login, contacto) (2-3h dev)
+- [ ] Headers HSTS + security headers (15min dev)
+- [ ] Sentry integration para monitoreo errores (1h dev)
+- [ ] Logs de auditoria de acciones admin (4-6h dev)
+- [ ] Backups automaticos MongoDB Atlas verificados
+
+### P0 - Decisiones pendientes usuario
+- [ ] Rebranding "Bookvia" (VIA registrada IMPI clase 9) - esperando decision
+- [ ] Acceso privado staging: Cloudflare Access (gratis 50 users) para beta cerrada
+
+### P1
+- [ ] Integracion WhatsApp/SMS con Twilio (recordatorios citas)
+- [ ] Precios suscripcion $199 MXN / $19.99 USD + Stripe Billing
 - [ ] Optimizacion UX mobile avanzada
+
+### P2
+- [ ] Refactor AdminDashboardPage.jsx (+2400 lineas) en componentes de tabs
 
 ### P3
 - [ ] PWA (Progressive Web App)
 - [ ] Stripe Connect (payouts automaticos - pausado hasta resolver estructura fiscal)
 - [ ] Chat / Preguntas al negocio
 - [ ] Cupones o codigos de descuento
-- [ ] Notificaciones Push
-- [ ] Notificaciones por WhatsApp/SMS
+- [ ] Notificaciones Push navegador
 
 ## Notas Tecnicas
 - Google Login: Usa Emergent Auth (auth.emergentagent.com). Solo para clientes.
