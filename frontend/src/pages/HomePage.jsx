@@ -310,7 +310,7 @@ export default function HomePage() {
                       {language === 'es' ? 'Gratis' : 'Free'}
                     </div>
                     <span className="text-[10px] text-slate-500 font-medium">
-                      {language === 'es' ? 'Sin tarjeta' : 'No card needed'}
+                      {language === 'es' ? '30 días de prueba' : '30-day trial'}
                     </span>
                   </div>
                   <div className="flex items-center gap-3">
