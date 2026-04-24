@@ -153,8 +153,8 @@ export default function HomePage() {
 
             <p className="text-base sm:text-lg text-white/70 max-w-2xl mx-auto">
               {language === 'es'
-                ? 'Belleza, salud, fitness y mas. Encuentra, compara y reserva con los mejores profesionales de tu ciudad.'
-                : 'Beauty, health, fitness and more. Find, compare and book with the best professionals in your city.'}
+                ? 'Encuentra servicios cerca de ti, compara opciones y agenda fácil en un solo lugar.'
+                : 'Find services near you, compare options and book easily in one place.'}
             </p>
 
             {/* Search Bar */}
