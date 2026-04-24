@@ -130,15 +130,24 @@ export default function HomePage() {
 
         <div className="relative z-10 container-app text-center text-white py-16">
           <div className="max-w-4xl mx-auto space-y-6 animate-fade-in">
-            <Badge className="bg-white/10 text-white border-white/20 text-sm px-4 py-1.5 backdrop-blur-sm">
+            <Badge className="bg-white/10 text-white border-white/20 text-sm px-4 py-1.5 backdrop-blur-sm inline-flex items-center gap-2">
+              <Clock className="h-3.5 w-3.5 text-[#F05D5E]" />
               {language === 'es' ? 'Reserva 24/7' : 'Book 24/7'}
             </Badge>
 
-            <h1 className="text-4xl sm:text-5xl lg:text-7xl font-heading font-extrabold tracking-tight leading-[1.1]">
+            <h1 className="text-5xl sm:text-6xl lg:text-8xl font-heading font-extrabold tracking-tight leading-[0.95]">
               {language === 'es' ? (
-                <>Busca, <span className="text-[#F05D5E]">elige</span>,<br />reserva</>
+                <span className="inline-flex flex-wrap justify-center gap-x-4 gap-y-2">
+                  <span className="animate-fade-in" style={{ animationDelay: '0.1s' }}>Busca.</span>
+                  <span className="animate-fade-in" style={{ animationDelay: '0.3s' }}>Elige.</span>
+                  <span className="text-[#F05D5E] animate-fade-in" style={{ animationDelay: '0.5s' }}>Reserva.</span>
+                </span>
               ) : (
-                <>Search, <span className="text-[#F05D5E]">choose</span>,<br />book</>
+                <span className="inline-flex flex-wrap justify-center gap-x-4 gap-y-2">
+                  <span className="animate-fade-in" style={{ animationDelay: '0.1s' }}>Search.</span>
+                  <span className="animate-fade-in" style={{ animationDelay: '0.3s' }}>Choose.</span>
+                  <span className="text-[#F05D5E] animate-fade-in" style={{ animationDelay: '0.5s' }}>Book.</span>
+                </span>
               )}
             </h1>
 
