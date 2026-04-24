@@ -245,30 +245,96 @@ function ForBusinessPage() {
         <div className="absolute top-10 right-10 w-72 h-72 bg-[#F05D5E]/10 rounded-full blur-3xl" />
         <div className="absolute bottom-10 left-10 w-96 h-96 bg-[#F05D5E]/10 rounded-full blur-3xl" />
         <div className="relative z-10 container-app">
-          <div className="max-w-3xl mx-auto text-center space-y-6">
-            <span className="inline-block px-4 py-1.5 rounded-full bg-[#F05D5E]/15 text-[#F05D5E] text-sm font-medium border border-[#F05D5E]/30">
-              {language === 'es' ? 'Para profesionales y negocios' : 'For professionals & businesses'}
-            </span>
-            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-heading font-extrabold tracking-tight leading-[1.1]">
-              {language === 'es' ? (
-                <>Haz crecer tu negocio con <span className="text-[#F05D5E]">reservas en linea</span></>
-              ) : (
-                <>Grow your business with <span className="text-[#F05D5E]">online bookings</span></>
-              )}
-            </h1>
-            <p className="text-lg text-slate-700 max-w-2xl mx-auto">
-              {language === 'es'
-                ? 'Gestiona tu agenda, reduce cancelaciones y deja que tus clientes reserven 24/7. Todo desde una sola plataforma.'
-                : 'Manage your schedule, reduce cancellations and let your clients book 24/7. All from one platform.'}
-            </p>
-            <div className="flex flex-col sm:flex-row gap-3 justify-center pt-4">
-              <button onClick={() => navigate('/business/register')}
-                className="btn-coral px-8 py-4 rounded-xl text-base font-semibold flex items-center justify-center gap-2">
-                {language === 'es' ? 'Registrar mi negocio gratis' : 'Register my business free'}
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" /></svg>
-              </button>
+          <div className="grid lg:grid-cols-12 gap-12 items-center">
+            {/* LEFT: Text + CTA */}
+            <div className="lg:col-span-7 space-y-6 text-center lg:text-left">
+              <span className="inline-block px-4 py-1.5 rounded-full bg-[#F05D5E]/15 text-[#F05D5E] text-sm font-medium border border-[#F05D5E]/30">
+                {language === 'es' ? 'Para profesionales y negocios' : 'For professionals & businesses'}
+              </span>
+              <h1 className="text-4xl sm:text-5xl lg:text-6xl font-heading font-extrabold tracking-tight leading-[1.1]">
+                {language === 'es' ? (
+                  <>Haz crecer tu negocio con <span className="text-[#F05D5E]">reservas en linea</span></>
+                ) : (
+                  <>Grow your business with <span className="text-[#F05D5E]">online bookings</span></>
+                )}
+              </h1>
+              <p className="text-lg text-slate-700 max-w-xl lg:mx-0 mx-auto">
+                {language === 'es'
+                  ? 'Gestiona tu agenda, reduce cancelaciones y deja que tus clientes reserven 24/7. Todo desde una sola plataforma.'
+                  : 'Manage your schedule, reduce cancellations and let your clients book 24/7. All from one platform.'}
+              </p>
+              <div className="flex flex-col sm:flex-row gap-3 justify-center lg:justify-start pt-4">
+                <button onClick={() => navigate('/business/register')}
+                  className="btn-coral px-8 py-4 rounded-xl text-base font-semibold flex items-center justify-center gap-2">
+                  {language === 'es' ? 'Registrar mi negocio gratis' : 'Register my business free'}
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" /></svg>
+                </button>
+              </div>
+              <p className="text-xs text-slate-500">{language === 'es' ? 'Sin compromiso. Cancela cuando quieras.' : 'No commitment. Cancel anytime.'}</p>
             </div>
-            <p className="text-xs text-slate-500">{language === 'es' ? 'Sin compromiso. Cancela cuando quieras.' : 'No commitment. Cancel anytime.'}</p>
+
+            {/* RIGHT: Promo banner 30 dias gratis */}
+            <div className="lg:col-span-5 relative">
+              <div className="relative">
+                {/* Stamp/Badge tipo "sello" rotado */}
+                <div className="hidden lg:block absolute -top-8 -right-4 z-20 transform rotate-12 animate-fade-in" style={{ animationDelay: '0.4s' }}>
+                  <div className="bg-[#F05D5E] text-white text-[10px] font-extrabold uppercase tracking-widest rounded-full h-28 w-28 flex flex-col items-center justify-center shadow-2xl border-4 border-white">
+                    <span className="text-3xl">🎉</span>
+                    <span className="leading-none mt-1">{language === 'es' ? '¡Oferta!' : 'Offer!'}</span>
+                  </div>
+                </div>
+
+                {/* Main promo card */}
+                <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#F05D5E] via-[#e8504f] to-[#d94748] p-1 shadow-2xl animate-fade-in" style={{ animationDelay: '0.2s' }}>
+                  <div className="absolute inset-0 opacity-20" style={{ background: 'radial-gradient(circle at 30% 30%, #fcf7ba 0%, transparent 50%)' }} />
+                  <div className="relative bg-gradient-to-br from-[#F05D5E] to-[#d94748] rounded-3xl p-7 sm:p-9 text-white">
+                    <div className="inline-block bg-[#fcf7ba] text-[#d94748] text-[10px] font-extrabold uppercase tracking-widest px-3 py-1 rounded-full mb-4 shadow-md">
+                      {language === 'es' ? 'Oferta de lanzamiento' : 'Launch offer'}
+                    </div>
+
+                    <div className="mb-5">
+                      <div className="flex items-baseline gap-2 mb-1">
+                        <span className="text-7xl sm:text-8xl font-heading font-black leading-none">30</span>
+                        <span className="text-2xl font-bold">{language === 'es' ? 'días' : 'days'}</span>
+                      </div>
+                      <h3 className="text-3xl sm:text-4xl font-heading font-extrabold leading-tight">
+                        {language === 'es' ? 'totalmente GRATIS' : 'totally FREE'}
+                      </h3>
+                    </div>
+
+                    <p className="text-white/95 text-sm mb-6 leading-relaxed">
+                      {language === 'es'
+                        ? 'Prueba todas las funciones sin pagar nada el primer mes. Sin compromiso, sin sorpresas.'
+                        : 'Try all features without paying anything the first month. No commitment, no surprises.'}
+                    </p>
+
+                    <ul className="space-y-2.5 mb-6">
+                      {[
+                        language === 'es' ? 'Acceso a todas las funciones' : 'Access to all features',
+                        language === 'es' ? 'Sin contratos ni penalizaciones' : 'No contracts or penalties',
+                        language === 'es' ? 'Cancela cuando quieras' : 'Cancel anytime',
+                      ].map((item, i) => (
+                        <li key={i} className="flex items-center gap-2.5 text-sm text-white/95 font-medium">
+                          <div className="h-5 w-5 rounded-full bg-white/20 flex items-center justify-center shrink-0">
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
+                          </div>
+                          {item}
+                        </li>
+                      ))}
+                    </ul>
+
+                    <button
+                      onClick={() => navigate('/business/register')}
+                      className="w-full bg-white text-[#F05D5E] hover:bg-[#fcf7ba] hover:scale-[1.02] transition-all px-6 py-3.5 rounded-xl font-bold shadow-xl flex items-center justify-center gap-2"
+                      data-testid="hero-promo-cta"
+                    >
+                      {language === 'es' ? 'Activar mi prueba gratis' : 'Activate my free trial'}
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M17 8l4 4m0 0l-4 4m4-4H3" /></svg>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </section>
@@ -330,46 +396,8 @@ function ForBusinessPage() {
       </section>
 
       {/* Pricing */}
-      <section className="py-16 sm:py-24 bg-background relative overflow-hidden">
-        <div className="absolute top-20 left-10 w-72 h-72 bg-[#fcf7ba]/30 rounded-full blur-3xl" />
-        <div className="absolute bottom-20 right-10 w-96 h-96 bg-[#F05D5E]/5 rounded-full blur-3xl" />
-        <div className="container-app relative z-10">
-
-          {/* Promo banner - 30 dias gratis */}
-          <div className="max-w-4xl mx-auto mb-10">
-            <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-[#F05D5E] via-[#e8504f] to-[#d94748] p-1 shadow-2xl">
-              <div className="absolute inset-0 opacity-20" style={{ background: 'radial-gradient(circle at 20% 50%, #fcf7ba 0%, transparent 50%)' }} />
-              <div className="relative bg-gradient-to-r from-[#F05D5E] to-[#d94748] rounded-3xl px-6 sm:px-10 py-6 sm:py-7 flex flex-col sm:flex-row items-center justify-between gap-5">
-                <div className="flex items-center gap-4 text-white">
-                  <div className="hidden sm:flex h-14 w-14 rounded-2xl bg-white/20 backdrop-blur items-center justify-center text-3xl shrink-0">
-                    🎉
-                  </div>
-                  <div className="text-center sm:text-left">
-                    <div className="inline-block bg-[#fcf7ba] text-[#d94748] text-[10px] font-extrabold uppercase tracking-widest px-2.5 py-1 rounded-full mb-1.5">
-                      {language === 'es' ? 'Oferta de lanzamiento' : 'Launch offer'}
-                    </div>
-                    <h3 className="font-heading font-extrabold text-xl sm:text-2xl lg:text-3xl text-white leading-tight">
-                      {language === 'es' ? '30 días totalmente GRATIS' : '30 days totally FREE'}
-                    </h3>
-                    <p className="text-white/90 text-sm mt-1">
-                      {language === 'es'
-                        ? 'Prueba todas las funciones sin pagar nada el primer mes.'
-                        : 'Try all features without paying anything the first month.'}
-                    </p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => navigate('/business/register')}
-                  className="bg-white text-[#F05D5E] hover:bg-[#fcf7ba] hover:scale-105 transition-all px-6 py-3 rounded-xl font-bold whitespace-nowrap shadow-xl flex items-center gap-2"
-                  data-testid="pricing-promo-cta"
-                >
-                  {language === 'es' ? 'Empezar gratis' : 'Start free'}
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M17 8l4 4m0 0l-4 4m4-4H3" /></svg>
-                </button>
-              </div>
-            </div>
-          </div>
-
+      <section className="py-16 sm:py-24 bg-background">
+        <div className="container-app">
           <div className="text-center mb-14">
             <h2 className="text-2xl sm:text-3xl font-heading font-bold tracking-tight">
               {language === 'es' ? 'Simple y accesible' : 'Simple & affordable'}
