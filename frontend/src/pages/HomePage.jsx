@@ -283,8 +283,8 @@ export default function HomePage() {
                 {/* Main image */}
                 <div className="relative rounded-3xl overflow-hidden shadow-2xl border border-white/10 aspect-[4/5]">
                   <img
-                    src="https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&q=80&w=1200"
-                    alt="Servicio profesional Bookvia"
+                    src="https://images.unsplash.com/photo-1522337660859-02fbefca4702?auto=format&fit=crop&q=80&w=1200"
+                    alt="Cliente disfrutando servicio profesional en Bookvia"
                     className="w-full h-full object-cover"
                     loading="eager"
                   />
@@ -306,24 +306,28 @@ export default function HomePage() {
                   </div>
                 </div>
 
-                {/* Floating card 2: Rating (bottom-right) */}
-                <div className="absolute -bottom-6 -right-6 bg-white rounded-2xl shadow-2xl p-4 animate-fade-in w-[220px]" style={{ animationDelay: '1.1s' }}>
-                  <div className="flex items-center gap-2 mb-1.5">
-                    <div className="flex -space-x-1.5">
-                      {[1,2,3].map(i => (
-                        <div key={i} className="h-7 w-7 rounded-full bg-gradient-to-br from-[#F05D5E] to-amber-400 border-2 border-white" />
-                      ))}
-                    </div>
-                    <span className="text-xs text-slate-500 font-medium">+2.5K</span>
-                  </div>
-                  <div className="flex items-center gap-1 mb-1">
+                {/* Floating card 2: Testimonial (bottom-right) */}
+                <div className="absolute -bottom-6 -right-6 bg-white rounded-2xl shadow-2xl p-4 animate-fade-in w-[250px]" style={{ animationDelay: '1.1s' }}>
+                  <div className="flex items-center gap-1 mb-2">
                     {[1,2,3,4,5].map(i => (
                       <Star key={i} className="h-3.5 w-3.5 fill-amber-400 text-amber-400" />
                     ))}
-                    <span className="text-xs font-bold text-slate-900 ml-1">4.9</span>
                   </div>
-                  <div className="text-xs text-slate-500">
-                    {language === 'es' ? 'Clientes felices' : 'Happy clients'}
+                  <p className="text-xs text-slate-700 mb-2 leading-snug">
+                    {language === 'es'
+                      ? '"Reservé en 1 minuto. Excelente!"'
+                      : '"Booked in 1 minute. Excellent!"'}
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <div className="h-7 w-7 rounded-full bg-gradient-to-br from-[#F05D5E] to-amber-400 flex items-center justify-center text-white text-xs font-bold">
+                      A
+                    </div>
+                    <div>
+                      <div className="text-xs font-semibold text-slate-900">Ana M.</div>
+                      <div className="text-[10px] text-slate-500">
+                        {language === 'es' ? 'Cliente verificado' : 'Verified client'}
+                      </div>
+                    </div>
                   </div>
                 </div>
 
