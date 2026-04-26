@@ -344,71 +344,97 @@ export default function SearchPage() {
   return (
     <div className="min-h-screen pt-20 bg-background" data-testid="search-page">
 
-      {/* ── Search Header ────────────────────────────── */}
-      <div className="bg-muted/30 border-b border-border">
-        <div className="container-app py-4">
-          <form onSubmit={handleSearch} className="flex flex-col sm:flex-row gap-2">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input placeholder={language === 'es' ? '¿Qué servicio buscas?' : 'Search service...'} value={query} onChange={(e) => setQuery(e.target.value)} className="pl-10 h-11" data-testid="search-input" />
-            </div>
-            <div className="flex gap-2">
-              <div className="relative flex-1 sm:max-w-[200px]">
-                <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input placeholder={language === 'es' ? 'Ciudad' : 'City'} value={city} onChange={(e) => setCity(e.target.value)} className="pl-10 h-11" data-testid="search-city" />
+      {/* ── Search Header (compact) ────────────────── */}
+      <div className="bg-muted/30 border-b border-border sticky top-16 z-30 backdrop-blur-sm">
+        <div className="container-app py-3">
+          <form onSubmit={handleSearch} className="flex flex-col lg:flex-row gap-2 lg:items-center">
+            {/* Main search row */}
+            <div className="flex flex-1 gap-2 min-w-0">
+              <div className="relative flex-1 min-w-0">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder={language === 'es' ? '¿Qué servicio buscas?' : 'Search service...'}
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  className="pl-10 h-10 bg-white border-border/60"
+                  data-testid="search-input"
+                />
               </div>
-              <Button type="submit" className="h-11 btn-coral shrink-0" data-testid="search-button">
-                <Search className="h-4 w-4 sm:mr-1.5" /><span className="hidden sm:inline">{language === 'es' ? 'Buscar' : 'Search'}</span>
+              <div className="relative w-32 sm:w-44 shrink-0">
+                <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder={language === 'es' ? 'Ciudad' : 'City'}
+                  value={city}
+                  onChange={(e) => setCity(e.target.value)}
+                  className="pl-10 h-10 bg-white border-border/60"
+                  data-testid="search-city"
+                />
+              </div>
+              <Button type="submit" className="h-10 btn-coral shrink-0 px-4" data-testid="search-button">
+                <Search className="h-4 w-4 sm:mr-1.5" />
+                <span className="hidden sm:inline">{language === 'es' ? 'Buscar' : 'Search'}</span>
               </Button>
             </div>
-            <div className="flex gap-2">
-              <Button
+
+            {/* Secondary actions row - neutral pills */}
+            <div className="flex items-center gap-1.5 lg:ml-auto">
+              <button
                 type="button"
-                variant={sortBy === 'nearest' ? 'default' : 'outline'}
-                className={`h-11 flex-1 sm:flex-none ${sortBy === 'nearest' ? 'bg-[#F05D5E] hover:bg-[#F05D5E]/90 text-white' : ''}`}
                 onClick={requestLocation}
                 disabled={locatingUser}
+                className={`h-9 px-3 inline-flex items-center gap-1.5 rounded-full text-xs font-medium transition-colors border ${
+                  sortBy === 'nearest'
+                    ? 'bg-slate-900 text-white border-slate-900'
+                    : 'bg-white text-slate-700 border-border/60 hover:bg-slate-50'
+                }`}
                 data-testid="nearby-button"
               >
                 {locatingUser ? (
-                  <><span className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin mr-1.5" />{language === 'es' ? 'Ubicando...' : 'Locating...'}</>
+                  <span className="h-3.5 w-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
                 ) : (
-                  <><MapPin className="h-4 w-4 mr-1.5" />{language === 'es' ? 'Cerca de ti' : 'Near you'}</>
+                  <MapPin className="h-3.5 w-3.5" />
                 )}
-              </Button>
-
-            {/* View Toggle */}
-            <div className="hidden md:flex items-center border rounded-lg overflow-hidden">
-              <button
-                type="button"
-                onClick={() => setViewMode('list')}
-                className={`px-3 py-2.5 flex items-center gap-1 text-xs font-medium transition-colors ${viewMode === 'list' ? 'bg-[#F05D5E] text-white' : 'hover:bg-muted'}`}
-                data-testid="view-list-toggle"
-              >
-                <List className="h-4 w-4" />{language === 'es' ? 'Lista' : 'List'}
+                {locatingUser
+                  ? (language === 'es' ? 'Ubicando...' : 'Locating...')
+                  : (language === 'es' ? 'Cerca de ti' : 'Near you')}
               </button>
-              <button
-                type="button"
-                onClick={() => setViewMode('map')}
-                className={`px-3 py-2.5 flex items-center gap-1 text-xs font-medium transition-colors ${viewMode === 'map' ? 'bg-[#F05D5E] text-white' : 'hover:bg-muted'}`}
-                data-testid="view-map-toggle"
-              >
-                <MapIcon className="h-4 w-4" />{language === 'es' ? 'Mapa' : 'Map'}
-              </button>
-            </div>
 
-            <Sheet open={filtersOpen} onOpenChange={setFiltersOpen}>
-              <SheetTrigger asChild>
-                <Button variant="outline" className="h-11 md:hidden" data-testid="mobile-filters-button">
-                  <Filter className="h-4 w-4 mr-1.5" />{language === 'es' ? 'Filtros' : 'Filters'}
-                  {hasActiveFilters && <Badge className="ml-1 h-4 w-4 p-0 text-[10px] bg-[#F05D5E]">!</Badge>}
-                </Button>
-              </SheetTrigger>
-              <SheetContent>
-                <SheetHeader><SheetTitle>{language === 'es' ? 'Filtros' : 'Filters'}</SheetTitle></SheetHeader>
-                <div className="mt-4"><FilterContent /></div>
-              </SheetContent>
-            </Sheet>
+              {/* View Toggle - neutral segmented */}
+              <div className="hidden md:inline-flex items-center bg-white border border-border/60 rounded-full p-0.5">
+                <button
+                  type="button"
+                  onClick={() => setViewMode('list')}
+                  className={`px-3 h-8 inline-flex items-center gap-1 text-xs font-medium rounded-full transition-colors ${
+                    viewMode === 'list' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                  data-testid="view-list-toggle"
+                >
+                  <List className="h-3.5 w-3.5" />{language === 'es' ? 'Lista' : 'List'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode('map')}
+                  className={`px-3 h-8 inline-flex items-center gap-1 text-xs font-medium rounded-full transition-colors ${
+                    viewMode === 'map' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                  data-testid="view-map-toggle"
+                >
+                  <MapIcon className="h-3.5 w-3.5" />{language === 'es' ? 'Mapa' : 'Map'}
+                </button>
+              </div>
+
+              <Sheet open={filtersOpen} onOpenChange={setFiltersOpen}>
+                <SheetTrigger asChild>
+                  <Button variant="outline" className="h-9 md:hidden rounded-full px-3 text-xs" data-testid="mobile-filters-button">
+                    <Filter className="h-3.5 w-3.5 mr-1.5" />{language === 'es' ? 'Filtros' : 'Filters'}
+                    {hasActiveFilters && <Badge className="ml-1 h-4 w-4 p-0 text-[10px] bg-[#F05D5E]">!</Badge>}
+                  </Button>
+                </SheetTrigger>
+                <SheetContent>
+                  <SheetHeader><SheetTitle>{language === 'es' ? 'Filtros' : 'Filters'}</SheetTitle></SheetHeader>
+                  <div className="mt-4"><FilterContent /></div>
+                </SheetContent>
+              </Sheet>
             </div>
           </form>
         </div>
@@ -449,11 +475,11 @@ export default function SearchPage() {
               </div>
 
               {/* Mobile View Toggle */}
-              <div className="flex md:hidden items-center border rounded-lg overflow-hidden">
-                <button type="button" onClick={() => setViewMode('list')} className={`p-2 ${viewMode === 'list' ? 'bg-[#F05D5E] text-white' : ''}`}>
+              <div className="flex md:hidden items-center bg-white border border-border/60 rounded-full p-0.5">
+                <button type="button" onClick={() => setViewMode('list')} className={`p-1.5 rounded-full ${viewMode === 'list' ? 'bg-slate-900 text-white' : 'text-slate-600'}`}>
                   <List className="h-4 w-4" />
                 </button>
-                <button type="button" onClick={() => setViewMode('map')} className={`p-2 ${viewMode === 'map' ? 'bg-[#F05D5E] text-white' : ''}`}>
+                <button type="button" onClick={() => setViewMode('map')} className={`p-1.5 rounded-full ${viewMode === 'map' ? 'bg-slate-900 text-white' : 'text-slate-600'}`}>
                   <MapIcon className="h-4 w-4" />
                 </button>
               </div>
