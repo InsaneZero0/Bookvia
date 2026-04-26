@@ -882,7 +882,8 @@ async def get_my_private_info(token_data: TokenData = Depends(require_business))
          "proof_of_address_url": 1, "owner_birth_date": 1,
          "stripe_customer_id": 1, "subscription_status": 1,
          "stripe_subscription_id": 1, "subscription_started_at": 1,
-         "name": 1, "email": 1, "phone": 1, "description": 1}
+         "name": 1, "email": 1, "phone": 1, "description": 1,
+         "notify_email": 1, "notify_sms": 1}
     )
     if not business:
         raise HTTPException(status_code=404, detail="Business not found")
@@ -925,6 +926,8 @@ async def get_my_private_info(token_data: TokenData = Depends(require_business))
         "subscription_status": business.get("subscription_status", "none"),
         "subscription_started_at": business.get("subscription_started_at"),
         "subscription_info": subscription_info,
+        "notify_email": business.get("notify_email", True),
+        "notify_sms": business.get("notify_sms", True),
     }
 
 

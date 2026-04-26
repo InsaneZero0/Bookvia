@@ -235,8 +235,8 @@ async def stripe_webhook(request: Request):
                             except Exception as e:
                                 logger.error(f"Error sending worker notification: {e}")
                 
-                # Send confirmation email to client
-                if user and booking and service:
+                # Send confirmation email to client (respects notify_email pref)
+                if user and booking and service and user.get("notify_email", True):
                     from services.email import send_booking_confirmation
                     try:
                         worker_name = ""
@@ -256,17 +256,18 @@ async def stripe_webhook(request: Request):
                     except Exception as e:
                         logger.error(f"Error sending confirmation email: {e}")
                 
-                # Send SMS confirmation to client + business (best-effort, never raises)
+                # Send SMS confirmation to client + business (respects notify_sms pref)
                 if user and booking and service:
                     from services.sms import send_booking_confirmation_sms, send_business_new_booking_sms
-                    await send_booking_confirmation_sms(
-                        phone=user.get("phone"),
-                        user_name=user.get("full_name", "Cliente"),
-                        business_name=business["name"] if business else "Negocio",
-                        date=booking["date"],
-                        time=booking["time"]
-                    )
-                    if business:
+                    if user.get("notify_sms", True):
+                        await send_booking_confirmation_sms(
+                            phone=user.get("phone"),
+                            user_name=user.get("full_name", "Cliente"),
+                            business_name=business["name"] if business else "Negocio",
+                            date=booking["date"],
+                            time=booking["time"]
+                        )
+                    if business and business.get("notify_sms", True):
                         await send_business_new_booking_sms(
                             phone=business.get("phone"),
                             business_name=business["name"],

@@ -8,6 +8,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Switch } from '@/components/ui/switch';
 import { useAuth } from '@/lib/auth';
 import { useI18n } from '@/lib/i18n';
 import { usersAPI, bookingsAPI } from '@/lib/api';
@@ -16,7 +17,7 @@ import { toast } from 'sonner';
 import {
   User, Mail, Phone, Calendar, Heart, Shield, Camera, Edit2, Check, X,
   Clock, ChevronRight, Star, Search, MapPin, ArrowUpRight, Bookmark,
-  CalendarDays, CreditCard, Bell
+  CalendarDays, CreditCard, Bell, MessageSquare
 } from 'lucide-react';
 
 export default function UserDashboardPage() {
@@ -31,6 +32,7 @@ export default function UserDashboardPage() {
   const [upcomingBookings, setUpcomingBookings] = useState([]);
   const [favorites, setFavorites] = useState([]);
   const [userStats, setUserStats] = useState(null);
+  const [savingPrefs, setSavingPrefs] = useState(false);
 
   useEffect(() => {
     if (!isAuthenticated) { navigate('/login'); return; }
@@ -72,6 +74,19 @@ export default function UserDashboardPage() {
       toast.error(language === 'es' ? 'Error al actualizar' : 'Error updating');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const togglePref = async (field, nextValue) => {
+    setSavingPrefs(true);
+    try {
+      const res = await usersAPI.updateProfile({ [field]: nextValue });
+      updateUser(res.data);
+      toast.success(language === 'es' ? 'Preferencias actualizadas' : 'Preferences updated');
+    } catch {
+      toast.error(language === 'es' ? 'Error al actualizar' : 'Error updating');
+    } finally {
+      setSavingPrefs(false);
     }
   };
 
@@ -372,6 +387,75 @@ export default function UserDashboardPage() {
                       <p className="text-[10px] text-muted-foreground">{stat.label}</p>
                     </div>
                   ))}
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Notification Preferences */}
+            <Card data-testid="notification-prefs-card">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base font-heading flex items-center gap-2">
+                  <Bell className="h-4 w-4 text-[#F05D5E]" />
+                  {language === 'es' ? 'Mis notificaciones' : 'My notifications'}
+                </CardTitle>
+                <p className="text-xs text-muted-foreground leading-relaxed mt-1">
+                  {language === 'es'
+                    ? 'Elige cómo quieres que te avisemos cuando reserves, te confirmen o cancelen una cita, y cuando se acerque tu próxima visita.'
+                    : 'Choose how we should notify you when you book, get a confirmation or cancellation, and when your next visit is coming up.'}
+                </p>
+              </CardHeader>
+              <CardContent className="space-y-4 pt-0">
+                {/* Email toggle */}
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-start gap-3 min-w-0 flex-1">
+                    <div className="h-9 w-9 rounded-lg bg-[#F05D5E]/10 flex items-center justify-center shrink-0">
+                      <Mail className="h-4 w-4 text-[#F05D5E]" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium">{language === 'es' ? 'Correo electrónico' : 'Email'}</p>
+                      <p className="text-[11px] text-muted-foreground truncate">{user?.email}</p>
+                      <p className="text-[11px] text-muted-foreground mt-0.5">
+                        {language === 'es' ? 'Detalles completos de cada cita' : 'Full appointment details'}
+                      </p>
+                    </div>
+                  </div>
+                  <Switch
+                    checked={user?.notify_email !== false}
+                    disabled={savingPrefs}
+                    onCheckedChange={(v) => togglePref('notify_email', v)}
+                    data-testid="notify-email-toggle"
+                  />
+                </div>
+
+                {/* SMS toggle */}
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-start gap-3 min-w-0 flex-1">
+                    <div className="h-9 w-9 rounded-lg bg-[#F05D5E]/10 flex items-center justify-center shrink-0">
+                      <MessageSquare className="h-4 w-4 text-[#F05D5E]" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium">{language === 'es' ? 'SMS al celular' : 'SMS to mobile'}</p>
+                      <p className="text-[11px] text-muted-foreground truncate">{user?.phone || (language === 'es' ? 'Sin número' : 'No number')}</p>
+                      <p className="text-[11px] text-muted-foreground mt-0.5">
+                        {language === 'es' ? 'Avisos rápidos y recordatorios' : 'Quick alerts and reminders'}
+                      </p>
+                    </div>
+                  </div>
+                  <Switch
+                    checked={user?.notify_sms !== false}
+                    disabled={savingPrefs || !user?.phone}
+                    onCheckedChange={(v) => togglePref('notify_sms', v)}
+                    data-testid="notify-sms-toggle"
+                  />
+                </div>
+
+                {/* Info note */}
+                <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2">
+                  <p className="text-[11px] text-amber-900 leading-relaxed">
+                    {language === 'es'
+                      ? 'Te recomendamos mantener al menos uno activo para no perderte tus citas. No te enviaremos publicidad.'
+                      : 'We recommend keeping at least one enabled so you don\'t miss your appointments. We won\'t send ads.'}
+                  </p>
                 </div>
               </CardContent>
             </Card>
