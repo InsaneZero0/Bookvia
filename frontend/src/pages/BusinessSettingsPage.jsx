@@ -8,6 +8,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Separator } from '@/components/ui/separator';
+import { Switch } from '@/components/ui/switch';
 import { useAuth } from '@/lib/auth';
 import { useI18n } from '@/lib/i18n';
 import { businessesAPI } from '@/lib/api';
@@ -16,12 +17,12 @@ import { toast } from 'sonner';
 import {
   ArrowLeft, Mail, Phone, User, ShieldX, MapPin, Search, Loader2,
   Ban, Trash2, Plus, FileText, CreditCard, Building2, Eye, EyeOff,
-  Calendar, Shield, ExternalLink, Save, Pencil, Clock
+  Calendar, Shield, ExternalLink, Save, Pencil, Clock, Bell, MessageSquare
 } from 'lucide-react';
 
 export default function BusinessSettingsPage() {
   const { language } = useI18n();
-  const { isAuthenticated, isBusiness, user } = useAuth();
+  const { isAuthenticated, isBusiness, user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
   const t = (es, en) => language === 'es' ? es : en;
 
@@ -58,9 +59,10 @@ export default function BusinessSettingsPage() {
   const [savingHours, setSavingHours] = useState(false);
 
   useEffect(() => {
+    if (authLoading) return;
     if (!isAuthenticated || !isBusiness) { navigate('/business/login'); return; }
     loadData();
-  }, [isAuthenticated, isBusiness]);
+  }, [isAuthenticated, isBusiness, authLoading]);
 
   const loadData = async () => {
     try {
@@ -102,6 +104,19 @@ export default function BusinessSettingsPage() {
       toast.error(t('Error al guardar', 'Error saving'));
     }
     setSaving(false);
+  };
+
+  const [savingPrefs, setSavingPrefs] = useState(false);
+  const toggleNotifPref = async (field, nextValue) => {
+    setSavingPrefs(true);
+    try {
+      await businessesAPI.updateBusiness({ [field]: nextValue });
+      setPrivateInfo(prev => ({ ...prev, [field]: nextValue }));
+      toast.success(t('Preferencias actualizadas', 'Preferences updated'));
+    } catch {
+      toast.error(t('Error al guardar', 'Error saving'));
+    }
+    setSavingPrefs(false);
   };
 
   // Location handlers
@@ -179,6 +194,7 @@ export default function BusinessSettingsPage() {
   const tabs = [
     { id: 'info', label: t('Informacion', 'Information'), icon: Building2 },
     { id: 'hours', label: t('Horarios', 'Hours'), icon: Clock },
+    { id: 'notifications', label: t('Notificaciones', 'Notifications'), icon: Bell },
     { id: 'documents', label: t('Documentos', 'Documents'), icon: FileText },
     { id: 'subscription', label: t('Suscripcion', 'Subscription'), icon: CreditCard },
     { id: 'location', label: t('Ubicacion', 'Location'), icon: MapPin },
@@ -599,6 +615,86 @@ export default function BusinessSettingsPage() {
                   <p className="text-sm text-muted-foreground">{t('Busca tu direccion para ver el mapa', 'Search your address to see the map')}</p>
                 </div>
               )}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* ===================== NOTIFICATIONS TAB ===================== */}
+        {activeTab === 'notifications' && privateInfo && (
+          <Card data-testid="notifications-section">
+            <CardHeader>
+              <CardTitle className="text-base font-heading flex items-center gap-2">
+                <Bell className="h-5 w-5 text-[#F05D5E]" />
+                {t('Notificaciones del negocio', 'Business notifications')}
+              </CardTitle>
+              <p className="text-xs text-muted-foreground leading-relaxed mt-1">
+                {t(
+                  'Decide como quieres enterarte cuando un cliente reserve, confirme su pago o cancele una cita. Estas avisos llegan al telefono y correo registrados del negocio.',
+                  'Choose how you want to be notified when a client books, confirms payment, or cancels an appointment. Alerts go to the business phone and email on file.'
+                )}
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              {/* Email toggle */}
+              <div className="flex items-start justify-between gap-3 rounded-lg border p-4">
+                <div className="flex items-start gap-3 min-w-0 flex-1">
+                  <div className="h-10 w-10 rounded-lg bg-[#F05D5E]/10 flex items-center justify-center shrink-0">
+                    <Mail className="h-5 w-5 text-[#F05D5E]" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium">{t('Correo electrónico', 'Email')}</p>
+                    <p className="text-xs text-muted-foreground truncate">{privateInfo.email}</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {t(
+                        'Recibe el detalle completo de cada nueva reserva y cancelación.',
+                        'Get full details of every new booking and cancellation.'
+                      )}
+                    </p>
+                  </div>
+                </div>
+                <Switch
+                  checked={privateInfo.notify_email !== false}
+                  disabled={savingPrefs}
+                  onCheckedChange={(v) => toggleNotifPref('notify_email', v)}
+                  data-testid="biz-notify-email-toggle"
+                />
+              </div>
+
+              {/* SMS toggle */}
+              <div className="flex items-start justify-between gap-3 rounded-lg border p-4">
+                <div className="flex items-start gap-3 min-w-0 flex-1">
+                  <div className="h-10 w-10 rounded-lg bg-[#F05D5E]/10 flex items-center justify-center shrink-0">
+                    <MessageSquare className="h-5 w-5 text-[#F05D5E]" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium">{t('SMS al celular del negocio', 'SMS to business mobile')}</p>
+                    <p className="text-xs text-muted-foreground truncate">{privateInfo.phone || t('Sin numero', 'No number')}</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {t(
+                        'Avisos rápidos para que no pierdas reservas mientras estás atendiendo.',
+                        'Quick alerts so you never miss a booking while serving clients.'
+                      )}
+                    </p>
+                  </div>
+                </div>
+                <Switch
+                  checked={privateInfo.notify_sms !== false}
+                  disabled={savingPrefs || !privateInfo.phone}
+                  onCheckedChange={(v) => toggleNotifPref('notify_sms', v)}
+                  data-testid="biz-notify-sms-toggle"
+                />
+              </div>
+
+              {/* Info note */}
+              <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3">
+                <p className="text-xs text-amber-900 leading-relaxed">
+                  <strong>{t('Importante:', 'Important:')}</strong>{' '}
+                  {t(
+                    'Te recomendamos mantener al menos uno activo. Si los apagas todos, no recibirás avisos de nuevas reservas y podrías perder citas. Estas notificaciones nunca contienen publicidad — solo información operativa de tu negocio.',
+                    'We recommend keeping at least one enabled. If you turn them all off, you won\'t receive new booking alerts and may miss appointments. These notifications never contain ads — only operational info for your business.'
+                  )}
+                </p>
+              </div>
             </CardContent>
           </Card>
         )}

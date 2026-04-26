@@ -32,7 +32,7 @@ import {
 
 export default function BusinessDashboardPage() {
   const { t, language } = useI18n();
-  const { business, user, isAuthenticated, isBusiness, isManager, hasPermission } = useAuth();
+  const { business, user, isAuthenticated, isBusiness, isManager, hasPermission, loading: authLoading } = useAuth();
   const navigate = useNavigate();
 
   const [loading, setLoading] = useState(true);
@@ -77,6 +77,7 @@ export default function BusinessDashboardPage() {
   const [notifOpen, setNotifOpen] = useState(false);
   const [dashSummary, setDashSummary] = useState(null);
   useEffect(() => {
+    if (authLoading) return;
     if (!isAuthenticated || !isBusiness) {
       navigate('/business/login');
       return;
@@ -85,7 +86,7 @@ export default function BusinessDashboardPage() {
     loadNotifications();
     const notifInterval = setInterval(loadUnreadCount, 30000);
     return () => clearInterval(notifInterval);
-  }, [isAuthenticated, isBusiness]);
+  }, [isAuthenticated, isBusiness, authLoading]);
 
   const loadNotifications = async () => {
     try {

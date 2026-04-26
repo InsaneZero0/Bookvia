@@ -14,7 +14,7 @@ import { useI18n } from '@/lib/i18n';
 import { useAuth } from '@/lib/auth';
 import { useCountry } from '@/lib/countryContext';
 import { businessesAPI, categoriesAPI, usersAPI } from '@/lib/api';
-import { Search, SlidersHorizontal, MapPin, X, Filter, List, Map as MapIcon, Star, ArrowRight } from 'lucide-react';
+import { Search, SlidersHorizontal, MapPin, X, Filter, List, Map as MapIcon, Star, ArrowRight, ChevronRight } from 'lucide-react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { toast } from 'sonner';
 import { GoogleMap, Marker, useJsApiLoader } from '@react-google-maps/api';
@@ -91,6 +91,7 @@ export default function SearchPage() {
   const navigate = useNavigate();
 
   const [businesses, setBusinesses] = useState([]);
+  const [featuredBusinesses, setFeaturedBusinesses] = useState([]);
   const [categories, setCategories] = useState([]);
   const [cities, setCities] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -108,6 +109,7 @@ export default function SearchPage() {
   const [sortBy, setSortBy] = useState(searchParams.get('sort') || 'relevance');
   const [priceRange, setPriceRange] = useState([0, 5000]);
   const [onlyFeatured, setOnlyFeatured] = useState(searchParams.get('featured') === 'true');
+  const [openNow, setOpenNow] = useState(searchParams.get('open_now') === 'true');
   const [page, setPage] = useState(1);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [userLocation, setUserLocation] = useState(null);
@@ -117,11 +119,48 @@ export default function SearchPage() {
     loadCategories();
     loadCities();
     loadFavorites();
+    loadFeatured();
   }, [countryCode]);
 
   useEffect(() => {
     loadBusinesses();
   }, [categoryId, city, minRating, homeService, requiresDeposit, sortBy, onlyFeatured, page, countryCode, userLocation]);
+
+  // Show category browse view when no specific filters/query are active
+  const showCategoriesView = !query && !city && (!categoryId || categoryId === 'all') &&
+    !homeService && !onlyFeatured && minRating[0] === 0 && requiresDeposit === 'all' &&
+    sortBy === 'relevance' && !userLocation;
+
+  const selectedCategory = useMemo(
+    () => categories.find(c => c.id === categoryId || c.slug === categoryId),
+    [categories, categoryId]
+  );
+
+  const handleCategorySelect = (cat) => {
+    setCategoryId(cat.id);
+    const params = new URLSearchParams(searchParams);
+    params.set('category', cat.id);
+    setSearchParams(params);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleBackToCategories = () => {
+    clearFilters();
+    setSearchParams({});
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const loadFeatured = async () => {
+    try {
+      const baseUrl = process.env.REACT_APP_BACKEND_URL || '';
+      const res = await fetch(`${baseUrl}/api/businesses/featured?limit=3${countryCode ? `&country_code=${countryCode}` : ''}`);
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      setFeaturedBusinesses(Array.isArray(data) ? data : []);
+    } catch {
+      setFeaturedBusinesses([]);
+    }
+  };
 
   const loadCategories = async () => {
     try {
@@ -242,16 +281,35 @@ export default function SearchPage() {
   const clearFilters = () => {
     setQuery(''); setCity(''); setCategoryId(''); setMinRating([0]);
     setHomeService(false); setRequiresDeposit('all'); setSortBy('relevance');
-    setPriceRange([0, 5000]); setOnlyFeatured(false); setSearchParams({});
+    setPriceRange([0, 5000]); setOnlyFeatured(false); setOpenNow(false); setSearchParams({});
   };
 
   const hasActiveFilters = query || city || categoryId || minRating[0] > 0 || homeService ||
-    requiresDeposit !== 'all' || sortBy !== 'relevance' || onlyFeatured;
+    requiresDeposit !== 'all' || sortBy !== 'relevance' || onlyFeatured || openNow;
 
   const mappableBusinesses = useMemo(
     () => businesses.filter(b => b.latitude && b.longitude),
     [businesses]
   );
+
+  // Filter results client-side: open now toggle
+  const filteredBusinesses = useMemo(
+    () => openNow ? businesses.filter(b => b.is_open_now === true) : businesses,
+    [businesses, openNow]
+  );
+
+  const filteredMappable = useMemo(
+    () => filteredBusinesses.filter(b => b.latitude && b.longitude),
+    [filteredBusinesses]
+  );
+
+  const sortChips = [
+    { id: 'relevance', label_es: 'Relevancia', label_en: 'Relevance' },
+    { id: 'nearest', label_es: 'Más cercanos', label_en: 'Nearest' },
+    { id: 'rating', label_es: 'Mejor calificados', label_en: 'Top rated' },
+    { id: 'reviews', label_es: 'Más reseñas', label_en: 'Most reviews' },
+    { id: 'newest', label_es: 'Más recientes', label_en: 'Newest' },
+  ];
 
   const FilterContent = () => (
     <div className="space-y-5">
@@ -279,20 +337,6 @@ export default function SearchPage() {
           <SelectContent>
             <SelectItem value="all">{language === 'es' ? 'Todas las ciudades' : 'All cities'}</SelectItem>
             {cities.map(c => <SelectItem key={c.slug} value={c.name}>{c.name}</SelectItem>)}
-          </SelectContent>
-        </Select>
-      </div>
-
-      <div className="space-y-1.5">
-        <Label className="text-xs font-medium">{language === 'es' ? 'Ordenar por' : 'Sort by'}</Label>
-        <Select value={sortBy} onValueChange={setSortBy}>
-          <SelectTrigger data-testid="filter-sort" className="h-9"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="relevance">{language === 'es' ? 'Relevancia' : 'Relevance'}</SelectItem>
-            <SelectItem value="nearest">{language === 'es' ? 'Mas cercanos' : 'Nearest'}</SelectItem>
-            <SelectItem value="rating">{language === 'es' ? 'Mejor calificados' : 'Top rated'}</SelectItem>
-            <SelectItem value="reviews">{language === 'es' ? 'Mas resenas' : 'Most reviews'}</SelectItem>
-            <SelectItem value="newest">{language === 'es' ? 'Mas recientes' : 'Newest'}</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -344,71 +388,97 @@ export default function SearchPage() {
   return (
     <div className="min-h-screen pt-20 bg-background" data-testid="search-page">
 
-      {/* ── Search Header ────────────────────────────── */}
-      <div className="bg-muted/30 border-b border-border">
-        <div className="container-app py-4">
-          <form onSubmit={handleSearch} className="flex flex-col sm:flex-row gap-2">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input placeholder={language === 'es' ? '¿Qué servicio buscas?' : 'Search service...'} value={query} onChange={(e) => setQuery(e.target.value)} className="pl-10 h-11" data-testid="search-input" />
-            </div>
-            <div className="flex gap-2">
-              <div className="relative flex-1 sm:max-w-[200px]">
-                <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input placeholder={language === 'es' ? 'Ciudad' : 'City'} value={city} onChange={(e) => setCity(e.target.value)} className="pl-10 h-11" data-testid="search-city" />
+      {/* ── Search Header (compact) ────────────────── */}
+      <div className="bg-muted/30 border-b border-border sticky top-16 z-30 backdrop-blur-sm">
+        <div className="container-app py-3">
+          <form onSubmit={handleSearch} className="flex flex-col lg:flex-row gap-2 lg:items-center">
+            {/* Main search row */}
+            <div className="flex flex-1 gap-2 min-w-0">
+              <div className="relative flex-1 min-w-0">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder={language === 'es' ? '¿Qué servicio buscas?' : 'Search service...'}
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  className="pl-10 h-10 bg-white border-border/60"
+                  data-testid="search-input"
+                />
               </div>
-              <Button type="submit" className="h-11 btn-coral shrink-0" data-testid="search-button">
-                <Search className="h-4 w-4 sm:mr-1.5" /><span className="hidden sm:inline">{language === 'es' ? 'Buscar' : 'Search'}</span>
+              <div className="relative w-32 sm:w-44 shrink-0">
+                <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder={language === 'es' ? 'Ciudad' : 'City'}
+                  value={city}
+                  onChange={(e) => setCity(e.target.value)}
+                  className="pl-10 h-10 bg-white border-border/60"
+                  data-testid="search-city"
+                />
+              </div>
+              <Button type="submit" className="h-10 btn-coral shrink-0 px-4" data-testid="search-button">
+                <Search className="h-4 w-4 sm:mr-1.5" />
+                <span className="hidden sm:inline">{language === 'es' ? 'Buscar' : 'Search'}</span>
               </Button>
             </div>
-            <div className="flex gap-2">
-              <Button
+
+            {/* Secondary actions row - neutral pills */}
+            <div className="flex items-center gap-1.5 lg:ml-auto">
+              <button
                 type="button"
-                variant={sortBy === 'nearest' ? 'default' : 'outline'}
-                className={`h-11 flex-1 sm:flex-none ${sortBy === 'nearest' ? 'bg-[#F05D5E] hover:bg-[#F05D5E]/90 text-white' : ''}`}
                 onClick={requestLocation}
                 disabled={locatingUser}
+                className={`h-9 px-3 inline-flex items-center gap-1.5 rounded-full text-xs font-medium transition-colors border ${
+                  sortBy === 'nearest'
+                    ? 'bg-slate-900 text-white border-slate-900'
+                    : 'bg-white text-slate-700 border-border/60 hover:bg-slate-50'
+                }`}
                 data-testid="nearby-button"
               >
                 {locatingUser ? (
-                  <><span className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin mr-1.5" />{language === 'es' ? 'Ubicando...' : 'Locating...'}</>
+                  <span className="h-3.5 w-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
                 ) : (
-                  <><MapPin className="h-4 w-4 mr-1.5" />{language === 'es' ? 'Cerca de ti' : 'Near you'}</>
+                  <MapPin className="h-3.5 w-3.5" />
                 )}
-              </Button>
-
-            {/* View Toggle */}
-            <div className="hidden md:flex items-center border rounded-lg overflow-hidden">
-              <button
-                type="button"
-                onClick={() => setViewMode('list')}
-                className={`px-3 py-2.5 flex items-center gap-1 text-xs font-medium transition-colors ${viewMode === 'list' ? 'bg-[#F05D5E] text-white' : 'hover:bg-muted'}`}
-                data-testid="view-list-toggle"
-              >
-                <List className="h-4 w-4" />{language === 'es' ? 'Lista' : 'List'}
+                {locatingUser
+                  ? (language === 'es' ? 'Ubicando...' : 'Locating...')
+                  : (language === 'es' ? 'Cerca de ti' : 'Near you')}
               </button>
-              <button
-                type="button"
-                onClick={() => setViewMode('map')}
-                className={`px-3 py-2.5 flex items-center gap-1 text-xs font-medium transition-colors ${viewMode === 'map' ? 'bg-[#F05D5E] text-white' : 'hover:bg-muted'}`}
-                data-testid="view-map-toggle"
-              >
-                <MapIcon className="h-4 w-4" />{language === 'es' ? 'Mapa' : 'Map'}
-              </button>
-            </div>
 
-            <Sheet open={filtersOpen} onOpenChange={setFiltersOpen}>
-              <SheetTrigger asChild>
-                <Button variant="outline" className="h-11 md:hidden" data-testid="mobile-filters-button">
-                  <Filter className="h-4 w-4 mr-1.5" />{language === 'es' ? 'Filtros' : 'Filters'}
-                  {hasActiveFilters && <Badge className="ml-1 h-4 w-4 p-0 text-[10px] bg-[#F05D5E]">!</Badge>}
-                </Button>
-              </SheetTrigger>
-              <SheetContent>
-                <SheetHeader><SheetTitle>{language === 'es' ? 'Filtros' : 'Filters'}</SheetTitle></SheetHeader>
-                <div className="mt-4"><FilterContent /></div>
-              </SheetContent>
-            </Sheet>
+              {/* View Toggle - neutral segmented */}
+              <div className="hidden md:inline-flex items-center bg-white border border-border/60 rounded-full p-0.5">
+                <button
+                  type="button"
+                  onClick={() => setViewMode('list')}
+                  className={`px-3 h-8 inline-flex items-center gap-1 text-xs font-medium rounded-full transition-colors ${
+                    viewMode === 'list' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                  data-testid="view-list-toggle"
+                >
+                  <List className="h-3.5 w-3.5" />{language === 'es' ? 'Lista' : 'List'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode('map')}
+                  className={`px-3 h-8 inline-flex items-center gap-1 text-xs font-medium rounded-full transition-colors ${
+                    viewMode === 'map' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                  data-testid="view-map-toggle"
+                >
+                  <MapIcon className="h-3.5 w-3.5" />{language === 'es' ? 'Mapa' : 'Map'}
+                </button>
+              </div>
+
+              <Sheet open={filtersOpen} onOpenChange={setFiltersOpen}>
+                <SheetTrigger asChild>
+                  <Button variant="outline" className="h-9 md:hidden rounded-full px-3 text-xs" data-testid="mobile-filters-button">
+                    <Filter className="h-3.5 w-3.5 mr-1.5" />{language === 'es' ? 'Filtros' : 'Filters'}
+                    {hasActiveFilters && <Badge className="ml-1 h-4 w-4 p-0 text-[10px] bg-[#F05D5E]">!</Badge>}
+                  </Button>
+                </SheetTrigger>
+                <SheetContent>
+                  <SheetHeader><SheetTitle>{language === 'es' ? 'Filtros' : 'Filters'}</SheetTitle></SheetHeader>
+                  <div className="mt-4"><FilterContent /></div>
+                </SheetContent>
+              </Sheet>
             </div>
           </form>
         </div>
@@ -416,6 +486,127 @@ export default function SearchPage() {
 
       {/* ── Main Content ─────────────────────────────── */}
       <div className="container-app py-6">
+        {showCategoriesView ? (
+          /* ═════════════ CATEGORIES BROWSE VIEW ═════════════ */
+          <div className="space-y-10" data-testid="categories-browse-view">
+            {/* Hero copy */}
+            <div className="text-center max-w-2xl mx-auto pt-2">
+              <h1 className="font-heading font-bold text-3xl sm:text-4xl mb-2 text-slate-900">
+                {language === 'es' ? '¿Qué necesitas hoy?' : 'What do you need today?'}
+              </h1>
+              <p className="text-sm sm:text-base text-muted-foreground">
+                {language === 'es'
+                  ? 'Elige una categoría para ver los negocios disponibles cerca de ti.'
+                  : 'Pick a category to see available businesses near you.'}
+              </p>
+            </div>
+
+            {/* Categories grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4" data-testid="categories-grid">
+              {categories.length === 0 ? (
+                Array.from({ length: 8 }).map((_, i) => (
+                  <div key={i} className="aspect-[4/3] rounded-2xl bg-slate-100 animate-pulse" />
+                ))
+              ) : categories.map(cat => (
+                <button
+                  key={cat.id}
+                  onClick={() => handleCategorySelect(cat)}
+                  className="group relative aspect-[4/3] rounded-2xl overflow-hidden border border-border/50 hover:border-[#F05D5E]/40 transition-all hover:shadow-lg text-left"
+                  data-testid={`category-card-${cat.slug}`}
+                >
+                  {cat.image_url ? (
+                    <img
+                      src={cat.image_url}
+                      alt={language === 'es' ? cat.name_es : cat.name_en}
+                      className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+                      loading="lazy"
+                    />
+                  ) : (
+                    <div className="absolute inset-0 bg-gradient-to-br from-[#F05D5E]/30 to-[#1a2844]/30" />
+                  )}
+                  <div className="absolute inset-0 bg-gradient-to-t from-slate-900/85 via-slate-900/30 to-transparent" />
+                  <div className="absolute inset-x-0 bottom-0 p-3 sm:p-4">
+                    <h3 className="font-heading font-bold text-white text-base sm:text-lg leading-tight line-clamp-2">
+                      {language === 'es' ? cat.name_es : cat.name_en}
+                    </h3>
+                    <p className="text-xs text-white/85 mt-0.5">
+                      {cat.business_count > 0
+                        ? `${cat.business_count} ${language === 'es' ? (cat.business_count === 1 ? 'negocio' : 'negocios') : (cat.business_count === 1 ? 'business' : 'businesses')}`
+                        : (language === 'es' ? 'Próximamente' : 'Coming soon')}
+                    </p>
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            {/* Quick actions row */}
+            <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
+              <button
+                type="button"
+                onClick={requestLocation}
+                disabled={locatingUser}
+                className="h-9 px-4 inline-flex items-center gap-1.5 rounded-full text-xs font-medium bg-white border border-border/60 text-slate-700 hover:bg-slate-50 transition-colors"
+                data-testid="cat-view-nearby"
+              >
+                <MapPin className="h-3.5 w-3.5" />
+                {language === 'es' ? 'Mostrar negocios cerca de ti' : 'Show businesses near me'}
+              </button>
+              <button
+                type="button"
+                onClick={() => { setSortBy('rating'); }}
+                className="h-9 px-4 inline-flex items-center gap-1.5 rounded-full text-xs font-medium bg-white border border-border/60 text-slate-700 hover:bg-slate-50 transition-colors"
+                data-testid="cat-view-all"
+              >
+                <Star className="h-3.5 w-3.5" />
+                {language === 'es' ? 'Ver todos los negocios' : 'View all businesses'}
+              </button>
+            </div>
+
+            {/* Featured businesses preview */}
+            {featuredBusinesses.length > 0 && (
+              <div className="pt-6 border-t border-border/40" data-testid="featured-section">
+                <div className="flex items-end justify-between mb-4">
+                  <div>
+                    <h2 className="font-heading font-bold text-xl text-slate-900">
+                      {language === 'es' ? 'Destacados de la semana' : 'Featured this week'}
+                    </h2>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {language === 'es' ? 'Los mejor calificados de la plataforma' : 'Top rated on the platform'}
+                    </p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {featuredBusinesses.slice(0, 3).map(b => (
+                    <BusinessCard
+                      key={b.id}
+                      business={b}
+                      onFavorite={handleFavorite}
+                      isFavorite={favorites.includes(b.id)}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+        /* ═════════════ RESULTS VIEW (categories browse skipped) ═════════════ */
+        <>
+        {/* Breadcrumb when a category is selected */}
+        {selectedCategory && (
+          <div className="flex items-center gap-2 mb-4 text-sm" data-testid="category-breadcrumb">
+            <button
+              onClick={handleBackToCategories}
+              className="text-muted-foreground hover:text-[#F05D5E] transition-colors"
+              data-testid="back-to-categories"
+            >
+              {language === 'es' ? 'Categorías' : 'Categories'}
+            </button>
+            <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+            <span className="font-medium text-slate-900">
+              {language === 'es' ? selectedCategory.name_es : selectedCategory.name_en}
+            </span>
+          </div>
+        )}
         <div className="flex gap-6">
 
           {/* Desktop Filters Sidebar */}
@@ -432,7 +623,7 @@ export default function SearchPage() {
 
           {/* Results Area */}
           <main className="flex-1 min-w-0">
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center justify-between mb-3">
               <div>
                 <h1 className="text-xl font-heading font-bold">
                   {sortBy === 'nearest' && userLocation
@@ -440,8 +631,9 @@ export default function SearchPage() {
                     : query ? `"${query}"` : (language === 'es' ? 'Todos los negocios' : 'All businesses')}
                 </h1>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  {businesses.length} {language === 'es' ? 'resultados' : 'results'}
+                  {filteredBusinesses.length} {language === 'es' ? 'resultados' : 'results'}
                   {city && ` ${language === 'es' ? 'en' : 'in'} ${city}`}
+                  {openNow && ` · ${language === 'es' ? 'abiertos ahora' : 'open now'}`}
                   {sortBy === 'nearest' && userLocation && businesses.length > 0 && businesses[0]?.distance_km != null && (
                     <> &mdash; {language === 'es' ? 'el más cercano a' : 'closest at'} {businesses[0].distance_km} km</>
                   )}
@@ -449,14 +641,52 @@ export default function SearchPage() {
               </div>
 
               {/* Mobile View Toggle */}
-              <div className="flex md:hidden items-center border rounded-lg overflow-hidden">
-                <button type="button" onClick={() => setViewMode('list')} className={`p-2 ${viewMode === 'list' ? 'bg-[#F05D5E] text-white' : ''}`}>
+              <div className="flex md:hidden items-center bg-white border border-border/60 rounded-full p-0.5">
+                <button type="button" onClick={() => setViewMode('list')} className={`p-1.5 rounded-full ${viewMode === 'list' ? 'bg-slate-900 text-white' : 'text-slate-600'}`}>
                   <List className="h-4 w-4" />
                 </button>
-                <button type="button" onClick={() => setViewMode('map')} className={`p-2 ${viewMode === 'map' ? 'bg-[#F05D5E] text-white' : ''}`}>
+                <button type="button" onClick={() => setViewMode('map')} className={`p-1.5 rounded-full ${viewMode === 'map' ? 'bg-slate-900 text-white' : 'text-slate-600'}`}>
                   <MapIcon className="h-4 w-4" />
                 </button>
               </div>
+            </div>
+
+            {/* Quick chips: Open now + Sort */}
+            <div className="flex flex-wrap items-center gap-2 mb-4 pb-3 border-b border-border/50" data-testid="sort-chips-row">
+              <button
+                type="button"
+                onClick={() => setOpenNow(v => !v)}
+                className={`h-8 px-3 inline-flex items-center gap-1.5 rounded-full text-xs font-medium border transition-colors ${
+                  openNow
+                    ? 'bg-emerald-600 text-white border-emerald-600'
+                    : 'bg-white text-slate-700 border-border/60 hover:bg-emerald-50 hover:border-emerald-300'
+                }`}
+                data-testid="open-now-chip"
+              >
+                <span className={`w-1.5 h-1.5 rounded-full ${openNow ? 'bg-white' : 'bg-emerald-500'}`} />
+                {language === 'es' ? 'Abierto ahora' : 'Open now'}
+              </button>
+
+              <span className="hidden sm:inline-block w-px h-5 bg-border/60 mx-1" />
+
+              <span className="text-[11px] text-muted-foreground uppercase tracking-wider mr-1">
+                {language === 'es' ? 'Ordenar:' : 'Sort:'}
+              </span>
+              {sortChips.map(chip => (
+                <button
+                  key={chip.id}
+                  type="button"
+                  onClick={() => setSortBy(chip.id)}
+                  className={`h-8 px-3 inline-flex items-center rounded-full text-xs font-medium border transition-colors ${
+                    sortBy === chip.id
+                      ? 'bg-slate-900 text-white border-slate-900'
+                      : 'bg-white text-slate-700 border-border/60 hover:bg-slate-50'
+                  }`}
+                  data-testid={`sort-chip-${chip.id}`}
+                >
+                  {language === 'es' ? chip.label_es : chip.label_en}
+                </button>
+              ))}
             </div>
 
             {/* Proximity info banner */}
@@ -522,7 +752,7 @@ export default function SearchPage() {
             ) : viewMode === 'list' ? (
               /* ── List View ──────────────────────────── */
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4" data-testid="results-list">
-                {businesses.length > 0 ? businesses.map(business => (
+                {filteredBusinesses.length > 0 ? filteredBusinesses.map(business => (
                   <div key={business.id} onMouseEnter={() => setHoveredBiz(business.id)} onMouseLeave={() => setHoveredBiz(null)}>
                     <BusinessCard business={business} onFavorite={handleFavorite} isFavorite={favorites.includes(business.id)} />
                   </div>
@@ -584,12 +814,12 @@ export default function SearchPage() {
               <div className="grid lg:grid-cols-2 gap-4" data-testid="results-map-view">
                 {/* Map */}
                 <div className="h-[500px] lg:h-[calc(100vh-200px)] rounded-xl overflow-hidden border sticky top-24" data-testid="search-map">
-                  <SearchGoogleMap businesses={mappableBusinesses} navigate={navigate} language={language} />
+                  <SearchGoogleMap businesses={filteredMappable} navigate={navigate} language={language} />
                 </div>
 
                 {/* Side List */}
                 <div className="space-y-3 max-h-[calc(100vh-200px)] overflow-y-auto pr-1">
-                  {businesses.length > 0 ? businesses.map(biz => (
+                  {filteredBusinesses.length > 0 ? filteredBusinesses.map(biz => (
                     <Card
                       key={biz.id}
                       className={`cursor-pointer transition-all hover:shadow-md ${hoveredBiz === biz.id ? 'border-[#F05D5E] shadow-md' : 'border-border/60'}`}
@@ -637,6 +867,8 @@ export default function SearchPage() {
             )}
           </main>
         </div>
+        </>
+        )}
       </div>
     </div>
   );

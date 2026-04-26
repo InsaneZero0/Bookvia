@@ -43,6 +43,8 @@ class UserResponse(BaseModel):
     favorites: List[str] = []
     preferred_language: str = "es"
     totp_enabled: bool = False
+    notify_email: bool = True
+    notify_sms: bool = True
     created_at: str
 
 class UserUpdate(BaseModel):
@@ -52,6 +54,8 @@ class UserUpdate(BaseModel):
     gender: Optional[str] = None
     photo_url: Optional[str] = None
     preferred_language: Optional[str] = None
+    notify_email: Optional[bool] = None
+    notify_sms: Optional[bool] = None
 
 class PhoneVerifyRequest(BaseModel):
     phone: str
@@ -153,6 +157,10 @@ class BusinessResponse(BaseModel):
     next_available_text: Optional[str] = None
     is_open_now: Optional[bool] = None
     business_hours: Optional[Dict[str, Any]] = None
+    notify_email: bool = True
+    notify_sms: bool = True
+    top_services: List[Dict[str, Any]] = []
+    min_price: Optional[float] = None
 
 class BusinessUpdate(BaseModel):
     name: Optional[str] = None
@@ -172,6 +180,8 @@ class BusinessUpdate(BaseModel):
     service_radius_km: Optional[float] = None
     photos: Optional[List[str]] = None
     logo_url: Optional[str] = None
+    notify_email: Optional[bool] = None
+    notify_sms: Optional[bool] = None
 
 class CategoryCreate(BaseModel):
     name_es: str

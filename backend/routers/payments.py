@@ -282,25 +282,46 @@ async def get_checkout_status(session_id: str, request: Request):
                     "booking",
                     {"booking_id": transaction["booking_id"]}
                 )
-            # Send confirmation email to client (fallback)
+            # Send confirmation email to client (fallback, respects notify_email pref)
             if user and booking and service:
-                from services.email import send_booking_confirmation
-                try:
-                    worker_name = ""
-                    if booking.get("worker_id"):
-                        w = await db.workers.find_one({"id": booking["worker_id"]}, {"_id": 0, "name": 1})
-                        worker_name = w["name"] if w else ""
-                    await send_booking_confirmation(
-                        user_email=user["email"],
+                if user.get("notify_email", True):
+                    from services.email import send_booking_confirmation
+                    try:
+                        worker_name = ""
+                        if booking.get("worker_id"):
+                            w = await db.workers.find_one({"id": booking["worker_id"]}, {"_id": 0, "name": 1})
+                            worker_name = w["name"] if w else ""
+                        await send_booking_confirmation(
+                            user_email=user["email"],
+                            user_name=user.get("full_name", "Cliente"),
+                            business_name=business["name"] if business else "Negocio",
+                            service_name=service["name"],
+                            date=booking["date"],
+                            time=booking["time"],
+                            worker_name=worker_name
+                        )
+                    except Exception as e:
+                        logger.error(f"Fallback confirmation email error: {e}")
+                
+                # Fallback SMS confirmation (respects notify_sms pref)
+                from services.sms import send_booking_confirmation_sms, send_business_new_booking_sms
+                if user.get("notify_sms", True):
+                    await send_booking_confirmation_sms(
+                        phone=user.get("phone"),
                         user_name=user.get("full_name", "Cliente"),
                         business_name=business["name"] if business else "Negocio",
+                        date=booking["date"],
+                        time=booking["time"]
+                    )
+                if business and business.get("notify_sms", True):
+                    await send_business_new_booking_sms(
+                        phone=business.get("phone"),
+                        business_name=business["name"],
+                        client_name=user.get("full_name", "Cliente"),
                         service_name=service["name"],
                         date=booking["date"],
-                        time=booking["time"],
-                        worker_name=worker_name
+                        time=booking["time"]
                     )
-                except Exception as e:
-                    logger.error(f"Fallback confirmation email error: {e}")
         except Exception as e:
             logger.error(f"Fallback notification error: {e}")
         

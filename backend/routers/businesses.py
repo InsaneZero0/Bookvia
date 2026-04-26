@@ -709,6 +709,29 @@ async def search_businesses(
                 if found:
                     break
     
+    # Fetch top services and min price per business (single bulk query)
+    if biz_ids:
+        all_services = await db.services.find(
+            {"business_id": {"$in": biz_ids}, "active": {"$ne": False}},
+            {"_id": 0, "id": 1, "business_id": 1, "name": 1, "price": 1}
+        ).sort("price", 1).to_list(2000)
+        biz_services_map = {}
+        for s in all_services:
+            biz_services_map.setdefault(s["business_id"], []).append(s)
+        
+        for b in businesses:
+            services = biz_services_map.get(b["id"], [])
+            if services:
+                b["top_services"] = [
+                    {"name": s.get("name", ""), "price": s.get("price", 0)}
+                    for s in services[:3]
+                ]
+                prices = [s.get("price", 0) for s in services if s.get("price")]
+                if prices:
+                    b["min_price"] = min(prices)
+            else:
+                b["top_services"] = []
+    
     return [BusinessResponse(**b) for b in businesses]
 
 
@@ -862,6 +885,15 @@ async def update_my_business(update: BusinessUpdate, token_data: TokenData = Dep
     
     await db.businesses.update_one({"id": user["business_id"]}, {"$set": update_data})
     business = await db.businesses.find_one({"id": user["business_id"]}, {"_id": 0, "password_hash": 0})
+    # Apply defaults for legacy documents that may be missing required fields
+    business.setdefault("description", "")
+    business.setdefault("category_id", "")
+    business.setdefault("address", "")
+    business.setdefault("city", "")
+    business.setdefault("state", "")
+    business.setdefault("country", "MX")
+    business.setdefault("zip_code", "")
+    business.setdefault("subscription_status", "none")
     return BusinessResponse(**business)
 
 
@@ -882,7 +914,8 @@ async def get_my_private_info(token_data: TokenData = Depends(require_business))
          "proof_of_address_url": 1, "owner_birth_date": 1,
          "stripe_customer_id": 1, "subscription_status": 1,
          "stripe_subscription_id": 1, "subscription_started_at": 1,
-         "name": 1, "email": 1, "phone": 1, "description": 1}
+         "name": 1, "email": 1, "phone": 1, "description": 1,
+         "notify_email": 1, "notify_sms": 1}
     )
     if not business:
         raise HTTPException(status_code=404, detail="Business not found")
@@ -925,6 +958,8 @@ async def get_my_private_info(token_data: TokenData = Depends(require_business))
         "subscription_status": business.get("subscription_status", "none"),
         "subscription_started_at": business.get("subscription_started_at"),
         "subscription_info": subscription_info,
+        "notify_email": business.get("notify_email", True),
+        "notify_sms": business.get("notify_sms", True),
     }
 
 
