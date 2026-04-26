@@ -1,0 +1,29 @@
+{
+  "summary": "Validated frontend auth-hydration race fix from iter 66 follow-up. All 15 frontend test cases PASS. Hard reload + direct URL paste to /business/settings now correctly keep the user on the page (the original iter-66 bug). Regression suite for both business pages (/business/dashboard, /business/finance, /business/settings) and user pages (/dashboard, /bookings, /favorites, /payments) confirmed: reload preserves the route and does not bounce to login/dashboard. Unauthenticated guards still work (delayed but functional): /business/settings → /business/login, /dashboard → /login. Already-authenticated business hitting /business/login still auto-redirects to /business/dashboard. Notification preference toggles end-to-end on both /dashboard (user) and /business/settings → tab-notifications (business) — both fire PUT and show 'Preferencias actualizadas' toast.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "auth-hydration guard pattern (`if (authLoading) return;` before redirecting on `!isAuthenticated`) is now consistently applied across BusinessSettingsPage, BusinessDashboardPage, BusinessFinancePage, UserDashboardPage, UserBookingsPage, PaymentHistoryPage, LoginPage. Recommend extracting this into a small `useRequireAuth({ redirectTo, requireRole })` hook to DRY across pages and prevent the same regression from re-appearing on future gated routes.",
+  "PaymentHistoryPage.jsx alias `loading: authLoading` (matches the pattern other pages use) is correct — context only exports `loading`, so destructuring `authLoading` directly would yield undefined. Worth a unit/lint rule check on any future page that imports useAuth."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "skipped (per request)",
+    "frontend": "100% (15/15 cases)"
+  },
+  "test_credentials": "User: testuser_stats@test.com / TestPass123!  |  Business: testbiz_dashboard@test.com / TestBiz123!",
+  "seed_data_creation": "None — used existing test users",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Iter 67 covered: business login + reload on /business/settings (original bug) + reload on /business/dashboard + reload on /business/finance + already-authed visit to /business/login auto-redirects to dashboard + unauth /business/settings → /business/login + unauth /dashboard → /login + unauth /business/login renders with no infinite loop + user login + reload on /dashboard, /bookings, /favorites, /payments + user notif toggle on /dashboard (Preferencias actualizadas toast confirmed) + business notif tab notif toggle on /business/settings → tab-notifications (Preferencias actualizadas toast confirmed). All passed. No retest required.",
+  "rca of the issue": "Iter 66 reported that direct URL/refresh on /business/settings redirected to /business/dashboard via /business/login. Root cause: BusinessSettingsPage's useEffect ran on first render before useAuth hydrated isAuthenticated/isBusiness from localStorage, so it redirected to /business/login; once useAuth hydrated, /business/login (which auto-redirects already-authed business to /business/dashboard) bounced again. Fix: each gated page's redirect-on-!isAuthenticated useEffect now early-returns if `authLoading` is true, deferring the guard until after hydration. The same fix was applied to LoginPage so its already-authed auto-redirect also waits for hydration. Reproduction (pre-fix): open fresh tab → log in as biz → paste /business/settings in URL bar → bounced to /business/dashboard. Post-fix: page stays on /business/settings, settings-tabs mounts, tab-notifications clickable, PUT /api/businesses/me succeeds with toast."
+}

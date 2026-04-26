@@ -54,7 +54,7 @@ const STATUS_CONFIG = {
 
 export default function UserBookingsPage() {
   const { language } = useI18n();
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, loading: authLoading } = useAuth();
   const navigate = useNavigate();
 
   const [upcomingBookings, setUpcomingBookings] = useState([]);
@@ -76,6 +76,7 @@ export default function UserBookingsPage() {
   const [slotsLoading, setSlotsLoading] = useState(false);
 
   useEffect(() => {
+    if (authLoading) return;
     if (!isAuthenticated) {
       navigate('/login');
       return;
@@ -85,7 +86,7 @@ export default function UserBookingsPage() {
     // Refresh every 30 seconds to update countdowns
     const interval = setInterval(loadBookings, 30000);
     return () => clearInterval(interval);
-  }, [isAuthenticated]);
+  }, [isAuthenticated, authLoading]);
 
   const loadBookings = async () => {
     try {

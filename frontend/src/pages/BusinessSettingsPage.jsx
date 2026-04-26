@@ -22,7 +22,7 @@ import {
 
 export default function BusinessSettingsPage() {
   const { language } = useI18n();
-  const { isAuthenticated, isBusiness, user } = useAuth();
+  const { isAuthenticated, isBusiness, user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
   const t = (es, en) => language === 'es' ? es : en;
 
@@ -59,9 +59,10 @@ export default function BusinessSettingsPage() {
   const [savingHours, setSavingHours] = useState(false);
 
   useEffect(() => {
+    if (authLoading) return;
     if (!isAuthenticated || !isBusiness) { navigate('/business/login'); return; }
     loadData();
-  }, [isAuthenticated, isBusiness]);
+  }, [isAuthenticated, isBusiness, authLoading]);
 
   const loadData = async () => {
     try {

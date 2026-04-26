@@ -11,7 +11,7 @@ import { LogIn, Loader2, Mail, Lock, Eye, EyeOff } from 'lucide-react';
 
 export default function LoginPage() {
   const { t, language } = useI18n();
-  const { unifiedLogin, isAuthenticated, user, googleLogin } = useAuth();
+  const { unifiedLogin, isAuthenticated, user, googleLogin, loading: authLoading } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [loading, setLoading] = useState(false);
@@ -20,11 +20,12 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
 
   useEffect(() => {
+    if (authLoading) return;
     if (isAuthenticated && user) {
       if (user.role === 'business') navigate('/business/dashboard');
       else navigate('/dashboard');
     }
-  }, [isAuthenticated, user, navigate]);
+  }, [isAuthenticated, user, navigate, authLoading]);
 
   // Google OAuth callback
   useEffect(() => {

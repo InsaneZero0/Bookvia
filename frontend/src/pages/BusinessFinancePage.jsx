@@ -54,7 +54,7 @@ const STATUS_LABELS = {
 
 export default function BusinessFinancePage() {
   const { language } = useI18n();
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, loading: authLoading } = useAuth();
   const navigate = useNavigate();
 
   const [summary, setSummary] = useState(null);
@@ -64,12 +64,13 @@ export default function BusinessFinancePage() {
   const [statusFilter, setStatusFilter] = useState('all');
 
   useEffect(() => {
+    if (authLoading) return;
     if (!isAuthenticated || user?.role !== 'business') {
       navigate('/business/login');
       return;
     }
     loadData();
-  }, [isAuthenticated, user]);
+  }, [isAuthenticated, user, authLoading]);
 
   const loadData = async () => {
     try {

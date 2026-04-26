@@ -24,7 +24,7 @@ const STATUS_MAP = {
 
 export default function PaymentHistoryPage() {
   const { language } = useI18n();
-  const { isAuthenticated, authLoading } = useAuth();
+  const { isAuthenticated, loading: authLoading } = useAuth();
   const navigate = useNavigate();
 
   const [transactions, setTransactions] = useState([]);

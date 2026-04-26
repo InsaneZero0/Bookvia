@@ -22,7 +22,7 @@ import {
 
 export default function UserDashboardPage() {
   const { t, language } = useI18n();
-  const { user, isAuthenticated, updateUser, refreshUser } = useAuth();
+  const { user, isAuthenticated, updateUser, refreshUser, loading: authLoading } = useAuth();
   const navigate = useNavigate();
 
   const [loading, setLoading] = useState(true);
@@ -35,9 +35,10 @@ export default function UserDashboardPage() {
   const [savingPrefs, setSavingPrefs] = useState(false);
 
   useEffect(() => {
+    if (authLoading) return;
     if (!isAuthenticated) { navigate('/login'); return; }
     loadData();
-  }, [isAuthenticated]);
+  }, [isAuthenticated, authLoading]);
 
   const loadData = async () => {
     try {
