@@ -862,6 +862,15 @@ async def update_my_business(update: BusinessUpdate, token_data: TokenData = Dep
     
     await db.businesses.update_one({"id": user["business_id"]}, {"$set": update_data})
     business = await db.businesses.find_one({"id": user["business_id"]}, {"_id": 0, "password_hash": 0})
+    # Apply defaults for legacy documents that may be missing required fields
+    business.setdefault("description", "")
+    business.setdefault("category_id", "")
+    business.setdefault("address", "")
+    business.setdefault("city", "")
+    business.setdefault("state", "")
+    business.setdefault("country", "MX")
+    business.setdefault("zip_code", "")
+    business.setdefault("subscription_status", "none")
     return BusinessResponse(**business)
 
 

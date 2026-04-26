@@ -1,0 +1,40 @@
+{
+  "summary": "Re-test iter 65 fixes for notification preferences. Backend pytest: 8/8 PASS. Frontend: /business/settings now correctly mounts BusinessSettingsPage when navigated via dashboard Config button — tab-notifications visible, biz-notify-email-toggle and biz-notify-sms-toggle present and initially checked (true). Toggling SMS OFF triggers PUT /api/businesses/me → 200 → toast 'Preferencias actualizadas' appears. End-to-end flow validated.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "Direct navigation to /business/settings via page.goto/URL bar",
+        "issue": "When the user navigates directly to /business/settings via the URL bar (no prior in-app state), the route briefly mounts BusinessSettingsPage but its useEffect runs before useAuth hydrates (isAuthenticated/isBusiness still false), so it redirects to /business/login. /business/login then sees an already-authenticated business and bounces to /business/dashboard. Net effect: refreshing or deep-linking /business/settings lands the user on /business/dashboard. In-app navigation (clicking the 'Config' button on the dashboard) works perfectly. Recommend gating the redirect on a 'authReady'/'authLoading' flag from useAuth so the initial render does not redirect while auth is still hydrating.",
+        "affected_selectors": ["[data-testid=\"business-settings-page\"]"]
+      }
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_notification_preferences.py",
+    "/app/test_reports/pytest/pytest_notification_prefs_iter66.xml"
+  ],
+  "action_items": [
+    "OPTIONAL (not blocking the original feature): In BusinessSettingsPage.jsx (and similar gated routes), wait for useAuth to finish hydrating before running the auth redirect. Otherwise direct URL/refresh on /business/settings always punts the user back to the dashboard."
+  ],
+  "critical_code_review_comments": [
+    "routers/businesses.py PUT /me — the setdefault() shim for description/category_id/address/city/state/country/zip_code/subscription_status fixes the Pydantic ValidationError for legacy biz docs. Confirmed 200 response in pytest and via UI PUT.",
+    "BusinessSettingsPage.jsx line 62 — `if (!isAuthenticated || !isBusiness) { navigate('/business/login'); return; }` runs on first render before useAuth has resolved persisted token, causing direct-URL deep-link to redirect away. Same anti-pattern likely exists on other business gated pages."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "100% (8/8 pytest)",
+    "frontend": "100% on the targeted notifications flow when reached via Config button"
+  },
+  "test_credentials": "User: testuser_stats@test.com / TestPass123!  |  Business: testbiz_dashboard@test.com / TestBiz123!",
+  "seed_data_creation": "None — used existing test users",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "test_notification_preferences.py is now the regression suite for both user and business notification toggles plus the Twilio SMS helper smoke test (8 tests). The /business/settings deep-link redirect quirk is purely an auth-hydration race in the frontend and is independent of the notification preferences feature. To reproduce: open a fresh browser session, log in as business, then paste /business/settings into URL bar — you'll be redirected to /business/dashboard. Clicking the 'Config' button on the dashboard works as expected.",
+  "rca of the issue": "Iter 65 had two issues. (1) PUT /api/businesses/me 500 due to legacy biz doc missing description/etc — FIXED in routers/businesses.py with setdefault before BusinessResponse(**business). Validated by pytest TestBusinessNotificationPrefs::* (3/3 pass) and by live PUT (200) from the UI toggle. (2) /business/settings appearing to redirect to /business/dashboard — confirmed root cause is BusinessSettingsPage useEffect redirecting before useAuth hydrates on direct URL load. When navigated via the dashboard Config button (in-app), the page mounts correctly with hydrated auth state and the entire notifications flow works end-to-end."
+}
