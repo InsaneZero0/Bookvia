@@ -1,0 +1,57 @@
+{
+  "summary": "Tested Bookvia per-business public_code (BV-XXXXX) feature end-to-end. All 10 backend tests passed (1 skipped: admin endpoint covered separately via curl since TOTP-based fixture wasn't in scope). Frontend BusinessSettings public-code card and Admin Dashboard code badges all verified working.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_public_code.py",
+    "/app/test_reports/pytest/pytest_public_code.xml"
+  ],
+  "test_results_detail": {
+    "backend": {
+      "TestBackfill::test_every_business_has_public_code": "PASS - all 5 MX businesses have BV-XXXXX format codes",
+      "TestBackfill::test_codes_are_unique": "PASS",
+      "TestByCodeLookup::test_lookup_known_code (BV-QFC6D)": "PASS - 200 with correct biz",
+      "TestByCodeLookup::test_lookup_case_insensitive (bv-qfc6d)": "PASS",
+      "TestByCodeLookup::test_lookup_invalid_format_400 (INVALID)": "PASS - 400",
+      "TestByCodeLookup::test_lookup_invalid_prefix_400 (BV-INVALID)": "PASS - 400",
+      "TestByCodeLookup::test_lookup_valid_format_not_found_404 (BV-AAAAA)": "PASS - 404",
+      "TestPrivateInfo::test_private_info_includes_public_code": "PASS - BV-4T9BB returned for testbiz_dashboard",
+      "TestPrivateInfo::test_private_code_matches_public_listing": "PASS",
+      "TestNewRegistration::test_new_business_has_public_code": "PASS - new biz auto-assigned BV-XXXXX, verified via direct MongoDB lookup; cleaned up after test",
+      "TestAdminSearch::test_admin_search_by_code": "SKIPPED in pytest; verified via curl: search=BV-QFC6D returns exactly 1 biz (Test Real Stripe), search=QFC partial also returns 1"
+    },
+    "frontend": {
+      "BusinessSettings public-code-card": "PASS - card visible at top of Info tab",
+      "public-code-value": "PASS - shows BV-4T9BB matching /private-info",
+      "copy-public-code-btn": "PASS - toast 'Codigo copiado' appears",
+      "Other tabs (hours, notifications, documents, subscription, location) clickable": "PASS - regression OK",
+      "Admin /bv-ctrl Negocios tab": "PASS - 20 admin-biz-code-{id} badges visible (BV-FHDPH, BV-4T9BB, BV-VTDQQ, etc.)",
+      "Admin code badge click-to-copy": "PASS - toast 'Codigo copiado' shown",
+      "Admin search placeholder text": "PASS - 'Buscar por nombre, email, telefono o codigo BV-XXXXX...'",
+      "Admin search submission": "Backend search by BV-QFC6D returns single matching biz (verified via API); search input is filled but requires explicit 'Buscar' button click to apply (standard UX pattern, not a bug)"
+    }
+  },
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Generator uses cryptographically secure secrets.choice with retry loop - good. 28^5 ~= 17M space gives near-zero collision risk.",
+    "Backfill on startup is idempotent (sparse unique index + only fills missing). Looks safe.",
+    "by-code endpoint correctly returns 400 for invalid format vs 404 for not-found - good HTTP semantics.",
+    "Test data accumulating in DB (multiple TEST_* businesses with codes visible in admin list). Consider periodic cleanup but not blocking."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_public_code.py (new)"
+  ],
+  "success_rate": {"backend": "100% (10/10 executed pytest, +1 verified via curl)", "frontend": "100%"},
+  "test_credentials": "Business: testbiz_dashboard@test.com / TestBiz123! (BV-4T9BB). Admin: zamorachapa50@gmail.com / RainbowLol3133! + TOTP via /app/scripts/get_admin_totp.py. Admin login URL is /bv-ctrl/login (NOT /admin/login). Admin dashboard at /bv-ctrl.",
+  "seed_data_creation": "Test created one business (TEST_pubcode_<uuid>@test.com) and cleaned it up via direct MongoDB delete in fixture. Older TEST_PubCode_* entries from other test runs remain visible in admin list.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Public code feature works end-to-end. Login response field is 'token'. Admin login uses /api/auth/admin/login with totp_code field. Admin pages live at /bv-ctrl* (not /admin*). The admin search input requires clicking 'Buscar' button to submit (standard UX). All BV-XXXXX badges/cards properly rendered with data-testids: public-code-card, public-code-value, copy-public-code-btn, admin-biz-code-{biz.id}."
+}

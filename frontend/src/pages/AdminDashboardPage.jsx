@@ -1191,7 +1191,7 @@ export default function AdminDashboardPage() {
             <div className="flex flex-col sm:flex-row gap-3">
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input placeholder={t('Buscar por nombre, email o telefono...', 'Search by name, email or phone...')}
+                <Input placeholder={t('Buscar por nombre, email, telefono o codigo BV-XXXXX...', 'Search by name, email, phone or BV-XXXXX code...')}
                   value={bizSearch} onChange={e => setBizSearch(e.target.value)}
                   onKeyDown={e => e.key === 'Enter' && loadBusinesses(1)}
                   className="pl-10" data-testid="biz-search-input" />
@@ -1226,6 +1226,20 @@ export default function AdminDashboardPage() {
                         <div className="min-w-0 flex-1 cursor-pointer" onClick={() => openDetail(biz.id)}>
                           <div className="flex items-center gap-2 flex-wrap">
                             <h4 className="font-semibold hover:text-primary transition-colors">{biz.name}</h4>
+                            {biz.public_code && (
+                              <code
+                                className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200 hover:bg-slate-200 transition-colors cursor-pointer"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  navigator.clipboard.writeText(biz.public_code);
+                                  toast.success(t('Codigo copiado', 'Code copied'));
+                                }}
+                                title={t('Click para copiar', 'Click to copy')}
+                                data-testid={`admin-biz-code-${biz.id}`}
+                              >
+                                {biz.public_code}
+                              </code>
+                            )}
                             <Badge className={STATUS_COLORS[biz.status] || 'bg-gray-100'}>{biz.status}</Badge>
                             {biz.subscription_status && (
                               <Badge variant="outline" className={STATUS_COLORS[biz.subscription_status] || ''}>

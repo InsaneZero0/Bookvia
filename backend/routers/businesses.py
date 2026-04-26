@@ -527,6 +527,30 @@ async def export_business_reports(
 
 
 
+@router.get("/by-code/{code}", response_model=BusinessResponse)
+async def get_business_by_public_code(code: str):
+    """Look up a business by its public Bookvia code (BV-XXXXX). Used for QR codes and short URLs."""
+    from services.public_code import normalize_public_code, is_valid_public_code
+    normalized = normalize_public_code(code)
+    if not is_valid_public_code(normalized):
+        raise HTTPException(status_code=400, detail="Codigo invalido")
+    business = await db.businesses.find_one(
+        {"public_code": normalized, "status": BusinessStatus.APPROVED},
+        {"_id": 0, "password_hash": 0}
+    )
+    if not business:
+        raise HTTPException(status_code=404, detail="Negocio no encontrado")
+    business.setdefault("description", "")
+    business.setdefault("address", "")
+    business.setdefault("city", "")
+    business.setdefault("state", "")
+    business.setdefault("country", "MX")
+    business.setdefault("zip_code", "")
+    business.setdefault("subscription_status", "none")
+    return BusinessResponse(**business)
+
+
+
 @router.get("", response_model=List[BusinessResponse])
 async def search_businesses(
     request: Request,
@@ -915,7 +939,7 @@ async def get_my_private_info(token_data: TokenData = Depends(require_business))
          "stripe_customer_id": 1, "subscription_status": 1,
          "stripe_subscription_id": 1, "subscription_started_at": 1,
          "name": 1, "email": 1, "phone": 1, "description": 1,
-         "notify_email": 1, "notify_sms": 1}
+         "notify_email": 1, "notify_sms": 1, "public_code": 1}
     )
     if not business:
         raise HTTPException(status_code=404, detail="Business not found")
@@ -960,6 +984,7 @@ async def get_my_private_info(token_data: TokenData = Depends(require_business))
         "subscription_info": subscription_info,
         "notify_email": business.get("notify_email", True),
         "notify_sms": business.get("notify_sms", True),
+        "public_code": business.get("public_code"),
     }
 
 

@@ -115,6 +115,22 @@ async def startup_event():
             logger.warning("Cloudinary not configured - using fallback storage")
     except Exception as e:
         logger.warning(f"Cloudinary init failed: {e}")
+    # Ensure unique sparse index on businesses.public_code + backfill missing codes
+    try:
+        from core.database import db
+        from services.public_code import generate_unique_public_code
+        await db.businesses.create_index("public_code", unique=True, sparse=True)
+        missing = await db.businesses.find(
+            {"$or": [{"public_code": {"$exists": False}}, {"public_code": None}, {"public_code": ""}]},
+            {"_id": 0, "id": 1}
+        ).to_list(1000)
+        for b in missing:
+            code = await generate_unique_public_code(db)
+            await db.businesses.update_one({"id": b["id"]}, {"$set": {"public_code": code}})
+        if missing:
+            logger.info(f"Backfilled public_code for {len(missing)} businesses")
+    except Exception as e:
+        logger.warning(f"public_code backfill failed: {e}")
     # Start background schedulers
     asyncio.create_task(appointment_reminder_scheduler())
     asyncio.create_task(subscription_reminder_scheduler())

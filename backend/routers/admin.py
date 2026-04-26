@@ -455,11 +455,18 @@ async def get_all_businesses(
     if city:
         query["city"] = {"$regex": city, "$options": "i"}
     if search:
-        query["$or"] = [
-            {"name": {"$regex": search, "$options": "i"}},
-            {"email": {"$regex": search, "$options": "i"}},
-            {"phone": {"$regex": search, "$options": "i"}},
-        ]
+        # If search looks like a public_code (BV-XXXXX or just XXXXX), normalize and match exactly first
+        from services.public_code import normalize_public_code, is_valid_public_code
+        normalized = normalize_public_code(search)
+        if is_valid_public_code(normalized):
+            query["public_code"] = normalized
+        else:
+            query["$or"] = [
+                {"name": {"$regex": search, "$options": "i"}},
+                {"email": {"$regex": search, "$options": "i"}},
+                {"phone": {"$regex": search, "$options": "i"}},
+                {"public_code": {"$regex": search.upper(), "$options": "i"}},
+            ]
     total = await db.businesses.count_documents(query)
     businesses = await db.businesses.find(
         query, {"_id": 0, "password_hash": 0}

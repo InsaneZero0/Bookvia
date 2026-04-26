@@ -161,6 +161,7 @@ class BusinessResponse(BaseModel):
     notify_sms: bool = True
     top_services: List[Dict[str, Any]] = []
     min_price: Optional[float] = None
+    public_code: Optional[str] = None
 
 class BusinessUpdate(BaseModel):
     name: Optional[str] = None

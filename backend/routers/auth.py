@@ -449,6 +449,10 @@ async def register_business(business: BusinessCreate):
     slug = generate_slug(business.name) + "-" + business_id[:8]
     city_slug = generate_slug(business.city)
     
+    # Generate unique public code (BV-XXXXX)
+    from services.public_code import generate_unique_public_code
+    public_code = await generate_unique_public_code(db)
+    
     # Normalize country code
     country_code = business.country.upper()[:2] if business.country else "MX"
     
@@ -505,6 +509,7 @@ async def register_business(business: BusinessCreate):
         "trial_ends_at": trial_ends,
         "is_featured": False,
         "payout_hold": False,
+        "public_code": public_code,
         "created_at": datetime.now(timezone.utc).isoformat()
     }
     
