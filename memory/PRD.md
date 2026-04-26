@@ -59,6 +59,7 @@ Auth Social: Emergent-managed Google Auth (solo clientes)
 - [x] SMS confirmacion de reserva al cliente + notificacion al negocio (post-pago Stripe)
 - [x] SMS de cancelacion al cliente y al negocio
 - [x] Preferencias de notificacion por canal (email/SMS) - usuarios en /dashboard, negocios en /business/settings tab Notificaciones (default ambos ON, opt-out individual). Backend respeta notify_email/notify_sms en todos los puntos de envio
+- [x] Codigo publico unico por negocio BV-XXXXX (auto-generado, backfilled, visible en BusinessSettings con copiar, busqueda admin por codigo, endpoint GET /api/businesses/by-code/{code})
 - [x] Registro de negocio: pago de suscripcion como ultimo paso obligatorio
 - [x] Recordatorio automatico de suscripcion (email 24h despues si no pagaron)
 
