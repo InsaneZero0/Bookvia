@@ -159,6 +159,8 @@ class BusinessResponse(BaseModel):
     business_hours: Optional[Dict[str, Any]] = None
     notify_email: bool = True
     notify_sms: bool = True
+    top_services: List[Dict[str, Any]] = []
+    min_price: Optional[float] = None
 
 class BusinessUpdate(BaseModel):
     name: Optional[str] = None

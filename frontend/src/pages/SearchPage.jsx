@@ -108,6 +108,7 @@ export default function SearchPage() {
   const [sortBy, setSortBy] = useState(searchParams.get('sort') || 'relevance');
   const [priceRange, setPriceRange] = useState([0, 5000]);
   const [onlyFeatured, setOnlyFeatured] = useState(searchParams.get('featured') === 'true');
+  const [openNow, setOpenNow] = useState(searchParams.get('open_now') === 'true');
   const [page, setPage] = useState(1);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [userLocation, setUserLocation] = useState(null);
@@ -242,16 +243,35 @@ export default function SearchPage() {
   const clearFilters = () => {
     setQuery(''); setCity(''); setCategoryId(''); setMinRating([0]);
     setHomeService(false); setRequiresDeposit('all'); setSortBy('relevance');
-    setPriceRange([0, 5000]); setOnlyFeatured(false); setSearchParams({});
+    setPriceRange([0, 5000]); setOnlyFeatured(false); setOpenNow(false); setSearchParams({});
   };
 
   const hasActiveFilters = query || city || categoryId || minRating[0] > 0 || homeService ||
-    requiresDeposit !== 'all' || sortBy !== 'relevance' || onlyFeatured;
+    requiresDeposit !== 'all' || sortBy !== 'relevance' || onlyFeatured || openNow;
 
   const mappableBusinesses = useMemo(
     () => businesses.filter(b => b.latitude && b.longitude),
     [businesses]
   );
+
+  // Filter results client-side: open now toggle
+  const filteredBusinesses = useMemo(
+    () => openNow ? businesses.filter(b => b.is_open_now === true) : businesses,
+    [businesses, openNow]
+  );
+
+  const filteredMappable = useMemo(
+    () => filteredBusinesses.filter(b => b.latitude && b.longitude),
+    [filteredBusinesses]
+  );
+
+  const sortChips = [
+    { id: 'relevance', label_es: 'Relevancia', label_en: 'Relevance' },
+    { id: 'nearest', label_es: 'Más cercanos', label_en: 'Nearest' },
+    { id: 'rating', label_es: 'Mejor calificados', label_en: 'Top rated' },
+    { id: 'reviews', label_es: 'Más reseñas', label_en: 'Most reviews' },
+    { id: 'newest', label_es: 'Más recientes', label_en: 'Newest' },
+  ];
 
   const FilterContent = () => (
     <div className="space-y-5">
@@ -279,20 +299,6 @@ export default function SearchPage() {
           <SelectContent>
             <SelectItem value="all">{language === 'es' ? 'Todas las ciudades' : 'All cities'}</SelectItem>
             {cities.map(c => <SelectItem key={c.slug} value={c.name}>{c.name}</SelectItem>)}
-          </SelectContent>
-        </Select>
-      </div>
-
-      <div className="space-y-1.5">
-        <Label className="text-xs font-medium">{language === 'es' ? 'Ordenar por' : 'Sort by'}</Label>
-        <Select value={sortBy} onValueChange={setSortBy}>
-          <SelectTrigger data-testid="filter-sort" className="h-9"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="relevance">{language === 'es' ? 'Relevancia' : 'Relevance'}</SelectItem>
-            <SelectItem value="nearest">{language === 'es' ? 'Mas cercanos' : 'Nearest'}</SelectItem>
-            <SelectItem value="rating">{language === 'es' ? 'Mejor calificados' : 'Top rated'}</SelectItem>
-            <SelectItem value="reviews">{language === 'es' ? 'Mas resenas' : 'Most reviews'}</SelectItem>
-            <SelectItem value="newest">{language === 'es' ? 'Mas recientes' : 'Newest'}</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -458,7 +464,7 @@ export default function SearchPage() {
 
           {/* Results Area */}
           <main className="flex-1 min-w-0">
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center justify-between mb-3">
               <div>
                 <h1 className="text-xl font-heading font-bold">
                   {sortBy === 'nearest' && userLocation
@@ -466,8 +472,9 @@ export default function SearchPage() {
                     : query ? `"${query}"` : (language === 'es' ? 'Todos los negocios' : 'All businesses')}
                 </h1>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  {businesses.length} {language === 'es' ? 'resultados' : 'results'}
+                  {filteredBusinesses.length} {language === 'es' ? 'resultados' : 'results'}
                   {city && ` ${language === 'es' ? 'en' : 'in'} ${city}`}
+                  {openNow && ` · ${language === 'es' ? 'abiertos ahora' : 'open now'}`}
                   {sortBy === 'nearest' && userLocation && businesses.length > 0 && businesses[0]?.distance_km != null && (
                     <> &mdash; {language === 'es' ? 'el más cercano a' : 'closest at'} {businesses[0].distance_km} km</>
                   )}
@@ -483,6 +490,44 @@ export default function SearchPage() {
                   <MapIcon className="h-4 w-4" />
                 </button>
               </div>
+            </div>
+
+            {/* Quick chips: Open now + Sort */}
+            <div className="flex flex-wrap items-center gap-2 mb-4 pb-3 border-b border-border/50" data-testid="sort-chips-row">
+              <button
+                type="button"
+                onClick={() => setOpenNow(v => !v)}
+                className={`h-8 px-3 inline-flex items-center gap-1.5 rounded-full text-xs font-medium border transition-colors ${
+                  openNow
+                    ? 'bg-emerald-600 text-white border-emerald-600'
+                    : 'bg-white text-slate-700 border-border/60 hover:bg-emerald-50 hover:border-emerald-300'
+                }`}
+                data-testid="open-now-chip"
+              >
+                <span className={`w-1.5 h-1.5 rounded-full ${openNow ? 'bg-white' : 'bg-emerald-500'}`} />
+                {language === 'es' ? 'Abierto ahora' : 'Open now'}
+              </button>
+
+              <span className="hidden sm:inline-block w-px h-5 bg-border/60 mx-1" />
+
+              <span className="text-[11px] text-muted-foreground uppercase tracking-wider mr-1">
+                {language === 'es' ? 'Ordenar:' : 'Sort:'}
+              </span>
+              {sortChips.map(chip => (
+                <button
+                  key={chip.id}
+                  type="button"
+                  onClick={() => setSortBy(chip.id)}
+                  className={`h-8 px-3 inline-flex items-center rounded-full text-xs font-medium border transition-colors ${
+                    sortBy === chip.id
+                      ? 'bg-slate-900 text-white border-slate-900'
+                      : 'bg-white text-slate-700 border-border/60 hover:bg-slate-50'
+                  }`}
+                  data-testid={`sort-chip-${chip.id}`}
+                >
+                  {language === 'es' ? chip.label_es : chip.label_en}
+                </button>
+              ))}
             </div>
 
             {/* Proximity info banner */}
@@ -548,7 +593,7 @@ export default function SearchPage() {
             ) : viewMode === 'list' ? (
               /* ── List View ──────────────────────────── */
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4" data-testid="results-list">
-                {businesses.length > 0 ? businesses.map(business => (
+                {filteredBusinesses.length > 0 ? filteredBusinesses.map(business => (
                   <div key={business.id} onMouseEnter={() => setHoveredBiz(business.id)} onMouseLeave={() => setHoveredBiz(null)}>
                     <BusinessCard business={business} onFavorite={handleFavorite} isFavorite={favorites.includes(business.id)} />
                   </div>
@@ -610,12 +655,12 @@ export default function SearchPage() {
               <div className="grid lg:grid-cols-2 gap-4" data-testid="results-map-view">
                 {/* Map */}
                 <div className="h-[500px] lg:h-[calc(100vh-200px)] rounded-xl overflow-hidden border sticky top-24" data-testid="search-map">
-                  <SearchGoogleMap businesses={mappableBusinesses} navigate={navigate} language={language} />
+                  <SearchGoogleMap businesses={filteredMappable} navigate={navigate} language={language} />
                 </div>
 
                 {/* Side List */}
                 <div className="space-y-3 max-h-[calc(100vh-200px)] overflow-y-auto pr-1">
-                  {businesses.length > 0 ? businesses.map(biz => (
+                  {filteredBusinesses.length > 0 ? filteredBusinesses.map(biz => (
                     <Card
                       key={biz.id}
                       className={`cursor-pointer transition-all hover:shadow-md ${hoveredBiz === biz.id ? 'border-[#F05D5E] shadow-md' : 'border-border/60'}`}

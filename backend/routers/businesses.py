@@ -709,6 +709,29 @@ async def search_businesses(
                 if found:
                     break
     
+    # Fetch top services and min price per business (single bulk query)
+    if biz_ids:
+        all_services = await db.services.find(
+            {"business_id": {"$in": biz_ids}, "active": {"$ne": False}},
+            {"_id": 0, "id": 1, "business_id": 1, "name": 1, "price": 1}
+        ).sort("price", 1).to_list(2000)
+        biz_services_map = {}
+        for s in all_services:
+            biz_services_map.setdefault(s["business_id"], []).append(s)
+        
+        for b in businesses:
+            services = biz_services_map.get(b["id"], [])
+            if services:
+                b["top_services"] = [
+                    {"name": s.get("name", ""), "price": s.get("price", 0)}
+                    for s in services[:3]
+                ]
+                prices = [s.get("price", 0) for s in services if s.get("price")]
+                if prices:
+                    b["min_price"] = min(prices)
+            else:
+                b["top_services"] = []
+    
     return [BusinessResponse(**b) for b in businesses]
 
 

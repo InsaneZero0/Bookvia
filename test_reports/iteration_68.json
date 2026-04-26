@@ -1,0 +1,49 @@
+{
+  "summary": "Tested TIER 2 (card content rework) + TIER 3 (sort chips + Open Now toggle) on Bookvia search page. Backend (4/4) and Frontend (13/13) checks passed. Service chips show real prices, CTA is 'Ver disponibilidad', sort chips reorder, Open Now toggle filters client-side, filter-sort removed from sidebar. Map view and 'Cerca de ti' regression OK.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Search /search map view", "issues": ["Google Maps console error 'RefererNotAllowedMapError' for the preview domain — pre-existing config (not regressed by this iter). Map renders but with watermark warning. The REACT_APP_GOOGLE_MAPS_KEY needs the preview hostname added to authorized referers."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_search_chips_redesign.py",
+    "/app/test_reports/pytest/pytest_search_chips_redesign.xml"
+  ],
+  "action_items": [
+    "(Optional, non-blocking) Add preview/prod domains to Google Maps API key referer allowlist to remove RefererNotAllowedMapError noise."
+  ],
+  "critical_code_review_comments": [
+    "BusinessCard.jsx line 160: min_price fallback uses 299. With backend now returning real min_price, fallback is fine for legacy/empty top_services rows.",
+    "SearchPage.jsx: openNow filter is purely client-side over `businesses` array — businesses without is_open_now (null) will be excluded. Verified: when open-now is toggled with no truly-open businesses, header correctly shows '0 resultados · abiertos ahora'. Acceptable.",
+    "businesses.py line 713-733: bulk service fetch limits to 2000 across all biz_ids — could be tight for large pages but adequate at limit=20."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_search_chips_redesign.py (new)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "Not used (public search endpoints).",
+  "seed_data_creation": "None — used existing 5 MX businesses including 'Test Real Stripe' (3 services starting $150).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "verified_checks": [
+    "GET /api/businesses?country_code=MX&limit=5 returns top_services (max 3, ASC by price) and min_price",
+    "Test Real Stripe returns 3 services starting at $150 MXN, min_price=150",
+    "Legacy fields preserved (id,name,slug,photos,rating,review_count,city,country_code)",
+    "GET /api/businesses?country_code=US returns [] (200 OK)",
+    "Frontend cards show services-chips-{id} with formatCurrency prices like 'Corte de cabello · $150.00'",
+    "CTA = 'Ver disponibilidad' (no 'Reservar ahora')",
+    "min_price comes from real services ('Desde $150.00' on Test Real Stripe, not 299 fallback)",
+    "sort-chips-row visible with open-now-chip + 5 sort chips (relevance/nearest/rating/reviews/newest)",
+    "Click sort-chip-rating -> active slate-900 background",
+    "Click open-now-chip -> emerald-600 active, header appends ' · abiertos ahora', client-side filter applied",
+    "Click open-now-chip again -> toggles off, all results return",
+    "filter-sort REMOVED from sidebar (data-testid=filter-sort no longer exists)",
+    "Reload /search -> sort resets to 'relevance' (active)",
+    "Map view toggle renders results-map-view with side list",
+    "'Cerca de ti' (nearby-button) is present and clickable"
+  ],
+  "context_for_next_testing_agent": "Search page redesign TIER 2+3 verified end-to-end. Backend test file at /app/backend/tests/test_search_chips_redesign.py is reusable. Note: Google Maps API key has RefererNotAllowedMapError on preview domain (pre-existing, non-blocking). When testing search, set localStorage 'bookvia-country'='MX' before navigating, otherwise country defaults differ."
+}

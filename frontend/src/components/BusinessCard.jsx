@@ -98,32 +98,42 @@ export function BusinessCard({ business, onFavorite, isFavorite = false }) {
               {titleCase(business.name)}
             </h3>
           </Link>
-          <p className="text-sm text-muted-foreground line-clamp-2 mt-1">
+          <p className="text-sm text-muted-foreground line-clamp-1 mt-0.5">
             {business.description}
           </p>
         </div>
+
+        {/* Service chips with prices */}
+        {business.top_services && business.top_services.length > 0 && (
+          <div className="flex flex-wrap gap-1.5" data-testid={`services-chips-${business.id}`}>
+            {business.top_services.slice(0, 3).map((s, idx) => (
+              <span
+                key={idx}
+                className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-slate-50 border border-slate-200 text-[11px] text-slate-700"
+              >
+                <span className="line-clamp-1 max-w-[110px]">{s.name}</span>
+                <span className="font-semibold text-slate-900">·</span>
+                <span className="font-semibold text-slate-900">{formatCurrency(s.price, 'MXN')}</span>
+              </span>
+            ))}
+          </div>
+        )}
 
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-muted-foreground">
           <div className="flex items-center gap-1">
             <MapPin className="h-3.5 w-3.5" />
             <span className="line-clamp-1 text-xs">{business.city}</span>
           </div>
-          {business.is_open_now != null && (
-            <span className={`flex items-center gap-1 text-xs font-medium ${business.is_open_now ? 'text-emerald-600' : 'text-muted-foreground'}`}>
-              <span className={`w-1.5 h-1.5 rounded-full ${business.is_open_now ? 'bg-emerald-500' : 'bg-slate-400'}`} />
-              {business.is_open_now ? (language === 'es' ? 'Abierto' : 'Open') : (language === 'es' ? 'Cerrado' : 'Closed')}
-            </span>
-          )}
           {business.distance_km != null && (
             <span className="text-xs font-medium text-[#F05D5E]">
               {business.distance_km < 1 ? `${Math.round(business.distance_km * 1000)}m` : `${business.distance_km} km`}
             </span>
           )}
-          {business.next_available_text && !business.is_open_now && (
-            <div className="flex items-center gap-1 text-xs font-medium text-emerald-600">
-              <Clock className="h-3 w-3" />
-              <span>{business.next_available_text}</span>
-            </div>
+          {business.is_open_now != null && (
+            <span className={`flex items-center gap-1 text-xs font-medium ${business.is_open_now ? 'text-emerald-600' : 'text-muted-foreground'}`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${business.is_open_now ? 'bg-emerald-500' : 'bg-slate-400'}`} />
+              {business.is_open_now ? (language === 'es' ? 'Abierto' : 'Open') : (language === 'es' ? 'Cerrado' : 'Closed')}
+            </span>
           )}
           {business.review_count > 0 && (
             <span className="text-xs">
@@ -132,6 +142,17 @@ export function BusinessCard({ business, onFavorite, isFavorite = false }) {
           )}
         </div>
 
+        {/* Urgency line - next available */}
+        {business.next_available_text && (
+          <div className="flex items-center gap-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 border border-emerald-100 rounded-md px-2 py-1.5">
+            <Clock className="h-3.5 w-3.5" />
+            <span>
+              {language === 'es' ? 'Próxima cita: ' : 'Next slot: '}
+              <span className="font-semibold">{business.next_available_text}</span>
+            </span>
+          </div>
+        )}
+
         <div className="flex items-center justify-between pt-2 border-t border-border/50">
           <div>
             <span className="text-xs text-muted-foreground">{t('common.from')}</span>
@@ -139,9 +160,9 @@ export function BusinessCard({ business, onFavorite, isFavorite = false }) {
               {formatCurrency(business.min_price || 299, 'MXN')}
             </span>
           </div>
-          <Button asChild className="btn-coral text-sm px-4 py-2" data-testid={`book-btn-${business.id}`}>
+          <Button asChild variant="outline" className="text-sm px-4 py-2 border-slate-300 hover:border-[#F05D5E] hover:text-[#F05D5E]" data-testid={`book-btn-${business.id}`}>
             <Link to={`/business/${business.slug}`}>
-              {t('business.bookNow')}
+              {language === 'es' ? 'Ver disponibilidad' : 'See availability'}
             </Link>
           </Button>
         </div>
