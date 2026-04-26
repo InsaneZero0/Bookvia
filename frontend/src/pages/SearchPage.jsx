@@ -14,7 +14,7 @@ import { useI18n } from '@/lib/i18n';
 import { useAuth } from '@/lib/auth';
 import { useCountry } from '@/lib/countryContext';
 import { businessesAPI, categoriesAPI, usersAPI } from '@/lib/api';
-import { Search, SlidersHorizontal, MapPin, X, Filter, List, Map as MapIcon, Star, ArrowRight } from 'lucide-react';
+import { Search, SlidersHorizontal, MapPin, X, Filter, List, Map as MapIcon, Star, ArrowRight, ChevronRight } from 'lucide-react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { toast } from 'sonner';
 import { GoogleMap, Marker, useJsApiLoader } from '@react-google-maps/api';
@@ -91,6 +91,7 @@ export default function SearchPage() {
   const navigate = useNavigate();
 
   const [businesses, setBusinesses] = useState([]);
+  const [featuredBusinesses, setFeaturedBusinesses] = useState([]);
   const [categories, setCategories] = useState([]);
   const [cities, setCities] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -118,11 +119,48 @@ export default function SearchPage() {
     loadCategories();
     loadCities();
     loadFavorites();
+    loadFeatured();
   }, [countryCode]);
 
   useEffect(() => {
     loadBusinesses();
   }, [categoryId, city, minRating, homeService, requiresDeposit, sortBy, onlyFeatured, page, countryCode, userLocation]);
+
+  // Show category browse view when no specific filters/query are active
+  const showCategoriesView = !query && !city && (!categoryId || categoryId === 'all') &&
+    !homeService && !onlyFeatured && minRating[0] === 0 && requiresDeposit === 'all' &&
+    sortBy === 'relevance' && !userLocation;
+
+  const selectedCategory = useMemo(
+    () => categories.find(c => c.id === categoryId || c.slug === categoryId),
+    [categories, categoryId]
+  );
+
+  const handleCategorySelect = (cat) => {
+    setCategoryId(cat.id);
+    const params = new URLSearchParams(searchParams);
+    params.set('category', cat.id);
+    setSearchParams(params);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleBackToCategories = () => {
+    clearFilters();
+    setSearchParams({});
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const loadFeatured = async () => {
+    try {
+      const baseUrl = process.env.REACT_APP_BACKEND_URL || '';
+      const res = await fetch(`${baseUrl}/api/businesses/featured?limit=3${countryCode ? `&country_code=${countryCode}` : ''}`);
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      setFeaturedBusinesses(Array.isArray(data) ? data : []);
+    } catch {
+      setFeaturedBusinesses([]);
+    }
+  };
 
   const loadCategories = async () => {
     try {
@@ -448,6 +486,127 @@ export default function SearchPage() {
 
       {/* ── Main Content ─────────────────────────────── */}
       <div className="container-app py-6">
+        {showCategoriesView ? (
+          /* ═════════════ CATEGORIES BROWSE VIEW ═════════════ */
+          <div className="space-y-10" data-testid="categories-browse-view">
+            {/* Hero copy */}
+            <div className="text-center max-w-2xl mx-auto pt-2">
+              <h1 className="font-heading font-bold text-3xl sm:text-4xl mb-2 text-slate-900">
+                {language === 'es' ? '¿Qué necesitas hoy?' : 'What do you need today?'}
+              </h1>
+              <p className="text-sm sm:text-base text-muted-foreground">
+                {language === 'es'
+                  ? 'Elige una categoría para ver los negocios disponibles cerca de ti.'
+                  : 'Pick a category to see available businesses near you.'}
+              </p>
+            </div>
+
+            {/* Categories grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4" data-testid="categories-grid">
+              {categories.length === 0 ? (
+                Array.from({ length: 8 }).map((_, i) => (
+                  <div key={i} className="aspect-[4/3] rounded-2xl bg-slate-100 animate-pulse" />
+                ))
+              ) : categories.map(cat => (
+                <button
+                  key={cat.id}
+                  onClick={() => handleCategorySelect(cat)}
+                  className="group relative aspect-[4/3] rounded-2xl overflow-hidden border border-border/50 hover:border-[#F05D5E]/40 transition-all hover:shadow-lg text-left"
+                  data-testid={`category-card-${cat.slug}`}
+                >
+                  {cat.image_url ? (
+                    <img
+                      src={cat.image_url}
+                      alt={language === 'es' ? cat.name_es : cat.name_en}
+                      className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+                      loading="lazy"
+                    />
+                  ) : (
+                    <div className="absolute inset-0 bg-gradient-to-br from-[#F05D5E]/30 to-[#1a2844]/30" />
+                  )}
+                  <div className="absolute inset-0 bg-gradient-to-t from-slate-900/85 via-slate-900/30 to-transparent" />
+                  <div className="absolute inset-x-0 bottom-0 p-3 sm:p-4">
+                    <h3 className="font-heading font-bold text-white text-base sm:text-lg leading-tight line-clamp-2">
+                      {language === 'es' ? cat.name_es : cat.name_en}
+                    </h3>
+                    <p className="text-xs text-white/85 mt-0.5">
+                      {cat.business_count > 0
+                        ? `${cat.business_count} ${language === 'es' ? (cat.business_count === 1 ? 'negocio' : 'negocios') : (cat.business_count === 1 ? 'business' : 'businesses')}`
+                        : (language === 'es' ? 'Próximamente' : 'Coming soon')}
+                    </p>
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            {/* Quick actions row */}
+            <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
+              <button
+                type="button"
+                onClick={requestLocation}
+                disabled={locatingUser}
+                className="h-9 px-4 inline-flex items-center gap-1.5 rounded-full text-xs font-medium bg-white border border-border/60 text-slate-700 hover:bg-slate-50 transition-colors"
+                data-testid="cat-view-nearby"
+              >
+                <MapPin className="h-3.5 w-3.5" />
+                {language === 'es' ? 'Mostrar negocios cerca de ti' : 'Show businesses near me'}
+              </button>
+              <button
+                type="button"
+                onClick={() => { setSortBy('rating'); }}
+                className="h-9 px-4 inline-flex items-center gap-1.5 rounded-full text-xs font-medium bg-white border border-border/60 text-slate-700 hover:bg-slate-50 transition-colors"
+                data-testid="cat-view-all"
+              >
+                <Star className="h-3.5 w-3.5" />
+                {language === 'es' ? 'Ver todos los negocios' : 'View all businesses'}
+              </button>
+            </div>
+
+            {/* Featured businesses preview */}
+            {featuredBusinesses.length > 0 && (
+              <div className="pt-6 border-t border-border/40" data-testid="featured-section">
+                <div className="flex items-end justify-between mb-4">
+                  <div>
+                    <h2 className="font-heading font-bold text-xl text-slate-900">
+                      {language === 'es' ? 'Destacados de la semana' : 'Featured this week'}
+                    </h2>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {language === 'es' ? 'Los mejor calificados de la plataforma' : 'Top rated on the platform'}
+                    </p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {featuredBusinesses.slice(0, 3).map(b => (
+                    <BusinessCard
+                      key={b.id}
+                      business={b}
+                      onFavorite={handleFavorite}
+                      isFavorite={favorites.includes(b.id)}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+        /* ═════════════ RESULTS VIEW (categories browse skipped) ═════════════ */
+        <>
+        {/* Breadcrumb when a category is selected */}
+        {selectedCategory && (
+          <div className="flex items-center gap-2 mb-4 text-sm" data-testid="category-breadcrumb">
+            <button
+              onClick={handleBackToCategories}
+              className="text-muted-foreground hover:text-[#F05D5E] transition-colors"
+              data-testid="back-to-categories"
+            >
+              {language === 'es' ? 'Categorías' : 'Categories'}
+            </button>
+            <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+            <span className="font-medium text-slate-900">
+              {language === 'es' ? selectedCategory.name_es : selectedCategory.name_en}
+            </span>
+          </div>
+        )}
         <div className="flex gap-6">
 
           {/* Desktop Filters Sidebar */}
@@ -708,6 +867,8 @@ export default function SearchPage() {
             )}
           </main>
         </div>
+        </>
+        )}
       </div>
     </div>
   );
