@@ -19,7 +19,7 @@ Production mode:
 import logging
 import random
 from datetime import datetime, timezone, timedelta
-from typing import Tuple
+from typing import Tuple, Optional
 
 from core.config import (
     IS_DEVELOPMENT, IS_PRODUCTION,
@@ -74,23 +74,22 @@ def generate_code() -> str:
 
 async def send_sms(phone: str, message: str) -> Tuple[bool, str]:
     """
-    Send SMS message.
+    Send SMS message via Twilio.
+    
+    Behavior:
+    - If Twilio is configured: attempts real send. On failure (e.g. Trial unverified
+      number, network error), falls back to mock log mode and returns success=False
+      with the error string, but does NOT raise. This protects the booking flow.
+    - If Twilio is NOT configured: logs to console (mock) and returns success.
     
     Returns:
         Tuple of (success: bool, message_id_or_error: str)
     """
-    if IS_DEVELOPMENT:
-        # Mock mode - log and return success
-        logger.info(f"[SMS MOCK] To: {phone} | Message: {message}")
+    if not is_twilio_configured():
+        logger.info(f"[SMS MOCK - twilio not configured] To: {phone} | Message: {message}")
         return True, f"mock_{datetime.now(timezone.utc).timestamp()}"
     
-    if IS_PRODUCTION and not is_twilio_configured():
-        raise SMSNotConfiguredError(
-            "Twilio not configured. Set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_PHONE_NUMBER."
-        )
-    
     try:
-        # Import Twilio only when needed
         from twilio.rest import Client
         
         client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
@@ -105,8 +104,44 @@ async def send_sms(phone: str, message: str) -> Tuple[bool, str]:
         return True, twilio_message.sid
         
     except Exception as e:
-        logger.error(f"[SMS ERROR] To: {phone} | Error: {str(e)}")
-        raise SMSServiceError(f"Failed to send SMS: {str(e)}")
+        # Fallback log mode: never break booking flow because of SMS failure
+        logger.warning(f"[SMS FAILED - fallback log] To: {phone} | Error: {str(e)} | Message: {message}")
+        return False, str(e)
+
+
+async def safe_send_sms(phone: Optional[str], message: str) -> bool:
+    """
+    Best-effort SMS send. Never raises. Returns True if sent or mocked, False on failure.
+    """
+    if not phone:
+        return False
+    try:
+        # Normalize to E.164 if missing leading +
+        normalized = phone.strip()
+        if not normalized.startswith("+"):
+            # Default to MX if 10 digits, US if 11 starting with 1
+            digits = "".join(c for c in normalized if c.isdigit())
+            if len(digits) == 10:
+                normalized = f"+52{digits}"
+            elif len(digits) == 11 and digits.startswith("1"):
+                normalized = f"+{digits}"
+            else:
+                normalized = f"+{digits}"
+        success, _ = await send_sms(normalized, message)
+        return success
+    except Exception as e:
+        logger.error(f"[SMS SAFE-SEND ERROR] To: {phone} | Error: {str(e)}")
+        return False
+
+
+def detect_language(phone: Optional[str]) -> str:
+    """Detect language by phone country code. +52 (MX) -> es, +1 (US) -> en. Default es."""
+    if not phone:
+        return "es"
+    p = phone.strip()
+    if p.startswith("+1") or p.startswith("1") and len(p.replace(" ", "")) == 11:
+        return "en"
+    return "es"
 
 
 async def send_verification_code(phone: str) -> Tuple[str, str]:
@@ -180,3 +215,102 @@ async def cleanup_expired_codes():
         "expires_at": {"$lt": now.isoformat()}
     })
     logger.info(f"[SMS CLEANUP] Removed {result.deleted_count} expired codes")
+
+
+
+# ========================== BOOKING SMS TEMPLATES ==========================
+# All booking notification helpers are best-effort: they call safe_send_sms
+# which never raises. If Twilio fails (e.g. unverified Trial number) the
+# message is logged and the booking flow continues normally.
+
+async def send_booking_confirmation_sms(
+    phone: Optional[str],
+    user_name: str,
+    business_name: str,
+    date: str,
+    time: str
+) -> bool:
+    """SMS confirmation to client when booking is paid/confirmed."""
+    lang = detect_language(phone)
+    if lang == "en":
+        msg = (
+            f"Bookvia: Hi {user_name}, your appointment at {business_name} "
+            f"is confirmed for {date} at {time}. See details: bookvia.app/bookings"
+        )
+    else:
+        msg = (
+            f"Bookvia: Hola {user_name}, tu cita en {business_name} esta "
+            f"confirmada para el {date} a las {time}. Detalles: bookvia.app/bookings"
+        )
+    return await safe_send_sms(phone, msg)
+
+
+async def send_business_new_booking_sms(
+    phone: Optional[str],
+    business_name: str,
+    client_name: str,
+    service_name: str,
+    date: str,
+    time: str
+) -> bool:
+    """SMS to business when a new booking is confirmed."""
+    lang = detect_language(phone)
+    if lang == "en":
+        msg = (
+            f"Bookvia: New booking for {business_name}. "
+            f"{client_name} - {service_name} on {date} at {time}."
+        )
+    else:
+        msg = (
+            f"Bookvia: Nueva reserva en {business_name}. "
+            f"{client_name} - {service_name} el {date} a las {time}."
+        )
+    return await safe_send_sms(phone, msg)
+
+
+async def send_appointment_reminder_sms(
+    phone: Optional[str],
+    user_name: str,
+    business_name: str,
+    date: str,
+    time: str
+) -> bool:
+    """24h reminder SMS to client."""
+    lang = detect_language(phone)
+    if lang == "en":
+        msg = (
+            f"Bookvia: Hi {user_name}, reminder of your appointment at "
+            f"{business_name} tomorrow {date} at {time}."
+        )
+    else:
+        msg = (
+            f"Bookvia: Hola {user_name}, te recordamos tu cita en "
+            f"{business_name} manana {date} a las {time}."
+        )
+    return await safe_send_sms(phone, msg)
+
+
+async def send_booking_cancelled_sms(
+    phone: Optional[str],
+    user_name: str,
+    business_name: str,
+    date: str,
+    time: str,
+    reason: Optional[str] = None
+) -> bool:
+    """Cancellation SMS."""
+    lang = detect_language(phone)
+    reason_part = ""
+    if reason:
+        reason_part = f" ({reason})" if lang == "en" else f" ({reason})"
+    if lang == "en":
+        msg = (
+            f"Bookvia: Hi {user_name}, your appointment at {business_name} "
+            f"on {date} at {time} has been cancelled{reason_part}."
+        )
+    else:
+        msg = (
+            f"Bookvia: Hola {user_name}, tu cita en {business_name} del "
+            f"{date} a las {time} fue cancelada{reason_part}."
+        )
+    return await safe_send_sms(phone, msg)

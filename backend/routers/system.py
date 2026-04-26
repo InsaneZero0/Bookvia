@@ -256,6 +256,26 @@ async def stripe_webhook(request: Request):
                     except Exception as e:
                         logger.error(f"Error sending confirmation email: {e}")
                 
+                # Send SMS confirmation to client + business (best-effort, never raises)
+                if user and booking and service:
+                    from services.sms import send_booking_confirmation_sms, send_business_new_booking_sms
+                    await send_booking_confirmation_sms(
+                        phone=user.get("phone"),
+                        user_name=user.get("full_name", "Cliente"),
+                        business_name=business["name"] if business else "Negocio",
+                        date=booking["date"],
+                        time=booking["time"]
+                    )
+                    if business:
+                        await send_business_new_booking_sms(
+                            phone=business.get("phone"),
+                            business_name=business["name"],
+                            client_name=user.get("full_name", "Cliente"),
+                            service_name=service["name"],
+                            date=booking["date"],
+                            time=booking["time"]
+                        )
+                
                 # Update business balance (pending payout)
                 await db.businesses.update_one(
                     {"id": transaction["business_id"]},

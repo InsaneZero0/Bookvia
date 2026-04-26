@@ -75,6 +75,7 @@ def is_exception_blocking(exc: dict, date_str: str, slot_start, slot_end) -> tup
 async def send_pending_reminders():
     """Send reminders for bookings that are pending confirmation."""
     from services.email import send_appointment_reminder
+    from services.sms import send_appointment_reminder_sms
     try:
         pending = await db.bookings.find(
             {"status": "confirmed", "reminder_sent": {"$ne": True}},
@@ -83,7 +84,7 @@ async def send_pending_reminders():
         count = 0
         for booking in pending:
             try:
-                user = await db.users.find_one({"id": booking["user_id"]}, {"_id": 0, "email": 1, "full_name": 1})
+                user = await db.users.find_one({"id": booking["user_id"]}, {"_id": 0, "email": 1, "full_name": 1, "phone": 1})
                 business = await db.businesses.find_one({"id": booking["business_id"]}, {"_id": 0, "name": 1, "address": 1})
                 service = await db.services.find_one({"id": booking.get("service_id")}, {"_id": 0, "name": 1})
                 if user and business:
@@ -96,6 +97,14 @@ async def send_pending_reminders():
                         time=booking.get("time", ""),
                         worker_name="",
                         business_address=business.get("address", "")
+                    )
+                    # Best-effort SMS reminder
+                    await send_appointment_reminder_sms(
+                        phone=user.get("phone"),
+                        user_name=user.get("full_name", ""),
+                        business_name=business.get("name", ""),
+                        date=booking.get("date", ""),
+                        time=booking.get("time", "")
                     )
                     await db.bookings.update_one({"id": booking["id"]}, {"$set": {"reminder_sent": True}})
                     count += 1
@@ -1157,6 +1166,18 @@ async def cancel_booking_by_user(
     except Exception as e:
         logger.error(f"Error sending cancellation email to business: {e}")
     
+    # Best-effort SMS to business owner
+    if business:
+        from services.sms import send_booking_cancelled_sms
+        await send_booking_cancelled_sms(
+            phone=business.get("phone"),
+            user_name=business["name"],
+            business_name=business["name"],
+            date=booking["date"],
+            time=booking["time"],
+            reason="Cancelada por el cliente"
+        )
+    
     return {
         "message": "Booking cancelled",
         "status": AppointmentStatus.CANCELLED,
@@ -1300,6 +1321,16 @@ async def cancel_booking_by_business(
                 time=booking["time"],
                 reason=f"Cancelada por el negocio. Motivo: {cancel_req.reason or 'No especificado'}",
                 refund_info=refund_msg
+            )
+            # Best-effort SMS to client
+            from services.sms import send_booking_cancelled_sms
+            await send_booking_cancelled_sms(
+                phone=client_user.get("phone"),
+                user_name=client_user.get("full_name", "Cliente"),
+                business_name=business["name"],
+                date=booking["date"],
+                time=booking["time"],
+                reason="Cancelada por el negocio"
             )
     except Exception as e:
         logger.error(f"Error sending cancellation email to client: {e}")

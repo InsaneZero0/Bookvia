@@ -55,6 +55,9 @@ Auth Social: Emergent-managed Google Auth (solo clientes)
 - [x] Cancelacion con politicas, sistema de resenas
 - [x] Reagendar citas (negocio y cliente, solo 24h antes)
 - [x] Recordatorios por email 24h antes (scheduler cada 30 min + Resend)
+- [x] Recordatorios por SMS 24h antes (Twilio, idioma auto MX/US, modo fallback no-rompe-flujo)
+- [x] SMS confirmacion de reserva al cliente + notificacion al negocio (post-pago Stripe)
+- [x] SMS de cancelacion al cliente y al negocio
 - [x] Registro de negocio: pago de suscripcion como ultimo paso obligatorio
 - [x] Recordatorio automatico de suscripcion (email 24h despues si no pagaron)
 
@@ -132,7 +135,8 @@ Auth Social: Emergent-managed Google Auth (solo clientes)
 - [ ] Acceso privado staging: Cloudflare Access (gratis 50 users) para beta cerrada
 
 ### P1
-- [ ] Integracion WhatsApp/SMS con Twilio (recordatorios citas)
+- [x] Integracion Twilio SMS - COMPLETADO Abril 2026 (confirmacion, recordatorios, cancelaciones, idioma auto MX/US)
+- [ ] Integracion WhatsApp via Twilio (Fase 2 - requiere aprobacion plantillas Meta)
 - [ ] Precios suscripcion $199 MXN / $19.99 USD + Stripe Billing
 - [ ] Optimizacion UX mobile avanzada
 

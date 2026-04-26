@@ -301,6 +301,25 @@ async def get_checkout_status(session_id: str, request: Request):
                     )
                 except Exception as e:
                     logger.error(f"Fallback confirmation email error: {e}")
+                
+                # Fallback SMS confirmation (best-effort)
+                from services.sms import send_booking_confirmation_sms, send_business_new_booking_sms
+                await send_booking_confirmation_sms(
+                    phone=user.get("phone"),
+                    user_name=user.get("full_name", "Cliente"),
+                    business_name=business["name"] if business else "Negocio",
+                    date=booking["date"],
+                    time=booking["time"]
+                )
+                if business:
+                    await send_business_new_booking_sms(
+                        phone=business.get("phone"),
+                        business_name=business["name"],
+                        client_name=user.get("full_name", "Cliente"),
+                        service_name=service["name"],
+                        date=booking["date"],
+                        time=booking["time"]
+                    )
         except Exception as e:
             logger.error(f"Fallback notification error: {e}")
         
