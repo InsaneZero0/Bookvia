@@ -60,6 +60,7 @@ Auth Social: Emergent-managed Google Auth (solo clientes)
 - [x] SMS de cancelacion al cliente y al negocio
 - [x] Preferencias de notificacion por canal (email/SMS) - usuarios en /dashboard, negocios en /business/settings tab Notificaciones (default ambos ON, opt-out individual). Backend respeta notify_email/notify_sms en todos los puntos de envio
 - [x] Codigo publico unico por negocio BV-XXXXX (auto-generado, backfilled, visible en BusinessSettings con copiar, busqueda admin por codigo, endpoint GET /api/businesses/by-code/{code})
+- [x] Codigo publico unico por cliente CL-XXXXX (auto-generado al registrar usuario, backfilled). Tickets de soporte ahora guardan reporter_code (CL- o BV- segun el rol) y business_public_code (negocio reportado). Email de confirmacion incluye codigo del negocio en el footer. Admin tickets view muestra ambos codigos clickeables para copiar y permite buscar tickets por codigo.
 - [x] Registro de negocio: pago de suscripcion como ultimo paso obligatorio
 - [x] Recordatorio automatico de suscripcion (email 24h despues si no pagaron)
 

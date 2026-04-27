@@ -1765,9 +1765,39 @@ export default function AdminDashboardPage() {
                                   {tk.status === 'open' ? t('Abierto', 'Open') : tk.status === 'in_progress' ? t('En progreso', 'In progress') : t('Cerrado', 'Closed')}
                                 </Badge>
                               </div>
-                              <div className="flex gap-3 text-xs text-muted-foreground mt-1">
+                              <div className="flex gap-3 text-xs text-muted-foreground mt-1 flex-wrap items-center">
                                 <span>{tk.user_name || tk.user_email}</span>
-                                {tk.business_name && <span>{tk.business_name}</span>}
+                                {tk.reporter_code && (
+                                  <code
+                                    className="font-mono font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200 hover:bg-slate-200 transition-colors"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      navigator.clipboard.writeText(tk.reporter_code);
+                                      toast.success(t('Codigo copiado', 'Code copied'));
+                                    }}
+                                    title={t('Codigo del que reporta - Click para copiar', 'Reporter code - Click to copy')}
+                                  >
+                                    {tk.reporter_code}
+                                  </code>
+                                )}
+                                {tk.business_name && (
+                                  <span className="flex items-center gap-1">
+                                    {tk.business_name}
+                                    {tk.business_public_code && (
+                                      <code
+                                        className="font-mono font-bold px-1.5 py-0.5 rounded bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100 transition-colors"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          navigator.clipboard.writeText(tk.business_public_code);
+                                          toast.success(t('Codigo copiado', 'Code copied'));
+                                        }}
+                                        title={t('Codigo del negocio reportado - Click para copiar', 'Reported business code - Click to copy')}
+                                      >
+                                        {tk.business_public_code}
+                                      </code>
+                                    )}
+                                  </span>
+                                )}
                                 <span>{formatDate(tk.created_at, language === 'es' ? 'es-MX' : 'en-US')}</span>
                               </div>
                             </div>

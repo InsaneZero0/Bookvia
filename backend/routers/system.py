@@ -250,7 +250,8 @@ async def stripe_webhook(request: Request):
                             service_name=service["name"],
                             date=booking["date"],
                             time=booking["time"],
-                            worker_name=worker_name
+                            worker_name=worker_name,
+                            business_public_code=business.get("public_code") if business else None
                         )
                         logger.info(f"Confirmation email sent to {user['email']} for booking {booking['id']}")
                     except Exception as e:
@@ -634,23 +635,41 @@ async def serve_file(path: str):
 @router.post("/support/tickets")
 async def create_support_ticket(ticket: SupportTicketCreate, token_data: TokenData = Depends(require_auth)):
     """Create a support ticket (authenticated users)."""
-    user = await db.users.find_one({"id": token_data.user_id}, {"_id": 0, "full_name": 1, "email": 1})
+    user = await db.users.find_one(
+        {"id": token_data.user_id},
+        {"_id": 0, "full_name": 1, "email": 1, "role": 1, "business_id": 1, "public_code": 1}
+    )
     now = datetime.now(timezone.utc).isoformat()
     biz_name = None
+    biz_public_code = None
     if ticket.business_id:
-        biz = await db.businesses.find_one({"id": ticket.business_id}, {"_id": 0, "name": 1})
-        biz_name = biz.get("name") if biz else None
+        biz = await db.businesses.find_one({"id": ticket.business_id}, {"_id": 0, "name": 1, "public_code": 1})
+        if biz:
+            biz_name = biz.get("name")
+            biz_public_code = biz.get("public_code")
+    # Reporter code: BV- if reporter is a business owner, else CL- (their own user code)
+    reporter_code = None
+    reporter_role = user.get("role", "user") if user else "user"
+    if reporter_role == "business" and user and user.get("business_id"):
+        owner_biz = await db.businesses.find_one({"id": user["business_id"]}, {"_id": 0, "public_code": 1})
+        reporter_code = owner_biz.get("public_code") if owner_biz else None
+    elif user:
+        reporter_code = user.get("public_code")
+    
     doc = {
         "id": generate_id(),
         "user_id": token_data.user_id,
         "user_name": user.get("full_name", "") if user else "",
         "user_email": user.get("email", "") if user else "",
+        "reporter_code": reporter_code,
+        "reporter_role": reporter_role,
         "subject": ticket.subject,
         "message": ticket.message,
         "category": ticket.category,
         "status": "open",
         "business_id": ticket.business_id,
         "business_name": biz_name,
+        "business_public_code": biz_public_code,
         "booking_id": ticket.booking_id,
         "messages": [{"sender": "user", "sender_name": user.get("full_name", ""), "message": ticket.message, "created_at": now}],
         "created_at": now,

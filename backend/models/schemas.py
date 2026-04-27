@@ -45,6 +45,7 @@ class UserResponse(BaseModel):
     totp_enabled: bool = False
     notify_email: bool = True
     notify_sms: bool = True
+    public_code: Optional[str] = None
     created_at: str
 
 class UserUpdate(BaseModel):
