@@ -155,10 +155,18 @@ export function BusinessCard({ business, onFavorite, isFavorite = false }) {
 
         <div className="flex items-center justify-between pt-2 border-t border-border/50">
           <div>
-            <span className="text-xs text-muted-foreground">{t('common.from')}</span>
-            <span className="font-bold text-lg ml-1">
-              {formatCurrency(business.min_price || 299, 'MXN')}
-            </span>
+            {business.min_price != null && business.min_price > 0 ? (
+              <>
+                <span className="text-xs text-muted-foreground">{t('common.from')}</span>
+                <span className="font-bold text-lg ml-1">
+                  {formatCurrency(business.min_price, 'MXN')}
+                </span>
+              </>
+            ) : (
+              <span className="text-xs text-muted-foreground italic">
+                {language === 'es' ? 'Consultar precio' : 'Ask for pricing'}
+              </span>
+            )}
           </div>
           <Button asChild variant="outline" className="text-sm px-4 py-2 border-slate-300 hover:border-[#F05D5E] hover:text-[#F05D5E]" data-testid={`book-btn-${business.id}`}>
             <Link to={`/business/${business.slug}`}>
