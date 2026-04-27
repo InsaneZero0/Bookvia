@@ -45,6 +45,7 @@ class UserResponse(BaseModel):
     totp_enabled: bool = False
     notify_email: bool = True
     notify_sms: bool = True
+    public_code: Optional[str] = None
     created_at: str
 
 class UserUpdate(BaseModel):
@@ -161,6 +162,7 @@ class BusinessResponse(BaseModel):
     notify_sms: bool = True
     top_services: List[Dict[str, Any]] = []
     min_price: Optional[float] = None
+    public_code: Optional[str] = None
 
 class BusinessUpdate(BaseModel):
     name: Optional[str] = None

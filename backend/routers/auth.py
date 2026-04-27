@@ -64,6 +64,10 @@ async def register_user(user: UserCreate):
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
     
+    # Generate unique client code (CL-XXXXX)
+    from services.public_code import generate_unique_user_code
+    public_code = await generate_unique_user_code(db)
+    
     user_doc = {
         "id": generate_id(),
         "email": user.email,
@@ -86,6 +90,7 @@ async def register_user(user: UserCreate):
         "preferred_language": user.preferred_language,
         "stripe_customer_id": None,
         "saved_cards": [],
+        "public_code": public_code,
         "created_at": datetime.now(timezone.utc).isoformat()
     }
     
@@ -449,6 +454,10 @@ async def register_business(business: BusinessCreate):
     slug = generate_slug(business.name) + "-" + business_id[:8]
     city_slug = generate_slug(business.city)
     
+    # Generate unique public code (BV-XXXXX)
+    from services.public_code import generate_unique_public_code
+    public_code = await generate_unique_public_code(db)
+    
     # Normalize country code
     country_code = business.country.upper()[:2] if business.country else "MX"
     
@@ -505,6 +514,7 @@ async def register_business(business: BusinessCreate):
         "trial_ends_at": trial_ends,
         "is_featured": False,
         "payout_hold": False,
+        "public_code": public_code,
         "created_at": datetime.now(timezone.utc).isoformat()
     }
     

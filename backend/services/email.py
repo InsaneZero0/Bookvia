@@ -268,10 +268,14 @@ async def send_booking_confirmation(
     service_name: str,
     date: str,
     time: str,
-    worker_name: str
+    worker_name: str,
+    business_public_code: Optional[str] = None
 ) -> str:
     """Send booking confirmation to user"""
     subject = f"Cita confirmada - {business_name}"
+    code_footer = ""
+    if business_public_code:
+        code_footer = f'<p style="color:#94a3b8;font-size:12px;margin-top:8px;">Codigo Bookvia del negocio: <strong style="color:#475569;font-family:monospace;letter-spacing:0.5px;">{business_public_code}</strong></p>'
     content = f"""<p style="color:#334155;font-size:15px;line-height:1.6;">Hola <strong>{user_name}</strong>,</p>
 <p style="color:#334155;font-size:15px;line-height:1.6;">Tu cita ha sido confirmada:</p>
 <table width="100%" style="margin:16px 0;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;" cellpadding="0" cellspacing="0">
@@ -281,13 +285,14 @@ async def send_booking_confirmation(
 <tr><td style="padding:12px 16px;background:#f8fafc;font-size:13px;color:#64748b;border-top:1px solid #e2e8f0;">Hora</td><td style="padding:12px 16px;font-size:14px;color:#1e293b;border-top:1px solid #e2e8f0;">{time}</td></tr>
 <tr><td style="padding:12px 16px;background:#f8fafc;font-size:13px;color:#64748b;border-top:1px solid #e2e8f0;">Profesional</td><td style="padding:12px 16px;font-size:14px;color:#1e293b;border-top:1px solid #e2e8f0;">{worker_name}</td></tr>
 </table>
-<p style="color:#64748b;font-size:14px;">Gracias por reservar con Bookvia.</p>"""
+<p style="color:#64748b;font-size:14px;">Gracias por reservar con Bookvia.</p>
+{code_footer}"""
     
     return await send_email(
         to=user_email, subject=subject,
-        body=f"Hola {user_name}, tu cita en {business_name} esta confirmada para el {date} a las {time}.",
+        body=f"Hola {user_name}, tu cita en {business_name} esta confirmada para el {date} a las {time}." + (f" Codigo: {business_public_code}" if business_public_code else ""),
         html=email_html("Cita Confirmada", content), template="booking_confirmation",
-        data={"user_name": user_name, "business_name": business_name, "service_name": service_name, "date": date, "time": time, "worker_name": worker_name}
+        data={"user_name": user_name, "business_name": business_name, "service_name": service_name, "date": date, "time": time, "worker_name": worker_name, "business_public_code": business_public_code or ""}
     )
 
 

@@ -115,6 +115,35 @@ async def startup_event():
             logger.warning("Cloudinary not configured - using fallback storage")
     except Exception as e:
         logger.warning(f"Cloudinary init failed: {e}")
+    # Ensure unique sparse index on businesses.public_code + backfill missing codes
+    try:
+        from core.database import db
+        from services.public_code import generate_unique_public_code, generate_unique_user_code
+        await db.businesses.create_index("public_code", unique=True, sparse=True)
+        await db.users.create_index("public_code", unique=True, sparse=True)
+        # Backfill businesses
+        missing_biz = await db.businesses.find(
+            {"$or": [{"public_code": {"$exists": False}}, {"public_code": None}, {"public_code": ""}]},
+            {"_id": 0, "id": 1}
+        ).to_list(1000)
+        for b in missing_biz:
+            code = await generate_unique_public_code(db)
+            await db.businesses.update_one({"id": b["id"]}, {"$set": {"public_code": code}})
+        if missing_biz:
+            logger.info(f"Backfilled BV public_code for {len(missing_biz)} businesses")
+        # Backfill users (any role except admin)
+        missing_users = await db.users.find(
+            {"role": {"$ne": "admin"},
+             "$or": [{"public_code": {"$exists": False}}, {"public_code": None}, {"public_code": ""}]},
+            {"_id": 0, "id": 1}
+        ).to_list(5000)
+        for u in missing_users:
+            code = await generate_unique_user_code(db)
+            await db.users.update_one({"id": u["id"]}, {"$set": {"public_code": code}})
+        if missing_users:
+            logger.info(f"Backfilled CL public_code for {len(missing_users)} users")
+    except Exception as e:
+        logger.warning(f"public_code backfill failed: {e}")
     # Start background schedulers
     asyncio.create_task(appointment_reminder_scheduler())
     asyncio.create_task(subscription_reminder_scheduler())

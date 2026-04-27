@@ -298,7 +298,8 @@ async def get_checkout_status(session_id: str, request: Request):
                             service_name=service["name"],
                             date=booking["date"],
                             time=booking["time"],
-                            worker_name=worker_name
+                            worker_name=worker_name,
+                            business_public_code=business.get("public_code") if business else None
                         )
                     except Exception as e:
                         logger.error(f"Fallback confirmation email error: {e}")

@@ -77,6 +77,32 @@ async def health_check():
 async def startup_event():
     from server import ensure_admin_exists
     await ensure_admin_exists()
+    
+    # Ensure unique index on businesses.public_code (sparse so legacy docs without it don't fail)
+    try:
+        from core.database import db
+        await db.businesses.create_index("public_code", unique=True, sparse=True)
+    except Exception as e:
+        import logging
+        logging.warning(f"Could not create public_code index: {e}")
+    
+    # Backfill public_code for businesses that don't have one yet
+    try:
+        from core.database import db
+        from services.public_code import generate_unique_public_code
+        missing = await db.businesses.find(
+            {"$or": [{"public_code": {"$exists": False}}, {"public_code": None}, {"public_code": ""}]},
+            {"_id": 0, "id": 1}
+        ).to_list(1000)
+        for b in missing:
+            code = await generate_unique_public_code(db)
+            await db.businesses.update_one({"id": b["id"]}, {"$set": {"public_code": code}})
+        if missing:
+            import logging
+            logging.info(f"Backfilled public_code for {len(missing)} businesses")
+    except Exception as e:
+        import logging
+        logging.warning(f"Backfill public_code failed: {e}")
 
 
 if __name__ == "__main__":

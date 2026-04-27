@@ -246,7 +246,45 @@ export default function BusinessSettingsPage() {
 
         {/* ===================== INFO TAB ===================== */}
         {activeTab === 'info' && privateInfo && (
-          <Card data-testid="info-section">
+          <div className="space-y-4">
+            {/* Public Code Card - prominent */}
+            {privateInfo.public_code && (
+              <Card className="border-[#F05D5E]/30 bg-gradient-to-br from-[#F05D5E]/5 to-transparent" data-testid="public-code-card">
+                <CardContent className="p-5">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-[11px] font-semibold uppercase tracking-wider text-[#F05D5E]">
+                        {t('Tu codigo Bookvia', 'Your Bookvia code')}
+                      </p>
+                      <p className="font-mono font-bold text-2xl sm:text-3xl text-slate-900 mt-1 tracking-wider" data-testid="public-code-value">
+                        {privateInfo.public_code}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-1.5 max-w-md leading-relaxed">
+                        {t(
+                          'Compartelo en tarjetas, redes o cuando llames a soporte. Sirve como identificacion unica de tu negocio.',
+                          'Share it on cards, social media, or when calling support. It is your business unique identifier.'
+                        )}
+                      </p>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        navigator.clipboard.writeText(privateInfo.public_code);
+                        toast.success(t('Codigo copiado', 'Code copied'));
+                      }}
+                      className="shrink-0 border-[#F05D5E] text-[#F05D5E] hover:bg-[#F05D5E] hover:text-white"
+                      data-testid="copy-public-code-btn"
+                    >
+                      <Save className="h-4 w-4 mr-1.5" />
+                      {t('Copiar', 'Copy')}
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            <Card data-testid="info-section">
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle className="text-base font-heading flex items-center gap-2">
                 <Building2 className="h-5 w-5 text-[#F05D5E]" />
@@ -286,6 +324,7 @@ export default function BusinessSettingsPage() {
               )}
             </CardContent>
           </Card>
+          </div>
         )}
 
         {/* ===================== HOURS TAB ===================== */}
