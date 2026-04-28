@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { BusinessCard } from '@/components/BusinessCard';
+import { HowItWorksModal } from '@/components/HowItWorksModal';
 import { useI18n } from '@/lib/i18n';
 import { useCountry } from '@/lib/countryContext';
 import { categoriesAPI, businessesAPI, utilityAPI } from '@/lib/api';
@@ -113,6 +114,7 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen" data-testid="home-page">
+      <HowItWorksModal />
 
       {/* ═══ Hero ═══════════════════════════════════ */}
       <section className="relative min-h-[88vh] flex items-center overflow-hidden bg-[#fcf7ba]">
