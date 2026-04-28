@@ -218,15 +218,6 @@ export function Navbar() {
                 {language === 'es' ? 'Beneficios' : 'Benefits'}
               </Link>
               <Link 
-                to="/sobre-nosotros" 
-                className={`text-sm font-medium transition-colors hover:text-[#F05D5E] ${
-                  isTransparent ? 'text-white/90' : 'text-foreground'
-                }`}
-                data-testid="nav-about"
-              >
-                {language === 'es' ? 'Sobre nosotros' : 'About us'}
-              </Link>
-              <Link 
                 to="/for-business" 
                 className={`text-sm font-medium transition-colors hover:text-[#F05D5E] ${
                   isTransparent ? 'text-white/90' : 'text-foreground'
@@ -443,13 +434,6 @@ export function Navbar() {
                 onClick={() => setMobileMenuOpen(false)}
               >
                 {language === 'es' ? 'Beneficios' : 'Benefits'}
-              </Link>
-              <Link
-                to="/sobre-nosotros"
-                className="px-4 py-2 text-sm font-medium hover:bg-muted rounded-lg"
-                onClick={() => setMobileMenuOpen(false)}
-              >
-                {language === 'es' ? 'Sobre nosotros' : 'About us'}
               </Link>
               <Link
                 to="/for-business"
