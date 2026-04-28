@@ -207,6 +207,15 @@ export function Navbar() {
               {language === 'es' ? 'Explorar' : 'Explore'}
             </Link>
             <Link 
+              to="/beneficios" 
+              className={`text-sm font-medium transition-colors hover:text-[#F05D5E] ${
+                isTransparent ? 'text-white/90' : 'text-foreground'
+              }`}
+              data-testid="nav-benefits"
+            >
+              {language === 'es' ? 'Beneficios' : 'Benefits'}
+            </Link>
+            <Link 
               to="/for-business" 
               className={`text-sm font-medium transition-colors hover:text-[#F05D5E] ${
                 isTransparent ? 'text-white/90' : 'text-foreground'
@@ -415,6 +424,13 @@ export function Navbar() {
                 onClick={() => setMobileMenuOpen(false)}
               >
                 {language === 'es' ? 'Explorar' : 'Explore'}
+              </Link>
+              <Link
+                to="/beneficios"
+                className="px-4 py-2 text-sm font-medium hover:bg-muted rounded-lg"
+                onClick={() => setMobileMenuOpen(false)}
+              >
+                {language === 'es' ? 'Beneficios' : 'Benefits'}
               </Link>
               <Link
                 to="/for-business"

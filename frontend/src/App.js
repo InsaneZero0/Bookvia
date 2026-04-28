@@ -31,6 +31,7 @@ import HelpPage from '@/pages/HelpPage';
 import TermsPage from '@/pages/TermsPage';
 import PrivacyPage from '@/pages/PrivacyPage';
 import AboutPage from '@/pages/AboutPage';
+import BenefitsPage from '@/pages/BenefitsPage';
 import NotFoundPage from '@/pages/NotFoundPage';
 import RegistrationSuccessPage from '@/pages/RegistrationSuccessPage';
 import VerifyEmailPage from '@/pages/VerifyEmailPage';
@@ -116,6 +117,9 @@ function App() {
               <Route path="/privacy" element={<Layout><PrivacyPage /></Layout>} />
               <Route path="/nosotros" element={<Layout><AboutPage /></Layout>} />
               <Route path="/about" element={<Layout><AboutPage /></Layout>} />
+              <Route path="/sobre-nosotros" element={<Layout><AboutPage /></Layout>} />
+              <Route path="/beneficios" element={<Layout><BenefitsPage /></Layout>} />
+              <Route path="/benefits" element={<Layout><BenefitsPage /></Layout>} />
               
               {/* Admin Pages */}
               <Route path="/bv-ctrl/login" element={<AdminLoginPage />} />

@@ -60,12 +60,12 @@ export function Footer() {
             <ul className="space-y-3">
               <li>
                 <Link to="/search" className="text-slate-300 hover:text-[#F05D5E] text-sm transition-colors">
-                  {t('nav.search')}
+                  {language === 'es' ? 'Negocios' : 'Businesses'}
                 </Link>
               </li>
               <li>
-                <Link to="/categories" className="text-slate-300 hover:text-[#F05D5E] text-sm transition-colors">
-                  {t('nav.categories')}
+                <Link to="/beneficios" className="text-slate-300 hover:text-[#F05D5E] text-sm transition-colors">
+                  {language === 'es' ? 'Beneficios' : 'Benefits'}
                 </Link>
               </li>
               <li>
@@ -74,8 +74,8 @@ export function Footer() {
                 </Link>
               </li>
               <li>
-                <Link to="/how-it-works" className="text-slate-300 hover:text-[#F05D5E] text-sm transition-colors">
-                  {language === 'es' ? '¿Cómo funciona?' : 'How it works?'}
+                <Link to="/sobre-nosotros" className="text-slate-300 hover:text-[#F05D5E] text-sm transition-colors" data-testid="footer-about-link">
+                  {language === 'es' ? 'Sobre nosotros' : 'About us'}
                 </Link>
               </li>
             </ul>
