@@ -202,18 +202,9 @@ export function Navbar() {
               className={`text-sm font-medium transition-colors hover:text-[#F05D5E] ${
                 isTransparent ? 'text-white/90' : 'text-foreground'
               }`}
-              data-testid="nav-search"
+              data-testid="nav-explore"
             >
-              {t('nav.search')}
-            </Link>
-            <Link 
-              to="/categories" 
-              className={`text-sm font-medium transition-colors hover:text-[#F05D5E] ${
-                isTransparent ? 'text-white/90' : 'text-foreground'
-              }`}
-              data-testid="nav-categories"
-            >
-              {t('nav.categories')}
+              {language === 'es' ? 'Explorar' : 'Explore'}
             </Link>
             <Link 
               to="/for-business" 
@@ -423,14 +414,7 @@ export function Navbar() {
                 className="px-4 py-2 text-sm font-medium hover:bg-muted rounded-lg"
                 onClick={() => setMobileMenuOpen(false)}
               >
-                {t('nav.search')}
-              </Link>
-              <Link
-                to="/categories"
-                className="px-4 py-2 text-sm font-medium hover:bg-muted rounded-lg"
-                onClick={() => setMobileMenuOpen(false)}
-              >
-                {t('nav.categories')}
+                {language === 'es' ? 'Explorar' : 'Explore'}
               </Link>
               <Link
                 to="/for-business"
