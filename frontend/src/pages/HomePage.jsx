@@ -5,6 +5,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { BusinessCard } from '@/components/BusinessCard';
 import { HowItWorksModal } from '@/components/HowItWorksModal';
+import { JsonLd, organizationSchema, websiteSchema } from '@/components/JsonLd';
 import { useI18n } from '@/lib/i18n';
 import { useCountry } from '@/lib/countryContext';
 import { categoriesAPI, businessesAPI, utilityAPI } from '@/lib/api';
@@ -114,6 +115,8 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen" data-testid="home-page">
+      <JsonLd data={organizationSchema} id="jsonld-org" />
+      <JsonLd data={websiteSchema} id="jsonld-site" />
       <HowItWorksModal />
 
       {/* ═══ Hero ═══════════════════════════════════ */}

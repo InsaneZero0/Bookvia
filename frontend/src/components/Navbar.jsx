@@ -125,21 +125,18 @@ export function Navbar() {
     >
       <div className="container-app">
         <div className="flex items-center justify-between h-16 md:h-20">
-          {/* Logo */}
-          <BookviaLogo 
-            variant={isTransparent ? 'dark' : 'light'} 
-            size="text-2xl" 
-            asLink 
-          />
-
-          {/* Desktop Navigation */}
-          <div className="hidden md:flex items-center gap-6">
-            {/* Country selector */}
+          {/* Logo + Country pegado a la izquierda */}
+          <div className="flex items-center gap-3">
+            <BookviaLogo 
+              variant={isTransparent ? 'dark' : 'light'} 
+              size="text-2xl" 
+              asLink 
+            />
             {country && (
               <Popover open={countryOpen} onOpenChange={(open) => { setCountryOpen(open); if (!open) setCountrySearch(''); }}>
                 <PopoverTrigger asChild>
                   <button
-                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border transition-all cursor-pointer hover:scale-105 ${
+                    className={`hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-full border transition-all cursor-pointer hover:scale-105 ${
                       isTransparent
                         ? 'border-white/20 bg-white/10 text-white hover:bg-white/20'
                         : 'border-border bg-muted/50 text-foreground hover:bg-muted'
@@ -197,6 +194,10 @@ export function Navbar() {
                 </PopoverContent>
               </Popover>
             )}
+          </div>
+
+          {/* Desktop Navigation - center links */}
+          <div className="hidden md:flex items-center gap-6">
             <Link 
               to="/search" 
               className={`text-sm font-medium transition-colors hover:text-[#F05D5E] ${
@@ -214,6 +215,15 @@ export function Navbar() {
               data-testid="nav-benefits"
             >
               {language === 'es' ? 'Beneficios' : 'Benefits'}
+            </Link>
+            <Link 
+              to="/sobre-nosotros" 
+              className={`text-sm font-medium transition-colors hover:text-[#F05D5E] ${
+                isTransparent ? 'text-white/90' : 'text-foreground'
+              }`}
+              data-testid="nav-about"
+            >
+              {language === 'es' ? 'Sobre nosotros' : 'About us'}
             </Link>
             <Link 
               to="/for-business" 
@@ -431,6 +441,13 @@ export function Navbar() {
                 onClick={() => setMobileMenuOpen(false)}
               >
                 {language === 'es' ? 'Beneficios' : 'Benefits'}
+              </Link>
+              <Link
+                to="/sobre-nosotros"
+                className="px-4 py-2 text-sm font-medium hover:bg-muted rounded-lg"
+                onClick={() => setMobileMenuOpen(false)}
+              >
+                {language === 'es' ? 'Sobre nosotros' : 'About us'}
               </Link>
               <Link
                 to="/for-business"

@@ -5,6 +5,7 @@ import {
   Sparkles, X, Search, Calendar, ChevronRight, ShieldCheck,
 } from 'lucide-react';
 import { useI18n } from '@/lib/i18n';
+import { JsonLd, buildFaqSchema } from '@/components/JsonLd';
 
 export default function BenefitsPage() {
   const { language } = useI18n();
@@ -95,8 +96,54 @@ export default function BenefitsPage() {
     { n: 3, icon: Sparkles, t: t('Disfruta', 'Enjoy'), d: t('Llega tranquilo. Sin filas, sin esperas.', 'Show up relaxed. No lines, no waits.') },
   ];
 
+  const faqs = [
+    {
+      q: t('¿Cómo se cobra el anticipo?', 'How is the deposit charged?'),
+      a: t(
+        'El anticipo se cobra solo cuando confirmas la reserva. Se procesa de forma segura por Stripe. Si el negocio cancela, se reembolsa automáticamente al método de pago original.',
+        'The deposit is only charged when you confirm the booking. It is processed securely through Stripe. If the business cancels, it is automatically refunded to the original payment method.'
+      ),
+    },
+    {
+      q: t('¿Puedo cancelar mi cita?', 'Can I cancel my appointment?'),
+      a: t(
+        'Sí. Puedes cancelar gratis hasta 24 horas antes de tu cita y se te devuelve el 100% del anticipo. Después de ese plazo aplica la política de cancelación del negocio.',
+        'Yes. You can cancel for free up to 24 hours before your appointment and get a 100% refund. After that, the business cancellation policy applies.'
+      ),
+    },
+    {
+      q: t('¿Y si el negocio no me atiende cuando llego?', 'What if the business does not honor my appointment?'),
+      a: t(
+        'Reembolso garantizado. Reportas el caso desde "Mis citas" y nuestro equipo procesa la devolución en menos de 48h hábiles.',
+        'Guaranteed refund. Report the case from "My appointments" and our team processes the refund within 48 business hours.'
+      ),
+    },
+    {
+      q: t('¿Tengo que descargar una app?', 'Do I need to download an app?'),
+      a: t(
+        'No. Bookvia funciona desde tu navegador en celular o computadora. No ocupa espacio en tu teléfono ni te pide actualizaciones.',
+        'No. Bookvia works from your browser on mobile or desktop. It takes no space on your phone and does not require updates.'
+      ),
+    },
+    {
+      q: t('¿Qué tan verificados están los negocios?', 'How verified are the businesses?'),
+      a: t(
+        'Validamos identidad del dueño, RFC y comprobante de domicilio antes de aprobar cada negocio. Cada uno recibe un código único Bookvia (BV-XXXXX) que aparece en su perfil.',
+        'We validate the owner identity, tax ID, and proof of address before approving each business. Each one gets a unique Bookvia code (BV-XXXXX) shown in their profile.'
+      ),
+    },
+    {
+      q: t('¿Puedo dejar reseñas?', 'Can I leave reviews?'),
+      a: t(
+        'Sí, pero solo si reservaste por Bookvia y completaste tu cita. Esto evita reseñas falsas y asegura que cada estrella refleja una experiencia real.',
+        'Yes, but only if you booked through Bookvia and completed your appointment. This prevents fake reviews and ensures every star reflects a real experience.'
+      ),
+    },
+  ];
+
   return (
     <div className="min-h-screen bg-[#fcf7ba]/40" data-testid="benefits-page">
+      <JsonLd data={buildFaqSchema(faqs)} id="jsonld-benefits-faq" />
       {/* Hero */}
       <section className="relative overflow-hidden bg-gradient-to-br from-[#fcf7ba] via-[#fcf7ba]/70 to-white pt-20 pb-14">
         <div className="absolute top-10 -right-20 w-72 h-72 rounded-full bg-[#F05D5E]/10 blur-3xl" />
@@ -240,6 +287,38 @@ export default function BenefitsPage() {
               <Sparkles className="h-4 w-4 text-emerald-600" />
               <span><strong>{t('Soporte en espanol', 'Spanish support')}</strong></span>
             </div>
+          </div>
+        </div>
+      </section>
+
+      {/* FAQ */}
+      <section className="py-16 bg-white border-t border-border/40">
+        <div className="container-app max-w-3xl">
+          <div className="text-center mb-10">
+            <span className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-[#F05D5E] mb-3">
+              <Sparkles className="h-3.5 w-3.5" />
+              {t('Preguntas frecuentes', 'Frequently asked questions')}
+            </span>
+            <h2 className="font-heading font-bold text-3xl text-slate-900">
+              {t('Las dudas mas comunes, resueltas.', 'The most common questions, answered.')}
+            </h2>
+          </div>
+          <div className="space-y-3" data-testid="benefits-faq-list">
+            {faqs.map((f, idx) => (
+              <details
+                key={f.q}
+                className="group bg-white rounded-xl border border-border/50 hover:border-[#F05D5E]/30 transition-colors overflow-hidden"
+                data-testid={`faq-item-${idx}`}
+              >
+                <summary className="cursor-pointer list-none px-5 py-4 flex items-center justify-between gap-3 text-sm font-medium text-slate-900 hover:bg-slate-50">
+                  <span className="flex-1">{f.q}</span>
+                  <ChevronRight className="h-4 w-4 text-slate-400 group-open:rotate-90 transition-transform shrink-0" />
+                </summary>
+                <div className="px-5 pb-5 pt-0 text-sm text-slate-600 leading-relaxed border-t border-border/30">
+                  <p className="pt-3">{f.a}</p>
+                </div>
+              </details>
+            ))}
           </div>
         </div>
       </section>

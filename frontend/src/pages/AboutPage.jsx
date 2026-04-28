@@ -12,6 +12,7 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 import { useI18n } from '@/lib/i18n';
+import { JsonLd, organizationSchema } from '@/components/JsonLd';
 
 export default function AboutPage() {
   const { language } = useI18n();
@@ -66,6 +67,7 @@ export default function AboutPage() {
 
   return (
     <div className="min-h-screen bg-[#fcf7ba]/40" data-testid="about-page">
+      <JsonLd data={organizationSchema} id="jsonld-about-org" />
       {/* Hero */}
       <section className="relative overflow-hidden bg-gradient-to-br from-[#fcf7ba] via-[#fcf7ba]/70 to-white pt-20 pb-16">
         <div className="absolute top-10 -right-20 w-72 h-72 rounded-full bg-[#F05D5E]/10 blur-3xl" />
