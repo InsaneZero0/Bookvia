@@ -1402,7 +1402,11 @@ export default function BusinessRegisterPage() {
                     <div className="flex items-center gap-3">
                       <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0" />
                       <div>
-                        <p className="font-semibold">{language === 'es' ? 'Después $49.99 MXN o $4.99 USD al mes' : 'Then $49.99 MXN or $4.99 USD per month'}</p>
+                        <p className="font-semibold">{
+                          formData.country === 'US'
+                            ? (language === 'es' ? 'Después $4.99 USD al mes' : 'Then $4.99 USD per month')
+                            : (language === 'es' ? 'Después $49.99 MXN al mes' : 'Then $49.99 MXN per month')
+                        }</p>
                         <p className="text-xs text-muted-foreground">{language === 'es' ? 'Se cobrará automáticamente después de 30 días' : 'Automatically charged after 30 days'}</p>
                       </div>
                     </div>

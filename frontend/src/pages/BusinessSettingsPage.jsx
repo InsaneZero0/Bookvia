@@ -540,8 +540,7 @@ export default function BusinessSettingsPage() {
                 </div>
                 <div className="text-right">
                   <p className="text-xs text-muted-foreground">{t('Plan', 'Plan')}</p>
-                  <p className="text-sm font-semibold mt-1">$49.99 MXN / {t('mes', 'month')}</p>
-                  <p className="text-[11px] text-muted-foreground mt-0.5">$4.99 USD {t('en EE. UU.', 'in U.S.')}</p>
+                  <p className="text-sm font-semibold mt-1">{privateInfo.country_code === 'US' ? `$4.99 USD / ${t('mes', 'month')}` : `$49.99 MXN / ${t('mes', 'month')}`}</p>
                 </div>
               </div>
 

@@ -1737,7 +1737,8 @@ async def get_subscription_status(session_id: str = None, token_data: TokenData 
         "subscription_id": sub_id,
         "trial": sub_status == "trialing",
         "current_period_end": None,
-        "cancel_at_period_end": False
+        "cancel_at_period_end": False,
+        "country_code": (business.get("country_code") if business else None) or "MX"
     }
     
     # Fetch live details from Stripe if subscription exists

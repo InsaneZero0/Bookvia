@@ -663,6 +663,7 @@ async def verify_registration_subscription(data: dict):
             "status": "active",
             "subscription_status": "trialing",
             "email": business["email"],
+            "country_code": business.get("country_code") or "MX",
             "message": "Suscripción activada. Revisa tu correo para verificar tu cuenta."
         }
     else:

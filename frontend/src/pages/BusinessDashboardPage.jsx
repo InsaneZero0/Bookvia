@@ -1204,9 +1204,13 @@ export default function BusinessDashboardPage() {
                     <div className="flex items-start gap-2 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
                       <Shield className="h-4 w-4 text-blue-600 mt-0.5 shrink-0" />
                       <p className="text-xs text-blue-700 dark:text-blue-300">
-                        {language === 'es'
-                          ? 'Estas en tu periodo de prueba gratuito de 30 dias. El primer cobro ($49.99 MXN o $4.99 USD segun tu pais) se realizara automaticamente al terminar el periodo.'
-                          : 'You are in your 30-day free trial. The first charge ($49.99 MXN or $4.99 USD based on your country) will be made automatically at the end of the trial.'}
+                        {subscriptionData?.country_code === 'US'
+                          ? (language === 'es'
+                            ? 'Estas en tu periodo de prueba gratuito de 30 dias. El primer cobro de $4.99 USD se realizara automaticamente al terminar el periodo.'
+                            : 'You are in your 30-day free trial. The first charge of $4.99 USD will be made automatically at the end of the trial.')
+                          : (language === 'es'
+                            ? 'Estas en tu periodo de prueba gratuito de 30 dias. El primer cobro de $49.99 MXN se realizara automaticamente al terminar el periodo.'
+                            : 'You are in your 30-day free trial. The first charge of $49.99 MXN will be made automatically at the end of the trial.')}
                       </p>
                     </div>
                   )}
@@ -1220,7 +1224,7 @@ export default function BusinessDashboardPage() {
 
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-muted-foreground">{language === 'es' ? 'Precio' : 'Price'}</span>
-                    <span className="font-medium">$49.99 MXN o $4.99 USD / {language === 'es' ? 'mes' : 'month'}</span>
+                    <span className="font-medium">{subscriptionData?.country_code === 'US' ? '$4.99 USD' : '$49.99 MXN'} / {language === 'es' ? 'mes' : 'month'}</span>
                   </div>
 
                   {subscriptionData?.cancel_at_period_end && (
