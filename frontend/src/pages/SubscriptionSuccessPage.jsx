@@ -124,7 +124,7 @@ export default function SubscriptionSuccessPage() {
             </div>
             <ul className="text-xs text-muted-foreground space-y-1 pl-6">
               <li>{language === 'es' ? 'Primer mes GRATIS (30 dias de prueba)' : 'First month FREE (30-day trial)'}</li>
-              <li>{language === 'es' ? 'Despues de 30 dias: $39 MXN/mes' : 'After 30 days: $39 MXN/month'}</li>
+              <li>{language === 'es' ? 'Despues de 30 dias: $49.99 MXN / $4.99 USD/mes' : 'After 30 days: $49.99 MXN / $4.99 USD/month'}</li>
               <li>{language === 'es' ? 'Puedes cancelar en cualquier momento desde tu panel' : 'Cancel anytime from your dashboard'}</li>
             </ul>
           </div>

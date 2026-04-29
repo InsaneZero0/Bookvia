@@ -559,7 +559,7 @@ async def create_registration_subscription(data: dict):
     if business.get("subscription_status") not in ("none", None):
         raise HTTPException(status_code=400, detail="Ya tiene una suscripción activa")
     
-    price_id = await get_or_create_stripe_price()
+    price_id = await get_or_create_stripe_price(country_code=business.get("country_code", "MX"))
     if not price_id:
         raise HTTPException(status_code=500, detail="Error de configuración de pagos")
     
@@ -591,13 +591,16 @@ async def create_registration_subscription(data: dict):
             metadata={"business_id": business["id"], "registration_flow": "true"}
         )
         
+        is_usd = (business.get("country_code") or "MX").upper() != "MX"
+        sub_amount = SUBSCRIPTION_PRICE_USD if is_usd else SUBSCRIPTION_PRICE_MXN
+        sub_currency = "usd" if is_usd else "mxn"
         await db.payment_transactions.insert_one({
             "id": generate_id(),
             "business_id": business["id"],
             "session_id": session.id,
             "type": "subscription",
-            "amount": SUBSCRIPTION_PRICE_MXN,
-            "currency": "mxn",
+            "amount": sub_amount,
+            "currency": sub_currency,
             "payment_status": "pending",
             "created_at": datetime.now(timezone.utc).isoformat()
         })

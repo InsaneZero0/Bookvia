@@ -1205,8 +1205,8 @@ export default function BusinessDashboardPage() {
                       <Shield className="h-4 w-4 text-blue-600 mt-0.5 shrink-0" />
                       <p className="text-xs text-blue-700 dark:text-blue-300">
                         {language === 'es'
-                          ? 'Estas en tu periodo de prueba gratuito de 30 dias. El primer cobro de $39 MXN se realizara automaticamente al terminar el periodo.'
-                          : 'You are in your 30-day free trial. The first charge of $39 MXN will be made automatically at the end of the trial.'}
+                          ? 'Estas en tu periodo de prueba gratuito de 30 dias. El primer cobro ($49.99 MXN o $4.99 USD segun tu pais) se realizara automaticamente al terminar el periodo.'
+                          : 'You are in your 30-day free trial. The first charge ($49.99 MXN or $4.99 USD based on your country) will be made automatically at the end of the trial.'}
                       </p>
                     </div>
                   )}

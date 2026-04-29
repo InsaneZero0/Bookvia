@@ -103,17 +103,13 @@ class AuditAction(str, Enum):
 PLATFORM_FEE_PERCENT = 0.08
 HOLD_EXPIRATION_MINUTES = 30
 MIN_DEPOSIT_AMOUNT = 50.0
-SUBSCRIPTION_PRICE_MXN = 39.00
+SUBSCRIPTION_PRICE_MXN = 49.99
+SUBSCRIPTION_PRICE_USD = 4.99
 SUBSCRIPTION_TRIAL_DAYS = 30
 
 VISIBLE_BUSINESS_FILTER = {
     "status": BusinessStatus.APPROVED,
-    "$or": [
-        {"subscription_status": {"$in": ["active", "trialing"]}},
-        {"subscription_status": {"$exists": False}},
-        {"subscription_status": None},
-        {"subscription_status": "none"},
-    ]
+    "subscription_status": {"$in": ["active", "trialing"]}
 }
 
 DEFAULT_MANAGER_PERMISSIONS = {

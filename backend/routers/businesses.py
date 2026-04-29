@@ -1636,7 +1636,7 @@ async def create_subscription_checkout(request: Request, token_data: TokenData =
     if business.get("stripe_subscription_id"):
         raise HTTPException(status_code=400, detail="Already subscribed")
     
-    price_id = await get_or_create_stripe_price()
+    price_id = await get_or_create_stripe_price(country_code=business.get("country_code", "MX"))
     if not price_id:
         raise HTTPException(status_code=500, detail="Payment configuration error")
     
