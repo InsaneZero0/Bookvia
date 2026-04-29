@@ -19,6 +19,7 @@ if "sk_test_emergent" in STRIPE_API_KEY:
 async def get_or_create_stripe_price(country_code: str = "MX"):
     """
     Returns the Stripe price ID for the subscription, creating one if needed.
+    Validates the cached price_id still exists in Stripe; recreates if missing.
     Pricing depends on country:
       - MX: $49.99 MXN
       - US (or any non-MX): $4.99 USD
@@ -28,7 +29,13 @@ async def get_or_create_stripe_price(country_code: str = "MX"):
     
     config = await db.stripe_config.find_one({"type": config_key})
     if config and config.get("price_id"):
-        return config["price_id"]
+        # Validate the cached price still exists in Stripe (handles key rotation/test wipes)
+        try:
+            stripe_lib.Price.retrieve(config["price_id"])
+            return config["price_id"]
+        except Exception as e:
+            logger.warning(f"Cached Stripe price {config['price_id']} invalid, recreating: {e}")
+            # fall through to recreate
     
     try:
         product_name = "Bookvia Subscription (USD)" if is_usd else "Bookvia Suscripción Mensual"

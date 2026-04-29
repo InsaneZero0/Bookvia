@@ -568,20 +568,12 @@ async def search_businesses(
     limit: int = 20,
     current_user: Optional[TokenData] = Depends(get_current_user)
 ):
-    # By default only show approved businesses with active subscription
+    # By default only show approved businesses with active subscription (or trialing)
     # If include_pending=True, also show PENDING (for profile viewing, but no bookings)
     if include_pending:
         filters = {"status": {"$in": [BusinessStatus.APPROVED, BusinessStatus.PENDING]}}
     else:
-        filters = {
-            "status": BusinessStatus.APPROVED,
-            "$or": [
-                {"subscription_status": {"$in": ["active", "trialing"]}},
-                {"subscription_status": {"$exists": False}},
-                {"subscription_status": None},
-                {"subscription_status": "none"},
-            ]
-        }
+        filters = dict(VISIBLE_BUSINESS_FILTER)
     
     if country_code:
         filters["country_code"] = country_code.upper()
@@ -762,7 +754,7 @@ async def search_businesses(
 
 @router.get("/featured", response_model=List[BusinessResponse])
 async def get_featured_businesses(limit: int = 8, country_code: Optional[str] = None, current_user: Optional[TokenData] = Depends(get_current_user)):
-    base_filter = {"status": BusinessStatus.APPROVED, "is_featured": True, "$or": [{"subscription_status": {"$in": ["active", "trialing"]}}, {"subscription_status": {"$exists": False}}, {"subscription_status": None}, {"subscription_status": "none"}]}
+    base_filter = {**VISIBLE_BUSINESS_FILTER, "is_featured": True}
     if country_code:
         base_filter["country_code"] = country_code.upper()
     businesses = await db.businesses.find(
@@ -773,7 +765,7 @@ async def get_featured_businesses(limit: int = 8, country_code: Optional[str] = 
     # If not enough featured, add top rated
     if len(businesses) < limit:
         existing_ids = [b["id"] for b in businesses]
-        more_filter = {"status": BusinessStatus.APPROVED, "id": {"$nin": existing_ids}, "$or": [{"subscription_status": {"$in": ["active", "trialing"]}}, {"subscription_status": {"$exists": False}}, {"subscription_status": None}, {"subscription_status": "none"}]}
+        more_filter = {**VISIBLE_BUSINESS_FILTER, "id": {"$nin": existing_ids}}
         if country_code:
             more_filter["country_code"] = country_code.upper()
         more = await db.businesses.find(
