@@ -430,7 +430,7 @@ async def send_subscription_reminder(
 <p style="color:#334155;font-size:15px;line-height:1.6;">Notamos que iniciaste el registro de tu negocio en Bookvia pero aun no has completado el pago de tu suscripcion.</p>
 <div style="margin:20px 0;padding:16px;background:#fef3c7;border-radius:8px;border:1px solid #fbbf24;">
 <p style="margin:0;color:#92400e;font-size:14px;font-weight:600;">Tu cuenta esta lista, solo falta el pago</p>
-<p style="margin:8px 0 0;color:#92400e;font-size:13px;">Recuerda que el primer mes es GRATIS. Despues solo pagas $39 MXN/mes.</p>
+<p style="margin:8px 0 0;color:#92400e;font-size:13px;">Recuerda que el primer mes es GRATIS. Despues solo pagas $49.99 MXN/mes ($4.99 USD en EE. UU.).</p>
 </div>
 <p style="color:#334155;font-size:15px;line-height:1.6;">Para completar tu registro:</p>
 <ol style="color:#334155;font-size:14px;line-height:1.8;">

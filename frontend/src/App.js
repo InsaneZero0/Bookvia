@@ -291,11 +291,11 @@ function ForBusinessPage() {
                       {language === 'es' ? 'Suscripcion mensual' : 'Monthly subscription'}
                     </p>
                     <div className="flex items-end justify-center gap-1 mb-1">
-                      <span className="text-5xl font-heading font-extrabold text-slate-900">$39</span>
+                      <span className="text-5xl font-heading font-extrabold text-slate-900">$49.99</span>
                       <span className="text-lg text-slate-500 mb-1">MXN</span>
                     </div>
                     <p className="text-sm text-slate-500 mb-2">
-                      {language === 'es' ? '/mes' : '/month'}
+                      {language === 'es' ? '/mes · $4.99 USD en EE. UU.' : '/month · $4.99 USD in U.S.'}
                     </p>
                     <p className="text-xs text-emerald-600 font-semibold mb-6">
                       {language === 'es' ? 'Después de tus 30 días gratis' : 'After your 30 free days'}
@@ -408,10 +408,10 @@ function ForBusinessPage() {
               </div>
               <p className="text-sm font-medium text-[#F05D5E] mb-2 mt-2">{language === 'es' ? 'Suscripcion mensual' : 'Monthly subscription'}</p>
               <div className="flex items-end justify-center gap-1 mb-1">
-                <span className="text-5xl font-heading font-extrabold">$39</span>
+                <span className="text-5xl font-heading font-extrabold">$49.99</span>
                 <span className="text-lg text-muted-foreground mb-1">MXN</span>
               </div>
-              <p className="text-sm text-muted-foreground mb-2">{language === 'es' ? '/mes' : '/month'}</p>
+              <p className="text-sm text-muted-foreground mb-2">{language === 'es' ? '/mes · $4.99 USD en EE. UU.' : '/month · $4.99 USD in U.S.'}</p>
               <p className="text-xs text-emerald-600 font-semibold mb-6">
                 {language === 'es' ? 'Después de tus 30 días gratis' : 'After your 30 free days'}
               </p>

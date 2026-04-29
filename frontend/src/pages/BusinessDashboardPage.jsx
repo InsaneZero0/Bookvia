@@ -1220,7 +1220,7 @@ export default function BusinessDashboardPage() {
 
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-muted-foreground">{language === 'es' ? 'Precio' : 'Price'}</span>
-                    <span className="font-medium">$39 MXN / {language === 'es' ? 'mes' : 'month'}</span>
+                    <span className="font-medium">$49.99 MXN o $4.99 USD / {language === 'es' ? 'mes' : 'month'}</span>
                   </div>
 
                   {subscriptionData?.cancel_at_period_end && (

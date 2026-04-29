@@ -40,7 +40,7 @@ from models.enums import (
     TransactionStatus, LedgerDirection, LedgerAccount, LedgerEntryStatus,
     SettlementStatus, AuditAction,
     PLATFORM_FEE_PERCENT, HOLD_EXPIRATION_MINUTES, MIN_DEPOSIT_AMOUNT,
-    SUBSCRIPTION_PRICE_MXN, SUBSCRIPTION_TRIAL_DAYS,
+    SUBSCRIPTION_PRICE_MXN, SUBSCRIPTION_PRICE_USD, SUBSCRIPTION_TRIAL_DAYS,
     VISIBLE_BUSINESS_FILTER, DEFAULT_MANAGER_PERMISSIONS
 )
 from models.schemas import *
@@ -1672,14 +1672,17 @@ async def create_subscription_checkout(request: Request, token_data: TokenData =
             metadata={"business_id": business["id"]}
         )
         
-        # Record the transaction
+        # Record the transaction (currency depends on country)
+        is_usd = (business.get("country_code") or "MX").upper() != "MX"
+        sub_amount = SUBSCRIPTION_PRICE_USD if is_usd else SUBSCRIPTION_PRICE_MXN
+        sub_currency = "usd" if is_usd else "mxn"
         await db.payment_transactions.insert_one({
             "id": generate_id(),
             "business_id": business["id"],
             "session_id": session.id,
             "type": "subscription",
-            "amount": SUBSCRIPTION_PRICE_MXN,
-            "currency": "mxn",
+            "amount": sub_amount,
+            "currency": sub_currency,
             "payment_status": "pending",
             "created_at": datetime.now(timezone.utc).isoformat()
         })
