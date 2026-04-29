@@ -125,29 +125,27 @@ export function Navbar() {
     >
       <div className="container-app">
         <div className="flex items-center justify-between h-16 md:h-20">
-          {/* Logo */}
-          <BookviaLogo 
-            variant={isTransparent ? 'dark' : 'light'} 
-            size="text-2xl" 
-            asLink 
-          />
-
-          {/* Desktop Navigation */}
-          <div className="hidden md:flex items-center gap-6">
-            {/* Country selector */}
-            {country && (
-              <Popover open={countryOpen} onOpenChange={(open) => { setCountryOpen(open); if (!open) setCountrySearch(''); }}>
-                <PopoverTrigger asChild>
-                  <button
-                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border transition-all cursor-pointer hover:scale-105 ${
-                      isTransparent
-                        ? 'border-white/20 bg-white/10 text-white hover:bg-white/20'
-                        : 'border-border bg-muted/50 text-foreground hover:bg-muted'
-                    }`}
-                    data-testid="country-indicator"
-                    title={language === 'es' ? 'Cambiar país' : 'Change country'}
-                  >
-                    <MapPin className="h-3 w-3 opacity-60" />
+          {/* Left: Logo + Country + Center Links (all grouped) */}
+          <div className="flex items-center gap-6">
+            <div className="flex items-center gap-3">
+              <BookviaLogo 
+                variant={isTransparent ? 'dark' : 'light'} 
+                size="text-2xl" 
+                asLink 
+              />
+              {country && (
+                <Popover open={countryOpen} onOpenChange={(open) => { setCountryOpen(open); if (!open) setCountrySearch(''); }}>
+                  <PopoverTrigger asChild>
+                    <button
+                      className={`hidden md:flex items-center gap-1.5 px-2.5 py-1 rounded-full border transition-all cursor-pointer hover:scale-105 ${
+                        isTransparent
+                          ? 'border-white/20 bg-white/10 text-white hover:bg-white/20'
+                          : 'border-border bg-muted/50 text-foreground hover:bg-muted'
+                      }`}
+                      data-testid="country-indicator"
+                      title={language === 'es' ? 'Cambiar país' : 'Change country'}
+                    >
+                      <MapPin className="h-3 w-3 opacity-60" />
                     <span className="text-base leading-none">{country.flag}</span>
                     <span className="text-xs font-medium">{country.code}</span>
                     <ChevronDown className="h-3 w-3 opacity-50" />
@@ -197,33 +195,38 @@ export function Navbar() {
                 </PopoverContent>
               </Popover>
             )}
-            <Link 
-              to="/search" 
-              className={`text-sm font-medium transition-colors hover:text-[#F05D5E] ${
-                isTransparent ? 'text-white/90' : 'text-foreground'
-              }`}
-              data-testid="nav-search"
-            >
-              {t('nav.search')}
-            </Link>
-            <Link 
-              to="/categories" 
-              className={`text-sm font-medium transition-colors hover:text-[#F05D5E] ${
-                isTransparent ? 'text-white/90' : 'text-foreground'
-              }`}
-              data-testid="nav-categories"
-            >
-              {t('nav.categories')}
-            </Link>
-            <Link 
-              to="/for-business" 
-              className={`text-sm font-medium transition-colors hover:text-[#F05D5E] ${
-                isTransparent ? 'text-white/90' : 'text-foreground'
-              }`}
-              data-testid="nav-for-business"
-            >
-              {t('nav.forBusiness')}
-            </Link>
+            </div>
+
+            {/* Center links - in the same flex group as logo+country */}
+            <div className="hidden md:flex items-center gap-5 lg:gap-6 ml-2 lg:ml-4">
+              <Link 
+                to="/search" 
+                className={`text-sm font-medium transition-colors hover:text-[#F05D5E] ${
+                  isTransparent ? 'text-white/90' : 'text-foreground'
+                }`}
+                data-testid="nav-explore"
+              >
+                {language === 'es' ? 'Explorar' : 'Explore'}
+              </Link>
+              <Link 
+                to="/beneficios" 
+                className={`text-sm font-medium transition-colors hover:text-[#F05D5E] ${
+                  isTransparent ? 'text-white/90' : 'text-foreground'
+                }`}
+                data-testid="nav-benefits"
+              >
+                {language === 'es' ? 'Beneficios' : 'Benefits'}
+              </Link>
+              <Link 
+                to="/for-business" 
+                className={`text-sm font-medium transition-colors hover:text-[#F05D5E] ${
+                  isTransparent ? 'text-white/90' : 'text-foreground'
+                }`}
+                data-testid="nav-for-business"
+              >
+                {t('nav.forBusiness')}
+              </Link>
+            </div>
           </div>
 
           {/* Right Side */}
@@ -423,14 +426,14 @@ export function Navbar() {
                 className="px-4 py-2 text-sm font-medium hover:bg-muted rounded-lg"
                 onClick={() => setMobileMenuOpen(false)}
               >
-                {t('nav.search')}
+                {language === 'es' ? 'Explorar' : 'Explore'}
               </Link>
               <Link
-                to="/categories"
+                to="/beneficios"
                 className="px-4 py-2 text-sm font-medium hover:bg-muted rounded-lg"
                 onClick={() => setMobileMenuOpen(false)}
               >
-                {t('nav.categories')}
+                {language === 'es' ? 'Beneficios' : 'Benefits'}
               </Link>
               <Link
                 to="/for-business"

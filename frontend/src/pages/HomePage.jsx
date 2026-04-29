@@ -4,6 +4,8 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { BusinessCard } from '@/components/BusinessCard';
+import { HowItWorksModal } from '@/components/HowItWorksModal';
+import { JsonLd, organizationSchema, websiteSchema } from '@/components/JsonLd';
 import { useI18n } from '@/lib/i18n';
 import { useCountry } from '@/lib/countryContext';
 import { categoriesAPI, businessesAPI, utilityAPI } from '@/lib/api';
@@ -113,6 +115,9 @@ export default function HomePage() {
 
   return (
     <div className="min-h-screen" data-testid="home-page">
+      <JsonLd data={organizationSchema} id="jsonld-org" />
+      <JsonLd data={websiteSchema} id="jsonld-site" />
+      <HowItWorksModal />
 
       {/* ═══ Hero ═══════════════════════════════════ */}
       <section className="relative min-h-[88vh] flex items-center overflow-hidden bg-[#fcf7ba]">
@@ -257,7 +262,6 @@ export default function HomePage() {
             {/* Quick trust indicators */}
             <div className="flex flex-wrap justify-center lg:justify-start gap-4 sm:gap-6 mt-8 pt-6">
               {[
-                { icon: Shield, text: language === 'es' ? 'Pagos seguros' : 'Secure payments' },
                 { icon: Clock, text: language === 'es' ? 'Reserva 24/7' : 'Book 24/7' },
                 { icon: CheckCircle2, text: language === 'es' ? 'Confirmacion inmediata' : 'Instant confirmation' },
               ].map(item => (
@@ -266,6 +270,34 @@ export default function HomePage() {
                   <span>{item.text}</span>
                 </div>
               ))}
+            </div>
+
+            {/* Trust badge: Pagos seguros con Stripe */}
+            <div className="mt-4 flex flex-wrap items-center justify-center lg:justify-start gap-3" data-testid="trust-stripe-badge">
+              <div className="inline-flex items-center gap-2.5 px-3 py-2 rounded-xl bg-white border border-slate-200 shadow-sm">
+                <Shield className="h-4 w-4 text-emerald-600 shrink-0" />
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="text-slate-700 font-medium">
+                    {language === 'es' ? 'Pagos seguros con' : 'Secure payments with'}
+                  </span>
+                  <span className="font-bold text-[#635BFF] tracking-tight">Stripe</span>
+                </div>
+                <div className="flex items-center gap-1 ml-1 pl-2 border-l border-slate-200">
+                  <svg className="h-4 w-auto" viewBox="0 0 32 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="Visa">
+                    <rect width="32" height="20" rx="2" fill="#1A1F71"/>
+                    <text x="16" y="14" textAnchor="middle" fill="white" fontSize="9" fontWeight="bold" fontFamily="Arial">VISA</text>
+                  </svg>
+                  <svg className="h-4 w-auto" viewBox="0 0 32 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="Mastercard">
+                    <rect width="32" height="20" rx="2" fill="#000"/>
+                    <circle cx="13" cy="10" r="5" fill="#EB001B" opacity="0.9"/>
+                    <circle cx="19" cy="10" r="5" fill="#F79E1B" opacity="0.9"/>
+                  </svg>
+                  <svg className="h-4 w-auto" viewBox="0 0 32 20" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="American Express">
+                    <rect width="32" height="20" rx="2" fill="#2E77BB"/>
+                    <text x="16" y="14" textAnchor="middle" fill="white" fontSize="6" fontWeight="bold" fontFamily="Arial">AMEX</text>
+                  </svg>
+                </div>
+              </div>
             </div>
           </div>
 

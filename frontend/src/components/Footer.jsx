@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { useI18n } from '@/lib/i18n';
-import { Facebook, Twitter, Instagram, Linkedin, Mail, MapPin, Phone } from 'lucide-react';
+import { Facebook, Twitter, Instagram, Linkedin, Mail, MapPin, Phone, Shield } from 'lucide-react';
 
 export function Footer() {
   const { t, language } = useI18n();
@@ -60,12 +60,12 @@ export function Footer() {
             <ul className="space-y-3">
               <li>
                 <Link to="/search" className="text-slate-300 hover:text-[#F05D5E] text-sm transition-colors">
-                  {t('nav.search')}
+                  {language === 'es' ? 'Negocios' : 'Businesses'}
                 </Link>
               </li>
               <li>
-                <Link to="/categories" className="text-slate-300 hover:text-[#F05D5E] text-sm transition-colors">
-                  {t('nav.categories')}
+                <Link to="/beneficios" className="text-slate-300 hover:text-[#F05D5E] text-sm transition-colors">
+                  {language === 'es' ? 'Beneficios' : 'Benefits'}
                 </Link>
               </li>
               <li>
@@ -74,8 +74,8 @@ export function Footer() {
                 </Link>
               </li>
               <li>
-                <Link to="/how-it-works" className="text-slate-300 hover:text-[#F05D5E] text-sm transition-colors">
-                  {language === 'es' ? '¿Cómo funciona?' : 'How it works?'}
+                <Link to="/sobre-nosotros" className="text-slate-300 hover:text-[#F05D5E] text-sm transition-colors" data-testid="footer-about-link">
+                  {language === 'es' ? 'Sobre nosotros' : 'About us'}
                 </Link>
               </li>
             </ul>
@@ -137,6 +137,27 @@ export function Footer() {
             © {currentYear} Bookvia. {t('footer.rights')}.
           </p>
           <div className="flex items-center gap-4 text-sm text-slate-400">
+            {/* Pagos seguros con Stripe */}
+            <div className="flex items-center gap-2 text-xs" data-testid="footer-stripe-badge">
+              <Shield className="h-3.5 w-3.5 text-emerald-400" />
+              <span className="text-slate-300">Pagos seguros con</span>
+              <span className="font-bold text-white">Stripe</span>
+              <div className="flex items-center gap-1 ml-1 pl-2 border-l border-white/15">
+                <svg className="h-3.5 w-auto" viewBox="0 0 32 20" fill="none" aria-label="Visa">
+                  <rect width="32" height="20" rx="2" fill="#1A1F71"/>
+                  <text x="16" y="14" textAnchor="middle" fill="white" fontSize="9" fontWeight="bold" fontFamily="Arial">VISA</text>
+                </svg>
+                <svg className="h-3.5 w-auto" viewBox="0 0 32 20" fill="none" aria-label="Mastercard">
+                  <rect width="32" height="20" rx="2" fill="#000"/>
+                  <circle cx="13" cy="10" r="5" fill="#EB001B" opacity="0.9"/>
+                  <circle cx="19" cy="10" r="5" fill="#F79E1B" opacity="0.9"/>
+                </svg>
+                <svg className="h-3.5 w-auto" viewBox="0 0 32 20" fill="none" aria-label="American Express">
+                  <rect width="32" height="20" rx="2" fill="#2E77BB"/>
+                  <text x="16" y="14" textAnchor="middle" fill="white" fontSize="6" fontWeight="bold" fontFamily="Arial">AMEX</text>
+                </svg>
+              </div>
+            </div>
             <span className="font-semibold">MXN</span>
           </div>
         </div>
