@@ -140,7 +140,10 @@ Auth Social: Emergent-managed Google Auth (solo clientes)
 ### P1
 - [x] Integracion Twilio SMS - COMPLETADO Abril 2026 (confirmacion, recordatorios, cancelaciones, idioma auto MX/US)
 - [ ] Integracion WhatsApp via Twilio (Fase 2 - requiere aprobacion plantillas Meta)
-- [ ] Precios suscripcion $199 MXN / $19.99 USD + Stripe Billing
+- [x] Precios suscripcion $49.99 MXN / $4.99 USD + 30 dias trial (Stripe Billing) - COMPLETADO Abril 2026
+- [x] Filtro estricto VISIBLE_BUSINESS_FILTER: negocios sin suscripcion activa/trialing no aparecen en /featured ni /search - COMPLETADO Abril 2026
+- [x] get_or_create_stripe_price con auto-recovery en cache invalida - COMPLETADO Abril 2026
+- [ ] Banner motivador en Business Dashboard ("Negocios con precios reciben 3x mas reservas")
 - [ ] Optimizacion UX mobile avanzada
 
 ### P2
