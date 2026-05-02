@@ -1485,12 +1485,14 @@ async def _process_no_show_report(booking: dict) -> bool:
     
     # 6) Notifications
     try:
+        client_refund = float(transaction.get("client_paid") or 0)
+        total_received = client_refund + NO_SHOW_COMPENSATION_MXN
         await create_notification(
             user_id,
             "Reembolso procesado",
-            f"El negocio no respondio a tu reporte. Te depositamos $108.20 + $50 de compensacion en tu saldo Bookvia.",
+            f"El negocio no respondio a tu reporte. Te depositamos ${client_refund:.2f} + ${NO_SHOW_COMPENSATION_MXN:.0f} de compensacion (total ${total_received:.2f}) en tu saldo Bookvia.",
             "refund",
-            {"booking_id": booking_id, "amount": (float(transaction.get("client_paid") or 0) + NO_SHOW_COMPENSATION_MXN)}
+            {"booking_id": booking_id, "amount": total_received}
         )
         biz = await db.businesses.find_one({"id": business_id})
         if biz and biz.get("user_id"):
