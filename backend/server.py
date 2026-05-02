@@ -223,23 +223,27 @@ async def send_appointment_reminders():
 
                 try:
                     if user.get("notify_email", True):
-                        from services.email import send_appointment_reminder
-                        worker = await db.workers.find_one({"id": booking.get("worker_id")}, {"_id": 0, "name": 1}) if booking.get("worker_id") else None
-                        await send_appointment_reminder(
-                            user_email=user["email"],
-                            user_name=user.get("full_name", ""),
-                            business_name=business.get("name", ""),
-                            service_name=service.get("name", "") if service else "",
-                            date=date_str,
-                            time=time_str,
-                            worker_name=worker.get("name", "") if worker else "",
-                            business_address=business.get("address", ""),
-                            booking_id=booking["id"],
-                            cancel_free_until_text=cancel_text,
-                            reschedule_until_text=reschedule_text,
-                            reschedule_remaining=remaining,
-                            calendar_url=calendar_url,
-                        )
+                        try:
+                            from services.email import send_appointment_reminder
+                            worker = await db.workers.find_one({"id": booking.get("worker_id")}, {"_id": 0, "name": 1}) if booking.get("worker_id") else None
+                            await send_appointment_reminder(
+                                user_email=user["email"],
+                                user_name=user.get("full_name", ""),
+                                business_name=business.get("name", ""),
+                                service_name=service.get("name", "") if service else "",
+                                date=date_str,
+                                time=time_str,
+                                worker_name=worker.get("name", "") if worker else "",
+                                business_address=business.get("address", ""),
+                                booking_id=booking["id"],
+                                cancel_free_until_text=cancel_text,
+                                reschedule_until_text=reschedule_text,
+                                reschedule_remaining=remaining,
+                                calendar_url=calendar_url,
+                            )
+                        except Exception as email_err:
+                            # Do not block push + reminder_sent flag if email provider fails
+                            logger.warning(f"Email reminder failed for booking {booking.get('id')}: {email_err}")
 
                     # Push notification (in-app) regardless of email pref
                     try:
