@@ -301,6 +301,19 @@ async def admin_resolve_dispute(
         await clear_now(transaction_id, actor=f"admin:{token_data.email}", reason=f"Dispute resolved in favor of business: {reason}")
     else:
         await mark_refunded(transaction_id, actor=f"admin:{token_data.email}", reason=f"Dispute resolved in favor of client: {reason}")
+        # Issue progressive strike to the business
+        try:
+            from services.strikes import issue_strike
+            await issue_strike(
+                business_id=tx["business_id"],
+                reason="dispute_lost",
+                description=f"Admin resolved dispute against business: {reason}",
+                booking_id=tx.get("booking_id"),
+                issued_by=f"admin:{token_data.email}",
+                metadata={"transaction_id": transaction_id, "admin_reason": reason},
+            )
+        except Exception as e:
+            logger.error(f"Failed to issue strike on lost dispute: {e}")
     
     # Audit log
     await create_audit_log(
@@ -314,6 +327,96 @@ async def admin_resolve_dispute(
     )
     
     return {"message": f"Dispute resolved: {outcome}", "outcome": outcome}
+
+
+@router.get("/strikes")
+async def admin_list_all_strikes(
+    business_id: Optional[str] = None,
+    limit: int = 100,
+    token_data: TokenData = Depends(require_admin)
+):
+    """Admin: list strikes across all businesses (or filter by business_id)."""
+    query = {}
+    if business_id:
+        query["business_id"] = business_id
+    strikes = await db.business_strikes.find(query, {"_id": 0}).sort("created_at", -1).limit(limit).to_list(limit)
+    
+    # Enrich with business name
+    out = []
+    for s in strikes:
+        biz = await db.businesses.find_one({"id": s.get("business_id")}, {"_id": 0, "name": 1, "public_code": 1, "status": 1})
+        out.append({**s, "business_summary": biz})
+    return {"strikes": out, "total": len(out)}
+
+
+@router.post("/strikes/issue")
+async def admin_issue_strike(
+    body: dict,
+    request: Request,
+    token_data: TokenData = Depends(require_admin)
+):
+    """
+    Admin manually issue a strike to a business.
+    Body: {business_id, reason, description, booking_id?, force_severity?}
+    """
+    business_id = (body or {}).get("business_id")
+    reason = (body or {}).get("reason") or "admin_manual"
+    description = (body or {}).get("description") or "Manual strike issued by admin"
+    booking_id = (body or {}).get("booking_id")
+    
+    if not business_id:
+        raise HTTPException(status_code=400, detail="business_id required")
+    
+    from services.strikes import issue_strike
+    try:
+        strike = await issue_strike(
+            business_id=business_id,
+            reason=reason,
+            description=description,
+            booking_id=booking_id,
+            issued_by=f"admin:{token_data.email}",
+            metadata={"manual": True},
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    
+    await create_audit_log(
+        admin_id=token_data.user_id,
+        admin_email=token_data.email,
+        action=AuditAction.BUSINESS_SUSPEND,
+        target_type="business",
+        target_id=business_id,
+        details={"strike_id": strike["id"], "severity": strike["severity"], "reason": reason},
+        request=request,
+    )
+    return strike
+
+
+@router.post("/strikes/{strike_id}/clear")
+async def admin_clear_strike_endpoint(
+    strike_id: str,
+    body: dict,
+    request: Request,
+    token_data: TokenData = Depends(require_admin)
+):
+    """Admin: clear/cancel a strike (override). Adjusts counters and may lift suspension."""
+    reason = (body or {}).get("reason") or "Admin override"
+    from services.strikes import admin_clear_strike
+    try:
+        cleared = await admin_clear_strike(strike_id, admin_email=token_data.email, reason=reason)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    
+    await create_audit_log(
+        admin_id=token_data.user_id,
+        admin_email=token_data.email,
+        action=AuditAction.BUSINESS_APPROVE,
+        target_type="strike",
+        target_id=strike_id,
+        details={"reason": reason, "business_id": cleared.get("business_id")},
+        request=request,
+    )
+    return cleared
 
 
 

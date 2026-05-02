@@ -199,3 +199,25 @@ async def get_funds_state_summary(token_data: TokenData = Depends(require_busine
         recent_by_state[state] = txs
     
     return {**summary, "recent_by_state": recent_by_state}
+
+
+@router.get("/strikes")
+async def get_my_strikes(token_data: TokenData = Depends(require_business)):
+    """Return strike history + current suspension status for the authenticated business."""
+    user = await db.users.find_one({"id": token_data.user_id})
+    if not user or not user.get("business_id"):
+        raise HTTPException(status_code=404, detail="Business not found")
+    
+    from services.strikes import list_business_strikes, get_active_suspension
+    business = await db.businesses.find_one({"id": user["business_id"]}, {"_id": 0})
+    strikes = await list_business_strikes(user["business_id"], limit=50)
+    suspension = await get_active_suspension(user["business_id"])
+    
+    return {
+        "strike_count_30d": int(business.get("strike_count_30d") or 0),
+        "strike_count_90d": int(business.get("strike_count_90d") or 0),
+        "pending_penalty_mxn": float(business.get("pending_strike_penalty_mxn") or 0),
+        "active_suspension": suspension,
+        "history": strikes,
+    }
+

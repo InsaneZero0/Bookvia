@@ -255,16 +255,19 @@ async def funds_state_scheduler():
     Hourly task driving the transaction funds_state lifecycle:
       1. Auto-complete bookings 48h after their scheduled end without business action.
       2. Auto-clear AVAILABLE transactions whose 24h grace window elapsed.
+      3. Lift expired business suspensions.
     """
     logger.info("Funds state scheduler started")
     await asyncio.sleep(180)  # Wait 3 min after startup
     while True:
         try:
             from services.funds_state import auto_complete_appointments, auto_clear_after_grace
+            from services.strikes import lift_expired_suspensions
             ac = await auto_complete_appointments()
             cl = await auto_clear_after_grace()
-            if ac or cl:
-                logger.info(f"Funds state cron: auto_completed={ac}, auto_cleared={cl}")
+            ls = await lift_expired_suspensions()
+            if ac or cl or ls:
+                logger.info(f"Funds state cron: auto_completed={ac}, auto_cleared={cl}, suspensions_lifted={ls}")
         except Exception as e:
             logger.error(f"Funds state scheduler error: {e}")
         await asyncio.sleep(3600)  # Every 1 hour

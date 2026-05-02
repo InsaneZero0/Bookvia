@@ -3,6 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { TrustBadge } from '@/components/TrustBadge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Calendar } from '@/components/ui/calendar';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
@@ -721,6 +722,7 @@ export default function BusinessProfilePage() {
                   <span>({business.review_count})</span>
                 </button>
               )}
+              <TrustBadge businessId={business.id} />
               {workers.length > 0 && (() => {
                 const { isOpen, nextOpenText } = getOpenStatus(workers, language);
                 return (

@@ -88,6 +88,30 @@ MAX_RESCHEDULES_PER_BOOKING = 2    # Maximum number of times a booking can be re
 RESCHEDULE_CUTOFF_HOURS = 2        # Client must reschedule at least N hours before the appointment
 
 
+class StrikeReason(str, Enum):
+    """Why a strike was issued to a business."""
+    LATE_CANCELLATION = "late_cancellation"        # Business cancelled <6h before appointment
+    REGULAR_CANCELLATION = "regular_cancellation"  # Business cancelled >6h before appointment (still counts)
+    NO_SHOW_BUSINESS = "no_show_business"          # Client reported the business never opened (Fase 6)
+    DISPUTE_LOST = "dispute_lost"                  # Admin resolved a dispute against the business
+    EXCESSIVE_RESCHEDULES = "excessive_reschedules"  # Business reagended too many times
+    ADMIN_MANUAL = "admin_manual"                  # Admin manually issued a strike
+
+
+class StrikeSeverity(str, Enum):
+    WARNING = "warning"           # No financial penalty, 1st strike under non-severe reasons
+    MINOR = "minor"                # -$100 MXN deduction from next payout
+    SUSPENSION_7D = "suspension_7d"   # Removed from search 7 days
+    SUSPENSION_30D = "suspension_30d" # Removed from search 30 days, admin review triggered
+    PERMANENT_BAN = "permanent_ban"   # Account banned indefinitely, payout final balance only
+
+
+# Strike escalation thresholds (count within rolling window -> severity)
+STRIKE_PENALTY_AMOUNT = 100.0      # MXN deducted per MINOR strike
+STRIKE_WINDOW_30_DAYS = 30
+STRIKE_WINDOW_90_DAYS = 90
+
+
 class SettlementStatus(str, Enum):
     PENDING = "pending"
     PAID = "paid"
@@ -136,8 +160,26 @@ SUBSCRIPTION_TRIAL_DAYS = 30
 
 VISIBLE_BUSINESS_FILTER = {
     "status": BusinessStatus.APPROVED,
-    "subscription_status": {"$in": ["active", "trialing"]}
+    "subscription_status": {"$in": ["active", "trialing"]},
+    "banned": {"$ne": True},
 }
+
+
+def visible_business_filter_now() -> dict:
+    """
+    Return the visibility filter for businesses, computed at call time so we can compare
+    suspended_until against the current ISO timestamp.
+    """
+    from datetime import datetime, timezone
+    now_iso = datetime.now(timezone.utc).isoformat()
+    return {
+        **VISIBLE_BUSINESS_FILTER,
+        "$or": [
+            {"suspended_until": None},
+            {"suspended_until": {"$exists": False}},
+            {"suspended_until": {"$lt": now_iso}},
+        ],
+    }
 
 DEFAULT_MANAGER_PERMISSIONS = {
     "complete_bookings": True,

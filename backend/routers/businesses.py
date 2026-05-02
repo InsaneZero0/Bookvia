@@ -41,7 +41,7 @@ from models.enums import (
     SettlementStatus, AuditAction,
     PLATFORM_FEE_PERCENT, HOLD_EXPIRATION_MINUTES, MIN_DEPOSIT_AMOUNT,
     SUBSCRIPTION_PRICE_MXN, SUBSCRIPTION_PRICE_USD, SUBSCRIPTION_TRIAL_DAYS,
-    VISIBLE_BUSINESS_FILTER, DEFAULT_MANAGER_PERMISSIONS
+    VISIBLE_BUSINESS_FILTER, DEFAULT_MANAGER_PERMISSIONS, visible_business_filter_now
 )
 from models.schemas import *
 
@@ -573,7 +573,7 @@ async def search_businesses(
     if include_pending:
         filters = {"status": {"$in": [BusinessStatus.APPROVED, BusinessStatus.PENDING]}}
     else:
-        filters = dict(VISIBLE_BUSINESS_FILTER)
+        filters = visible_business_filter_now()
     
     if country_code:
         filters["country_code"] = country_code.upper()
@@ -754,7 +754,7 @@ async def search_businesses(
 
 @router.get("/featured", response_model=List[BusinessResponse])
 async def get_featured_businesses(limit: int = 8, country_code: Optional[str] = None, current_user: Optional[TokenData] = Depends(get_current_user)):
-    base_filter = {**VISIBLE_BUSINESS_FILTER, "is_featured": True}
+    base_filter = {**visible_business_filter_now(), "is_featured": True}
     if country_code:
         base_filter["country_code"] = country_code.upper()
     businesses = await db.businesses.find(
@@ -765,7 +765,7 @@ async def get_featured_businesses(limit: int = 8, country_code: Optional[str] = 
     # If not enough featured, add top rated
     if len(businesses) < limit:
         existing_ids = [b["id"] for b in businesses]
-        more_filter = {**VISIBLE_BUSINESS_FILTER, "id": {"$nin": existing_ids}}
+        more_filter = {**visible_business_filter_now(), "id": {"$nin": existing_ids}}
         if country_code:
             more_filter["country_code"] = country_code.upper()
         more = await db.businesses.find(
@@ -883,6 +883,16 @@ async def get_business(business_id: str, current_user: Optional[TokenData] = Dep
     if current_user and await is_user_blacklisted(business["id"], user_id=current_user.user_id):
         raise HTTPException(status_code=404, detail="Business not found")
     return BusinessResponse(**business)
+
+
+@router.get("/{business_id}/trust-score")
+async def get_business_trust_score(business_id: str):
+    """Public: composite trust score (rating + completion + strikes) for the business profile badge."""
+    business = await db.businesses.find_one({"id": business_id}, {"_id": 0})
+    if not business:
+        raise HTTPException(status_code=404, detail="Business not found")
+    from services.strikes import compute_trust_score
+    return compute_trust_score(business)
 
 
 

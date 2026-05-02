@@ -1497,6 +1497,31 @@ async def cancel_booking_by_business(
         
         logger.info(f"Business cancelled booking {booking_id}: full refund ${refund_amount}, penalty ${fee_penalty}")
     
+    # Issue progressive strike to the business (Fase 5)
+    try:
+        from services.strikes import issue_strike
+        booking_dt = datetime.strptime(f"{booking['date']} {booking['time']}", "%Y-%m-%d %H:%M").replace(tzinfo=timezone.utc)
+        hours_until = (booking_dt - datetime.now(timezone.utc)).total_seconds() / 3600
+        strike_reason = (
+            "late_cancellation" if hours_until < 6 else "regular_cancellation"
+        )
+        strike = await issue_strike(
+            business_id=booking["business_id"],
+            reason=strike_reason,
+            description=f"Business cancelled booking {booking_id} ({hours_until:.1f}h before appointment)",
+            booking_id=booking_id,
+            issued_by=f"business_user:{token_data.user_id}",
+            metadata={"hours_before_appointment": round(hours_until, 2)},
+        )
+        if refund_result is not None:
+            refund_result["strike"] = {
+                "severity": strike["severity"],
+                "financial_penalty_mxn": strike["financial_penalty_mxn"],
+                "suspension_until": strike["suspension_until"],
+            }
+    except Exception as e:
+        logger.error(f"Failed to issue strike for business cancellation: {e}")
+    
     # Update booking
     await db.bookings.update_one(
         {"id": booking_id},

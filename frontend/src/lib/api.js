@@ -121,6 +121,7 @@ export const businessesAPI = {
   getFeatured: (limit = 8, country_code) => api.get('/businesses/featured', { params: { limit, ...(country_code ? { country_code } : {}) } }),
   getBySlug: (slug) => api.get(`/businesses/slug/${slug}`),
   getById: (id) => api.get(`/businesses/${id}`),
+  getTrustScore: (id) => api.get(`/businesses/${id}/trust-score`),
   updateMe: (data) => api.put('/businesses/me', data),
   getDashboard: () => api.get('/businesses/me/dashboard'),
   getPrivateInfo: () => api.get('/businesses/me/private-info'),
@@ -261,6 +262,7 @@ export const financeAPI = {
   getSummary: () => api.get('/business/finance/summary'),
   getTransactions: (params) => api.get('/business/finance/transactions', { params }),
   getFundsState: () => api.get('/business/finance/funds-state'),
+  getStrikes: () => api.get('/business/finance/strikes'),
   getLedger: (params) => api.get('/business/finance/ledger', { params }),
   getSettlements: (params) => api.get('/business/finance/settlements', { params }),
 };
