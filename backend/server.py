@@ -144,6 +144,29 @@ async def startup_event():
             logger.info(f"Backfilled CL public_code for {len(missing_users)} users")
     except Exception as e:
         logger.warning(f"public_code backfill failed: {e}")
+
+    # ------------------------------------------------------------------
+    # Fase 8 grandfather clause: any business that was already APPROVED
+    # before the documents_verified flag existed keeps receiving bookings.
+    # New businesses will flip to documents_verified=False on first legal
+    # doc update (see /businesses/me/legal-docs) until admin approves.
+    # ------------------------------------------------------------------
+    try:
+        from core.database import db
+        grandfather = await db.businesses.update_many(
+            {
+                "status": "approved",
+                "documents_verified": {"$exists": False},
+            },
+            {"$set": {"documents_verified": True, "documents_grandfathered": True}},
+        )
+        if grandfather.modified_count:
+            logger.info(
+                f"Fase 8 grandfather: marked {grandfather.modified_count} businesses as documents_verified=True"
+            )
+    except Exception as e:
+        logger.warning(f"Fase 8 grandfather backfill failed: {e}")
+
     # Start background schedulers
     asyncio.create_task(appointment_reminder_scheduler())
     asyncio.create_task(subscription_reminder_scheduler())
@@ -221,6 +244,23 @@ async def send_appointment_reminders():
                 public_api = os.environ.get("PUBLIC_API_URL") or "https://api.bookvia.app"
                 calendar_url = f"{public_api}/api/bookings/{booking['id']}/calendar.ics?token={token}"
 
+                # Google Calendar "add event" URL (RFC-compliant compact UTC format)
+                from urllib.parse import quote
+                utc_end = (utc_dt + timedelta(minutes=int(
+                    (service or {}).get("duration_minutes")
+                    or (service or {}).get("duration")
+                    or booking.get("duration_minutes")
+                    or 60
+                )))
+                gcal_dates = f"{utc_dt.strftime('%Y%m%dT%H%M%SZ')}/{utc_end.strftime('%Y%m%dT%H%M%SZ')}"
+                gcal_text = quote(f"Cita en {business.get('name','Bookvia')}")
+                gcal_details = quote(f"Servicio: {(service or {}).get('name','')}\\nReserva: https://bookvia.vercel.app/bookings")
+                gcal_location = quote(business.get("address", "") or "")
+                google_calendar_url = (
+                    f"https://calendar.google.com/calendar/render?action=TEMPLATE"
+                    f"&text={gcal_text}&dates={gcal_dates}&details={gcal_details}&location={gcal_location}"
+                )
+
                 try:
                     if user.get("notify_email", True):
                         try:
@@ -240,6 +280,7 @@ async def send_appointment_reminders():
                                 reschedule_until_text=reschedule_text,
                                 reschedule_remaining=remaining,
                                 calendar_url=calendar_url,
+                                google_calendar_url=google_calendar_url,
                             )
                         except Exception as email_err:
                             # Do not block push + reminder_sent flag if email provider fails

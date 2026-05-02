@@ -145,6 +145,8 @@ class AuditAction(str, Enum):
     STAFF_CREATE = "staff_create"
     STAFF_UPDATE = "staff_update"
     STAFF_DELETE = "staff_delete"
+    DOCS_VERIFY = "docs_verify"
+    DOCS_REJECT = "docs_reject"
 
 
 # ========================== CONSTANTS ==========================
@@ -162,6 +164,7 @@ VISIBLE_BUSINESS_FILTER = {
     "status": BusinessStatus.APPROVED,
     "subscription_status": {"$in": ["active", "trialing"]},
     "banned": {"$ne": True},
+    "documents_verified": True,
 }
 
 

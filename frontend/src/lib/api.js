@@ -125,6 +125,7 @@ export const businessesAPI = {
   updateMe: (data) => api.put('/businesses/me', data),
   getDashboard: () => api.get('/businesses/me/dashboard'),
   getPrivateInfo: () => api.get('/businesses/me/private-info'),
+  updateLegalDocs: (data) => api.put('/businesses/me/legal-docs', data),
   getBusinessHours: () => api.get('/businesses/me/hours'),
   updateBusinessHours: (hours) => api.put('/businesses/me/hours', hours),
   // Workers (for specific business - public)
@@ -197,6 +198,13 @@ export const businessesAPI = {
   getClientHistory: (userId) => api.get(`/businesses/my/client-history/${userId}`),
   getMyBusiness: () => api.get('/businesses/me'),
   updateBusiness: (data) => api.put('/businesses/me', data),
+  uploadPublicFile: (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api.post('/upload/public', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
 };
 
 // Services API
@@ -286,6 +294,9 @@ export const adminAPI = {
   approveBusiness: (id) => api.put(`/admin/businesses/${id}/approve`),
   rejectBusiness: (id, reason) => api.put(`/admin/businesses/${id}/reject`, null, { params: { reason } }),
   suspendBusiness: (id, reason) => api.put(`/admin/businesses/${id}/suspend`, null, { params: { reason } }),
+  verifyBusinessDocuments: (id) => api.post(`/admin/businesses/${id}/verify-documents`),
+  rejectBusinessDocuments: (id, reason) => api.post(`/admin/businesses/${id}/reject-documents`, { reason }),
+  getPendingDocsBusinesses: (limit = 50) => api.get('/admin/businesses/pending-docs', { params: { limit } }),
   suspendUser: (id, days, reason) => api.put(`/admin/users/${id}/suspend`, null, { params: { days, reason } }),
   deleteReview: (id, reason) => api.delete(`/admin/reviews/${id}`, { params: { reason } }),
   getAuditLogs: (params) => api.get('/admin/audit-logs', { params }),

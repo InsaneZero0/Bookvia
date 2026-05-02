@@ -499,7 +499,10 @@ async def create_booking(booking: BookingCreate, token_data: TokenData = Depends
     
     if business["status"] != BusinessStatus.APPROVED:
         raise HTTPException(status_code=400, detail="Business is not accepting bookings")
-    
+
+    if not business.get("documents_verified", False):
+        raise HTTPException(status_code=400, detail="El negocio aun no tiene sus documentos verificados por Bookvia")
+
     if business.get("subscription_status") in ("canceled", "past_due", "unpaid"):
         raise HTTPException(status_code=400, detail="Business subscription is not active")
     

@@ -359,6 +359,7 @@ async def send_appointment_reminder(
     reschedule_until_text: Optional[str] = None,
     reschedule_remaining: Optional[int] = None,
     calendar_url: Optional[str] = None,
+    google_calendar_url: Optional[str] = None,
 ) -> str:
     """Send smart appointment reminder with dynamic cancel/reschedule windows and action buttons.
 
@@ -379,6 +380,7 @@ async def send_appointment_reminder(
     cancel_url = f"{base_url}/bookings?action=cancel&id={bid}" if bid else f"{base_url}/bookings"
     reschedule_url = f"{base_url}/bookings?action=reschedule&id={bid}" if bid else f"{base_url}/bookings"
     ics_url = calendar_url or (f"{base_url}/bookings?action=calendar&id={bid}" if bid else f"{base_url}/bookings")
+    gcal_url = google_calendar_url or ""
 
     # Dynamic policy panel
     policy_lines = []
@@ -428,14 +430,18 @@ async def send_appointment_reminder(
 <ul style="margin:0;padding-left:18px;color:#7c2d12;font-size:13px;line-height:1.55;">{policy_html}</ul>
 </div>
 <table cellpadding="0" cellspacing="0" style="margin:24px 0;width:100%;"><tr>
-<td align="center" style="padding:0 4px;">
-<a href="{ics_url}" style="display:inline-block;background:#1e293b;color:#ffffff;text-decoration:none;padding:11px 18px;border-radius:8px;font-weight:600;font-size:14px;">Anadir a calendario</a>
+<td align="center" style="padding:4px 4px;">
+<a href="{ics_url}" style="display:inline-block;background:#1e293b;color:#ffffff;text-decoration:none;padding:11px 18px;border-radius:8px;font-weight:600;font-size:13px;">Apple / Outlook (.ics)</a>
 </td>
-<td align="center" style="padding:0 4px;">
-<a href="{reschedule_url}" style="display:inline-block;background:{reschedule_btn_bg};color:{reschedule_btn_color};text-decoration:none;padding:10px 18px;border-radius:8px;font-weight:600;font-size:14px;border:1px solid {reschedule_btn_border};">{reschedule_btn_label}</a>
+<td align="center" style="padding:4px 4px;">
+<a href="{gcal_url or ics_url}" style="display:inline-block;background:#4285F4;color:#ffffff;text-decoration:none;padding:11px 18px;border-radius:8px;font-weight:600;font-size:13px;">Google Calendar</a>
 </td>
-<td align="center" style="padding:0 4px;">
-<a href="{cancel_url}" style="display:inline-block;background:#ffffff;color:#dc2626;text-decoration:none;padding:10px 18px;border-radius:8px;font-weight:600;font-size:14px;border:1px solid #dc2626;">Cancelar</a>
+</tr><tr>
+<td align="center" style="padding:4px 4px;">
+<a href="{reschedule_url}" style="display:inline-block;background:{reschedule_btn_bg};color:{reschedule_btn_color};text-decoration:none;padding:10px 18px;border-radius:8px;font-weight:600;font-size:13px;border:1px solid {reschedule_btn_border};">{reschedule_btn_label}</a>
+</td>
+<td align="center" style="padding:4px 4px;">
+<a href="{cancel_url}" style="display:inline-block;background:#ffffff;color:#dc2626;text-decoration:none;padding:10px 18px;border-radius:8px;font-weight:600;font-size:13px;border:1px solid #dc2626;">Cancelar</a>
 </td>
 </tr></table>
 <p style="color:#94a3b8;font-size:12px;margin-top:12px;">Si los botones no funcionan, abre <a href="{base_url}/bookings" style="color:#F05D5E;">Mis citas</a> en Bookvia.</p>"""

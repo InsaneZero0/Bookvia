@@ -1006,6 +1006,136 @@ async def suspend_business(business_id: str, request: Request, reason: str = "",
     return {"message": "Business suspended"}
 
 
+# ========================== BUSINESS DOCUMENTS VERIFICATION ==========================
+
+@router.post("/businesses/{business_id}/verify-documents")
+async def verify_business_documents(
+    business_id: str,
+    request: Request,
+    token_data: TokenData = Depends(require_admin),
+):
+    """Admin marks a business's legal+banking documents as verified.
+
+    Once verified, the business appears in search and can accept bookings
+    (gated by `documents_verified: True` in VISIBLE_BUSINESS_FILTER and in
+    create_booking).
+    """
+    business = await db.businesses.find_one({"id": business_id})
+    if not business:
+        raise HTTPException(status_code=404, detail="Business not found")
+
+    required = ["rfc", "clabe", "legal_name", "ine_url", "proof_of_address_url", "bank_proof_url"]
+    missing = [f for f in required if not business.get(f)]
+    if missing:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Documentos faltantes: {', '.join(missing)}",
+        )
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    await db.businesses.update_one(
+        {"id": business_id},
+        {"$set": {
+            "documents_verified": True,
+            "documents_verified_at": now_iso,
+            "documents_verified_by": token_data.user_id,
+            "documents_rejection_reason": None,
+        }},
+    )
+
+    await create_audit_log(
+        admin_id=token_data.user_id,
+        admin_email=token_data.email,
+        action=AuditAction.DOCS_VERIFY,
+        target_type="business",
+        target_id=business_id,
+        details={"business_name": business.get("name")},
+        request=request,
+    )
+
+    if business.get("user_id"):
+        await create_notification(
+            business["user_id"],
+            "Documentos verificados",
+            "Tus documentos legales y bancarios han sido verificados. Ya puedes recibir reservas en Bookvia.",
+            "docs_verified",
+            {"business_id": business_id},
+        )
+
+    return {"message": "Documents verified", "documents_verified": True}
+
+
+@router.post("/businesses/{business_id}/reject-documents")
+async def reject_business_documents(
+    business_id: str,
+    payload: DocumentsRejectRequest,
+    request: Request,
+    token_data: TokenData = Depends(require_admin),
+):
+    """Admin rejects business documents with a reason. The business stays
+    unverified and cannot receive bookings until new docs are resubmitted.
+    """
+    business = await db.businesses.find_one({"id": business_id})
+    if not business:
+        raise HTTPException(status_code=404, detail="Business not found")
+
+    reason = (payload.reason or "").strip()
+    if len(reason) < 5:
+        raise HTTPException(status_code=400, detail="Reason too short")
+
+    await db.businesses.update_one(
+        {"id": business_id},
+        {"$set": {
+            "documents_verified": False,
+            "documents_rejection_reason": reason,
+            "documents_verified_at": None,
+            "documents_verified_by": None,
+        }},
+    )
+
+    await create_audit_log(
+        admin_id=token_data.user_id,
+        admin_email=token_data.email,
+        action=AuditAction.DOCS_REJECT,
+        target_type="business",
+        target_id=business_id,
+        details={"business_name": business.get("name"), "reason": reason},
+        request=request,
+    )
+
+    if business.get("user_id"):
+        await create_notification(
+            business["user_id"],
+            "Documentos rechazados",
+            f"Revisa y reenvia tus documentos. Motivo: {reason}",
+            "docs_rejected",
+            {"business_id": business_id, "reason": reason},
+        )
+
+    return {"message": "Documents rejected"}
+
+
+@router.get("/businesses/pending-docs")
+async def list_businesses_pending_docs(
+    limit: int = 50,
+    token_data: TokenData = Depends(require_admin),
+):
+    """List approved businesses that still need documents verification.
+
+    Includes businesses that have submitted (or changed) documents but are
+    not yet `documents_verified`. Excludes rejected/pending-onboarding ones.
+    """
+    cursor = db.businesses.find(
+        {
+            "status": BusinessStatus.APPROVED,
+            "documents_verified": {"$ne": True},
+        },
+        {"_id": 0, "password_hash": 0},
+    ).sort("documents_submitted_at", -1).limit(limit)
+    rows = await cursor.to_list(limit)
+    return {"count": len(rows), "items": rows}
+
+
 
 @router.put("/users/{user_id}/suspend")
 async def suspend_user(user_id: str, request: Request, days: int = 15, reason: str = "", token_data: TokenData = Depends(require_admin)):

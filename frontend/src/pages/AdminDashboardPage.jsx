@@ -55,7 +55,7 @@ function SectionTitle({ children }) {
 }
 
 /* ─── Business Detail Dialog ─── */
-function BusinessDetailDialog({ businessId, open, onClose, onApprove, onReject, t, language }) {
+function BusinessDetailDialog({ businessId, open, onClose, onApprove, onReject, onVerifyDocs, onRejectDocs, refreshKey, t, language }) {
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(false);
   const [allCategories, setAllCategories] = useState([]);
@@ -81,7 +81,7 @@ function BusinessDetailDialog({ businessId, open, onClose, onApprove, onReject, 
       setAllCategories(catsRes.data || []);
     }).catch(() => toast.error('Error loading detail'))
       .finally(() => setLoading(false));
-  }, [open, businessId]);
+  }, [open, businessId, refreshKey]);
 
   const reloadCategories = async () => {
     try {
@@ -268,6 +268,58 @@ function BusinessDetailDialog({ businessId, open, onClose, onApprove, onReject, 
                 </a>
               </div>
             )}
+            {biz.bank_proof_url && (
+              <div className="flex items-center gap-2 py-1.5">
+                <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
+                <span className="text-sm text-muted-foreground w-28 shrink-0">{t('Comprob. bancario', 'Bank proof')}</span>
+                <a href={biz.bank_proof_url} target="_blank" rel="noopener noreferrer"
+                  className="text-sm text-blue-600 hover:underline flex items-center gap-1" data-testid="bank-proof-link">
+                  {t('Ver documento', 'View document')} <ExternalLink className="h-3 w-3" />
+                </a>
+              </div>
+            )}
+
+            {/* Documents verification status + actions (Fase 8) */}
+            <div className="mt-3 p-3 rounded-lg border" data-testid="docs-verification-box">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm font-medium">{t('Verificacion de documentos', 'Documents verification')}</p>
+                {biz.documents_verified ? (
+                  <Badge className="bg-green-100 text-green-700">{t('Verificados', 'Verified')}</Badge>
+                ) : biz.documents_rejection_reason ? (
+                  <Badge className="bg-red-100 text-red-700">{t('Rechazados', 'Rejected')}</Badge>
+                ) : (
+                  <Badge className="bg-amber-100 text-amber-700">{t('Pendientes', 'Pending')}</Badge>
+                )}
+              </div>
+              {biz.clabe_changed_at && (
+                <p className="text-xs text-amber-700 mb-2">
+                  {t('La CLABE fue modificada:', 'CLABE was changed:')} {formatDate(biz.clabe_changed_at, language === 'es' ? 'es-MX' : 'en-US')}
+                </p>
+              )}
+              {biz.documents_rejection_reason && (
+                <p className="text-xs text-red-700 mb-2 italic">{t('Motivo de rechazo anterior:', 'Previous rejection reason:')} {biz.documents_rejection_reason}</p>
+              )}
+              <div className="flex gap-2">
+                {!biz.documents_verified && (
+                  <Button size="sm" className="bg-green-600 hover:bg-green-700 text-white"
+                    onClick={() => onVerifyDocs && onVerifyDocs(biz.id)} data-testid="verify-docs-btn">
+                    <CheckCircle2 className="h-4 w-4 mr-1" />{t('Verificar documentos', 'Verify documents')}
+                  </Button>
+                )}
+                {biz.documents_verified && (
+                  <Button size="sm" variant="outline" className="text-red-600 hover:bg-red-50"
+                    onClick={() => onRejectDocs && onRejectDocs(biz.id)} data-testid="reject-docs-btn">
+                    <XCircle className="h-4 w-4 mr-1" />{t('Marcar como rechazados', 'Mark as rejected')}
+                  </Button>
+                )}
+                {!biz.documents_verified && (
+                  <Button size="sm" variant="outline" className="text-red-600 hover:bg-red-50"
+                    onClick={() => onRejectDocs && onRejectDocs(biz.id)} data-testid="reject-docs-btn">
+                    <XCircle className="h-4 w-4 mr-1" />{t('Rechazar', 'Reject')}
+                  </Button>
+                )}
+              </div>
+            </div>
 
             {/* Subscription */}
             <SectionTitle>{t('Suscripcion', 'Subscription')}</SectionTitle>
@@ -734,6 +786,33 @@ export default function AdminDashboardPage() {
     } catch { toast.error(t('Error', 'Error')); }
   };
 
+  const [detailRefreshKey, setDetailRefreshKey] = useState(0);
+
+  const handleVerifyDocs = async (id) => {
+    if (!window.confirm(t('Confirmar que los documentos son correctos y permitir al negocio recibir reservas?',
+                          'Confirm documents are correct and let the business accept bookings?'))) return;
+    try {
+      await adminAPI.verifyBusinessDocuments(id);
+      toast.success(t('Documentos verificados', 'Documents verified'));
+      setDetailRefreshKey(k => k + 1);
+      loadOverview();
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || t('Error al verificar documentos', 'Error verifying documents'));
+    }
+  };
+
+  const handleRejectDocs = async (id) => {
+    const reason = window.prompt(t('Motivo para rechazar documentos:', 'Reason to reject documents:'));
+    if (!reason || reason.trim().length < 5) return;
+    try {
+      await adminAPI.rejectBusinessDocuments(id, reason.trim());
+      toast.success(t('Documentos rechazados', 'Documents rejected'));
+      setDetailRefreshKey(k => k + 1);
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || t('Error al rechazar documentos', 'Error rejecting documents'));
+    }
+  };
+
   const handleSuspendUser = async (id) => {
     const days = window.prompt(t('Dias de suspension:', 'Suspension days:'), '15');
     if (days === null) return;
@@ -924,6 +1003,9 @@ export default function AdminDashboardPage() {
           onClose={() => setDetailOpen(false)}
           onApprove={handleApproveBusiness}
           onReject={handleRejectBusiness}
+          onVerifyDocs={handleVerifyDocs}
+          onRejectDocs={handleRejectDocs}
+          refreshKey={detailRefreshKey}
           t={t}
           language={language}
         />
