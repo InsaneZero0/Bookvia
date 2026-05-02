@@ -199,6 +199,13 @@ async def stripe_webhook(request: Request):
                 # Create ledger entries for payment
                 await create_transaction_ledger_entries(transaction, TransactionStatus.PAID)
                 
+                # Initialize funds state machine: PENDING_HOLD
+                try:
+                    from services.funds_state import initialize as init_funds
+                    await init_funds(transaction["id"], actor="webhook_stripe")
+                except Exception as e:
+                    logger.error(f"Funds state initialize failed for tx {transaction['id']}: {e}")
+                
                 # Update booking to CONFIRMED
                 await db.bookings.update_one(
                     {"id": transaction["booking_id"]},

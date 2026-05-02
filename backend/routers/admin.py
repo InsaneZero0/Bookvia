@@ -251,6 +251,74 @@ async def admin_toggle_payout_hold(
 
 
 
+@router.get("/disputes")
+async def admin_list_disputes(token_data: TokenData = Depends(require_admin)):
+    """List all transactions currently in DISPUTED state for admin review."""
+    txs = await db.transactions.find(
+        {"funds_state": "disputed", "status": TransactionStatus.PAID},
+        {"_id": 0}
+    ).sort("funds_state_updated_at", -1).limit(200).to_list(200)
+    
+    # Enrich with booking + business info
+    out = []
+    for tx in txs:
+        booking = await db.bookings.find_one({"id": tx.get("booking_id")}, {"_id": 0})
+        business = await db.businesses.find_one({"id": tx.get("business_id")}, {"_id": 0, "name": 1, "public_code": 1})
+        user = await db.users.find_one({"id": tx.get("user_id")}, {"_id": 0, "full_name": 1, "email": 1, "public_code": 1})
+        out.append({
+            **tx,
+            "booking": booking,
+            "business_summary": business,
+            "user_summary": user,
+        })
+    return {"disputes": out, "total": len(out)}
+
+
+@router.post("/disputes/{transaction_id}/resolve")
+async def admin_resolve_dispute(
+    transaction_id: str,
+    body: dict,
+    request: Request,
+    token_data: TokenData = Depends(require_admin)
+):
+    """
+    Resolve a disputed transaction. Body:
+      { "outcome": "favor_business" | "favor_client", "reason": "..." }
+    """
+    outcome = (body or {}).get("outcome")
+    reason = ((body or {}).get("reason") or "").strip() or "Admin resolution"
+    if outcome not in ("favor_business", "favor_client"):
+        raise HTTPException(status_code=400, detail="outcome must be 'favor_business' or 'favor_client'")
+    
+    tx = await db.transactions.find_one({"id": transaction_id}, {"_id": 0})
+    if not tx:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    if tx.get("funds_state") != "disputed":
+        raise HTTPException(status_code=400, detail=f"Transaction is not disputed (state={tx.get('funds_state')})")
+    
+    from services.funds_state import clear_now, mark_refunded
+    if outcome == "favor_business":
+        await clear_now(transaction_id, actor=f"admin:{token_data.email}", reason=f"Dispute resolved in favor of business: {reason}")
+    else:
+        await mark_refunded(transaction_id, actor=f"admin:{token_data.email}", reason=f"Dispute resolved in favor of client: {reason}")
+    
+    # Audit log
+    await create_audit_log(
+        admin_id=token_data.user_id,
+        admin_email=token_data.email,
+        action=AuditAction.PAYMENT_RELEASE if outcome == "favor_business" else AuditAction.PAYMENT_HOLD,
+        target_type="transaction",
+        target_id=transaction_id,
+        details={"outcome": outcome, "reason": reason},
+        request=request,
+    )
+    
+    return {"message": f"Dispute resolved: {outcome}", "outcome": outcome}
+
+
+
+
+
 @router.get("/export/transactions")
 async def admin_export_transactions(
     year: int,

@@ -1012,8 +1012,20 @@ async def complete_booking(booking_id: str, token_data: TokenData = Depends(requ
     
     await db.bookings.update_one(
         {"id": booking_id},
-        {"$set": {"status": AppointmentStatus.COMPLETED, "completed_at": datetime.now(timezone.utc).isoformat()}}
+        {"$set": {"status": AppointmentStatus.COMPLETED, "completed_at": datetime.now(timezone.utc).isoformat(), "completed_by": "business"}}
     )
+    
+    # Move associated transaction's funds_state from PENDING_HOLD to AVAILABLE (start 24h grace)
+    try:
+        tx = await db.transactions.find_one(
+            {"booking_id": booking_id, "status": TransactionStatus.PAID},
+            {"_id": 0}
+        )
+        if tx and tx.get("funds_state") == "pending_hold":
+            from services.funds_state import mark_appointment_completed
+            await mark_appointment_completed(tx["id"], actor="business", reason="Booking marked completed by business")
+    except Exception as e:
+        logger.error(f"Funds state -> AVAILABLE failed for booking {booking_id}: {e}")
     
     # Update business completed appointments
     await db.businesses.update_one(
@@ -1027,13 +1039,13 @@ async def complete_booking(booking_id: str, token_data: TokenData = Depends(requ
         {"$inc": {"active_appointments_count": -1}}
     )
     
-    # Notify user to leave review
+    # Notify user to leave review (push + 24h grace explanation)
     await create_notification(
         booking["user_id"],
         "Deja tu opinion",
-        "Tu cita ha sido completada. Dejanos tu opinion!",
+        "Tu cita ha sido completada. Tienes 24 horas para calificar o reportar cualquier problema.",
         "review",
-        {"booking_id": booking_id, "business_id": booking["business_id"]}
+        {"booking_id": booking_id, "business_id": booking["business_id"], "grace_period_hours": 24}
     )
     
     # Log activity
@@ -1044,6 +1056,61 @@ async def complete_booking(booking_id: str, token_data: TokenData = Depends(requ
     
     return {"message": "Booking completed"}
 
+
+
+@router.post("/{booking_id}/dispute")
+async def dispute_booking(
+    booking_id: str,
+    body: dict = None,
+    token_data: TokenData = Depends(require_auth)
+):
+    """
+    Client raises a dispute for a completed booking.
+    Marks the transaction's funds_state as DISPUTED (admin must resolve).
+    Body: {"reason": "..."}
+    """
+    body = body or {}
+    booking = await db.bookings.find_one({"id": booking_id})
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    if booking["user_id"] != token_data.user_id:
+        raise HTTPException(status_code=403, detail="Not your booking")
+    
+    if booking["status"] not in [AppointmentStatus.COMPLETED, AppointmentStatus.CONFIRMED]:
+        raise HTTPException(status_code=400, detail="Only completed or confirmed bookings can be disputed")
+    
+    transaction = await db.transactions.find_one({"booking_id": booking_id, "status": TransactionStatus.PAID}, {"_id": 0})
+    if not transaction:
+        raise HTTPException(status_code=400, detail="No paid transaction found for this booking")
+    
+    if transaction.get("funds_state") in {"refunded", "paid_out", "disputed"}:
+        raise HTTPException(status_code=400, detail=f"Cannot dispute transaction in state {transaction.get('funds_state')}")
+    
+    reason = (body.get("reason") or "").strip() or "Cliente reporto un problema"
+    try:
+        from services.funds_state import mark_disputed
+        await mark_disputed(transaction["id"], actor="client", reason=reason)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    
+    # Mark booking with dispute flag
+    await db.bookings.update_one(
+        {"id": booking_id},
+        {"$set": {"has_dispute": True, "dispute_reason": reason, "dispute_opened_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    
+    # Notify business
+    business = await db.businesses.find_one({"id": booking["business_id"]})
+    if business and business.get("user_id"):
+        await create_notification(
+            business["user_id"],
+            "Cliente reporto un problema",
+            f"Un cliente ha reportado un problema con la cita. Razon: {reason[:80]}",
+            "dispute",
+            {"booking_id": booking_id, "reason": reason}
+        )
+    
+    return {"message": "Dispute opened. Admin will review.", "funds_state": "disputed"}
 
 
 @router.put("/{booking_id}/cancel/user")
@@ -1133,6 +1200,22 @@ async def cancel_booking_by_user(
                 "updated_at": now.isoformat()
             }}
         )
+        
+        # Funds state: if money was refunded (full or partial >0) move to REFUNDED;
+        # if no refund (<24h), keep money flowing -> AVAILABLE so it can clear normally.
+        try:
+            from services.funds_state import mark_refunded, mark_appointment_completed
+            if refund_amount > 0:
+                await mark_refunded(transaction["id"], actor="user_cancel", reason=refund_reason)
+            else:
+                # Treat <24h cancellation as effectively a no-show/completed for the business
+                if transaction.get("funds_state") == "pending_hold":
+                    await mark_appointment_completed(
+                        transaction["id"], actor="user_cancel_lt_24h",
+                        reason="Late cancellation - business retains deposit"
+                    )
+        except Exception as e:
+            logger.error(f"Funds state on user cancel failed: {e}")
         
         # Create ledger entries for refund (if >24h)
         if hours_until > 24 and refund_amount > 0:
@@ -1270,6 +1353,13 @@ async def cancel_booking_by_business(
         # Create ledger entries for full refund
         updated_tx = {**transaction, "refund_amount": refund_amount}
         await create_transaction_ledger_entries(updated_tx, TransactionStatus.REFUND_FULL)
+        
+        # Funds state: REFUNDED (terminal)
+        try:
+            from services.funds_state import mark_refunded
+            await mark_refunded(transaction["id"], actor="business_cancel", reason="Business cancelled the appointment")
+        except Exception as e:
+            logger.error(f"Funds state on business cancel failed: {e}")
         
         # Create fee penalty transaction for business
         penalty_tx = {

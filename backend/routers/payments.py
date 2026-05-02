@@ -252,6 +252,13 @@ async def create_deposit_checkout(
         except Exception as e:
             logger.error(f"Wallet-paid ledger error: {e}")
         
+        # Initialize funds state machine: PENDING_HOLD
+        try:
+            from services.funds_state import initialize as init_funds
+            await init_funds(transaction_id, actor="wallet_checkout")
+        except Exception as e:
+            logger.error(f"Funds state init (wallet) failed for tx {transaction_id}: {e}")
+        
         return {
             "wallet_only": True,
             "transaction_id": transaction_id,
@@ -450,6 +457,13 @@ async def get_checkout_status(session_id: str, request: Request):
             await create_transaction_ledger_entries(transaction, TransactionStatus.PAID)
         except Exception as e:
             logger.error(f"Fallback ledger error: {e}")
+        
+        # Initialize funds state machine
+        try:
+            from services.funds_state import initialize as init_funds
+            await init_funds(transaction["id"], actor="checkout_status_fallback")
+        except Exception as e:
+            logger.error(f"Funds state init (fallback) failed for tx {transaction['id']}: {e}")
         
         # Update booking to CONFIRMED
         await db.bookings.update_one(

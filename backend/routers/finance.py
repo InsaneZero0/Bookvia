@@ -175,3 +175,27 @@ async def get_finance_settlements(
 
 
 
+
+
+
+@router.get("/funds-state")
+async def get_funds_state_summary(token_data: TokenData = Depends(require_business)):
+    """Return funds breakdown by lifecycle state for the authenticated business."""
+    user = await db.users.find_one({"id": token_data.user_id})
+    if not user or not user.get("business_id"):
+        raise HTTPException(status_code=404, detail="Business not found")
+    
+    from services.funds_state import get_state_summary
+    summary = await get_state_summary(user["business_id"])
+    
+    # Recent transactions per state for visibility (last 5)
+    recent_by_state = {}
+    for state in ["pending_hold", "available", "cleared", "disputed", "refunded", "paid_out"]:
+        txs = await db.transactions.find(
+            {"business_id": user["business_id"], "funds_state": state, "status": TransactionStatus.PAID},
+            {"_id": 0, "id": 1, "booking_id": 1, "business_amount": 1, "funds_state": 1,
+             "funds_state_updated_at": 1, "funds_clears_at": 1, "created_at": 1, "client_paid": 1, "amount_total": 1}
+        ).sort("funds_state_updated_at", -1).limit(5).to_list(5)
+        recent_by_state[state] = txs
+    
+    return {**summary, "recent_by_state": recent_by_state}

@@ -149,6 +149,28 @@ export default function UserBookingsPage() {
   };
 
   const [cancelDialog, setCancelDialog] = useState({ open: false, booking: null, refundTo: 'card' });
+  const [disputeDialog, setDisputeDialog] = useState({ open: false, booking: null });
+  const [disputeReason, setDisputeReason] = useState('');
+
+  const submitDispute = async () => {
+    const b = disputeDialog.booking;
+    if (!b) return;
+    const reason = disputeReason.trim();
+    if (reason.length < 10) {
+      toast.error(language === 'es' ? 'Describe el problema con al menos 10 caracteres' : 'Please describe the issue with at least 10 characters');
+      return;
+    }
+    try {
+      await bookingsAPI.raiseDispute(b.id, reason);
+      toast.success(language === 'es' ? 'Reporte enviado. Bookvia revisara el caso pronto.' : 'Report submitted. Bookvia will review the case soon.');
+      setDisputeDialog({ open: false, booking: null });
+      setDisputeReason('');
+      loadBookings();
+    } catch (err) {
+      const msg = err.response?.data?.detail || (language === 'es' ? 'Error al reportar problema' : 'Error reporting problem');
+      toast.error(msg);
+    }
+  };
 
   const handleCancelClick = (bookingId) => {
     const booking = upcomingBookings.find(b => b.id === bookingId);
@@ -441,6 +463,31 @@ export default function UserBookingsPage() {
                 </div>
               )}
 
+              {/* Dispute button (only completed bookings within 24h grace, no existing dispute) */}
+              {booking.status === 'completed' && booking.completed_at && !booking.has_dispute && (() => {
+                const completedAt = new Date(booking.completed_at);
+                const hoursSince = (Date.now() - completedAt.getTime()) / (1000 * 60 * 60);
+                if (hoursSince > 24) return null;
+                return (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="mt-3 text-rose-600 hover:bg-rose-50 px-2"
+                    onClick={() => setDisputeDialog({ open: true, booking })}
+                    data-testid={`dispute-booking-${booking.id}`}
+                  >
+                    <AlertTriangle className="h-3.5 w-3.5 mr-1" />
+                    {language === 'es' ? 'Reportar problema' : 'Report problem'}
+                  </Button>
+                );
+              })()}
+              {booking.has_dispute && (
+                <div className="mt-3 flex items-center gap-1 text-xs text-rose-600 bg-rose-50 px-2 py-1 rounded">
+                  <AlertTriangle className="h-3.5 w-3.5" />
+                  {language === 'es' ? 'Problema reportado - Bookvia revisara el caso' : 'Problem reported - Bookvia is reviewing'}
+                </div>
+              )}
+
               {/* Cancellation info */}
               {booking.status === 'cancelled' && booking.cancelled_by && (
                 <div className="mt-3 text-sm text-muted-foreground">
@@ -671,6 +718,42 @@ export default function UserBookingsPage() {
                 </div>
               );
             })()}
+          </DialogContent>
+        </Dialog>
+
+        {/* Dispute Dialog */}
+        <Dialog open={disputeDialog.open} onOpenChange={(open) => !open && (setDisputeDialog({ open: false, booking: null }), setDisputeReason(''))}>
+          <DialogContent className="max-w-md" data-testid="dispute-dialog">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-rose-600" />
+                {language === 'es' ? 'Reportar un problema' : 'Report a problem'}
+              </DialogTitle>
+              <DialogDescription>
+                {language === 'es'
+                  ? 'Si tuviste algun inconveniente con el servicio, describe brevemente lo que paso. Bookvia revisara el caso y se pondra en contacto contigo.'
+                  : 'If you had an issue with the service, briefly describe what happened. Bookvia will review the case and contact you.'}
+              </DialogDescription>
+            </DialogHeader>
+            <textarea
+              value={disputeReason}
+              onChange={(e) => setDisputeReason(e.target.value)}
+              placeholder={language === 'es' ? 'Describe el problema (minimo 10 caracteres)...' : 'Describe the problem (min 10 characters)...'}
+              className="w-full min-h-[120px] p-3 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#F05D5E]"
+              maxLength={500}
+              data-testid="dispute-reason-input"
+            />
+            <p className="text-[11px] text-muted-foreground">
+              {disputeReason.length}/500
+            </p>
+            <div className="flex gap-2 pt-1">
+              <Button variant="outline" className="flex-1" onClick={() => { setDisputeDialog({ open: false, booking: null }); setDisputeReason(''); }} data-testid="dispute-cancel">
+                {language === 'es' ? 'Cancelar' : 'Cancel'}
+              </Button>
+              <Button className="flex-1 bg-rose-600 hover:bg-rose-700" onClick={submitDispute} data-testid="dispute-submit">
+                {language === 'es' ? 'Enviar reporte' : 'Submit report'}
+              </Button>
+            </div>
           </DialogContent>
         </Dialog>
 

@@ -222,6 +222,7 @@ export const bookingsAPI = {
   getBusiness: (params) => api.get('/bookings/business', { params }),
   cancelByUser: (id, reason, refundTo = "card") => api.put(`/bookings/${id}/cancel/user`, { reason, refund_to: refundTo }),
   cancelByBusiness: (id, reason) => api.put(`/bookings/${id}/cancel/business`, { reason }),
+  raiseDispute: (id, reason) => api.post(`/bookings/${id}/dispute`, { reason }),
   reschedule: (id, newDate, newTime) => 
     api.put(`/bookings/${id}/reschedule`, null, { params: { new_date: newDate, new_time: newTime } }),
   rescheduleByBusiness: (id, data) => api.put(`/bookings/${id}/reschedule/business`, data),
@@ -259,6 +260,7 @@ export const paymentsAPI = {
 export const financeAPI = {
   getSummary: () => api.get('/business/finance/summary'),
   getTransactions: (params) => api.get('/business/finance/transactions', { params }),
+  getFundsState: () => api.get('/business/finance/funds-state'),
   getLedger: (params) => api.get('/business/finance/ledger', { params }),
   getSettlements: (params) => api.get('/business/finance/settlements', { params }),
 };

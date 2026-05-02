@@ -148,6 +148,7 @@ async def startup_event():
     asyncio.create_task(appointment_reminder_scheduler())
     asyncio.create_task(subscription_reminder_scheduler())
     asyncio.create_task(wallet_expiration_scheduler())
+    asyncio.create_task(funds_state_scheduler())
 
 
 # ========================== BACKGROUND SCHEDULERS ==========================
@@ -247,6 +248,26 @@ async def wallet_expiration_scheduler():
         except Exception as e:
             logger.error(f"Wallet expiration scheduler error: {e}")
         await asyncio.sleep(86400)  # 24 hours
+
+
+async def funds_state_scheduler():
+    """
+    Hourly task driving the transaction funds_state lifecycle:
+      1. Auto-complete bookings 48h after their scheduled end without business action.
+      2. Auto-clear AVAILABLE transactions whose 24h grace window elapsed.
+    """
+    logger.info("Funds state scheduler started")
+    await asyncio.sleep(180)  # Wait 3 min after startup
+    while True:
+        try:
+            from services.funds_state import auto_complete_appointments, auto_clear_after_grace
+            ac = await auto_complete_appointments()
+            cl = await auto_clear_after_grace()
+            if ac or cl:
+                logger.info(f"Funds state cron: auto_completed={ac}, auto_cleared={cl}")
+        except Exception as e:
+            logger.error(f"Funds state scheduler error: {e}")
+        await asyncio.sleep(3600)  # Every 1 hour
 
 
 async def send_subscription_reminders():

@@ -63,6 +63,29 @@ class LedgerEntryStatus(str, Enum):
     REVERSED = "reversed"
 
 
+class FundsState(str, Enum):
+    """
+    Lifecycle of money owed to a business per booking transaction.
+    
+      PENDING_HOLD   -> Client paid; appointment hasn't happened yet.
+      AVAILABLE      -> Appointment marked as completed; entering 24h grace window.
+      CLEARED        -> Grace passed without complaints; eligible for monthly payout.
+      DISPUTED       -> Client filed a complaint; admin must resolve before clearing.
+      REFUNDED       -> Money was refunded (cancellation / dispute resolved against business).
+      PAID_OUT       -> Money has been transferred to business in a settlement.
+    """
+    PENDING_HOLD = "pending_hold"
+    AVAILABLE = "available"
+    CLEARED = "cleared"
+    DISPUTED = "disputed"
+    REFUNDED = "refunded"
+    PAID_OUT = "paid_out"
+
+
+GRACE_PERIOD_HOURS = 24            # Hours after appointment completion before money clears
+AUTO_COMPLETE_HOURS = 48           # Hours after scheduled end time to auto-mark completed if business hasn't
+
+
 class SettlementStatus(str, Enum):
     PENDING = "pending"
     PAID = "paid"
