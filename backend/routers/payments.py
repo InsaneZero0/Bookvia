@@ -380,7 +380,9 @@ async def create_deposit_checkout(
         "client_paid": client_paid,
         "bookvia_fee": fees["bookvia_fee"],
         "business_amount": fees["business_amount"],
-        "fee": fees["fee_amount"]
+        "fee": fees["fee_amount"],
+        "wallet_applied": wallet_applied,
+        "stripe_charge_amount": stripe_charge_amount,
     }
 
 

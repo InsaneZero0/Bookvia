@@ -64,6 +64,7 @@ Auth Social: Emergent-managed Google Auth (solo clientes)
 - [x] Registro de negocio: pago de suscripcion como ultimo paso obligatorio
 - [x] Recordatorio automatico de suscripcion (email 24h despues si no pagaron)
 - [x] **FASE 1 Cobranza (Mayo 2026)**: anticipo minimo $100 MXN, cliente paga anticipo + $8.20 cuota Bookvia (IVA incluido), 8.5% procesamiento al negocio (recibe 91.5%). Transacciones guardan: client_paid, bookvia_fee, stripe_fee_estimated, business_amount, stripe_fee_actual (capturado del webhook Stripe balance_transaction). Endpoint publico /api/payments/fees/breakdown para previews. T&C actualizado con cobranza, liquidaciones dia 20, disclaimer legal de intermediacion.
+- [x] **FASE 2 Wallet/Saldo cliente (Mayo 2026)**: nueva coleccion user_wallets + wallet_transactions. Servicios credit_wallet/debit_wallet/expire_stale_balances con state machine de tipos (CREDIT_CANCELLATION, CREDIT_BUSINESS_CANCEL, DEBIT_BOOKING, DEBIT_EXPIRED, etc). Cliente puede elegir refund_to='wallet' al cancelar (>24h) -> ahorra fee de Stripe, saldo disponible al instante. Pago de booking acepta use_wallet=true: si saldo cubre todo evita Stripe completamente; si parcial paga remainder con tarjeta. Saldo expira a 24 meses sin actividad (cron diario). Frontend: WalletCard component visible en /dashboard, cancel dialog con radios 'Saldo Bookvia' / 'A tu tarjeta' (UserBookingsPage), historial de movimientos en dialog separado.
 
 ### Frontend
 - [x] Busqueda "Cerca de ti" con OpenStreetMap, horarios apertura, badge Abierto/Cerrado
