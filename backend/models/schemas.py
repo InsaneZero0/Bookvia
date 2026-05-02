@@ -115,10 +115,10 @@ class BusinessResponse(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str
     name: str
-    email: str
-    phone: str
+    email: str = ""
+    phone: str = ""
     phone_verified: bool = False
-    description: str
+    description: str = ""
     category_id: str
     category_name: Optional[str] = None
     address: str
