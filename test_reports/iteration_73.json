@@ -1,0 +1,46 @@
+{
+  "summary": "Tested Fase 1 del nuevo modelo de cobranza en Mexico (Bookvia). 12/12 backend tests passed covering: fee breakdown endpoint (deposits of 0/100/200/500/1000), calculate_fees math, MIN_DEPOSIT_AMOUNT=100, deposit/checkout flow (Stripe session creation + transaction fields), conditional deposit application based on service price, and PUT /businesses/me deposit clamping.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "PUT /api/businesses/me",
+        "issue": "When updating deposit_amount, the value is always clamped to MIN_DEPOSIT_AMOUNT (100) regardless of whether requires_deposit=false is also sent. If a business tries to disable the deposit by sending {requires_deposit: false, deposit_amount: 0}, the deposit_amount becomes 100 even though the intent was 0. Logic should skip clamp (or force to 0) when requires_deposit=false. File: /app/backend/routers/businesses.py lines 899-900."
+      },
+      {
+        "endpoint": "GET /api/admin/config",
+        "issue": "Not asserted directly because the endpoint requires admin TOTP (Super Admin). We verified MIN_DEPOSIT_AMOUNT=100 indirectly via the public GET /payments/fees/breakdown response (min_deposit_amount=100). The constant in code (/app/backend/models/enums.py line 105) is confirmed set to 100.0."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_fase1_cobranza.py",
+    "/app/test_reports/pytest/fase1_cobranza.xml"
+  ],
+  "action_items": [
+    "(Optional) Fix PUT /businesses/me to respect requires_deposit=false by either setting deposit_amount=0 or skipping the clamp when requires_deposit is false."
+  ],
+  "critical_code_review_comments": [
+    "calculate_fees() returns both new keys (bookvia_fee, stripe_fee_estimated, business_amount, client_paid) and back-compat aliases (fee_amount, payout_amount). Good transitional approach.",
+    "/deposit/checkout creates Stripe session with 2 line_items (anticipo + 'Servicio Bookvia' $8.20) as expected. Session id prefix cs_ verified.",
+    "Transaction doc persists new fields: client_paid, bookvia_fee, stripe_fee_estimated, business_amount, stripe_fee_actual=null (will be populated by webhook).",
+    "Webhook (/app/backend/routers/system.py) and fallback in /checkout/status both attempt to capture stripe_fee_actual from balance_transaction.fee (cents -> MXN). Good.",
+    "bookings.py deposit logic (lines 635-643) correctly gates deposit on both business.requires_deposit AND service.price >= MIN_DEPOSIT_AMOUNT, with cap to service price. Verified.",
+    "MIN_DEPOSIT_AMOUNT elevated from 50 to 100 MXN: confirmed in enums.py and reflected in public breakdown endpoint."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_fase1_cobranza.py (new)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "skipped"},
+  "test_credentials": "Business: testbiz_dashboard@test.com / TestBiz123! | User: testuser_stats@test.com / TestPass123!",
+  "seed_data_creation": "Created 2 test services on business biz_dd14ed093b51 (TEST_FASE1_CHEAP $80, TEST_FASE1_EXP $500) and 1 worker (TEST_FASE1_WORKER) with full 7-day schedule 08:00-22:00. All cleaned up in fixture teardown.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Fase 1 cobranza fully validated. Re-usable test file at /app/backend/tests/test_fase1_cobranza.py. Frontend was skipped per request. One minor behavior observation on PUT /businesses/me clamp (does not handle requires_deposit=false case) - see backend_issues.minor.",
+  "rca of the issue": "N/A - no critical issues."
+}

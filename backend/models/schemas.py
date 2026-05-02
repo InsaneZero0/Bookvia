@@ -101,7 +101,7 @@ class BusinessCreate(BaseModel):
     legal_name: str
     owner_birth_date: Optional[str] = None
     requires_deposit: bool = False
-    deposit_amount: float = 50.0
+    deposit_amount: float = 100.0
     cancellation_days: int = 1
     payout_schedule: Optional[str] = "monthly"
     min_time_between_appointments: int = 0
@@ -137,7 +137,7 @@ class BusinessResponse(BaseModel):
     completed_appointments: int = 0
     badges: List[str] = []
     requires_deposit: bool = False
-    deposit_amount: float = 50.0
+    deposit_amount: float = 100.0
     cancellation_days: int = 1
     payout_schedule: Optional[str] = "monthly"
     min_time_between_appointments: int = 0
@@ -466,9 +466,38 @@ class ClosureDateCreate(BaseModel):
 
 class DepositCheckoutRequest(BaseModel):
     booking_id: str
+    use_wallet: bool = False  # If True, apply user wallet balance before charging Stripe
 
 class CancelBookingRequest(BaseModel):
     reason: Optional[str] = None
+    refund_to: Optional[str] = "card"  # "card" or "wallet" - where to send the refund
+
+
+# ========================== WALLET MODELS ==========================
+
+class WalletTransactionResponse(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    id: str
+    user_id: str
+    type: str  # credit_cancellation, credit_admin, credit_business_cancel, debit_booking, debit_expired, etc.
+    amount: float  # positive value; type indicates direction
+    direction: str  # "credit" or "debit"
+    balance_after: float
+    booking_id: Optional[str] = None
+    description: Optional[str] = None
+    currency: str = "MXN"
+    created_at: str
+
+
+class WalletBalanceResponse(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    user_id: str
+    balance: float
+    currency: str = "MXN"
+    last_activity_at: Optional[str] = None
+    expires_at: Optional[str] = None  # 24 months after last_activity_at if balance > 0
+    transactions: List[WalletTransactionResponse] = []
+    transactions_total: int = 0
 
 
 # ========================== PAYMENT MODELS ==========================
@@ -627,9 +656,11 @@ class PlatformConfigUpdate(BaseModel):
 class PlatformConfigResponse(BaseModel):
     model_config = ConfigDict(extra="ignore")
     platform_fee_percent: float = 0.08
-    subscription_price_mxn: float = 39.00
+    subscription_price_mxn: float = 49.99
     subscription_trial_days: int = 30
-    min_deposit_amount: float = 50.0
+    min_deposit_amount: float = 100.0
+    bookvia_fee_mxn: float = 8.20
+    stripe_fee_percent_estimated: float = 0.085
     updated_at: Optional[str] = None
     updated_by: Optional[str] = None
 

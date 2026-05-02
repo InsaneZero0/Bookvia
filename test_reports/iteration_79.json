@@ -1,0 +1,49 @@
+{
+  "summary": "Phase 7 (Smart appointment reminder + .ics endpoint) backend tests: 13/13 pass. Verified HMAC-protected /calendar.ics endpoint (200/403/404/410), dynamic cancel/reschedule windows, reschedule_remaining math, push notification creation, admin trigger endpoint, and email body/HTML content. One important behavioral issue with Resend configuration was found and surfaced.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "send_appointment_reminders() in server.py (line ~224-278)",
+        "issue": "If services.email.send_appointment_reminder raises (e.g. real Resend API key set but domain unverified -> EmailServiceError), the outer try/except swallows the exception BEFORE the push notification is created and BEFORE 'reminder_sent' flag is set. Effect: (a) in-app booking_reminder push never fires when email provider fails, (b) the same booking is retried every 30 min forever. Recommendation: wrap the `await send_appointment_reminder(...)` call in its own try/except so push + reminder_sent still execute on email failure."
+      },
+      {
+        "endpoint": "backend/.env / services.email",
+        "issue": "RESEND_API_KEY is set to a real key but the sender domain (hola@bookvia.app) returns 'The associated domain with your API key is not verified'. As a result, every reminder email currently fails. Either remove RESEND_API_KEY (so is_resend_configured()=False -> mock path stores in db.sent_emails) OR verify the domain in Resend. Test had to monkeypatch is_resend_configured() to False to validate happy-path."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_fase7_smart_reminder.py",
+    "/app/test_reports/pytest/fase7_smart_reminder.xml"
+  ],
+  "action_items": [
+    "Wrap send_appointment_reminder call in a try/except inside send_appointment_reminders() so email failure does not block push notification creation and reminder_sent flag update.",
+    "Either verify the bookvia.app domain in Resend or unset RESEND_API_KEY in backend/.env to keep email service in mock mode for staging/preview."
+  ],
+  "critical_code_review_comments": [
+    "Calendar .ics endpoint correctly uses HMAC-SHA256 with JWT_SECRET (32-char hex truncation), validates with hmac.compare_digest. Returns 403 for missing/invalid token, 404 for unknown booking, 410 for cancelled/expired/no_show. Output is RFC5545-compliant including BEGIN/END VCALENDAR/VEVENT/VALARM, TRIGGER:-PT2H, business name in SUMMARY, booking_id in UID. No issues.",
+    "send_appointment_reminders() correctly computes cancel_free_until (24h before) and reschedule_until (RESCHEDULE_CUTOFF_HOURS=2 before), forces reschedule_remaining=0 when reschedule cutoff passed, and respects MAX_RESCHEDULES_PER_BOOKING=2. Spanish month abbreviations (_MONTHS) work for date formatting.",
+    "Push notification (create_notification) is created with type='booking_reminder' and the expected data payload, but only when the email path does NOT raise. See minor issue above.",
+    "POST /api/bookings/send-reminders requires admin auth; unauthenticated calls return 403, admin-token calls return 200 + {message}.",
+    "Email HTML correctly includes 3 action URLs (action=cancel, action=reschedule, calendar.ics?token=) and Spanish copy ('Cancelacion con reembolso', 'Reagendar gratis')."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_fase7_smart_reminder.py (new)"
+  ],
+  "success_rate": {
+    "backend": "100% (13/13)",
+    "frontend": "n/a"
+  },
+  "test_credentials": "Used /app/memory/test_credentials.md admin (zamorachapa50@gmail.com) with TOTP from db.users.totp_secret via pyotp. Test user/booking/service seeded directly in MongoDB with TEST_F7_ prefix.",
+  "seed_data_creation": "Seeded test user user_test_fase7 (TEST_F7_user@test.com), service TEST_F7_SVC under existing biz_dd14ed093b51, and bookings prefixed TEST_F7_BK_*. All cleaned up in teardown.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "test_fase7_smart_reminder.py monkeypatches services.email.is_resend_configured to return False so emails go through the mock path (Resend domain is unverified in this preview env). The test fixture _create_booking formats date/time in America/Mexico_City to align with the scheduler's tz interpretation. Tests use a session-scoped event_loop fixture so Motor (async mongo client) reuses the same loop across all async invocations.",
+  "rca of the issue": "N/A - all tests passed. Behavioral concern documented in backend_issues.minor: email-failure path skips push + flag update; combined with currently-failing Resend domain, every reminder is currently silently failing in production-like envs and being retried every 30 min."
+}

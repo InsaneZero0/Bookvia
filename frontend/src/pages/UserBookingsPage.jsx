@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -11,12 +11,12 @@ import { Calendar as CalendarWidget } from '@/components/ui/calendar';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { useAuth } from '@/lib/auth';
 import { useI18n } from '@/lib/i18n';
-import { bookingsAPI, paymentsAPI, reviewsAPI } from '@/lib/api';
+import { bookingsAPI, paymentsAPI, reviewsAPI, usersAPI } from '@/lib/api';
 import { formatTime, getStatusColor } from '@/lib/utils';
 import { toast } from 'sonner';
 import {
   Calendar, Clock, User, ChevronRight, AlertTriangle, XCircle, 
-  CreditCard, Timer, CheckCircle2, AlertCircle, Ban, Star, RefreshCw
+  CreditCard, Timer, CheckCircle2, AlertCircle, Ban, Star, RefreshCw, Loader2
 } from 'lucide-react';
 
 const STATUS_CONFIG = {
@@ -56,6 +56,7 @@ export default function UserBookingsPage() {
   const { language } = useI18n();
   const { user, isAuthenticated, loading: authLoading } = useAuth();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [upcomingBookings, setUpcomingBookings] = useState([]);
   const [pastBookings, setPastBookings] = useState([]);
@@ -88,6 +89,30 @@ export default function UserBookingsPage() {
     return () => clearInterval(interval);
   }, [isAuthenticated, authLoading]);
 
+  // Deep-link from smart reminder email: ?action=cancel|reschedule&id=<booking_id>
+  useEffect(() => {
+    if (loading) return;
+    const action = searchParams.get('action');
+    const id = searchParams.get('id');
+    if (!action || !id) return;
+    const target = upcomingBookings.find(b => b.id === id);
+    if (!target) {
+      toast.error(language === 'es' ? 'No encontramos la cita en tu lista' : 'We could not find that booking');
+      setSearchParams({}, { replace: true });
+      return;
+    }
+    if (action === 'cancel') {
+      setCancelDialog({ open: true, booking: target, refundTo: 'card' });
+    } else if (action === 'reschedule') {
+      setRescheduleModal({ open: true, booking: target });
+      setRescheduleDate(null);
+      setRescheduleSlots([]);
+      setRescheduleTime(null);
+    }
+    setSearchParams({}, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, upcomingBookings, searchParams]);
+
   const loadBookings = async () => {
     try {
       const [upcomingRes, pastRes] = await Promise.all([
@@ -103,11 +128,42 @@ export default function UserBookingsPage() {
     }
   };
 
+  const [walletBalance, setWalletBalance] = useState(0);
+
+  useEffect(() => {
+    // Best-effort fetch of wallet balance for booking checkout UX
+    (async () => {
+      try {
+        const res = await usersAPI.getWallet();
+        setWalletBalance(Number(res.data?.balance || 0));
+      } catch { /* ignore */ }
+    })();
+  }, []);
+
   const handlePayDeposit = async (booking) => {
     setPaymentLoading(booking.id);
+    
+    // If wallet has any balance, ask whether to use it
+    let useWallet = false;
+    if (walletBalance > 0) {
+      const totalNeeded = (Number(booking.deposit_amount) || 0) + 8.20;
+      const willCover = walletBalance >= totalNeeded;
+      const msg = language === 'es'
+        ? `Tienes $${walletBalance.toFixed(2)} MXN en tu saldo Bookvia.\n\n${willCover ? 'Tu saldo cubre el total ($' + totalNeeded.toFixed(2) + ' MXN). ¿Pagar con saldo?' : 'Tu saldo cubre $' + walletBalance.toFixed(2) + ' MXN, el resto ($' + (totalNeeded - walletBalance).toFixed(2) + ' MXN) se cobrara a tu tarjeta. ¿Aplicar saldo?'}`
+        : `You have $${walletBalance.toFixed(2)} MXN in your Bookvia wallet.\n\n${willCover ? 'Your wallet covers the total ($' + totalNeeded.toFixed(2) + ' MXN). Pay with wallet?' : 'Your wallet covers $' + walletBalance.toFixed(2) + ' MXN; the remainder ($' + (totalNeeded - walletBalance).toFixed(2) + ' MXN) will be charged to your card. Apply wallet?'}`;
+      useWallet = window.confirm(msg);
+    }
+    
     try {
-      const response = await paymentsAPI.createDepositCheckout(booking.id);
-      // Redirect to Stripe Checkout
+      const response = await paymentsAPI.createDepositCheckout(booking.id, useWallet);
+      // If paid entirely with wallet, redirect to local success page
+      if (response.data?.wallet_only) {
+        toast.success(language === 'es' ? 'Reserva confirmada con tu saldo Bookvia' : 'Booking confirmed with your Bookvia wallet');
+        // Navigate to success page instead of Stripe
+        window.location.href = response.data.redirect_url || '/bookings';
+        return;
+      }
+      // Otherwise redirect to Stripe Checkout
       window.location.href = response.data.url;
     } catch (error) {
       const message = error.response?.data?.detail || 
@@ -117,42 +173,91 @@ export default function UserBookingsPage() {
     }
   };
 
-  const handleCancel = async (bookingId) => {
-    const booking = upcomingBookings.find(b => b.id === bookingId);
-    const hoursUntil = booking?.hours_until_appointment;
-    
-    let message = language === 'es' ? '¿Estás seguro de cancelar esta cita?' : 'Are you sure you want to cancel this booking?';
-    
-    if (booking?.status === 'confirmed' && booking?.deposit_paid) {
-      if (hoursUntil > 24) {
-        message += language === 'es' 
-          ? '\n\nComo cancelas con más de 24h de anticipación, recibirás un reembolso del 92% del anticipo.'
-          : '\n\nSince you are cancelling more than 24h in advance, you will receive a 92% refund of the deposit.';
-      } else {
-        message += language === 'es'
-          ? '\n\nComo cancelas con menos de 24h de anticipación, NO recibirás reembolso del anticipo.'
-          : '\n\nSince you are cancelling less than 24h in advance, you will NOT receive a refund of the deposit.';
-      }
-    }
-    
-    if (!window.confirm(message)) {
+  const [cancelDialog, setCancelDialog] = useState({ open: false, booking: null, refundTo: 'card' });
+  const [disputeDialog, setDisputeDialog] = useState({ open: false, booking: null });
+  const [disputeReason, setDisputeReason] = useState('');
+  const [noShowDialog, setNoShowDialog] = useState({ open: false, booking: null });
+  const [noShowDescription, setNoShowDescription] = useState('');
+
+  const submitNoShow = async () => {
+    const b = noShowDialog.booking;
+    if (!b) return;
+    const desc = noShowDescription.trim();
+    if (desc.length < 10) {
+      toast.error(language === 'es' ? 'Describe lo que paso con al menos 10 caracteres' : 'Please describe what happened (min 10 characters)');
       return;
     }
+    try {
+      await bookingsAPI.reportNoShow(b.id, desc);
+      toast.success(
+        language === 'es'
+          ? 'Reporte enviado. Bookvia notifico al negocio para responder en 24h.'
+          : 'Report sent. Bookvia notified the business to respond within 24h.'
+      );
+      setNoShowDialog({ open: false, booking: null });
+      setNoShowDescription('');
+      loadBookings();
+    } catch (err) {
+      const msg = err.response?.data?.detail || (language === 'es' ? 'Error al reportar' : 'Error reporting');
+      toast.error(msg);
+    }
+  };
 
+  const submitDispute = async () => {
+    const b = disputeDialog.booking;
+    if (!b) return;
+    const reason = disputeReason.trim();
+    if (reason.length < 10) {
+      toast.error(language === 'es' ? 'Describe el problema con al menos 10 caracteres' : 'Please describe the issue with at least 10 characters');
+      return;
+    }
+    try {
+      await bookingsAPI.raiseDispute(b.id, reason);
+      toast.success(language === 'es' ? 'Reporte enviado. Bookvia revisara el caso pronto.' : 'Report submitted. Bookvia will review the case soon.');
+      setDisputeDialog({ open: false, booking: null });
+      setDisputeReason('');
+      loadBookings();
+    } catch (err) {
+      const msg = err.response?.data?.detail || (language === 'es' ? 'Error al reportar problema' : 'Error reporting problem');
+      toast.error(msg);
+    }
+  };
+
+  const handleCancelClick = (bookingId) => {
+    const booking = upcomingBookings.find(b => b.id === bookingId);
+    if (!booking) return;
+    setCancelDialog({ open: true, booking, refundTo: 'card' });
+  };
+
+  const confirmCancel = async () => {
+    const booking = cancelDialog.booking;
+    if (!booking) return;
+    const bookingId = booking.id;
     setCancelLoading(bookingId);
     try {
-      const response = await bookingsAPI.cancelByUser(bookingId, 'Usuario canceló');
+      const response = await bookingsAPI.cancelByUser(bookingId, 'Usuario canceló', cancelDialog.refundTo);
       
       if (response.data.refund) {
-        toast.success(
-          language === 'es' 
-            ? `Cita cancelada. Reembolso: $${response.data.refund.refund_amount} MXN` 
-            : `Booking cancelled. Refund: $${response.data.refund.refund_amount} MXN`
-        );
+        const r = response.data.refund;
+        const amt = r.refund_amount || 0;
+        if (amt > 0) {
+          if (r.refund_to === 'wallet') {
+            toast.success(language === 'es' 
+              ? `Cita cancelada. $${amt.toFixed(2)} MXN agregados a tu saldo Bookvia (disponible al instante).` 
+              : `Booking cancelled. $${amt.toFixed(2)} MXN added to your Bookvia wallet (instantly available).`);
+          } else {
+            toast.success(language === 'es' 
+              ? `Cita cancelada. Reembolso de $${amt.toFixed(2)} MXN a tu tarjeta (5-10 dias habiles).` 
+              : `Booking cancelled. Refund of $${amt.toFixed(2)} MXN to your card (5-10 business days).`);
+          }
+        } else {
+          toast.success(language === 'es' ? 'Cita cancelada (sin reembolso por politica de tiempo).' : 'Booking cancelled (no refund per time policy).');
+        }
       } else {
         toast.success(language === 'es' ? 'Cita cancelada' : 'Booking cancelled');
       }
       
+      setCancelDialog({ open: false, booking: null, refundTo: 'card' });
       loadBookings();
     } catch (error) {
       const message = error.response?.data?.detail || (language === 'es' ? 'Error al cancelar' : 'Error cancelling');
@@ -161,6 +266,8 @@ export default function UserBookingsPage() {
       setCancelLoading(null);
     }
   };
+
+  const handleCancel = (bookingId) => handleCancelClick(bookingId);
 
   const openReview = (booking) => {
     setReviewModal({ open: true, booking });
@@ -221,8 +328,19 @@ export default function UserBookingsPage() {
     setRescheduleLoading(true);
     try {
       const dateStr = rescheduleDate.toISOString().split('T')[0];
-      await bookingsAPI.reschedule(bk.id, dateStr, rescheduleTime);
-      toast.success(language === 'es' ? 'Cita reagendada exitosamente' : 'Appointment rescheduled successfully');
+      const res = await bookingsAPI.reschedule(bk.id, dateStr, rescheduleTime);
+      const remaining = res.data?.remaining_reschedules;
+      let msg = language === 'es' ? 'Cita reagendada exitosamente' : 'Appointment rescheduled successfully';
+      if (typeof remaining === 'number') {
+        msg += language === 'es'
+          ? remaining > 0
+            ? `. Tienes ${remaining} reagendamiento${remaining === 1 ? '' : 's'} restante${remaining === 1 ? '' : 's'} para esta cita.`
+            : '. Este fue tu ultimo reagendamiento permitido para esta cita.'
+          : remaining > 0
+            ? `. You have ${remaining} reschedule${remaining === 1 ? '' : 's'} left for this booking.`
+            : '. This was the last allowed reschedule for this booking.';
+      }
+      toast.success(msg);
       setRescheduleModal({ open: false, booking: null });
       loadBookings();
     } catch (error) {
@@ -351,18 +469,38 @@ export default function UserBookingsPage() {
               {/* Action buttons */}
               {showActions && booking.can_cancel && (
                 <div className="flex flex-wrap gap-2 mt-4">
-                  {booking.status === 'confirmed' && booking.hours_until_appointment > 24 && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => openReschedule(booking)}
-                      className="text-blue-600 hover:bg-blue-50"
-                      data-testid={`reschedule-booking-${booking.id}`}
-                    >
-                      <RefreshCw className="h-4 w-4 mr-1" />
-                      {language === 'es' ? 'Reagendar' : 'Reschedule'}
-                    </Button>
-                  )}
+                  {(() => {
+                    if (booking.status !== 'confirmed') return null;
+                    const reschedulesUsed = Number(booking.reschedule_count || 0);
+                    const reschedulesLeft = Math.max(0, 2 - reschedulesUsed);
+                    const canReschedule = booking.hours_until_appointment > 2 && reschedulesLeft > 0;
+                    
+                    return (
+                      <>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => openReschedule(booking)}
+                          className="text-blue-600 hover:bg-blue-50"
+                          disabled={!canReschedule}
+                          title={
+                            booking.hours_until_appointment <= 2
+                              ? (language === 'es' ? 'Solo puedes reagendar con mas de 2 horas de anticipacion' : 'You can only reschedule more than 2 hours in advance')
+                              : reschedulesLeft === 0
+                              ? (language === 'es' ? 'Ya alcanzaste el limite de 2 reagendamientos' : 'You reached the 2-reschedule limit')
+                              : ''
+                          }
+                          data-testid={`reschedule-booking-${booking.id}`}
+                        >
+                          <RefreshCw className="h-4 w-4 mr-1" />
+                          {language === 'es' ? 'Reagendar' : 'Reschedule'}
+                          {reschedulesUsed > 0 && (
+                            <span className="ml-1 text-[10px] opacity-70">({reschedulesUsed}/2)</span>
+                          )}
+                        </Button>
+                      </>
+                    );
+                  })()}
                   <Button
                     variant="outline"
                     size="sm"
@@ -404,6 +542,60 @@ export default function UserBookingsPage() {
                 <div className="mt-4 flex items-center gap-1 text-sm text-amber-600">
                   <Star className="h-4 w-4 fill-amber-500" />
                   {language === 'es' ? 'Ya calificaste este servicio' : 'Already rated'}
+                </div>
+              )}
+
+              {/* No-show button (visible from 30min before to 4h after, only confirmed bookings without report) */}
+              {booking.status === 'confirmed' && !booking.no_show_report && booking.deposit_paid && (() => {
+                const apptDate = new Date(booking.appointment_date || `${booking.date}T${booking.time}`);
+                const minSince = (Date.now() - apptDate.getTime()) / (1000 * 60);
+                if (minSince < -30 || minSince > 240) return null;
+                return (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="mt-3 text-rose-700 hover:bg-rose-50 px-2 border border-rose-200"
+                    onClick={() => setNoShowDialog({ open: true, booking })}
+                    data-testid={`no-show-booking-${booking.id}`}
+                  >
+                    <Ban className="h-3.5 w-3.5 mr-1" />
+                    {language === 'es' ? 'El negocio no me atendio' : 'Business didn\'t show up'}
+                  </Button>
+                );
+              })()}
+              {booking.no_show_report && !booking.no_show_report.resolved && (
+                <div className="mt-3 flex items-center gap-1 text-xs text-rose-700 bg-rose-50 px-2 py-1.5 rounded">
+                  <AlertTriangle className="h-3.5 w-3.5" />
+                  <span>
+                    {language === 'es'
+                      ? 'Reporte enviado. Bookvia esta esperando respuesta del negocio.'
+                      : 'Report sent. Bookvia is awaiting business response.'}
+                  </span>
+                </div>
+              )}
+
+              {/* Dispute button (only completed bookings within 24h grace, no existing dispute) */}
+              {booking.status === 'completed' && booking.completed_at && !booking.has_dispute && (() => {
+                const completedAt = new Date(booking.completed_at);
+                const hoursSince = (Date.now() - completedAt.getTime()) / (1000 * 60 * 60);
+                if (hoursSince > 24) return null;
+                return (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="mt-3 text-rose-600 hover:bg-rose-50 px-2"
+                    onClick={() => setDisputeDialog({ open: true, booking })}
+                    data-testid={`dispute-booking-${booking.id}`}
+                  >
+                    <AlertTriangle className="h-3.5 w-3.5 mr-1" />
+                    {language === 'es' ? 'Reportar problema' : 'Report problem'}
+                  </Button>
+                );
+              })()}
+              {booking.has_dispute && (
+                <div className="mt-3 flex items-center gap-1 text-xs text-rose-600 bg-rose-50 px-2 py-1 rounded">
+                  <AlertTriangle className="h-3.5 w-3.5" />
+                  {language === 'es' ? 'Problema reportado - Bookvia revisara el caso' : 'Problem reported - Bookvia is reviewing'}
                 </div>
               )}
 
@@ -540,6 +732,186 @@ export default function UserBookingsPage() {
           </TabsContent>
         </Tabs>
 
+        {/* Cancel Dialog with Refund Choice */}
+        <Dialog open={cancelDialog.open} onOpenChange={(open) => !open && setCancelDialog({ open: false, booking: null, refundTo: 'card' })}>
+          <DialogContent className="max-w-md" data-testid="cancel-booking-dialog">
+            <DialogHeader>
+              <DialogTitle>{language === 'es' ? 'Cancelar cita' : 'Cancel booking'}</DialogTitle>
+              <DialogDescription>
+                {cancelDialog.booking && (
+                  <span>{cancelDialog.booking.service_name} — {cancelDialog.booking.business_name}</span>
+                )}
+              </DialogDescription>
+            </DialogHeader>
+            
+            {(() => {
+              const b = cancelDialog.booking;
+              if (!b) return null;
+              const hoursUntil = b.hours_until_appointment;
+              const hasDeposit = b.status === 'confirmed' && b.deposit_paid && (b.deposit_amount > 0);
+              const refundEligible = hasDeposit && hoursUntil > 24;
+              const refundAmount = refundEligible ? Number((b.deposit_amount * 0.915).toFixed(2)) : 0;
+              
+              return (
+                <div className="space-y-3 text-sm">
+                  {hasDeposit ? (
+                    refundEligible ? (
+                      <>
+                        <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-emerald-800">
+                          <p className="font-semibold">
+                            {language === 'es' ? 'Tienes derecho a reembolso' : 'You qualify for a refund'}
+                          </p>
+                          <p className="text-xs mt-1">
+                            {language === 'es' 
+                              ? `Estas cancelando con ${Math.round(hoursUntil)}h de anticipacion. Recibiras $${refundAmount.toFixed(2)} MXN (91.5% del anticipo). La cuota Bookvia ($8.20) no se reembolsa.`
+                              : `You are cancelling ${Math.round(hoursUntil)}h in advance. You will receive $${refundAmount.toFixed(2)} MXN (91.5% of deposit). Bookvia fee ($8.20) is non-refundable.`}
+                          </p>
+                        </div>
+                        
+                        <div>
+                          <p className="font-medium mb-2">
+                            {language === 'es' ? '¿Como quieres recibir el reembolso?' : 'How would you like your refund?'}
+                          </p>
+                          <div className="space-y-2">
+                            <label className={`flex items-start gap-2 p-3 rounded-lg border-2 cursor-pointer transition ${cancelDialog.refundTo === 'wallet' ? 'border-[#F05D5E] bg-[#F05D5E]/5' : 'border-slate-200'}`} data-testid="refund-option-wallet">
+                              <input type="radio" name="refundTo" value="wallet" checked={cancelDialog.refundTo === 'wallet'} onChange={() => setCancelDialog(d => ({ ...d, refundTo: 'wallet' }))} className="mt-0.5" />
+                              <div className="flex-1">
+                                <p className="font-semibold flex items-center gap-1">
+                                  💰 {language === 'es' ? 'Saldo Bookvia' : 'Bookvia Wallet'}
+                                  <Badge variant="secondary" className="text-[10px] h-4 ml-1">⚡ {language === 'es' ? 'Al instante' : 'Instant'}</Badge>
+                                </p>
+                                <p className="text-xs text-muted-foreground">
+                                  {language === 'es' 
+                                    ? `Disponible inmediatamente. Usa $${refundAmount.toFixed(2)} en tu proxima reserva.`
+                                    : `Available immediately. Use $${refundAmount.toFixed(2)} on your next booking.`}
+                                </p>
+                              </div>
+                            </label>
+                            <label className={`flex items-start gap-2 p-3 rounded-lg border-2 cursor-pointer transition ${cancelDialog.refundTo === 'card' ? 'border-[#F05D5E] bg-[#F05D5E]/5' : 'border-slate-200'}`} data-testid="refund-option-card">
+                              <input type="radio" name="refundTo" value="card" checked={cancelDialog.refundTo === 'card'} onChange={() => setCancelDialog(d => ({ ...d, refundTo: 'card' }))} className="mt-0.5" />
+                              <div className="flex-1">
+                                <p className="font-semibold">🏦 {language === 'es' ? 'A tu tarjeta' : 'To your card'}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  {language === 'es' 
+                                    ? `Llega en 5-10 dias habiles a la tarjeta original.`
+                                    : `Arrives in 5-10 business days to original card.`}
+                                </p>
+                              </div>
+                            </label>
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="bg-rose-50 border border-rose-200 rounded-lg p-3 text-rose-800 text-xs">
+                        {language === 'es' 
+                          ? `Estas cancelando con menos de 24h de anticipacion. Segun la politica del negocio, NO se reembolsa el anticipo.`
+                          : `You are cancelling less than 24h in advance. According to the business's policy, the deposit is NOT refunded.`}
+                      </div>
+                    )
+                  ) : (
+                    <p className="text-muted-foreground">
+                      {language === 'es' 
+                        ? '¿Estas seguro que deseas cancelar esta cita?'
+                        : 'Are you sure you want to cancel this booking?'}
+                    </p>
+                  )}
+                  
+                  <div className="flex gap-2 pt-2">
+                    <Button variant="outline" className="flex-1" onClick={() => setCancelDialog({ open: false, booking: null, refundTo: 'card' })} data-testid="cancel-dialog-back">
+                      {language === 'es' ? 'Volver' : 'Back'}
+                    </Button>
+                    <Button className="flex-1 bg-rose-600 hover:bg-rose-700" onClick={confirmCancel} disabled={cancelLoading === b.id} data-testid="cancel-dialog-confirm">
+                      {cancelLoading === b.id 
+                        ? <Loader2 className="h-4 w-4 animate-spin" /> 
+                        : (language === 'es' ? 'Confirmar cancelacion' : 'Confirm cancel')}
+                    </Button>
+                  </div>
+                </div>
+              );
+            })()}
+          </DialogContent>
+        </Dialog>
+
+        {/* No-Show Dialog */}
+        <Dialog open={noShowDialog.open} onOpenChange={(open) => !open && (setNoShowDialog({ open: false, booking: null }), setNoShowDescription(''))}>
+          <DialogContent className="max-w-md" data-testid="no-show-dialog">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Ban className="h-5 w-5 text-rose-700" />
+                {language === 'es' ? 'El negocio no me atendio' : "Business didn't show up"}
+              </DialogTitle>
+              <DialogDescription>
+                {language === 'es'
+                  ? 'Si llegaste a tu cita y el negocio estaba cerrado o no te atendieron, repórtalo aquí. Bookvia notificara al negocio y tendra 24 horas para responder con evidencia.'
+                  : 'If you arrived to your appointment and the business was closed or did not attend, report it here. Bookvia will notify the business and they will have 24 hours to respond with evidence.'}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-xs text-amber-900 space-y-1">
+              <p className="font-semibold">
+                {language === 'es' ? '¿Que pasara despues?' : 'What happens next?'}
+              </p>
+              <ul className="list-disc pl-4 space-y-0.5">
+                <li>{language === 'es' ? 'Bookvia notifica al negocio inmediatamente.' : 'Bookvia notifies the business immediately.'}</li>
+                <li>{language === 'es' ? 'Si el negocio responde, Bookvia revisara ambas versiones.' : 'If the business responds, Bookvia will review both sides.'}</li>
+                <li>{language === 'es' ? 'Si NO responde en 24h: te reembolsamos automaticamente $108.20 + $50 de compensacion en tu saldo Bookvia.' : 'If they do NOT respond within 24h: we automatically refund $108.20 + $50 compensation to your Bookvia wallet.'}</li>
+              </ul>
+            </div>
+            <textarea
+              value={noShowDescription}
+              onChange={(e) => setNoShowDescription(e.target.value)}
+              placeholder={language === 'es' ? 'Describe que paso (minimo 10 caracteres). Ej: "Llegue a las 10:00 y el negocio estaba cerrado, toque y nadie respondio."' : 'Describe what happened (min 10 chars).'}
+              className="w-full min-h-[100px] p-3 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-rose-500"
+              maxLength={500}
+              data-testid="no-show-description-input"
+            />
+            <p className="text-[11px] text-muted-foreground">{noShowDescription.length}/500</p>
+            <div className="flex gap-2 pt-1">
+              <Button variant="outline" className="flex-1" onClick={() => { setNoShowDialog({ open: false, booking: null }); setNoShowDescription(''); }} data-testid="no-show-cancel">
+                {language === 'es' ? 'Cancelar' : 'Cancel'}
+              </Button>
+              <Button className="flex-1 bg-rose-700 hover:bg-rose-800" onClick={submitNoShow} data-testid="no-show-submit">
+                {language === 'es' ? 'Enviar reporte' : 'Submit report'}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Dispute Dialog */}
+        <Dialog open={disputeDialog.open} onOpenChange={(open) => !open && (setDisputeDialog({ open: false, booking: null }), setDisputeReason(''))}>
+          <DialogContent className="max-w-md" data-testid="dispute-dialog">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <AlertTriangle className="h-5 w-5 text-rose-600" />
+                {language === 'es' ? 'Reportar un problema' : 'Report a problem'}
+              </DialogTitle>
+              <DialogDescription>
+                {language === 'es'
+                  ? 'Si tuviste algun inconveniente con el servicio, describe brevemente lo que paso. Bookvia revisara el caso y se pondra en contacto contigo.'
+                  : 'If you had an issue with the service, briefly describe what happened. Bookvia will review the case and contact you.'}
+              </DialogDescription>
+            </DialogHeader>
+            <textarea
+              value={disputeReason}
+              onChange={(e) => setDisputeReason(e.target.value)}
+              placeholder={language === 'es' ? 'Describe el problema (minimo 10 caracteres)...' : 'Describe the problem (min 10 characters)...'}
+              className="w-full min-h-[120px] p-3 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#F05D5E]"
+              maxLength={500}
+              data-testid="dispute-reason-input"
+            />
+            <p className="text-[11px] text-muted-foreground">
+              {disputeReason.length}/500
+            </p>
+            <div className="flex gap-2 pt-1">
+              <Button variant="outline" className="flex-1" onClick={() => { setDisputeDialog({ open: false, booking: null }); setDisputeReason(''); }} data-testid="dispute-cancel">
+                {language === 'es' ? 'Cancelar' : 'Cancel'}
+              </Button>
+              <Button className="flex-1 bg-rose-600 hover:bg-rose-700" onClick={submitDispute} data-testid="dispute-submit">
+                {language === 'es' ? 'Enviar reporte' : 'Submit report'}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
         {/* Review Modal */}
         <Dialog open={reviewModal.open} onOpenChange={(open) => !open && setReviewModal({ open: false, booking: null })}>
           <DialogContent className="max-w-sm" data-testid="review-modal">
@@ -625,6 +997,28 @@ export default function UserBookingsPage() {
                   : 'Your deposit is already paid. No extra payment needed.'}
               </div>
             )}
+            
+            {(() => {
+              const used = Number(rescheduleModal.booking?.reschedule_count || 0);
+              const left = Math.max(0, 2 - used);
+              return (
+                <div className="flex items-start gap-2 p-3 bg-blue-50 text-blue-800 rounded-lg text-xs leading-relaxed" data-testid="reschedule-policy-notice">
+                  <RefreshCw className="h-4 w-4 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-semibold">
+                      {language === 'es' 
+                        ? `Te quedan ${left} reagendamiento${left === 1 ? '' : 's'} para esta cita`
+                        : `You have ${left} reschedule${left === 1 ? '' : 's'} left for this booking`}
+                    </p>
+                    <p>
+                      {language === 'es' 
+                        ? 'Politica: maximo 2 reagendamientos sin costo. Debes hacerlo con al menos 2 horas de anticipacion. Tu anticipo se mantiene.'
+                        : 'Policy: up to 2 free reschedules. Must be at least 2 hours in advance. Your deposit is preserved.'}
+                    </p>
+                  </div>
+                </div>
+              );
+            })()}
 
             <div className="space-y-4 mt-2">
               <div>

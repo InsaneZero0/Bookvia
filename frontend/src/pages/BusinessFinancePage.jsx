@@ -72,16 +72,20 @@ export default function BusinessFinancePage() {
     loadData();
   }, [isAuthenticated, user, authLoading]);
 
+  const [fundsState, setFundsState] = useState(null);
+
   const loadData = async () => {
     try {
-      const [summaryRes, transactionsRes, settlementsRes] = await Promise.all([
+      const [summaryRes, transactionsRes, settlementsRes, fundsStateRes] = await Promise.all([
         financeAPI.getSummary(),
         financeAPI.getTransactions({ limit: 50 }),
         financeAPI.getSettlements({}),
+        financeAPI.getFundsState().catch(() => ({ data: null })),
       ]);
       setSummary(summaryRes.data);
       setTransactions(transactionsRes.data);
       setSettlements(settlementsRes.data);
+      setFundsState(fundsStateRes.data);
     } catch (error) {
       console.error('Error loading finance data:', error);
       toast.error(language === 'es' ? 'Error al cargar datos financieros' : 'Error loading finance data');
@@ -228,6 +232,64 @@ export default function BusinessFinancePage() {
             </CardContent>
           </Card>
         </div>
+
+        {/* Funds State Pipeline (NEW - Fase 3) */}
+        {fundsState && (
+          <Card className="mb-6 border-[#F05D5E]/20" data-testid="funds-state-card">
+            <CardContent className="p-5">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="font-semibold text-base">
+                    {language === 'es' ? 'Flujo de tu dinero' : 'Your money pipeline'}
+                  </h3>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {language === 'es' 
+                      ? 'Asi viaja cada anticipo desde el cobro hasta tu cuenta. Solo el dinero "Listo para pagar" se incluye en tu corte mensual.'
+                      : 'Here is how each deposit flows from charge to your bank account. Only "Ready to pay" funds are included in your monthly settlement.'}
+                  </p>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="p-3 rounded-lg bg-slate-50 border border-slate-200" data-testid="funds-state-pending">
+                  <p className="text-[11px] uppercase tracking-wide text-slate-500 font-semibold">
+                    {language === 'es' ? '1. En espera' : '1. On hold'}
+                  </p>
+                  <p className="text-lg font-bold mt-1">{formatCurrency(fundsState.in_hold || 0)}</p>
+                  <p className="text-[10px] text-muted-foreground leading-tight mt-1">
+                    {language === 'es' ? 'Cita aun no se realiza' : 'Appointment not yet held'}
+                  </p>
+                </div>
+                <div className="p-3 rounded-lg bg-amber-50 border border-amber-200" data-testid="funds-state-grace">
+                  <p className="text-[11px] uppercase tracking-wide text-amber-700 font-semibold">
+                    {language === 'es' ? '2. Periodo de gracia' : '2. Grace period'}
+                  </p>
+                  <p className="text-lg font-bold mt-1 text-amber-800">{formatCurrency(fundsState.in_grace || 0)}</p>
+                  <p className="text-[10px] text-amber-700 leading-tight mt-1">
+                    {language === 'es' ? '24h despues de completar' : '24h after completion'}
+                  </p>
+                </div>
+                <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200" data-testid="funds-state-cleared">
+                  <p className="text-[11px] uppercase tracking-wide text-emerald-700 font-semibold">
+                    {language === 'es' ? '3. Listo para pagar' : '3. Ready to pay'}
+                  </p>
+                  <p className="text-lg font-bold mt-1 text-emerald-800">{formatCurrency(fundsState.pending_payout || 0)}</p>
+                  <p className="text-[10px] text-emerald-700 leading-tight mt-1">
+                    {language === 'es' ? 'Se paga el dia 1 del mes' : 'Paid on the 1st of the month'}
+                  </p>
+                </div>
+                <div className="p-3 rounded-lg bg-rose-50 border border-rose-200" data-testid="funds-state-disputed">
+                  <p className="text-[11px] uppercase tracking-wide text-rose-700 font-semibold">
+                    {language === 'es' ? 'En revision' : 'Under review'}
+                  </p>
+                  <p className="text-lg font-bold mt-1 text-rose-800">{formatCurrency(fundsState.disputed || 0)}</p>
+                  <p className="text-[10px] text-rose-700 leading-tight mt-1">
+                    {language === 'es' ? 'Cliente reporto problema' : 'Client reported issue'}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Payout Status Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">

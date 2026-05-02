@@ -63,6 +63,55 @@ class LedgerEntryStatus(str, Enum):
     REVERSED = "reversed"
 
 
+class FundsState(str, Enum):
+    """
+    Lifecycle of money owed to a business per booking transaction.
+    
+      PENDING_HOLD   -> Client paid; appointment hasn't happened yet.
+      AVAILABLE      -> Appointment marked as completed; entering 24h grace window.
+      CLEARED        -> Grace passed without complaints; eligible for monthly payout.
+      DISPUTED       -> Client filed a complaint; admin must resolve before clearing.
+      REFUNDED       -> Money was refunded (cancellation / dispute resolved against business).
+      PAID_OUT       -> Money has been transferred to business in a settlement.
+    """
+    PENDING_HOLD = "pending_hold"
+    AVAILABLE = "available"
+    CLEARED = "cleared"
+    DISPUTED = "disputed"
+    REFUNDED = "refunded"
+    PAID_OUT = "paid_out"
+
+
+GRACE_PERIOD_HOURS = 24            # Hours after appointment completion before money clears
+AUTO_COMPLETE_HOURS = 48           # Hours after scheduled end time to auto-mark completed if business hasn't
+MAX_RESCHEDULES_PER_BOOKING = 2    # Maximum number of times a booking can be rescheduled by the client
+RESCHEDULE_CUTOFF_HOURS = 2        # Client must reschedule at least N hours before the appointment
+
+
+class StrikeReason(str, Enum):
+    """Why a strike was issued to a business."""
+    LATE_CANCELLATION = "late_cancellation"        # Business cancelled <6h before appointment
+    REGULAR_CANCELLATION = "regular_cancellation"  # Business cancelled >6h before appointment (still counts)
+    NO_SHOW_BUSINESS = "no_show_business"          # Client reported the business never opened (Fase 6)
+    DISPUTE_LOST = "dispute_lost"                  # Admin resolved a dispute against the business
+    EXCESSIVE_RESCHEDULES = "excessive_reschedules"  # Business reagended too many times
+    ADMIN_MANUAL = "admin_manual"                  # Admin manually issued a strike
+
+
+class StrikeSeverity(str, Enum):
+    WARNING = "warning"           # No financial penalty, 1st strike under non-severe reasons
+    MINOR = "minor"                # -$100 MXN deduction from next payout
+    SUSPENSION_7D = "suspension_7d"   # Removed from search 7 days
+    SUSPENSION_30D = "suspension_30d" # Removed from search 30 days, admin review triggered
+    PERMANENT_BAN = "permanent_ban"   # Account banned indefinitely, payout final balance only
+
+
+# Strike escalation thresholds (count within rolling window -> severity)
+STRIKE_PENALTY_AMOUNT = 100.0      # MXN deducted per MINOR strike
+STRIKE_WINDOW_30_DAYS = 30
+STRIKE_WINDOW_90_DAYS = 90
+
+
 class SettlementStatus(str, Enum):
     PENDING = "pending"
     PAID = "paid"
@@ -100,21 +149,37 @@ class AuditAction(str, Enum):
 
 # ========================== CONSTANTS ==========================
 
-PLATFORM_FEE_PERCENT = 0.08
+PLATFORM_FEE_PERCENT = 0.08  # Legacy (unused in new model, keep for back-compat)
 HOLD_EXPIRATION_MINUTES = 30
-MIN_DEPOSIT_AMOUNT = 50.0
-SUBSCRIPTION_PRICE_MXN = 39.00
+MIN_DEPOSIT_AMOUNT = 100.0  # Minimum deposit amount (MXN) per service
+BOOKVIA_FEE_MXN = 8.20  # Fixed fee charged to client per booking with deposit (IVA included)
+STRIPE_FEE_PERCENT_ESTIMATED = 0.085  # Estimated Stripe fee (8.5%) charged to business
+SUBSCRIPTION_PRICE_MXN = 49.99
+SUBSCRIPTION_PRICE_USD = 4.99
 SUBSCRIPTION_TRIAL_DAYS = 30
 
 VISIBLE_BUSINESS_FILTER = {
     "status": BusinessStatus.APPROVED,
-    "$or": [
-        {"subscription_status": {"$in": ["active", "trialing"]}},
-        {"subscription_status": {"$exists": False}},
-        {"subscription_status": None},
-        {"subscription_status": "none"},
-    ]
+    "subscription_status": {"$in": ["active", "trialing"]},
+    "banned": {"$ne": True},
 }
+
+
+def visible_business_filter_now() -> dict:
+    """
+    Return the visibility filter for businesses, computed at call time so we can compare
+    suspended_until against the current ISO timestamp.
+    """
+    from datetime import datetime, timezone
+    now_iso = datetime.now(timezone.utc).isoformat()
+    return {
+        **VISIBLE_BUSINESS_FILTER,
+        "$or": [
+            {"suspended_until": None},
+            {"suspended_until": {"$exists": False}},
+            {"suspended_until": {"$lt": now_iso}},
+        ],
+    }
 
 DEFAULT_MANAGER_PERMISSIONS = {
     "complete_bookings": True,

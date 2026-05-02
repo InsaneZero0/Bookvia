@@ -175,3 +175,49 @@ async def get_finance_settlements(
 
 
 
+
+
+
+@router.get("/funds-state")
+async def get_funds_state_summary(token_data: TokenData = Depends(require_business)):
+    """Return funds breakdown by lifecycle state for the authenticated business."""
+    user = await db.users.find_one({"id": token_data.user_id})
+    if not user or not user.get("business_id"):
+        raise HTTPException(status_code=404, detail="Business not found")
+    
+    from services.funds_state import get_state_summary
+    summary = await get_state_summary(user["business_id"])
+    
+    # Recent transactions per state for visibility (last 5)
+    recent_by_state = {}
+    for state in ["pending_hold", "available", "cleared", "disputed", "refunded", "paid_out"]:
+        txs = await db.transactions.find(
+            {"business_id": user["business_id"], "funds_state": state, "status": TransactionStatus.PAID},
+            {"_id": 0, "id": 1, "booking_id": 1, "business_amount": 1, "funds_state": 1,
+             "funds_state_updated_at": 1, "funds_clears_at": 1, "created_at": 1, "client_paid": 1, "amount_total": 1}
+        ).sort("funds_state_updated_at", -1).limit(5).to_list(5)
+        recent_by_state[state] = txs
+    
+    return {**summary, "recent_by_state": recent_by_state}
+
+
+@router.get("/strikes")
+async def get_my_strikes(token_data: TokenData = Depends(require_business)):
+    """Return strike history + current suspension status for the authenticated business."""
+    user = await db.users.find_one({"id": token_data.user_id})
+    if not user or not user.get("business_id"):
+        raise HTTPException(status_code=404, detail="Business not found")
+    
+    from services.strikes import list_business_strikes, get_active_suspension
+    business = await db.businesses.find_one({"id": user["business_id"]}, {"_id": 0})
+    strikes = await list_business_strikes(user["business_id"], limit=50)
+    suspension = await get_active_suspension(user["business_id"])
+    
+    return {
+        "strike_count_30d": int(business.get("strike_count_30d") or 0),
+        "strike_count_90d": int(business.get("strike_count_90d") or 0),
+        "pending_penalty_mxn": float(business.get("pending_strike_penalty_mxn") or 0),
+        "active_suspension": suspension,
+        "history": strikes,
+    }
+

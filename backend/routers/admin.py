@@ -251,6 +251,276 @@ async def admin_toggle_payout_hold(
 
 
 
+@router.get("/disputes")
+async def admin_list_disputes(token_data: TokenData = Depends(require_admin)):
+    """List all transactions currently in DISPUTED state for admin review."""
+    txs = await db.transactions.find(
+        {"funds_state": "disputed", "status": TransactionStatus.PAID},
+        {"_id": 0}
+    ).sort("funds_state_updated_at", -1).limit(200).to_list(200)
+    
+    # Enrich with booking + business info
+    out = []
+    for tx in txs:
+        booking = await db.bookings.find_one({"id": tx.get("booking_id")}, {"_id": 0})
+        business = await db.businesses.find_one({"id": tx.get("business_id")}, {"_id": 0, "name": 1, "public_code": 1})
+        user = await db.users.find_one({"id": tx.get("user_id")}, {"_id": 0, "full_name": 1, "email": 1, "public_code": 1})
+        out.append({
+            **tx,
+            "booking": booking,
+            "business_summary": business,
+            "user_summary": user,
+        })
+    return {"disputes": out, "total": len(out)}
+
+
+@router.post("/disputes/{transaction_id}/resolve")
+async def admin_resolve_dispute(
+    transaction_id: str,
+    body: dict,
+    request: Request,
+    token_data: TokenData = Depends(require_admin)
+):
+    """
+    Resolve a disputed transaction. Body:
+      { "outcome": "favor_business" | "favor_client", "reason": "..." }
+    """
+    outcome = (body or {}).get("outcome")
+    reason = ((body or {}).get("reason") or "").strip() or "Admin resolution"
+    if outcome not in ("favor_business", "favor_client"):
+        raise HTTPException(status_code=400, detail="outcome must be 'favor_business' or 'favor_client'")
+    
+    tx = await db.transactions.find_one({"id": transaction_id}, {"_id": 0})
+    if not tx:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    if tx.get("funds_state") != "disputed":
+        raise HTTPException(status_code=400, detail=f"Transaction is not disputed (state={tx.get('funds_state')})")
+    
+    from services.funds_state import clear_now, mark_refunded
+    if outcome == "favor_business":
+        await clear_now(transaction_id, actor=f"admin:{token_data.email}", reason=f"Dispute resolved in favor of business: {reason}")
+    else:
+        await mark_refunded(transaction_id, actor=f"admin:{token_data.email}", reason=f"Dispute resolved in favor of client: {reason}")
+        # Issue progressive strike to the business
+        try:
+            from services.strikes import issue_strike
+            await issue_strike(
+                business_id=tx["business_id"],
+                reason="dispute_lost",
+                description=f"Admin resolved dispute against business: {reason}",
+                booking_id=tx.get("booking_id"),
+                issued_by=f"admin:{token_data.email}",
+                metadata={"transaction_id": transaction_id, "admin_reason": reason},
+            )
+        except Exception as e:
+            logger.error(f"Failed to issue strike on lost dispute: {e}")
+    
+    # Audit log
+    await create_audit_log(
+        admin_id=token_data.user_id,
+        admin_email=token_data.email,
+        action=AuditAction.PAYMENT_RELEASE if outcome == "favor_business" else AuditAction.PAYMENT_HOLD,
+        target_type="transaction",
+        target_id=transaction_id,
+        details={"outcome": outcome, "reason": reason},
+        request=request,
+    )
+    
+    return {"message": f"Dispute resolved: {outcome}", "outcome": outcome}
+
+
+@router.get("/strikes")
+async def admin_list_all_strikes(
+    business_id: Optional[str] = None,
+    limit: int = 100,
+    token_data: TokenData = Depends(require_admin)
+):
+    """Admin: list strikes across all businesses (or filter by business_id)."""
+    query = {}
+    if business_id:
+        query["business_id"] = business_id
+    strikes = await db.business_strikes.find(query, {"_id": 0}).sort("created_at", -1).limit(limit).to_list(limit)
+    
+    # Enrich with business name
+    out = []
+    for s in strikes:
+        biz = await db.businesses.find_one({"id": s.get("business_id")}, {"_id": 0, "name": 1, "public_code": 1, "status": 1})
+        out.append({**s, "business_summary": biz})
+    return {"strikes": out, "total": len(out)}
+
+
+@router.post("/strikes/issue")
+async def admin_issue_strike(
+    body: dict,
+    request: Request,
+    token_data: TokenData = Depends(require_admin)
+):
+    """
+    Admin manually issue a strike to a business.
+    Body: {business_id, reason, description, booking_id?, force_severity?}
+    """
+    business_id = (body or {}).get("business_id")
+    reason = (body or {}).get("reason") or "admin_manual"
+    description = (body or {}).get("description") or "Manual strike issued by admin"
+    booking_id = (body or {}).get("booking_id")
+    
+    if not business_id:
+        raise HTTPException(status_code=400, detail="business_id required")
+    
+    from services.strikes import issue_strike
+    try:
+        strike = await issue_strike(
+            business_id=business_id,
+            reason=reason,
+            description=description,
+            booking_id=booking_id,
+            issued_by=f"admin:{token_data.email}",
+            metadata={"manual": True},
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    
+    await create_audit_log(
+        admin_id=token_data.user_id,
+        admin_email=token_data.email,
+        action=AuditAction.BUSINESS_SUSPEND,
+        target_type="business",
+        target_id=business_id,
+        details={"strike_id": strike["id"], "severity": strike["severity"], "reason": reason},
+        request=request,
+    )
+    return strike
+
+
+@router.post("/strikes/{strike_id}/clear")
+async def admin_clear_strike_endpoint(
+    strike_id: str,
+    body: dict,
+    request: Request,
+    token_data: TokenData = Depends(require_admin)
+):
+    """Admin: clear/cancel a strike (override). Adjusts counters and may lift suspension."""
+    reason = (body or {}).get("reason") or "Admin override"
+    from services.strikes import admin_clear_strike
+    try:
+        cleared = await admin_clear_strike(strike_id, admin_email=token_data.email, reason=reason)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    
+    await create_audit_log(
+        admin_id=token_data.user_id,
+        admin_email=token_data.email,
+        action=AuditAction.BUSINESS_APPROVE,
+        target_type="strike",
+        target_id=strike_id,
+        details={"reason": reason, "business_id": cleared.get("business_id")},
+        request=request,
+    )
+    return cleared
+
+
+@router.get("/no-show-reports")
+async def admin_list_no_show_reports(token_data: TokenData = Depends(require_admin)):
+    """List all open (or recently resolved) no-show reports for admin review."""
+    bookings = await db.bookings.find(
+        {"no_show_report": {"$exists": True}},
+        {"_id": 0}
+    ).sort("no_show_report.reported_at", -1).limit(200).to_list(200)
+    
+    out = []
+    for bk in bookings:
+        biz = await db.businesses.find_one({"id": bk.get("business_id")}, {"_id": 0, "name": 1, "public_code": 1, "phone": 1})
+        user = await db.users.find_one({"id": bk.get("user_id")}, {"_id": 0, "full_name": 1, "email": 1, "public_code": 1})
+        out.append({
+            "booking_id": bk.get("id"),
+            "service_name": bk.get("service_name"),
+            "business_summary": biz,
+            "user_summary": user,
+            "report": bk.get("no_show_report"),
+            "appointment_date": f"{bk.get('date')} {bk.get('time')}",
+        })
+    return {"reports": out, "total": len(out)}
+
+
+@router.post("/no-show-reports/{booking_id}/resolve")
+async def admin_resolve_no_show(
+    booking_id: str,
+    body: dict,
+    request: Request,
+    token_data: TokenData = Depends(require_admin),
+):
+    """
+    Admin resolves a no-show report manually (overrides 24h auto-resolve).
+    Body: {outcome: 'favor_client'|'favor_business', reason}
+    favor_client -> refund + compensation + uphold strike
+    favor_business -> clear pending strike, no refund
+    """
+    outcome = (body or {}).get("outcome")
+    reason = (body or {}).get("reason") or "Admin manual resolution"
+    if outcome not in ("favor_client", "favor_business"):
+        raise HTTPException(status_code=400, detail="outcome must be 'favor_client' or 'favor_business'")
+    
+    booking = await db.bookings.find_one({"id": booking_id})
+    if not booking or not booking.get("no_show_report"):
+        raise HTTPException(status_code=404, detail="No-show report not found")
+    
+    report = booking["no_show_report"]
+    if report.get("resolved"):
+        raise HTTPException(status_code=400, detail="Report already resolved")
+    
+    strike_id = report.get("strike_id")
+    
+    if outcome == "favor_client":
+        # Reuse the auto-resolve logic via direct call
+        from routers.bookings import _process_no_show_report  # noqa: PLC0415
+        await _process_no_show_report(booking)
+    else:
+        # favor_business: clear the pending strike, restore funds to AVAILABLE/PENDING_HOLD
+        if strike_id:
+            from services.strikes import resolve_pending_strike
+            try:
+                await resolve_pending_strike(
+                    strike_id, outcome="cleared",
+                    resolved_by=f"admin:{token_data.email}", reason=reason
+                )
+            except ValueError:
+                pass
+        
+        # Restore transaction funds_state from DISPUTED back to AVAILABLE (if it was)
+        tx = await db.transactions.find_one({"booking_id": booking_id, "status": TransactionStatus.PAID}, {"_id": 0})
+        if tx and tx.get("funds_state") == "disputed":
+            try:
+                from services.funds_state import transition
+                await transition(tx["id"], "available", actor=f"admin:{token_data.email}", reason=f"No-show dispute resolved in favor of business: {reason}")
+            except Exception:
+                pass
+        
+        await db.bookings.update_one(
+            {"id": booking_id},
+            {"$set": {
+                "no_show_report.resolved": True,
+                "no_show_report.resolved_at": datetime.now(timezone.utc).isoformat(),
+                "no_show_report.outcome": "cleared",
+                "no_show_report.admin_reason": reason,
+            }}
+        )
+    
+    await create_audit_log(
+        admin_id=token_data.user_id,
+        admin_email=token_data.email,
+        action=AuditAction.PAYMENT_RELEASE if outcome == "favor_business" else AuditAction.PAYMENT_HOLD,
+        target_type="no_show_report",
+        target_id=booking_id,
+        details={"outcome": outcome, "reason": reason, "strike_id": strike_id},
+        request=request,
+    )
+    
+    return {"message": f"No-show report resolved: {outcome}", "outcome": outcome}
+
+
+
+
+
 @router.get("/export/transactions")
 async def admin_export_transactions(
     year: int,

@@ -104,6 +104,8 @@ export const usersAPI = {
   removeFavorite: (businessId) => api.delete(`/users/favorites/${businessId}`),
   getFavorites: () => api.get('/users/favorites'),
   getMyStats: () => api.get('/users/my-stats'),
+  getWallet: () => api.get('/users/me/wallet'),
+  getWalletTransactions: (page = 1, limit = 20) => api.get('/users/me/wallet/transactions', { params: { page, limit } }),
 };
 
 // Categories API
@@ -119,6 +121,7 @@ export const businessesAPI = {
   getFeatured: (limit = 8, country_code) => api.get('/businesses/featured', { params: { limit, ...(country_code ? { country_code } : {}) } }),
   getBySlug: (slug) => api.get(`/businesses/slug/${slug}`),
   getById: (id) => api.get(`/businesses/${id}`),
+  getTrustScore: (id) => api.get(`/businesses/${id}/trust-score`),
   updateMe: (data) => api.put('/businesses/me', data),
   getDashboard: () => api.get('/businesses/me/dashboard'),
   getPrivateInfo: () => api.get('/businesses/me/private-info'),
@@ -218,8 +221,11 @@ export const bookingsAPI = {
   create: (data) => api.post('/bookings', data),
   getMy: (params) => api.get('/bookings/my', { params }),
   getBusiness: (params) => api.get('/bookings/business', { params }),
-  cancelByUser: (id, reason) => api.put(`/bookings/${id}/cancel/user`, { reason }),
+  cancelByUser: (id, reason, refundTo = "card") => api.put(`/bookings/${id}/cancel/user`, { reason, refund_to: refundTo }),
   cancelByBusiness: (id, reason) => api.put(`/bookings/${id}/cancel/business`, { reason }),
+  raiseDispute: (id, reason) => api.post(`/bookings/${id}/dispute`, { reason }),
+  reportNoShow: (id, description, photoUrl) => api.post(`/bookings/${id}/no-show-business`, { description, photo_url: photoUrl }),
+  respondNoShow: (id, description, evidenceUrl) => api.post(`/bookings/${id}/no-show-response`, { description, evidence_url: evidenceUrl }),
   reschedule: (id, newDate, newTime) => 
     api.put(`/bookings/${id}/reschedule`, null, { params: { new_date: newDate, new_time: newTime } }),
   rescheduleByBusiness: (id, data) => api.put(`/bookings/${id}/reschedule/business`, data),
@@ -243,11 +249,12 @@ export const reviewsAPI = {
 // Payments API
 export const paymentsAPI = {
   // Deposit checkout for bookings
-  createDepositCheckout: (bookingId) => api.post('/payments/deposit/checkout', { booking_id: bookingId }),
+  createDepositCheckout: (bookingId, useWallet = false) => api.post('/payments/deposit/checkout', { booking_id: bookingId, use_wallet: useWallet }),
   getCheckoutStatus: (sessionId) => api.get(`/payments/checkout/status/${sessionId}`),
   getTransaction: (transactionId) => api.get(`/payments/transaction/${transactionId}`),
   getMyTransactions: (params) => api.get('/payments/my-transactions', { params }),
   getBusinessTransactions: (params) => api.get('/payments/business-transactions', { params }),
+  getFeesBreakdown: (depositAmount) => api.get('/payments/fees/breakdown', { params: { deposit_amount: depositAmount } }),
   // Legacy checkout for subscriptions
   createCheckoutSession: (data) => api.post('/payments/checkout/session', data),
 };
@@ -256,6 +263,8 @@ export const paymentsAPI = {
 export const financeAPI = {
   getSummary: () => api.get('/business/finance/summary'),
   getTransactions: (params) => api.get('/business/finance/transactions', { params }),
+  getFundsState: () => api.get('/business/finance/funds-state'),
+  getStrikes: () => api.get('/business/finance/strikes'),
   getLedger: (params) => api.get('/business/finance/ledger', { params }),
   getSettlements: (params) => api.get('/business/finance/settlements', { params }),
 };

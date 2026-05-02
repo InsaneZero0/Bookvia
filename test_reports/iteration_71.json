@@ -1,0 +1,79 @@
+{
+  "summary": "Validated subscription pricing change ($49.99 MXN / $4.99 USD with 30-day trial) and VISIBLE_BUSINESS_FILTER. Frontend pages all show new pricing correctly ($49.99 MXN, $4.99 USD, 30 days trial). Backend has 3 critical/high bugs: (1) /me/subscribe returns 500 because db.stripe_config has stale price_id from old Stripe account; (2) /admin/config still returns subscription_price_mxn=39.0 because db.platform_config wasn't updated; (3) /featured and /search endpoints incorrectly include businesses with subscription_status='none'/null/missing - only canceled is filtered out. 6/10 backend tests pass; 4 fail confirming the bugs.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "POST /api/businesses/me/subscribe",
+        "issue": "Returns 500 'No such price: price_1TRaVsC4OfX1G9SSBbba9d1R'. db.stripe_config has stale price_id pointing to a Price that doesn't exist in the current Stripe (sk_test_...) account. Result: businesses CANNOT subscribe at all. get_or_create_stripe_price() returns cached price_id without validating it exists in Stripe. Same risk applies to POST /api/auth/business/create-subscription (registration flow) which uses the same helper.",
+        "priority": "CRITICAL",
+        "fix_suggestion": "Either (a) drop existing rows from db.stripe_config so they get recreated, e.g. `db.stripe_config.delete_many({})`, or (b) wrap the cached lookup in a Stripe.Price.retrieve() call and recreate on InvalidRequestError, or (c) add a startup migration that validates and refreshes."
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "GET /api/admin/config",
+        "issue": "Returns subscription_price_mxn=39.0 from db.platform_config. Default constant is 49.99 but DB row was set when admin manually saved 39 in the past. Admin dashboard will display $39.",
+        "priority": "HIGH",
+        "fix_suggestion": "Update DB: `db.platform_config.update_one({'_id':'main'}, {'$set':{'subscription_price_mxn':49.99}})` or migrate on startup."
+      },
+      {
+        "endpoint": "GET /api/businesses/featured  AND  GET /api/businesses (search root)",
+        "issue": "Both endpoints use a permissive $or filter that includes businesses with subscription_status in ['none', null, missing] in addition to ['active','trialing']. Per requirement (and the VISIBLE_BUSINESS_FILTER constant in models/enums.py), only active/trialing should be visible. Filter in businesses.py lines 576-584 (search) and line 765/776 (featured) should be replaced with the strict VISIBLE_BUSINESS_FILTER constant.",
+        "priority": "HIGH",
+        "fix_suggestion": "Replace the inline `$or` blocks with `dict(VISIBLE_BUSINESS_FILTER)` (already imported on line 44 but unused)."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_subscription_pricing.py",
+    "/app/test_reports/pytest/pytest_subscription_pricing.xml"
+  ],
+  "test_results_detail": {
+    "backend_pass": [
+      "TestStripeConfig::test_subscription_price_mxn_in_db (amount=4999, currency=mxn)",
+      "TestStripeConfig::test_subscription_price_usd_in_db (amount=499, currency=usd)",
+      "TestEnumsConstants::test_constants (SUBSCRIPTION_PRICE_MXN=49.99, USD=4.99, TRIAL=30, VISIBLE_BUSINESS_FILTER strict)",
+      "TestSubscriptionStatus::test_status_returns_subscription_state (200 OK with subscription_status field)",
+      "TestVisibleBusinessFilter::test_featured_excludes_canceled (canceled biz NOT in /featured) - GOOD",
+      "TestVisibleBusinessFilter::test_search_excludes_canceled (canceled biz NOT in /api/businesses) - GOOD"
+    ],
+    "backend_fail": [
+      "TestSubscribeCheckout::test_subscribe_returns_checkout_url -> 500 stale Stripe price_id",
+      "TestPlatformConfig::test_platform_config -> subscription_price_mxn=39.0 (expected 49.99)",
+      "TestVisibleBusinessFilter::test_featured_excludes_none -> biz with subscription_status='none' STILL appears",
+      "TestVisibleBusinessFilter::test_search_excludes_none -> same"
+    ],
+    "frontend_pass": [
+      "/for-business: shows $49.99 MXN, $4.99 USD, 'Despues de tus 30 dias gratis', 'PRIMER MES GRATIS' badge - no old $39/$199/$299",
+      "/business/dashboard tab Suscripcion: shows $49.99 and $4.99 - no $39",
+      "/business/settings tab Suscripcion: shows '$49.99 MXN / mes' + secondary '$4.99 USD en EE. UU.' - no $39"
+    ]
+  },
+  "action_items": [
+    "CRITICAL: Fix stale Stripe price cache. Either purge db.stripe_config (will be recreated on next call) or add validation in get_or_create_stripe_price() to retry if Stripe.Price.retrieve(price_id) raises InvalidRequestError. Without this, no business can subscribe (current request returns 500).",
+    "HIGH: Update db.platform_config.subscription_price_mxn from 39.0 to 49.99 (admin UI shows 39 even though codebase says 49.99).",
+    "HIGH: Apply VISIBLE_BUSINESS_FILTER strictly in /api/businesses/featured (lines 765, 776) and /api/businesses search (lines 576-584). Currently the $or block lets through subscription_status='none' / null / missing, which contradicts the spec ('only active/trialing should be visible'). The constant is already imported but unused.",
+    "Optionally hide BusinessRegisterPage step 5 verification was not interactively tested (would require creating a brand-new biz), but text content and constants are confirmed in code via search."
+  ],
+  "critical_code_review_comments": [
+    "models/enums.py VISIBLE_BUSINESS_FILTER is correctly defined as strict ['active','trialing'] but routers/businesses.py rebuilds the filter inline with a permissive $or that includes 'none'/null/missing. This makes the constant misleading - either change the filter to be strict everywhere or relax the constant. Inconsistency is a maintenance risk.",
+    "core/stripe_config.py get_or_create_stripe_price() blindly trusts the cached price_id. If a Stripe key is rotated or test data wiped, the function returns a dead price_id and every subscribe call fails. Wrap in try/Stripe.Price.retrieve and fall through to creation on InvalidRequestError.",
+    "/api/admin/config endpoint returns DB values which can drift from code constants. After a price change, must run a migration; otherwise admin UI shows old number.",
+    "routers/businesses.py duplicates the same long $or block 3+ times (search, featured base_filter, featured more_filter). Extract VISIBLE_BUSINESS_FILTER and reuse."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_subscription_pricing.py (new)"
+  ],
+  "success_rate": {"backend": "60% (6/10)", "frontend": "100% (3/3 pages)"},
+  "test_credentials": "Business: testbiz_dashboard@test.com / TestBiz123! (already has subscription_status='active'). Admin login skipped (TOTP) but /api/admin/config tested via the admin_token fixture which fetched TOTP through /app/scripts/get_admin_totp.py.",
+  "seed_data_creation": "Created and cleaned up 2 transient businesses in fixture seed_invisible_biz: TEST_canceled_<uuid> (subscription_status=canceled) and TEST_none_<uuid> (subscription_status=none). Both deleted in fixture teardown.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "After main agent fixes the 3 backend bugs, rerun: pytest /app/backend/tests/test_subscription_pricing.py -v. Endpoints: /api/admin/config (NOT /platform-config). /api/businesses (root) is the search endpoint. Business login: POST /api/auth/business/login with {email,password} returns 'token' field. testbiz_dashboard already has subscription_status=active so /me/subscribe will short-circuit with 'Already subscribed' (400) - to retest /me/subscribe must use a biz with subscription_status='none' or temporarily clear stripe_subscription_id field.",
+  "rca_of_the_issue": "BUG-1 (subscribe 500): db.stripe_config has price_id='price_1TRaVsC4OfX1G9SSBbba9d1R' which doesn't exist in current Stripe test account (likely from previous Stripe key rotation). Code returns cached id without verifying. BUG-2 (admin config 39): db.platform_config row was inserted/updated long ago with subscription_price_mxn=39.0. The admin endpoint reads from DB, not from code constants. BUG-3 (filter): The inline filter is permissive `$or: [active/trialing, none, null, missing]` whereas the spec and the imported VISIBLE_BUSINESS_FILTER are strict `$in: [active, trialing]`. Canceled is excluded only by accident (it's not in the OR list)."
+}

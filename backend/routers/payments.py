@@ -39,6 +39,7 @@ from models.enums import (
     TransactionStatus, LedgerDirection, LedgerAccount, LedgerEntryStatus,
     SettlementStatus, AuditAction,
     PLATFORM_FEE_PERCENT, HOLD_EXPIRATION_MINUTES, MIN_DEPOSIT_AMOUNT,
+    BOOKVIA_FEE_MXN, STRIPE_FEE_PERCENT_ESTIMATED,
     SUBSCRIPTION_PRICE_MXN, SUBSCRIPTION_TRIAL_DAYS,
     VISIBLE_BUSINESS_FILTER, DEFAULT_MANAGER_PERMISSIONS
 )
@@ -54,11 +55,38 @@ if "sk_test_emergent" in (STRIPE_API_KEY or ""):
 
 router = APIRouter(prefix="/payments", tags=["Payments"])
 
-def calculate_fees(amount: float) -> dict:
-    """Calculate platform fee and payout amount for a given deposit."""
-    fee_amount = round(amount * PLATFORM_FEE_PERCENT, 2)
-    payout_amount = round(amount - fee_amount, 2)
-    return {"fee_amount": fee_amount, "payout_amount": payout_amount}
+def success_url_for_wallet(request, booking_id: str) -> str:
+    """Build the success URL used when a booking is paid entirely with wallet funds (no Stripe)."""
+    origin = request.headers.get('origin', str(request.base_url).rstrip('/'))
+    return f"{origin}/payment/success?wallet=1&booking_id={booking_id}"
+
+def calculate_fees(deposit_amount: float) -> dict:
+    """
+    Calculate the payment breakdown for a booking with deposit.
+    
+    Model:
+      - client_paid       = deposit + Bookvia fixed fee ($8.20 MXN)
+      - bookvia_fee       = $8.20 MXN fixed (IVA included)
+      - stripe_fee_est    = 8.5% of deposit (charged to business, covers Stripe)
+      - business_amount   = deposit - stripe_fee_est (what business receives after payout)
+    
+    Returns dict with all amounts rounded to 2 decimals.
+    """
+    deposit_amount = round(float(deposit_amount or 0), 2)
+    bookvia_fee = round(BOOKVIA_FEE_MXN, 2)
+    stripe_fee_est = round(deposit_amount * STRIPE_FEE_PERCENT_ESTIMATED, 2)
+    business_amount = round(deposit_amount - stripe_fee_est, 2)
+    client_paid = round(deposit_amount + bookvia_fee, 2)
+    # Legacy keys kept for back-compat in callers (fee_amount / payout_amount)
+    return {
+        "deposit_amount": deposit_amount,
+        "bookvia_fee": bookvia_fee,
+        "stripe_fee_estimated": stripe_fee_est,
+        "business_amount": business_amount,
+        "client_paid": client_paid,
+        "fee_amount": stripe_fee_est,
+        "payout_amount": business_amount,
+    }
 
 
 async def expire_holds_task() -> int:
@@ -72,6 +100,29 @@ async def expire_holds_task() -> int:
     if result.modified_count > 0:
         logger.info(f"Expired {result.modified_count} hold bookings")
     return result.modified_count
+
+
+@router.get("/fees/breakdown")
+async def get_fees_breakdown(deposit_amount: float):
+    """Return fee breakdown for a given deposit amount. Public helper for UI previews."""
+    if deposit_amount <= 0:
+        return {
+            "deposit_amount": 0.0,
+            "bookvia_fee": 0.0,
+            "stripe_fee_estimated": 0.0,
+            "business_amount": 0.0,
+            "client_paid": 0.0,
+            "min_deposit_amount": MIN_DEPOSIT_AMOUNT,
+            "bookvia_fee_mxn": BOOKVIA_FEE_MXN,
+            "stripe_fee_percent_estimated": STRIPE_FEE_PERCENT_ESTIMATED,
+        }
+    fees = calculate_fees(deposit_amount)
+    return {
+        **fees,
+        "min_deposit_amount": MIN_DEPOSIT_AMOUNT,
+        "bookvia_fee_mxn": BOOKVIA_FEE_MXN,
+        "stripe_fee_percent_estimated": STRIPE_FEE_PERCENT_ESTIMATED,
+    }
 
 @router.post("/deposit/checkout")
 async def create_deposit_checkout(
@@ -128,6 +179,97 @@ async def create_deposit_checkout(
     
     deposit_amount = max(booking.get("deposit_amount", MIN_DEPOSIT_AMOUNT), MIN_DEPOSIT_AMOUNT)
     fees = calculate_fees(deposit_amount)
+    client_paid = fees["client_paid"]  # deposit + $8.20 Bookvia fee
+    
+    # Optionally apply user wallet balance toward the total client_paid
+    wallet_applied = 0.0
+    stripe_charge_amount = client_paid
+    if checkout_req.use_wallet:
+        from services.wallet import get_wallet_balance
+        winfo = await get_wallet_balance(token_data.user_id)
+        wallet_balance = float(winfo.get("balance") or 0)
+        wallet_applied = round(min(wallet_balance, client_paid), 2)
+        stripe_charge_amount = round(client_paid - wallet_applied, 2)
+    
+    # If wallet covers the entire amount, no Stripe checkout needed - confirm directly
+    if checkout_req.use_wallet and stripe_charge_amount <= 0.50:  # tiny rounding leftover
+        from services.wallet import debit_wallet, DEBIT_BOOKING
+        try:
+            # Debit the full client_paid from wallet
+            await debit_wallet(
+                user_id=token_data.user_id,
+                amount=client_paid,
+                tx_type=DEBIT_BOOKING,
+                booking_id=checkout_req.booking_id,
+                description=f"Reserva con saldo Bookvia - {service['name'] if service else 'cita'}",
+            )
+            wallet_applied = client_paid
+            stripe_charge_amount = 0.0
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=f"Saldo insuficiente: {e}")
+        
+        # Create transaction record (paid by wallet, no Stripe)
+        now_iso = datetime.now(timezone.utc).isoformat()
+        transaction_id = generate_id()
+        transaction_doc = {
+            "id": transaction_id,
+            "booking_id": checkout_req.booking_id,
+            "user_id": token_data.user_id,
+            "business_id": booking["business_id"],
+            "stripe_session_id": None,
+            "stripe_payment_intent_id": None,
+            "amount_total": deposit_amount,
+            "client_paid": client_paid,
+            "bookvia_fee": fees["bookvia_fee"],
+            "stripe_fee_estimated": fees["stripe_fee_estimated"],
+            "stripe_fee_actual": 0.0,  # No Stripe fee since paid from wallet
+            "business_amount": fees["business_amount"],
+            "fee_amount": fees["fee_amount"],
+            "payout_amount": fees["payout_amount"],
+            "wallet_applied": wallet_applied,
+            "stripe_charge_amount": 0.0,
+            "currency": "MXN",
+            "status": TransactionStatus.PAID,
+            "paid_at": now_iso,
+            "created_at": now_iso,
+            "updated_at": now_iso,
+        }
+        await db.transactions.insert_one(transaction_doc)
+        
+        # Confirm booking
+        await db.bookings.update_one(
+            {"id": checkout_req.booking_id},
+            {"$set": {
+                "status": AppointmentStatus.CONFIRMED,
+                "deposit_paid": True,
+                "transaction_id": transaction_id,
+                "confirmed_at": now_iso,
+            }}
+        )
+        # Create ledger entries for paid transaction
+        try:
+            await create_transaction_ledger_entries(transaction_doc, TransactionStatus.PAID)
+        except Exception as e:
+            logger.error(f"Wallet-paid ledger error: {e}")
+        
+        # Initialize funds state machine: PENDING_HOLD
+        try:
+            from services.funds_state import initialize as init_funds
+            await init_funds(transaction_id, actor="wallet_checkout")
+        except Exception as e:
+            logger.error(f"Funds state init (wallet) failed for tx {transaction_id}: {e}")
+        
+        return {
+            "wallet_only": True,
+            "transaction_id": transaction_id,
+            "amount": deposit_amount,
+            "client_paid": client_paid,
+            "wallet_applied": wallet_applied,
+            "stripe_charge_amount": 0.0,
+            "bookvia_fee": fees["bookvia_fee"],
+            "business_amount": fees["business_amount"],
+            "redirect_url": success_url_for_wallet(request, checkout_req.booking_id),
+        }
     
     # Create transaction record
     transaction_id = generate_id()
@@ -138,9 +280,16 @@ async def create_deposit_checkout(
         "business_id": booking["business_id"],
         "stripe_session_id": None,
         "stripe_payment_intent_id": None,
-        "amount_total": deposit_amount,
-        "fee_amount": fees["fee_amount"],
-        "payout_amount": fees["payout_amount"],
+        "amount_total": deposit_amount,           # Deposit only (historical field)
+        "client_paid": client_paid,                # What client actually paid to Stripe + wallet
+        "bookvia_fee": fees["bookvia_fee"],        # $8.20 Bookvia retains
+        "stripe_fee_estimated": fees["stripe_fee_estimated"],  # 8.5% estimated charged to business
+        "stripe_fee_actual": None,                 # Populated by webhook from balance_transaction.fee
+        "business_amount": fees["business_amount"],# What the business will eventually receive
+        "fee_amount": fees["fee_amount"],          # Back-compat alias for stripe_fee_estimated
+        "payout_amount": fees["payout_amount"],    # Back-compat alias for business_amount
+        "wallet_applied": wallet_applied,           # Amount applied from wallet (0 if not used)
+        "stripe_charge_amount": stripe_charge_amount,  # Amount charged to card after wallet
         "currency": "MXN",
         "status": TransactionStatus.CREATED,
         "refund_amount": None,
@@ -157,11 +306,23 @@ async def create_deposit_checkout(
     success_url = f"{origin}/payment/success?session_id={{CHECKOUT_SESSION_ID}}&booking_id={checkout_req.booking_id}"
     cancel_url = f"{origin}/payment/cancel?booking_id={checkout_req.booking_id}"
     
-    try:
-        session = stripe_lib.checkout.Session.create(
-            payment_method_types=["card"],
-            mode="payment",
-            line_items=[{
+    # Build Stripe line items. If wallet covers part, show a single combined "Reserva" item
+    # for the remainder (so Stripe charges the right amount). Otherwise show the standard breakdown.
+    if wallet_applied > 0:
+        line_items = [{
+            "price_data": {
+                "currency": "mxn",
+                "unit_amount": int(stripe_charge_amount * 100),
+                "product_data": {
+                    "name": f"Reserva - {service['name'] if service else 'Cita'}",
+                    "description": f"Anticipo + Servicio Bookvia (saldo aplicado: ${wallet_applied:.2f})"
+                }
+            },
+            "quantity": 1
+        }]
+    else:
+        line_items = [
+            {
                 "price_data": {
                     "currency": "mxn",
                     "unit_amount": int(deposit_amount * 100),
@@ -171,7 +332,25 @@ async def create_deposit_checkout(
                     }
                 },
                 "quantity": 1
-            }],
+            },
+            {
+                "price_data": {
+                    "currency": "mxn",
+                    "unit_amount": int(fees["bookvia_fee"] * 100),
+                    "product_data": {
+                        "name": "Servicio Bookvia",
+                        "description": "Gestion de reserva y recordatorios (IVA incluido)"
+                    }
+                },
+                "quantity": 1
+            }
+        ]
+    
+    try:
+        session = stripe_lib.checkout.Session.create(
+            payment_method_types=["card"],
+            mode="payment",
+            line_items=line_items,
             success_url=success_url,
             cancel_url=cancel_url,
             metadata={
@@ -205,7 +384,12 @@ async def create_deposit_checkout(
         "session_id": session.id,
         "transaction_id": transaction_id,
         "amount": deposit_amount,
-        "fee": fees["fee_amount"]
+        "client_paid": client_paid,
+        "bookvia_fee": fees["bookvia_fee"],
+        "business_amount": fees["business_amount"],
+        "fee": fees["fee_amount"],
+        "wallet_applied": wallet_applied,
+        "stripe_charge_amount": stripe_charge_amount,
     }
 
 
@@ -226,22 +410,60 @@ async def get_checkout_status(session_id: str, request: Request):
         now = datetime.now(timezone.utc).isoformat()
         logger.info(f"Checkout status fallback: confirming payment for transaction {transaction['id']} (webhook may not have fired)")
         
+        # Attempt to capture actual Stripe fee from the payment intent's charge balance transaction
+        stripe_fee_actual = None
+        payment_intent_id = session.payment_intent if hasattr(session, 'payment_intent') else None
+        try:
+            if payment_intent_id:
+                pi = stripe_lib.PaymentIntent.retrieve(payment_intent_id, expand=["latest_charge.balance_transaction"])
+                charge = getattr(pi, "latest_charge", None)
+                bt = getattr(charge, "balance_transaction", None) if charge else None
+                if bt and getattr(bt, "fee", None) is not None:
+                    stripe_fee_actual = round(bt.fee / 100.0, 2)
+        except Exception as e:
+            logger.warning(f"Could not fetch actual Stripe fee for tx {transaction['id']}: {e}")
+        
         # Update transaction
+        update_set = {
+            "status": TransactionStatus.PAID,
+            "stripe_payment_intent_id": payment_intent_id,
+            "paid_at": now,
+            "updated_at": now
+        }
+        if stripe_fee_actual is not None:
+            update_set["stripe_fee_actual"] = stripe_fee_actual
         await db.transactions.update_one(
             {"id": transaction["id"]},
-            {"$set": {
-                "status": TransactionStatus.PAID,
-                "stripe_payment_intent_id": session.payment_intent if hasattr(session, 'payment_intent') else None,
-                "paid_at": now,
-                "updated_at": now
-            }}
+            {"$set": update_set}
         )
+        
+        # If transaction had a wallet portion applied, debit it now
+        wallet_applied = float(transaction.get("wallet_applied") or 0)
+        if wallet_applied > 0:
+            try:
+                from services.wallet import debit_wallet, DEBIT_BOOKING
+                await debit_wallet(
+                    user_id=transaction["user_id"],
+                    amount=wallet_applied,
+                    tx_type=DEBIT_BOOKING,
+                    booking_id=transaction["booking_id"],
+                    description=f"Saldo aplicado a reserva (resto pagado con tarjeta)",
+                )
+            except Exception as e:
+                logger.error(f"Wallet debit on fallback failed for tx {transaction['id']}: {e}")
         
         # Create ledger entries
         try:
             await create_transaction_ledger_entries(transaction, TransactionStatus.PAID)
         except Exception as e:
             logger.error(f"Fallback ledger error: {e}")
+        
+        # Initialize funds state machine
+        try:
+            from services.funds_state import initialize as init_funds
+            await init_funds(transaction["id"], actor="checkout_status_fallback")
+        except Exception as e:
+            logger.error(f"Funds state init (fallback) failed for tx {transaction['id']}: {e}")
         
         # Update booking to CONFIRMED
         await db.bookings.update_one(

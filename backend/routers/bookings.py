@@ -40,6 +40,7 @@ from models.enums import (
     SettlementStatus, AuditAction,
     PLATFORM_FEE_PERCENT, HOLD_EXPIRATION_MINUTES, MIN_DEPOSIT_AMOUNT,
     SUBSCRIPTION_PRICE_MXN, SUBSCRIPTION_TRIAL_DAYS,
+    MAX_RESCHEDULES_PER_BOOKING, RESCHEDULE_CUTOFF_HOURS,
     VISIBLE_BUSINESS_FILTER, DEFAULT_MANAGER_PERMISSIONS
 )
 from models.schemas import *
@@ -632,11 +633,15 @@ async def create_booking(booking: BookingCreate, token_data: TokenData = Depends
         if not (end_time_dt <= ex_start or start_time_dt >= ex_end_with_buffer):
             raise HTTPException(status_code=409, detail="Slot conflicts with existing booking")
     
-    # Calculate deposit amount (minimum 50 MXN)
-    deposit_amount = max(
-        business.get("deposit_amount", MIN_DEPOSIT_AMOUNT) if business.get("requires_deposit") else MIN_DEPOSIT_AMOUNT,
-        MIN_DEPOSIT_AMOUNT
-    )
+    # Calculate deposit amount. Only charge deposit if business requires it
+    # AND the service price is >= minimum deposit. Otherwise no deposit.
+    business_deposit = float(business.get("deposit_amount") or 0)
+    if business.get("requires_deposit") and business_deposit >= MIN_DEPOSIT_AMOUNT and service["price"] >= MIN_DEPOSIT_AMOUNT:
+        deposit_amount = max(business_deposit, MIN_DEPOSIT_AMOUNT)
+        # Cap deposit to service price (can't ask more than the service costs)
+        deposit_amount = min(deposit_amount, float(service["price"]))
+    else:
+        deposit_amount = 0.0
     
     # Determine if this is a business-created booking (skip payment)
     is_biz_booking = booking.skip_payment and token_data.role == UserRole.BUSINESS
@@ -840,6 +845,18 @@ async def get_business_bookings(
 
 
 
+@router.get("/policies")
+async def get_booking_policies():
+    """Public: return booking-related policies for UI display."""
+    return {
+        "max_reschedules_per_booking": MAX_RESCHEDULES_PER_BOOKING,
+        "reschedule_cutoff_hours": RESCHEDULE_CUTOFF_HOURS,
+        "grace_period_hours": 24,  # GRACE_PERIOD_HOURS
+        "auto_complete_hours": 48,  # AUTO_COMPLETE_HOURS
+        "min_deposit_amount": MIN_DEPOSIT_AMOUNT,
+    }
+
+
 @router.put("/{booking_id}/reschedule")
 async def reschedule_booking(
     booking_id: str,
@@ -851,30 +868,96 @@ async def reschedule_booking(
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
     
-    # Check if >24h before
+    # Only confirmed or hold bookings can be rescheduled
+    if booking.get("status") not in [AppointmentStatus.CONFIRMED, AppointmentStatus.HOLD]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot reschedule booking in status '{booking.get('status')}'"
+        )
+    
+    # Enforce reschedule limit (max 2 reschedules per booking)
+    reschedule_count = int(booking.get("reschedule_count") or 0)
+    if reschedule_count >= MAX_RESCHEDULES_PER_BOOKING:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Has alcanzado el limite de {MAX_RESCHEDULES_PER_BOOKING} reagendamientos para esta cita. Si necesitas cambiarla de nuevo, debes cancelarla."
+        )
+    
+    # Enforce minimum cutoff (must be > 2h before appointment)
     booking_datetime = datetime.strptime(f"{booking['date']} {booking['time']}", "%Y-%m-%d %H:%M")
     booking_datetime = booking_datetime.replace(tzinfo=timezone.utc)
     hours_until = (booking_datetime - datetime.now(timezone.utc)).total_seconds() / 3600
     
-    if hours_until <= 24:
-        raise HTTPException(status_code=400, detail="Cannot reschedule less than 24 hours before appointment")
+    if hours_until <= RESCHEDULE_CUTOFF_HOURS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"No puedes reagendar con menos de {RESCHEDULE_CUTOFF_HOURS} horas de anticipacion. Solo puedes cancelar."
+        )
+    
+    # Validate new datetime is in the future and at least RESCHEDULE_CUTOFF_HOURS away
+    try:
+        new_datetime = datetime.strptime(f"{new_date} {new_time}", "%Y-%m-%d %H:%M").replace(tzinfo=timezone.utc)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Formato de fecha u hora invalido")
+    
+    if new_datetime <= datetime.now(timezone.utc) + timedelta(hours=1):
+        raise HTTPException(status_code=400, detail="La nueva fecha debe ser al menos 1 hora en el futuro")
     
     # Calculate new end time
     service = await db.services.find_one({"id": booking["service_id"]})
+    if not service:
+        raise HTTPException(status_code=404, detail="Service not found")
     start_time = datetime.strptime(new_time, "%H:%M")
     end_time = start_time + timedelta(minutes=service["duration_minutes"])
     
+    now_iso = datetime.now(timezone.utc).isoformat()
+    history_entry = {
+        "from_date": booking["date"],
+        "from_time": booking["time"],
+        "to_date": new_date,
+        "to_time": new_time,
+        "by": "user",
+        "at": now_iso,
+    }
+    
     await db.bookings.update_one(
         {"id": booking_id},
-        {"$set": {
-            "date": new_date,
-            "time": new_time,
-            "end_time": end_time.strftime("%H:%M"),
-            "rescheduled_at": datetime.now(timezone.utc).isoformat()
-        }}
+        {
+            "$set": {
+                "date": new_date,
+                "time": new_time,
+                "end_time": end_time.strftime("%H:%M"),
+                "appointment_date": f"{new_date}T{new_time}:00+00:00",
+                "rescheduled_at": now_iso,
+                "rescheduled_by": "user",
+                "updated_at": now_iso,
+            },
+            "$inc": {"reschedule_count": 1},
+            "$push": {"reschedule_history": history_entry},
+        }
     )
     
-    return {"message": "Booking rescheduled"}
+    # Notify business
+    business = await db.businesses.find_one({"id": booking["business_id"]})
+    if business and business.get("user_id"):
+        try:
+            await create_notification(
+                business["user_id"],
+                "Cita reagendada por el cliente",
+                f"El cliente reagendo su cita: {booking['date']} {booking['time']} -> {new_date} {new_time}",
+                "booking",
+                {"booking_id": booking_id, "old_date": booking["date"], "new_date": new_date}
+            )
+        except Exception as e:
+            logger.error(f"Failed to send reschedule notification: {e}")
+    
+    return {
+        "message": "Booking rescheduled",
+        "reschedule_count": reschedule_count + 1,
+        "remaining_reschedules": MAX_RESCHEDULES_PER_BOOKING - (reschedule_count + 1),
+        "new_date": new_date,
+        "new_time": new_time,
+    }
 
 
 
@@ -931,15 +1014,30 @@ async def reschedule_booking_by_business(
         "date": req.new_date,
         "time": req.new_time,
         "end_time": new_end_time,
+        "appointment_date": f"{req.new_date}T{req.new_time}:00+00:00",
         "rescheduled_at": now,
         "rescheduled_by": "business",
+        "updated_at": now,
     }
     if req.new_worker_id:
         update_fields["worker_id"] = req.new_worker_id
     
+    business_history_entry = {
+        "from_date": old_date,
+        "from_time": old_time,
+        "to_date": req.new_date,
+        "to_time": req.new_time,
+        "by": "business",
+        "at": now,
+    }
+    
     await db.bookings.update_one(
         {"id": booking_id},
-        {"$set": update_fields}
+        {
+            "$set": update_fields,
+            "$inc": {"business_reschedule_count": 1},
+            "$push": {"reschedule_history": business_history_entry},
+        }
     )
     
     # Notify client
@@ -1008,8 +1106,20 @@ async def complete_booking(booking_id: str, token_data: TokenData = Depends(requ
     
     await db.bookings.update_one(
         {"id": booking_id},
-        {"$set": {"status": AppointmentStatus.COMPLETED, "completed_at": datetime.now(timezone.utc).isoformat()}}
+        {"$set": {"status": AppointmentStatus.COMPLETED, "completed_at": datetime.now(timezone.utc).isoformat(), "completed_by": "business"}}
     )
+    
+    # Move associated transaction's funds_state from PENDING_HOLD to AVAILABLE (start 24h grace)
+    try:
+        tx = await db.transactions.find_one(
+            {"booking_id": booking_id, "status": TransactionStatus.PAID},
+            {"_id": 0}
+        )
+        if tx and tx.get("funds_state") == "pending_hold":
+            from services.funds_state import mark_appointment_completed
+            await mark_appointment_completed(tx["id"], actor="business", reason="Booking marked completed by business")
+    except Exception as e:
+        logger.error(f"Funds state -> AVAILABLE failed for booking {booking_id}: {e}")
     
     # Update business completed appointments
     await db.businesses.update_one(
@@ -1023,13 +1133,13 @@ async def complete_booking(booking_id: str, token_data: TokenData = Depends(requ
         {"$inc": {"active_appointments_count": -1}}
     )
     
-    # Notify user to leave review
+    # Notify user to leave review (push + 24h grace explanation)
     await create_notification(
         booking["user_id"],
         "Deja tu opinion",
-        "Tu cita ha sido completada. Dejanos tu opinion!",
+        "Tu cita ha sido completada. Tienes 24 horas para calificar o reportar cualquier problema.",
         "review",
-        {"booking_id": booking_id, "business_id": booking["business_id"]}
+        {"booking_id": booking_id, "business_id": booking["business_id"], "grace_period_hours": 24}
     )
     
     # Log activity
@@ -1040,6 +1150,389 @@ async def complete_booking(booking_id: str, token_data: TokenData = Depends(requ
     
     return {"message": "Booking completed"}
 
+
+
+@router.post("/{booking_id}/dispute")
+async def dispute_booking(
+    booking_id: str,
+    body: dict = None,
+    token_data: TokenData = Depends(require_auth)
+):
+    """
+    Client raises a dispute for a completed booking.
+    Marks the transaction's funds_state as DISPUTED (admin must resolve).
+    Body: {"reason": "..."}
+    """
+    body = body or {}
+    booking = await db.bookings.find_one({"id": booking_id})
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    if booking["user_id"] != token_data.user_id:
+        raise HTTPException(status_code=403, detail="Not your booking")
+    
+    if booking["status"] not in [AppointmentStatus.COMPLETED, AppointmentStatus.CONFIRMED]:
+        raise HTTPException(status_code=400, detail="Only completed or confirmed bookings can be disputed")
+    
+    transaction = await db.transactions.find_one({"booking_id": booking_id, "status": TransactionStatus.PAID}, {"_id": 0})
+    if not transaction:
+        raise HTTPException(status_code=400, detail="No paid transaction found for this booking")
+    
+    if transaction.get("funds_state") in {"refunded", "paid_out", "disputed"}:
+        raise HTTPException(status_code=400, detail=f"Cannot dispute transaction in state {transaction.get('funds_state')}")
+    
+    reason = (body.get("reason") or "").strip() or "Cliente reporto un problema"
+    try:
+        from services.funds_state import mark_disputed
+        await mark_disputed(transaction["id"], actor="client", reason=reason)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    
+    # Mark booking with dispute flag
+    await db.bookings.update_one(
+        {"id": booking_id},
+        {"$set": {"has_dispute": True, "dispute_reason": reason, "dispute_opened_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    
+    # Notify business
+    business = await db.businesses.find_one({"id": booking["business_id"]})
+    if business and business.get("user_id"):
+        await create_notification(
+            business["user_id"],
+            "Cliente reporto un problema",
+            f"Un cliente ha reportado un problema con la cita. Razon: {reason[:80]}",
+            "dispute",
+            {"booking_id": booking_id, "reason": reason}
+        )
+    
+    return {"message": "Dispute opened. Admin will review.", "funds_state": "disputed"}
+
+
+# ────────────────────── FASE 6: Negocio cerrado ──────────────────────
+
+NO_SHOW_RESPONSE_WINDOW_HOURS = 24    # Business has 24h to respond to a no-show report
+NO_SHOW_AUTO_PROTECT_HOURS = 2        # If business responds within 2h with evidence, auto-recovery
+NO_SHOW_COMPENSATION_MXN = 50.0       # Bonus paid to client after auto-refund
+
+
+@router.post("/{booking_id}/no-show-business")
+async def report_business_no_show(
+    booking_id: str,
+    body: dict = None,
+    token_data: TokenData = Depends(require_auth),
+):
+    """
+    Client reports that the business never opened / didn't attend the appointment.
+    Creates a no_show_business strike in pending_review state and notifies the business.
+    The business has 24h to respond with evidence; if no response, auto-resolve in
+    favor of client (full refund + $50 compensation to wallet).
+    """
+    body = body or {}
+    booking = await db.bookings.find_one({"id": booking_id})
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    if booking["user_id"] != token_data.user_id:
+        raise HTTPException(status_code=403, detail="Not your booking")
+    if booking["status"] not in [AppointmentStatus.CONFIRMED, AppointmentStatus.COMPLETED]:
+        raise HTTPException(status_code=400, detail="Solo se puede reportar en citas confirmadas o completadas")
+    if booking.get("no_show_report"):
+        raise HTTPException(status_code=400, detail="Ya hay un reporte abierto para esta cita")
+    
+    # Time window: only allowed from 30min before appointment until 4h after
+    booking_dt = datetime.strptime(f"{booking['date']} {booking['time']}", "%Y-%m-%d %H:%M").replace(tzinfo=timezone.utc)
+    now = datetime.now(timezone.utc)
+    delta_min = (now - booking_dt).total_seconds() / 60
+    if delta_min < -30:
+        raise HTTPException(status_code=400, detail="Solo puedes reportar desde 30 min antes de la cita")
+    if delta_min > 240:  # 4h after
+        raise HTTPException(status_code=400, detail="Ya pasaron mas de 4 horas; usa el boton de reportar problema")
+    
+    transaction = await db.transactions.find_one(
+        {"booking_id": booking_id, "status": TransactionStatus.PAID}, {"_id": 0}
+    )
+    if not transaction:
+        raise HTTPException(status_code=400, detail="No hay pago asociado a esta cita")
+    if transaction.get("funds_state") in {"refunded", "paid_out"}:
+        raise HTTPException(status_code=400, detail=f"No se puede reportar: estado={transaction.get('funds_state')}")
+    
+    description = (body.get("description") or "").strip()
+    photo_url = (body.get("photo_url") or "").strip()
+    
+    # Issue pending_review strike
+    from services.strikes import issue_strike
+    try:
+        strike = await issue_strike(
+            business_id=booking["business_id"],
+            reason="no_show_business",
+            description=description or "Cliente reporto que el negocio no atendio",
+            booking_id=booking_id,
+            issued_by=f"client:{token_data.user_id}",
+            metadata={
+                "transaction_id": transaction["id"],
+                "client_description": description,
+                "photo_url": photo_url,
+                "reported_at": now.isoformat(),
+                "auto_resolve_at": (now + timedelta(hours=NO_SHOW_RESPONSE_WINDOW_HOURS)).isoformat(),
+            },
+            pending_review=True,
+        )
+    except Exception as e:
+        logger.error(f"Failed to create no-show strike: {e}")
+        raise HTTPException(status_code=500, detail="Error registrando el reporte")
+    
+    # Move funds to DISPUTED to freeze them
+    try:
+        from services.funds_state import mark_disputed
+        if transaction.get("funds_state") in {"pending_hold", "available"}:
+            await mark_disputed(transaction["id"], actor="client_no_show", reason=description or "Negocio no atendio")
+    except Exception as e:
+        logger.error(f"Funds state -> DISPUTED failed: {e}")
+    
+    # Mark the booking
+    auto_resolve_at = (now + timedelta(hours=NO_SHOW_RESPONSE_WINDOW_HOURS)).isoformat()
+    await db.bookings.update_one(
+        {"id": booking_id},
+        {"$set": {
+            "no_show_report": {
+                "reported_at": now.isoformat(),
+                "description": description,
+                "photo_url": photo_url,
+                "strike_id": strike["id"],
+                "auto_resolve_at": auto_resolve_at,
+                "business_response": None,
+                "resolved": False,
+            }
+        }}
+    )
+    
+    # Notify business immediately (push)
+    business = await db.businesses.find_one({"id": booking["business_id"]})
+    if business and business.get("user_id"):
+        try:
+            await create_notification(
+                business["user_id"],
+                "URGENTE: Cliente reporto que no atendiste",
+                f"Tienes 24h para responder con evidencia, de lo contrario se procesara reembolso automatico al cliente.",
+                "no_show_report",
+                {"booking_id": booking_id, "strike_id": strike["id"], "auto_resolve_at": auto_resolve_at}
+            )
+        except Exception as e:
+            logger.error(f"Failed to send no-show notification: {e}")
+    
+    return {
+        "message": "Reporte registrado. Bookvia notifico al negocio para que responda en 24h.",
+        "auto_resolve_at": auto_resolve_at,
+        "strike_id": strike["id"],
+    }
+
+
+@router.post("/{booking_id}/no-show-response")
+async def respond_business_no_show(
+    booking_id: str,
+    body: dict,
+    token_data: TokenData = Depends(require_business),
+):
+    """
+    Business responds to a no-show report with evidence (photo + description).
+    Body: {description, evidence_url}
+    The strike stays in pending_review until admin reviews.
+    """
+    body = body or {}
+    user = await db.users.find_one({"id": token_data.user_id})
+    if not user or not user.get("business_id"):
+        raise HTTPException(status_code=404, detail="Business not found")
+    
+    booking = await db.bookings.find_one({"id": booking_id})
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    if booking["business_id"] != user["business_id"]:
+        raise HTTPException(status_code=403, detail="Not your booking")
+    
+    report = booking.get("no_show_report")
+    if not report:
+        raise HTTPException(status_code=400, detail="No hay reporte abierto para esta cita")
+    if report.get("resolved"):
+        raise HTTPException(status_code=400, detail="El reporte ya fue resuelto")
+    if report.get("business_response"):
+        raise HTTPException(status_code=400, detail="Ya respondiste a este reporte")
+    
+    description = (body.get("description") or "").strip()
+    evidence_url = (body.get("evidence_url") or "").strip()
+    if len(description) < 10:
+        raise HTTPException(status_code=400, detail="Describe tu version con al menos 10 caracteres")
+    
+    now = datetime.now(timezone.utc)
+    response = {
+        "responded_at": now.isoformat(),
+        "description": description,
+        "evidence_url": evidence_url,
+    }
+    
+    await db.bookings.update_one(
+        {"id": booking_id},
+        {"$set": {"no_show_report.business_response": response}}
+    )
+    
+    # Update strike metadata so admin can see business's evidence
+    if report.get("strike_id"):
+        await db.business_strikes.update_one(
+            {"id": report["strike_id"]},
+            {"$set": {"metadata.business_response": response}}
+        )
+    
+    # Notify admin queue: the strike is in pending_review and now has business response
+    return {
+        "message": "Respuesta registrada. Bookvia revisara el caso y se pondra en contacto contigo.",
+        "responded_at": response["responded_at"],
+    }
+
+
+async def _process_no_show_report(booking: dict) -> bool:
+    """
+    Process a single no-show report whose 24h window has elapsed.
+    If business did NOT respond -> auto-resolve in favor of client (refund + $50 compensation).
+    If business responded -> leave for admin review (return False).
+    Returns True if auto-resolved.
+    """
+    report = booking.get("no_show_report") or {}
+    if report.get("resolved"):
+        return False
+    if report.get("business_response"):
+        # Business responded; leave pending for admin
+        return False
+    
+    booking_id = booking["id"]
+    business_id = booking["business_id"]
+    user_id = booking["user_id"]
+    
+    transaction = await db.transactions.find_one(
+        {"booking_id": booking_id, "status": TransactionStatus.PAID}, {"_id": 0}
+    )
+    if not transaction:
+        return False
+    
+    now_iso = datetime.now(timezone.utc).isoformat()
+    
+    # 1) Refund client_paid (or business_amount + bookvia_fee) to wallet (avoids Stripe fee loss)
+    try:
+        from services.wallet import credit_wallet, CREDIT_BUSINESS_NO_SHOW
+        client_paid = float(transaction.get("client_paid") or transaction.get("amount_total") or 0)
+        if client_paid > 0:
+            await credit_wallet(
+                user_id=user_id,
+                amount=client_paid,
+                tx_type=CREDIT_BUSINESS_NO_SHOW,
+                booking_id=booking_id,
+                description="Reembolso completo: el negocio no atendio tu cita",
+            )
+        # 2) Compensation $50 to client wallet
+        await credit_wallet(
+            user_id=user_id,
+            amount=NO_SHOW_COMPENSATION_MXN,
+            tx_type=CREDIT_BUSINESS_NO_SHOW,
+            booking_id=booking_id,
+            description="Compensacion de Bookvia por inconveniente",
+        )
+    except Exception as e:
+        logger.error(f"No-show wallet refund failed for booking {booking_id}: {e}")
+    
+    # 3) Mark transaction REFUNDED
+    try:
+        from services.funds_state import mark_refunded
+        if transaction.get("funds_state") in {"pending_hold", "available", "disputed"}:
+            await mark_refunded(transaction["id"], actor="auto_no_show", reason="Auto-resolved: business no-show, refund to client wallet")
+    except Exception as e:
+        logger.error(f"Funds state -> REFUNDED failed: {e}")
+    
+    await db.transactions.update_one(
+        {"id": transaction["id"]},
+        {"$set": {
+            "status": TransactionStatus.REFUND_FULL,
+            "refund_amount": float(transaction.get("client_paid") or 0),
+            "refund_to": "wallet",
+            "refund_reason": "auto_no_show_business",
+            "wallet_credited": True,
+            "cancelled_by": "system_no_show",
+            "updated_at": now_iso,
+        }}
+    )
+    
+    # 4) Apply the strike (uphold in favor of client)
+    if report.get("strike_id"):
+        try:
+            from services.strikes import resolve_pending_strike
+            await resolve_pending_strike(
+                report["strike_id"],
+                outcome="upheld",
+                resolved_by="system_auto_no_show",
+                reason="Business did not respond within 24h",
+            )
+        except Exception as e:
+            logger.error(f"Failed to uphold strike {report.get('strike_id')}: {e}")
+    
+    # 5) Mark booking
+    await db.bookings.update_one(
+        {"id": booking_id},
+        {"$set": {
+            "status": AppointmentStatus.CANCELLED,
+            "cancelled_by": "system_no_show",
+            "cancellation_reason": "Business did not attend",
+            "no_show_report.resolved": True,
+            "no_show_report.resolved_at": now_iso,
+            "no_show_report.outcome": "auto_refund",
+            "updated_at": now_iso,
+        }}
+    )
+    
+    # 6) Notifications
+    try:
+        client_refund = float(transaction.get("client_paid") or 0)
+        total_received = client_refund + NO_SHOW_COMPENSATION_MXN
+        await create_notification(
+            user_id,
+            "Reembolso procesado",
+            f"El negocio no respondio a tu reporte. Te depositamos ${client_refund:.2f} + ${NO_SHOW_COMPENSATION_MXN:.0f} de compensacion (total ${total_received:.2f}) en tu saldo Bookvia.",
+            "refund",
+            {"booking_id": booking_id, "amount": total_received}
+        )
+        biz = await db.businesses.find_one({"id": business_id})
+        if biz and biz.get("user_id"):
+            await create_notification(
+                biz["user_id"],
+                "Strike aplicado por no atender cliente",
+                "No respondiste al reporte en 24h. Se aplico strike y se reembolso al cliente.",
+                "strike",
+                {"booking_id": booking_id, "strike_id": report.get("strike_id")}
+            )
+    except Exception as e:
+        logger.error(f"Failed to send no-show resolution notifications: {e}")
+    
+    logger.info(f"[No-show] Auto-resolved booking={booking_id} biz={business_id}: refund + $50 compensation")
+    return True
+
+
+async def process_expired_no_show_reports() -> int:
+    """Cron task: auto-resolve no-show reports whose 24h window elapsed without business response."""
+    now_iso = datetime.now(timezone.utc).isoformat()
+    expired = await db.bookings.find(
+        {
+            "no_show_report.resolved": False,
+            "no_show_report.business_response": None,
+            "no_show_report.auto_resolve_at": {"$lte": now_iso},
+        },
+        {"_id": 0}
+    ).to_list(500)
+    
+    resolved = 0
+    for booking in expired:
+        try:
+            if await _process_no_show_report(booking):
+                resolved += 1
+        except Exception as e:
+            logger.error(f"Auto-resolve no-show failed for {booking.get('id')}: {e}")
+    
+    if resolved > 0:
+        logger.info(f"No-show: auto-resolved {resolved} expired reports")
+    return resolved
 
 
 @router.put("/{booking_id}/cancel/user")
@@ -1073,23 +1566,48 @@ async def cancel_booking_by_user(
     })
     
     refund_result = None
+    refund_to = (cancel_req.refund_to or "card").lower()
+    if refund_to not in ("card", "wallet"):
+        refund_to = "card"
     
     if transaction:
         # Apply cancellation policy
         if hours_until > 24:
-            # >24h: Refund amount - fee (8%)
-            refund_amount = transaction["payout_amount"]  # amount - fee
+            # >24h: Refund the deposit minus the 8.5% processing fee
+            # business_amount is what the business would have received (deposit * 0.915)
+            refund_amount = float(transaction.get("business_amount") or transaction.get("payout_amount") or 0)
             refund_status = TransactionStatus.REFUND_PARTIAL
-            refund_reason = "client_cancel_gt_24h"
+            refund_reason = f"client_cancel_gt_24h_{refund_to}"
             
-            logger.info(f"Partial refund: ${refund_amount} for booking {booking_id}")
+            logger.info(f"Partial refund (${refund_amount}) for booking {booking_id} -> {refund_to}")
         else:
-            # <24h: No refund (business keeps the deposit minus fee)
+            # <24h: No refund (business keeps the deposit)
             refund_amount = 0
-            refund_status = TransactionStatus.REFUND_PARTIAL  # 0 refund, business gets payout
+            refund_status = TransactionStatus.REFUND_PARTIAL
             refund_reason = "client_cancel_lt_24h"
+            refund_to = "card"  # Force card so we don't credit wallet for $0
             
             logger.info(f"No refund (<24h): booking {booking_id}")
+        
+        # If client chose wallet refund and we have an amount > 0:
+        # do NOT issue a Stripe refund (saves the unrecoverable Stripe fee).
+        # Instead, credit the wallet immediately with the refund amount.
+        wallet_credited = False
+        if refund_to == "wallet" and refund_amount > 0:
+            try:
+                from services.wallet import credit_wallet, CREDIT_CANCELLATION
+                await credit_wallet(
+                    user_id=token_data.user_id,
+                    amount=refund_amount,
+                    tx_type=CREDIT_CANCELLATION,
+                    booking_id=booking_id,
+                    description=f"Cancelacion de cita - reembolso a saldo Bookvia",
+                )
+                wallet_credited = True
+            except Exception as e:
+                logger.error(f"Wallet credit failed for booking {booking_id}: {e}")
+                # Fall back to card refund
+                refund_to = "card"
         
         # Update transaction
         await db.transactions.update_one(
@@ -1098,18 +1616,38 @@ async def cancel_booking_by_user(
                 "status": refund_status,
                 "refund_amount": refund_amount,
                 "refund_reason": refund_reason,
+                "refund_to": refund_to,
+                "wallet_credited": wallet_credited,
                 "cancelled_by": "user",
                 "updated_at": now.isoformat()
             }}
         )
         
+        # Funds state: if money was refunded (full or partial >0) move to REFUNDED;
+        # if no refund (<24h), keep money flowing -> AVAILABLE so it can clear normally.
+        try:
+            from services.funds_state import mark_refunded, mark_appointment_completed
+            if refund_amount > 0:
+                await mark_refunded(transaction["id"], actor="user_cancel", reason=refund_reason)
+            else:
+                # Treat <24h cancellation as effectively a no-show/completed for the business
+                if transaction.get("funds_state") == "pending_hold":
+                    await mark_appointment_completed(
+                        transaction["id"], actor="user_cancel_lt_24h",
+                        reason="Late cancellation - business retains deposit"
+                    )
+        except Exception as e:
+            logger.error(f"Funds state on user cancel failed: {e}")
+        
         # Create ledger entries for refund (if >24h)
         if hours_until > 24 and refund_amount > 0:
-            updated_tx = {**transaction, "refund_amount": refund_amount}
+            updated_tx = {**transaction, "refund_amount": refund_amount, "refund_to": refund_to}
             await create_transaction_ledger_entries(updated_tx, TransactionStatus.REFUND_PARTIAL)
         
         refund_result = {
             "refund_amount": refund_amount,
+            "refund_to": refund_to,
+            "wallet_credited": wallet_credited,
             "policy_applied": ">24h partial refund" if hours_until > 24 else "<24h no refund"
         }
     
@@ -1238,6 +1776,13 @@ async def cancel_booking_by_business(
         updated_tx = {**transaction, "refund_amount": refund_amount}
         await create_transaction_ledger_entries(updated_tx, TransactionStatus.REFUND_FULL)
         
+        # Funds state: REFUNDED (terminal)
+        try:
+            from services.funds_state import mark_refunded
+            await mark_refunded(transaction["id"], actor="business_cancel", reason="Business cancelled the appointment")
+        except Exception as e:
+            logger.error(f"Funds state on business cancel failed: {e}")
+        
         # Create fee penalty transaction for business
         penalty_tx = {
             "id": generate_id(),
@@ -1279,6 +1824,31 @@ async def cancel_booking_by_business(
         }
         
         logger.info(f"Business cancelled booking {booking_id}: full refund ${refund_amount}, penalty ${fee_penalty}")
+    
+    # Issue progressive strike to the business (Fase 5)
+    try:
+        from services.strikes import issue_strike
+        booking_dt = datetime.strptime(f"{booking['date']} {booking['time']}", "%Y-%m-%d %H:%M").replace(tzinfo=timezone.utc)
+        hours_until = (booking_dt - datetime.now(timezone.utc)).total_seconds() / 3600
+        strike_reason = (
+            "late_cancellation" if hours_until < 6 else "regular_cancellation"
+        )
+        strike = await issue_strike(
+            business_id=booking["business_id"],
+            reason=strike_reason,
+            description=f"Business cancelled booking {booking_id} ({hours_until:.1f}h before appointment)",
+            booking_id=booking_id,
+            issued_by=f"business_user:{token_data.user_id}",
+            metadata={"hours_before_appointment": round(hours_until, 2)},
+        )
+        if refund_result is not None:
+            refund_result["strike"] = {
+                "severity": strike["severity"],
+                "financial_penalty_mxn": strike["financial_penalty_mxn"],
+                "suspension_until": strike["suspension_until"],
+            }
+    except Exception as e:
+        logger.error(f"Failed to issue strike for business cancellation: {e}")
     
     # Update booking
     await db.bookings.update_one(
@@ -1428,6 +1998,125 @@ async def trigger_send_reminders(token_data: TokenData = Depends(require_admin))
     """Admin endpoint to manually trigger appointment reminders"""
     await send_pending_reminders()
     return {"message": "Reminders processed"}
+
+
+# ========================== CALENDAR (.ICS) ==========================
+
+def _calendar_token(booking_id: str) -> str:
+    """HMAC-SHA256 token to authorize public calendar download for a booking."""
+    import hmac
+    import hashlib
+    from core.config import JWT_SECRET
+    msg = f"calendar:{booking_id}".encode("utf-8")
+    secret = (JWT_SECRET or "dev").encode("utf-8")
+    return hmac.new(secret, msg, hashlib.sha256).hexdigest()[:32]
+
+
+def _ics_escape(value: str) -> str:
+    """Escape a string for inclusion in an ICS field per RFC 5545."""
+    return (
+        (value or "")
+        .replace("\\", "\\\\")
+        .replace(",", "\\,")
+        .replace(";", "\\;")
+        .replace("\n", "\\n")
+    )
+
+
+@router.get("/{booking_id}/calendar.ics")
+async def download_booking_calendar(booking_id: str, token: str = ""):
+    """Public endpoint that returns an .ics file for a booking.
+
+    Authentication is handled via an HMAC token tied to the booking id so the
+    link can be shared from email without requiring a session.
+    """
+    expected = _calendar_token(booking_id)
+    import hmac
+    if not token or not hmac.compare_digest(token, expected):
+        raise HTTPException(status_code=403, detail="Invalid calendar token")
+
+    booking = await db.bookings.find_one({"id": booking_id}, {"_id": 0})
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    if booking.get("status") in ("cancelled", "expired", "no_show"):
+        raise HTTPException(status_code=410, detail="Booking is no longer active")
+
+    business = await db.businesses.find_one(
+        {"id": booking["business_id"]},
+        {"_id": 0, "name": 1, "address": 1, "timezone": 1, "phone": 1},
+    ) or {}
+    service = await db.services.find_one(
+        {"id": booking.get("service_id")},
+        {"_id": 0, "name": 1, "duration_minutes": 1, "duration": 1},
+    ) or {}
+
+    tz_name = business.get("timezone") or "America/Mexico_City"
+    biz_tz = pytz.timezone(tz_name)
+
+    date_str = booking.get("date", "")
+    time_str = booking.get("time", "")
+    try:
+        naive_start = datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M")
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid booking datetime")
+
+    duration_min = int(
+        service.get("duration_minutes")
+        or service.get("duration")
+        or booking.get("duration_minutes")
+        or 60
+    )
+
+    local_start = biz_tz.localize(naive_start)
+    local_end = local_start + timedelta(minutes=duration_min)
+    utc_start = local_start.astimezone(pytz.utc)
+    utc_end = local_end.astimezone(pytz.utc)
+
+    dtstamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    dtstart = utc_start.strftime("%Y%m%dT%H%M%SZ")
+    dtend = utc_end.strftime("%Y%m%dT%H%M%SZ")
+
+    summary = _ics_escape(f"Cita en {business.get('name', 'Bookvia')}")
+    description_parts = [f"Servicio: {service.get('name', '')}"]
+    if business.get("phone"):
+        description_parts.append(f"Tel negocio: {business.get('phone')}")
+    description_parts.append("Reserva: https://bookvia.vercel.app/bookings")
+    description = _ics_escape("\n".join(description_parts))
+    location = _ics_escape(business.get("address") or "")
+
+    ics_lines = [
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        "PRODID:-//Bookvia//Reminders//ES",
+        "CALSCALE:GREGORIAN",
+        "METHOD:PUBLISH",
+        "BEGIN:VEVENT",
+        f"UID:{booking_id}@bookvia.app",
+        f"DTSTAMP:{dtstamp}",
+        f"DTSTART:{dtstart}",
+        f"DTEND:{dtend}",
+        f"SUMMARY:{summary}",
+        f"DESCRIPTION:{description}",
+        f"LOCATION:{location}",
+        "STATUS:CONFIRMED",
+        "BEGIN:VALARM",
+        "TRIGGER:-PT2H",
+        "ACTION:DISPLAY",
+        f"DESCRIPTION:{summary}",
+        "END:VALARM",
+        "END:VEVENT",
+        "END:VCALENDAR",
+    ]
+    body = "\r\n".join(ics_lines) + "\r\n"
+
+    return Response(
+        content=body,
+        media_type="text/calendar; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="bookvia-{booking_id}.ics"',
+            "Cache-Control": "no-store",
+        },
+    )
 
 
 

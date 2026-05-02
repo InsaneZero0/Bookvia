@@ -9,6 +9,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Switch } from '@/components/ui/switch';
+import WalletCard from '@/components/WalletCard';
 import { useAuth } from '@/lib/auth';
 import { useI18n } from '@/lib/i18n';
 import { usersAPI, bookingsAPI } from '@/lib/api';
@@ -140,6 +141,11 @@ export default function UserDashboardPage() {
           <Button variant="outline" size="sm" className="self-start" onClick={() => setEditing(true)} data-testid="edit-profile-button">
             <Edit2 className="h-4 w-4 mr-1.5" />{language === 'es' ? 'Editar perfil' : 'Edit profile'}
           </Button>
+        </div>
+
+        {/* ── Wallet Card ────────────────────────────── */}
+        <div className="mb-6">
+          <WalletCard />
         </div>
 
         {/* ── Quick Actions ──────────────────────────── */}

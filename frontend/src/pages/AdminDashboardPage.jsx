@@ -1640,7 +1640,7 @@ export default function AdminDashboardPage() {
                       <div className="flex items-center gap-2">
                         <span className="text-sm">$</span>
                         <Input type="number" step="1" min="0"
-                          value={configForm.subscription_price_mxn ?? 39}
+                          value={configForm.subscription_price_mxn ?? 49.99}
                           onChange={e => setConfigForm(f => ({ ...f, subscription_price_mxn: parseFloat(e.target.value) }))}
                           className="w-28" data-testid="config-price" />
                         <span className="text-sm text-muted-foreground">MXN</span>

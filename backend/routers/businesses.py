@@ -40,8 +40,8 @@ from models.enums import (
     TransactionStatus, LedgerDirection, LedgerAccount, LedgerEntryStatus,
     SettlementStatus, AuditAction,
     PLATFORM_FEE_PERCENT, HOLD_EXPIRATION_MINUTES, MIN_DEPOSIT_AMOUNT,
-    SUBSCRIPTION_PRICE_MXN, SUBSCRIPTION_TRIAL_DAYS,
-    VISIBLE_BUSINESS_FILTER, DEFAULT_MANAGER_PERMISSIONS
+    SUBSCRIPTION_PRICE_MXN, SUBSCRIPTION_PRICE_USD, SUBSCRIPTION_TRIAL_DAYS,
+    VISIBLE_BUSINESS_FILTER, DEFAULT_MANAGER_PERMISSIONS, visible_business_filter_now
 )
 from models.schemas import *
 
@@ -568,20 +568,12 @@ async def search_businesses(
     limit: int = 20,
     current_user: Optional[TokenData] = Depends(get_current_user)
 ):
-    # By default only show approved businesses with active subscription
+    # By default only show approved businesses with active subscription (or trialing)
     # If include_pending=True, also show PENDING (for profile viewing, but no bookings)
     if include_pending:
         filters = {"status": {"$in": [BusinessStatus.APPROVED, BusinessStatus.PENDING]}}
     else:
-        filters = {
-            "status": BusinessStatus.APPROVED,
-            "$or": [
-                {"subscription_status": {"$in": ["active", "trialing"]}},
-                {"subscription_status": {"$exists": False}},
-                {"subscription_status": None},
-                {"subscription_status": "none"},
-            ]
-        }
+        filters = visible_business_filter_now()
     
     if country_code:
         filters["country_code"] = country_code.upper()
@@ -762,7 +754,7 @@ async def search_businesses(
 
 @router.get("/featured", response_model=List[BusinessResponse])
 async def get_featured_businesses(limit: int = 8, country_code: Optional[str] = None, current_user: Optional[TokenData] = Depends(get_current_user)):
-    base_filter = {"status": BusinessStatus.APPROVED, "is_featured": True, "$or": [{"subscription_status": {"$in": ["active", "trialing"]}}, {"subscription_status": {"$exists": False}}, {"subscription_status": None}, {"subscription_status": "none"}]}
+    base_filter = {**visible_business_filter_now(), "is_featured": True}
     if country_code:
         base_filter["country_code"] = country_code.upper()
     businesses = await db.businesses.find(
@@ -773,7 +765,7 @@ async def get_featured_businesses(limit: int = 8, country_code: Optional[str] = 
     # If not enough featured, add top rated
     if len(businesses) < limit:
         existing_ids = [b["id"] for b in businesses]
-        more_filter = {"status": BusinessStatus.APPROVED, "id": {"$nin": existing_ids}, "$or": [{"subscription_status": {"$in": ["active", "trialing"]}}, {"subscription_status": {"$exists": False}}, {"subscription_status": None}, {"subscription_status": "none"}]}
+        more_filter = {**visible_business_filter_now(), "id": {"$nin": existing_ids}}
         if country_code:
             more_filter["country_code"] = country_code.upper()
         more = await db.businesses.find(
@@ -893,6 +885,16 @@ async def get_business(business_id: str, current_user: Optional[TokenData] = Dep
     return BusinessResponse(**business)
 
 
+@router.get("/{business_id}/trust-score")
+async def get_business_trust_score(business_id: str):
+    """Public: composite trust score (rating + completion + strikes) for the business profile badge."""
+    business = await db.businesses.find_one({"id": business_id}, {"_id": 0})
+    if not business:
+        raise HTTPException(status_code=404, detail="Business not found")
+    from services.strikes import compute_trust_score
+    return compute_trust_score(business)
+
+
 
 @router.put("/me", response_model=BusinessResponse)
 async def update_my_business(update: BusinessUpdate, token_data: TokenData = Depends(require_business)):
@@ -905,7 +907,12 @@ async def update_my_business(update: BusinessUpdate, token_data: TokenData = Dep
         raise HTTPException(status_code=400, detail="No data to update")
     
     if "deposit_amount" in update_data:
-        update_data["deposit_amount"] = max(update_data["deposit_amount"], 50.0)
+        # If also disabling requires_deposit in the same update, allow zero
+        requires_dep_in_update = update_data.get("requires_deposit")
+        if requires_dep_in_update is False:
+            update_data["deposit_amount"] = 0.0
+        else:
+            update_data["deposit_amount"] = max(update_data["deposit_amount"], MIN_DEPOSIT_AMOUNT)
     
     await db.businesses.update_one({"id": user["business_id"]}, {"$set": update_data})
     business = await db.businesses.find_one({"id": user["business_id"]}, {"_id": 0, "password_hash": 0})
@@ -1636,7 +1643,7 @@ async def create_subscription_checkout(request: Request, token_data: TokenData =
     if business.get("stripe_subscription_id"):
         raise HTTPException(status_code=400, detail="Already subscribed")
     
-    price_id = await get_or_create_stripe_price()
+    price_id = await get_or_create_stripe_price(country_code=business.get("country_code", "MX"))
     if not price_id:
         raise HTTPException(status_code=500, detail="Payment configuration error")
     
@@ -1672,14 +1679,17 @@ async def create_subscription_checkout(request: Request, token_data: TokenData =
             metadata={"business_id": business["id"]}
         )
         
-        # Record the transaction
+        # Record the transaction (currency depends on country)
+        is_usd = (business.get("country_code") or "MX").upper() != "MX"
+        sub_amount = SUBSCRIPTION_PRICE_USD if is_usd else SUBSCRIPTION_PRICE_MXN
+        sub_currency = "usd" if is_usd else "mxn"
         await db.payment_transactions.insert_one({
             "id": generate_id(),
             "business_id": business["id"],
             "session_id": session.id,
             "type": "subscription",
-            "amount": SUBSCRIPTION_PRICE_MXN,
-            "currency": "mxn",
+            "amount": sub_amount,
+            "currency": sub_currency,
             "payment_status": "pending",
             "created_at": datetime.now(timezone.utc).isoformat()
         })
@@ -1742,7 +1752,8 @@ async def get_subscription_status(session_id: str = None, token_data: TokenData 
         "subscription_id": sub_id,
         "trial": sub_status == "trialing",
         "current_period_end": None,
-        "cancel_at_period_end": False
+        "cancel_at_period_end": False,
+        "country_code": (business.get("country_code") if business else None) or "MX"
     }
     
     # Fetch live details from Stripe if subscription exists

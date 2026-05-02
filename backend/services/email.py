@@ -353,15 +353,68 @@ async def send_appointment_reminder(
     date: str,
     time: str,
     worker_name: str,
-    business_address: str = ""
+    business_address: str = "",
+    booking_id: Optional[str] = None,
+    cancel_free_until_text: Optional[str] = None,
+    reschedule_until_text: Optional[str] = None,
+    reschedule_remaining: Optional[int] = None,
+    calendar_url: Optional[str] = None,
 ) -> str:
-    """Send 24h appointment reminder to user"""
-    subject = f"Recordatorio: Cita manana en {business_name}"
-    
-    address_row = f'<tr><td style="padding:12px 16px;background:#f8fafc;font-size:13px;color:#64748b;border-top:1px solid #e2e8f0;">Direccion</td><td style="padding:12px 16px;font-size:14px;color:#1e293b;border-top:1px solid #e2e8f0;">{business_address}</td></tr>' if business_address else ""
-    
+    """Send smart appointment reminder with dynamic cancel/reschedule windows and action buttons.
+
+    The reminder is built around the *current state* of the booking so the
+    client always sees the real cutoff for each action (free cancellation,
+    reschedule cutoff, remaining reschedules) instead of a generic message.
+    """
+    subject = f"Recordatorio: tu cita en {business_name} es pronto"
+
+    address_row = (
+        f'<tr><td style="padding:12px 16px;background:#f8fafc;font-size:13px;color:#64748b;border-top:1px solid #e2e8f0;">Direccion</td>'
+        f'<td style="padding:12px 16px;font-size:14px;color:#1e293b;border-top:1px solid #e2e8f0;">{business_address}</td></tr>'
+        if business_address else ""
+    )
+
+    base_url = "https://bookvia.vercel.app"
+    bid = booking_id or ""
+    cancel_url = f"{base_url}/bookings?action=cancel&id={bid}" if bid else f"{base_url}/bookings"
+    reschedule_url = f"{base_url}/bookings?action=reschedule&id={bid}" if bid else f"{base_url}/bookings"
+    ics_url = calendar_url or (f"{base_url}/bookings?action=calendar&id={bid}" if bid else f"{base_url}/bookings")
+
+    # Dynamic policy panel
+    policy_lines = []
+    if cancel_free_until_text:
+        policy_lines.append(
+            f"Cancelacion con reembolso (menos 8.5%): hasta el <strong>{cancel_free_until_text}</strong>."
+        )
+    else:
+        policy_lines.append("Cancelacion con reembolso: solo si lo haces con mas de 24h de anticipacion.")
+
+    if reschedule_until_text:
+        rem = reschedule_remaining if reschedule_remaining is not None else 2
+        rem_txt = (
+            "ya no puedes reagendar"
+            if rem <= 0
+            else f"te {'queda' if rem == 1 else 'quedan'} {rem} reagendamiento{'' if rem == 1 else 's'} sin costo"
+        )
+        policy_lines.append(
+            f"Reagendar gratis: hasta el <strong>{reschedule_until_text}</strong> ({rem_txt})."
+        )
+    else:
+        policy_lines.append("Reagendar gratis: hasta 2h antes de la cita (maximo 2 veces).")
+
+    policy_html = "".join(
+        f'<li style="margin-bottom:6px;">{line}</li>' for line in policy_lines
+    )
+
+    # Disable reschedule button visually if no reschedules remain
+    reschedule_disabled = reschedule_remaining is not None and reschedule_remaining <= 0
+    reschedule_btn_bg = "#cbd5e1" if reschedule_disabled else "#ffffff"
+    reschedule_btn_color = "#64748b" if reschedule_disabled else "#1e293b"
+    reschedule_btn_border = "#cbd5e1" if reschedule_disabled else "#1e293b"
+    reschedule_btn_label = "Reagendar (no disponible)" if reschedule_disabled else "Reagendar"
+
     content = f"""<p style="color:#334155;font-size:15px;line-height:1.6;">Hola <strong>{user_name}</strong>,</p>
-<p style="color:#334155;font-size:15px;line-height:1.6;">Te recordamos que tienes una cita programada para manana:</p>
+<p style="color:#334155;font-size:15px;line-height:1.6;">Te recordamos que tienes una cita proxima:</p>
 <table width="100%" style="margin:16px 0;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;" cellpadding="0" cellspacing="0">
 <tr><td style="padding:12px 16px;background:#f8fafc;font-size:13px;color:#64748b;width:120px;">Negocio</td><td style="padding:12px 16px;font-size:14px;color:#1e293b;font-weight:600;">{business_name}</td></tr>
 <tr><td style="padding:12px 16px;background:#f8fafc;font-size:13px;color:#64748b;border-top:1px solid #e2e8f0;">Servicio</td><td style="padding:12px 16px;font-size:14px;color:#1e293b;border-top:1px solid #e2e8f0;">{service_name}</td></tr>
@@ -370,16 +423,50 @@ async def send_appointment_reminder(
 <tr><td style="padding:12px 16px;background:#f8fafc;font-size:13px;color:#64748b;border-top:1px solid #e2e8f0;">Profesional</td><td style="padding:12px 16px;font-size:14px;color:#1e293b;border-top:1px solid #e2e8f0;">{worker_name}</td></tr>
 {address_row}
 </table>
-<p style="color:#64748b;font-size:14px;">Si necesitas cancelar o reagendar tu cita, puedes hacerlo desde tu cuenta en Bookvia hasta 24 horas antes.</p>
-<table cellpadding="0" cellspacing="0" style="margin:24px 0;"><tr><td style="background:#F05D5E;border-radius:8px;padding:12px 28px;">
-<a href="https://bookvia.vercel.app/bookings" style="color:#ffffff;text-decoration:none;font-weight:bold;font-size:15px;">Ver mis citas</a>
-</td></tr></table>"""
-    
+<div style="margin:20px 0;padding:14px 16px;background:#fff7ed;border-left:4px solid #F05D5E;border-radius:6px;">
+<p style="margin:0 0 8px;color:#9a3412;font-size:13px;font-weight:700;">Tu ventana de cambios</p>
+<ul style="margin:0;padding-left:18px;color:#7c2d12;font-size:13px;line-height:1.55;">{policy_html}</ul>
+</div>
+<table cellpadding="0" cellspacing="0" style="margin:24px 0;width:100%;"><tr>
+<td align="center" style="padding:0 4px;">
+<a href="{ics_url}" style="display:inline-block;background:#1e293b;color:#ffffff;text-decoration:none;padding:11px 18px;border-radius:8px;font-weight:600;font-size:14px;">Anadir a calendario</a>
+</td>
+<td align="center" style="padding:0 4px;">
+<a href="{reschedule_url}" style="display:inline-block;background:{reschedule_btn_bg};color:{reschedule_btn_color};text-decoration:none;padding:10px 18px;border-radius:8px;font-weight:600;font-size:14px;border:1px solid {reschedule_btn_border};">{reschedule_btn_label}</a>
+</td>
+<td align="center" style="padding:0 4px;">
+<a href="{cancel_url}" style="display:inline-block;background:#ffffff;color:#dc2626;text-decoration:none;padding:10px 18px;border-radius:8px;font-weight:600;font-size:14px;border:1px solid #dc2626;">Cancelar</a>
+</td>
+</tr></table>
+<p style="color:#94a3b8;font-size:12px;margin-top:12px;">Si los botones no funcionan, abre <a href="{base_url}/bookings" style="color:#F05D5E;">Mis citas</a> en Bookvia.</p>"""
+
+    text_body = (
+        f"Hola {user_name}, te recordamos tu cita en {business_name} el {date} a las {time}.\n"
+        f"Servicio: {service_name}.\n"
+    )
+    if cancel_free_until_text:
+        text_body += f"Cancelacion gratis hasta: {cancel_free_until_text}.\n"
+    if reschedule_until_text:
+        text_body += f"Reagendar gratis hasta: {reschedule_until_text}.\n"
+    text_body += f"Mis citas: {base_url}/bookings"
+
     return await send_email(
-        to=user_email, subject=subject,
-        body=f"Hola {user_name}, te recordamos que tienes una cita manana en {business_name} a las {time}. Servicio: {service_name}.",
-        html=email_html("Recordatorio de Cita", content), template="appointment_reminder",
-        data={"user_name": user_name, "business_name": business_name, "service_name": service_name, "date": date, "time": time}
+        to=user_email,
+        subject=subject,
+        body=text_body,
+        html=email_html("Recordatorio de Cita", content),
+        template="appointment_reminder",
+        data={
+            "user_name": user_name,
+            "business_name": business_name,
+            "service_name": service_name,
+            "date": date,
+            "time": time,
+            "booking_id": booking_id,
+            "cancel_free_until": cancel_free_until_text,
+            "reschedule_until": reschedule_until_text,
+            "reschedule_remaining": reschedule_remaining,
+        },
     )
 
 
@@ -430,7 +517,7 @@ async def send_subscription_reminder(
 <p style="color:#334155;font-size:15px;line-height:1.6;">Notamos que iniciaste el registro de tu negocio en Bookvia pero aun no has completado el pago de tu suscripcion.</p>
 <div style="margin:20px 0;padding:16px;background:#fef3c7;border-radius:8px;border:1px solid #fbbf24;">
 <p style="margin:0;color:#92400e;font-size:14px;font-weight:600;">Tu cuenta esta lista, solo falta el pago</p>
-<p style="margin:8px 0 0;color:#92400e;font-size:13px;">Recuerda que el primer mes es GRATIS. Despues solo pagas $39 MXN/mes.</p>
+<p style="margin:8px 0 0;color:#92400e;font-size:13px;">Recuerda que el primer mes es GRATIS. Despues solo pagas $49.99 MXN/mes ($4.99 USD en EE. UU.).</p>
 </div>
 <p style="color:#334155;font-size:15px;line-height:1.6;">Para completar tu registro:</p>
 <ol style="color:#334155;font-size:14px;line-height:1.8;">

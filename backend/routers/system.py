@@ -154,19 +154,57 @@ async def stripe_webhook(request: Request):
             if payment_status == "paid":
                 now = datetime.now(timezone.utc).isoformat()
                 
+                # Attempt to capture actual Stripe fee from payment intent balance transaction
+                stripe_fee_actual = None
+                payment_intent_id = session.payment_intent if hasattr(session, 'payment_intent') else None
+                try:
+                    if payment_intent_id:
+                        pi = stripe_lib.PaymentIntent.retrieve(payment_intent_id, expand=["latest_charge.balance_transaction"])
+                        charge = getattr(pi, "latest_charge", None)
+                        bt = getattr(charge, "balance_transaction", None) if charge else None
+                        if bt and getattr(bt, "fee", None) is not None:
+                            stripe_fee_actual = round(bt.fee / 100.0, 2)
+                except Exception as e:
+                    logger.warning(f"Could not fetch actual Stripe fee for tx {transaction['id']}: {e}")
+                
                 # Update transaction
+                update_set = {
+                    "status": TransactionStatus.PAID,
+                    "stripe_payment_intent_id": payment_intent_id,
+                    "paid_at": now,
+                    "updated_at": now
+                }
+                if stripe_fee_actual is not None:
+                    update_set["stripe_fee_actual"] = stripe_fee_actual
                 await db.transactions.update_one(
                     {"id": transaction["id"]},
-                    {"$set": {
-                        "status": TransactionStatus.PAID,
-                        "stripe_payment_intent_id": session.payment_intent if hasattr(session, 'payment_intent') else None,
-                        "paid_at": now,
-                        "updated_at": now
-                    }}
+                    {"$set": update_set}
                 )
+                
+                # If transaction had a wallet portion applied, debit it now (was reserved at checkout creation)
+                wallet_applied = float(transaction.get("wallet_applied") or 0)
+                if wallet_applied > 0:
+                    try:
+                        from services.wallet import debit_wallet, DEBIT_BOOKING
+                        await debit_wallet(
+                            user_id=transaction["user_id"],
+                            amount=wallet_applied,
+                            tx_type=DEBIT_BOOKING,
+                            booking_id=transaction["booking_id"],
+                            description=f"Saldo aplicado a reserva (resto pagado con tarjeta)",
+                        )
+                    except Exception as e:
+                        logger.error(f"Wallet debit on confirm failed for tx {transaction['id']}: {e}")
                 
                 # Create ledger entries for payment
                 await create_transaction_ledger_entries(transaction, TransactionStatus.PAID)
+                
+                # Initialize funds state machine: PENDING_HOLD
+                try:
+                    from services.funds_state import initialize as init_funds
+                    await init_funds(transaction["id"], actor="webhook_stripe")
+                except Exception as e:
+                    logger.error(f"Funds state initialize failed for tx {transaction['id']}: {e}")
                 
                 # Update booking to CONFIRMED
                 await db.bookings.update_one(

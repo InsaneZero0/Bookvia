@@ -4,6 +4,7 @@ import { ThemeProvider } from '@/components/ThemeProvider';
 import { AuthProvider } from '@/lib/auth';
 import { I18nProvider, useI18n } from '@/lib/i18n';
 import { CountryProvider } from '@/lib/countryContext';
+import { useCountry } from '@/lib/countryContext';
 import { Navbar } from '@/components/Navbar';
 import { Footer } from '@/components/Footer';
 
@@ -225,6 +226,10 @@ function SEORouter() {
 function ForBusinessPage() {
   const navigate = useNavigate();
   const { t, language } = useI18n();
+  const { countryCode } = useCountry();
+  const isUS = countryCode === 'US';
+  const priceAmount = isUS ? '$4.99' : '$49.99';
+  const priceCurrency = isUS ? 'USD' : 'MXN';
 
   const features = [
     { icon: '🕐', title: language === 'es' ? 'Reservas 24/7' : 'Bookings 24/7', desc: language === 'es' ? 'Tus clientes agendan citas a cualquier hora del día, incluso cuando tu negocio está cerrado. Nunca pierdas una venta por un horario.' : 'Your clients book at any time, even when your business is closed. Never lose a sale due to schedule.' },
@@ -291,8 +296,8 @@ function ForBusinessPage() {
                       {language === 'es' ? 'Suscripcion mensual' : 'Monthly subscription'}
                     </p>
                     <div className="flex items-end justify-center gap-1 mb-1">
-                      <span className="text-5xl font-heading font-extrabold text-slate-900">$39</span>
-                      <span className="text-lg text-slate-500 mb-1">MXN</span>
+                      <span className="text-5xl font-heading font-extrabold text-slate-900">{priceAmount}</span>
+                      <span className="text-lg text-slate-500 mb-1">{priceCurrency}</span>
                     </div>
                     <p className="text-sm text-slate-500 mb-2">
                       {language === 'es' ? '/mes' : '/month'}
@@ -408,8 +413,8 @@ function ForBusinessPage() {
               </div>
               <p className="text-sm font-medium text-[#F05D5E] mb-2 mt-2">{language === 'es' ? 'Suscripcion mensual' : 'Monthly subscription'}</p>
               <div className="flex items-end justify-center gap-1 mb-1">
-                <span className="text-5xl font-heading font-extrabold">$39</span>
-                <span className="text-lg text-muted-foreground mb-1">MXN</span>
+                <span className="text-5xl font-heading font-extrabold">{priceAmount}</span>
+                <span className="text-lg text-muted-foreground mb-1">{priceCurrency}</span>
               </div>
               <p className="text-sm text-muted-foreground mb-2">{language === 'es' ? '/mes' : '/month'}</p>
               <p className="text-xs text-emerald-600 font-semibold mb-6">

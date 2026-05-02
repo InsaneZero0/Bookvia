@@ -39,6 +39,8 @@ export default function BusinessRegisterPage() {
   const { businessRegister } = useAuth();
   const navigate = useNavigate();
   
+  const formatCurrencyMXN = (n) => `$${(Number(n) || 0).toFixed(2)} MXN`;
+  
   const [currentStep, setCurrentStep] = useState(0);
   const [loading, setLoading] = useState(false);
   const [categories, setCategories] = useState([]);
@@ -98,7 +100,7 @@ export default function BusinessRegisterPage() {
     confirmPassword: '',
     clabe: '',
     requires_deposit: false,
-    deposit_amount: 50,
+    deposit_amount: 100,
     cancellation_days: 1,
     payout_schedule: 'monthly',
     // Settings
@@ -329,6 +331,13 @@ export default function BusinessRegisterPage() {
             : 'CLABE must have 18 digits');
           return false;
         }
+        // Deposit validation: if enabled, must be >= 100 MXN
+        if (formData.requires_deposit && Number(formData.deposit_amount) < 100) {
+          toast.error(language === 'es' 
+            ? 'El monto del anticipo debe ser al menos $100 MXN' 
+            : 'Deposit amount must be at least $100 MXN');
+          return false;
+        }
         return true;
         
       default:
@@ -379,7 +388,7 @@ export default function BusinessRegisterPage() {
         legal_name: formData.legal_name, ine_url: ineUrl,
         proof_of_address_url: proofUrl, clabe: formData.clabe,
         requires_deposit: formData.requires_deposit,
-        deposit_amount: formData.requires_deposit ? Number(formData.deposit_amount) : 50,
+        deposit_amount: formData.requires_deposit ? Number(formData.deposit_amount) : 100,
         cancellation_days: Number(formData.cancellation_days) || 1,
         payout_schedule: formData.requires_deposit ? formData.payout_schedule : null,
         owner_birth_date: ownerBirthDate,
@@ -1171,8 +1180,8 @@ export default function BusinessRegisterPage() {
                                   <p className="font-medium mb-1">{language === 'es' ? 'Monto del anticipo' : 'Deposit amount'}</p>
                                   <p className="text-muted-foreground text-xs leading-relaxed">
                                     {language === 'es'
-                                      ? 'Es la cantidad que el cliente debe pagar al momento de reservar para confirmar su cita. El resto se paga directamente en el establecimiento. El monto mínimo es de $50 MXN.'
-                                      : 'The amount the customer must pay when booking to confirm their appointment. The rest is paid at the venue. Minimum is $50 MXN.'}
+                                      ? 'Cantidad que el cliente paga al reservar para confirmar su cita. El resto se paga en el establecimiento. Minimo $100 MXN. Se descuenta 8.5% como cuota de procesamiento: por cada $100 de anticipo recibiras $91.50.'
+                                      : 'Amount the customer pays when booking to confirm. The rest is paid at the venue. Minimum $100 MXN. A 8.5% processing fee is deducted: for every $100 deposit you receive $91.50.'}
                                   </p>
                                 </PopoverContent>
                               </Popover>
@@ -1181,13 +1190,17 @@ export default function BusinessRegisterPage() {
                               id="deposit_amount"
                               name="deposit_amount"
                               type="number"
-                              min="50"
+                              min="100"
                               value={formData.deposit_amount}
                               onChange={handleChange}
                               className="h-10 w-36"
                               data-testid="deposit-amount-input"
                             />
-                            <p className="text-xs text-muted-foreground">{language === 'es' ? 'Mínimo $50 MXN' : 'Minimum $50 MXN'}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {language === 'es' 
+                                ? `Minimo $100 MXN. Recibiras ${formatCurrencyMXN((Number(formData.deposit_amount) || 0) * 0.915)} por cada anticipo (8.5% cuota procesamiento).`
+                                : `Minimum $100 MXN. You'll receive ${formatCurrencyMXN((Number(formData.deposit_amount) || 0) * 0.915)} per deposit (8.5% processing fee).`}
+                            </p>
                           </div>
 
                           {/* Margen de cancelación con anticipo */}
@@ -1402,7 +1415,11 @@ export default function BusinessRegisterPage() {
                     <div className="flex items-center gap-3">
                       <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0" />
                       <div>
-                        <p className="font-semibold">{language === 'es' ? 'Después $39 MXN al mes' : 'Then $39 MXN per month'}</p>
+                        <p className="font-semibold">{
+                          formData.country === 'US'
+                            ? (language === 'es' ? 'Después $4.99 USD al mes' : 'Then $4.99 USD per month')
+                            : (language === 'es' ? 'Después $49.99 MXN al mes' : 'Then $49.99 MXN per month')
+                        }</p>
                         <p className="text-xs text-muted-foreground">{language === 'es' ? 'Se cobrará automáticamente después de 30 días' : 'Automatically charged after 30 days'}</p>
                       </div>
                     </div>
