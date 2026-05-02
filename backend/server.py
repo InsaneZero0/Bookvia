@@ -172,6 +172,7 @@ async def startup_event():
     asyncio.create_task(subscription_reminder_scheduler())
     asyncio.create_task(wallet_expiration_scheduler())
     asyncio.create_task(funds_state_scheduler())
+    asyncio.create_task(settlement_day20_scheduler())
 
 
 # ========================== BACKGROUND SCHEDULERS ==========================
@@ -408,3 +409,30 @@ async def send_subscription_reminders():
             logger.info(f"Subscription reminder sent to {biz['email']}")
         except Exception as e:
             logger.error(f"Failed to send subscription reminder to {biz.get('email')}: {e}")
+
+
+
+async def settlement_day20_scheduler():
+    """Run the day-20 settlement job once per day; only acts on day 20.
+
+    We re-use the idempotency of `generate_settlements_day20`: if the job
+    was already run in this calendar month, the CLEARED transactions are
+    already tagged with `settlement_id` and won't be picked up again.
+    """
+    logger.info("Settlement day-20 scheduler started")
+    await asyncio.sleep(120)
+    last_run_date = None
+    while True:
+        try:
+            now = datetime.now(timezone.utc)
+            today_key = now.strftime("%Y-%m-%d")
+            if now.day == 20 and last_run_date != today_key:
+                logger.info(f"[day20] Running settlement generation for {today_key}")
+                from routers.admin import generate_settlements_day20
+                result = await generate_settlements_day20(run_date=now, force=False, admin_id="cron_day20")
+                logger.info(f"[day20] Finished: {result.get('settlements_created', 0)} settlements created")
+                last_run_date = today_key
+        except Exception as e:
+            logger.error(f"Settlement day-20 scheduler error: {e}")
+        # Check every hour
+        await asyncio.sleep(3600)

@@ -2021,3 +2021,271 @@ async def reassign_business_category(
         request=request
     )
     return {"message": "Category reassigned", "new_category": category.get("name_es")}
+
+
+# ========================== FASE 9: DAY-20 SETTLEMENTS ==========================
+
+async def _build_day20_period_key(run_date: datetime) -> str:
+    """Period key for day-20 settlements: YYYY-MM-D20 of the month being paid.
+
+    The day-20 settlement pays out all CLEARED transactions that were not
+    settled previously. We key the period by the month on which the run
+    happens (e.g. 2026-05-D20) so repeated runs on the same month are
+    idempotent.
+    """
+    return f"{run_date.year}-{str(run_date.month).zfill(2)}-D20"
+
+
+async def generate_settlements_day20(
+    run_date: Optional[datetime] = None,
+    force: bool = False,
+    admin_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Generate day-20 settlements for every business that has CLEARED funds.
+
+    Behavior:
+      * Only runs on day 20 unless `force=True`.
+      * Groups every `transactions` document with `funds_state=CLEARED`
+        and no `settlement_id` by business_id.
+      * For each business, creates one settlement doc and stamps the
+        included transactions with `settlement_id` so they will not be
+        picked up again.
+      * Sends an email to each business with the details.
+      * Returns a summary with counts and per-business payouts.
+    """
+    run_date = run_date or datetime.now(timezone.utc)
+    if not force and run_date.day != 20:
+        return {"skipped": True, "reason": f"day={run_date.day}", "period": None, "settlements": []}
+
+    period_key = await _build_day20_period_key(run_date)
+
+    # Fetch all CLEARED transactions that have not been paid out yet
+    txs = await db.transactions.find(
+        {"funds_state": "cleared", "settlement_id": {"$in": [None, ""]}},
+        {"_id": 0},
+    ).to_list(5000)
+
+    # Legacy docs may not have settlement_id field at all
+    legacy_txs = await db.transactions.find(
+        {"funds_state": "cleared", "settlement_id": {"$exists": False}},
+        {"_id": 0},
+    ).to_list(5000)
+    seen = {t["id"] for t in txs}
+    for t in legacy_txs:
+        if t["id"] not in seen:
+            txs.append(t)
+
+    # Group by business
+    groups: Dict[str, List[Dict[str, Any]]] = {}
+    for t in txs:
+        bid = t.get("business_id")
+        if not bid:
+            continue
+        groups.setdefault(bid, []).append(t)
+
+    results = []
+    created = 0
+    for bid, items in groups.items():
+        # Skip businesses with active payout_hold
+        business = await db.businesses.find_one(
+            {"id": bid}, {"_id": 0, "name": 1, "email": 1, "clabe": 1, "legal_name": 1, "rfc": 1, "payout_hold": 1}
+        )
+        if not business:
+            continue
+        if business.get("payout_hold"):
+            results.append({"business_id": bid, "skipped": True, "reason": "payout_hold"})
+            continue
+
+        net_payout = round(sum(float(t.get("business_amount") or 0) for t in items), 2)
+        if net_payout <= 0:
+            continue
+
+        booking_ids = list({t.get("booking_id") for t in items if t.get("booking_id")})
+        tx_ids = [t["id"] for t in items]
+
+        settlement_id = generate_id()
+        settlement = {
+            "id": settlement_id,
+            "business_id": bid,
+            "business_name": business.get("name"),
+            "period_key": period_key,
+            "idempotency_key": f"day20-{period_key}",
+            "total_amount": net_payout,
+            "fee_amount": 0.0,  # Fees already deducted in business_amount
+            "payout_amount": net_payout,
+            "net_payout": net_payout,
+            "booking_count": len(booking_ids),
+            "booking_ids": booking_ids,
+            "transaction_ids": tx_ids,
+            "status": SettlementStatus.PENDING,
+            "clabe": business.get("clabe"),
+            "legal_name": business.get("legal_name"),
+            "rfc": business.get("rfc"),
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_by": admin_id or "cron_day20",
+        }
+        await db.settlements.insert_one(settlement)
+        # Tag transactions so they are not re-included
+        await db.transactions.update_many(
+            {"id": {"$in": tx_ids}},
+            {"$set": {"settlement_id": settlement_id, "settlement_period": period_key}},
+        )
+
+        # Email the business (best effort)
+        try:
+            if business.get("email"):
+                from services.email import send_settlement_notification
+                await send_settlement_notification(
+                    business_email=business["email"],
+                    business_name=business.get("name", ""),
+                    amount_mxn=net_payout,
+                    period_key=period_key,
+                    settlement_id=settlement_id,
+                    booking_count=len(booking_ids),
+                    transactions_count=len(tx_ids),
+                )
+        except Exception as e:
+            logger.warning(f"Failed to email settlement to {business.get('email')}: {e}")
+
+        # Push notification for the business owner (not the manager)
+        try:
+            owner = await db.users.find_one(
+                {"business_id": bid, "role": UserRole.BUSINESS, "is_manager": {"$ne": True}},
+                {"_id": 0, "id": 1},
+            )
+            if owner:
+                await create_notification(
+                    owner["id"],
+                    "Liquidacion lista",
+                    f"Tu liquidacion de ${net_payout:,.2f} MXN para {period_key} esta agendada. Se depositara via SPEI en 1-3 dias habiles.",
+                    "settlement_ready",
+                    {"settlement_id": settlement_id, "period_key": period_key, "amount_mxn": net_payout},
+                )
+        except Exception as e:
+            logger.warning(f"Failed to push settlement notification: {e}")
+
+        results.append({
+            "business_id": bid,
+            "settlement_id": settlement_id,
+            "amount": net_payout,
+            "booking_count": len(booking_ids),
+            "transactions_count": len(tx_ids),
+        })
+        created += 1
+
+    return {
+        "skipped": False,
+        "period": period_key,
+        "run_date": run_date.isoformat(),
+        "settlements_created": created,
+        "total_transactions": sum(len(items) for items in groups.values()),
+        "settlements": results,
+    }
+
+
+@router.post("/settlements/generate-day20")
+async def admin_generate_day20_settlements(
+    request: Request,
+    force: bool = False,
+    token_data: TokenData = Depends(require_admin),
+):
+    """Admin endpoint to run the day-20 settlement job manually.
+
+    Pass `force=true` to bypass the "is it the 20th today?" check (useful for
+    early previews or ad-hoc reruns).
+    """
+    result = await generate_settlements_day20(
+        run_date=datetime.now(timezone.utc),
+        force=force,
+        admin_id=token_data.user_id,
+    )
+    if not result.get("skipped"):
+        await create_audit_log(
+            admin_id=token_data.user_id, admin_email=token_data.email,
+            action=AuditAction.SETTLEMENT_GENERATE, target_type="settlement",
+            target_id=result.get("period") or "",
+            details={"created": result.get("settlements_created"), "force": force},
+            request=request,
+        )
+    return result
+
+
+def _csv_escape(value: Any) -> str:
+    if value is None:
+        return ""
+    s = str(value)
+    if any(ch in s for ch in [',', '"', '\n', '\r']):
+        return '"' + s.replace('"', '""') + '"'
+    return s
+
+
+@router.get("/settlements/{period_key}/export-spei.csv")
+async def admin_export_spei_csv(
+    period_key: str,
+    status_filter: str = "pending",
+    token_data: TokenData = Depends(require_admin),
+):
+    """Export a SPEI-ready CSV for every settlement in the given period.
+
+    The CSV layout is compatible with most Mexican banks' massive SPEI
+    uploaders: Beneficiario, CLABE, Banco, Monto, Concepto, RFC, Referencia.
+    """
+    filters = {"period_key": period_key}
+    if status_filter and status_filter != "all":
+        filters["status"] = status_filter
+    rows = await db.settlements.find(filters, {"_id": 0}).sort("created_at", -1).to_list(5000)
+
+    headers = [
+        "Beneficiario",
+        "CLABE",
+        "RFC",
+        "Monto",
+        "Concepto",
+        "Referencia",
+        "Email",
+        "Citas",
+        "Folio",
+    ]
+    lines = [",".join(headers)]
+    for r in rows:
+        business = await db.businesses.find_one(
+            {"id": r.get("business_id")},
+            {"_id": 0, "name": 1, "email": 1, "clabe": 1, "legal_name": 1, "rfc": 1},
+        ) or {}
+        beneficiario = r.get("legal_name") or business.get("legal_name") or business.get("name") or ""
+        clabe = r.get("clabe") or business.get("clabe") or ""
+        rfc = r.get("rfc") or business.get("rfc") or ""
+        monto = r.get("net_payout") if r.get("net_payout") is not None else r.get("payout_amount", 0)
+        concepto = f"Bookvia {period_key} {r.get('booking_count', 0)} citas"
+        referencia = r.get("id", "")[:20]
+        email = business.get("email", "")
+        row = [
+            _csv_escape(beneficiario),
+            _csv_escape(clabe),
+            _csv_escape(rfc),
+            _csv_escape(f"{float(monto):.2f}"),
+            _csv_escape(concepto),
+            _csv_escape(referencia),
+            _csv_escape(email),
+            _csv_escape(r.get("booking_count", 0)),
+            _csv_escape(r.get("id", "")),
+        ]
+        lines.append(",".join(row))
+    body = "\r\n".join(lines) + "\r\n"
+
+    await create_audit_log(
+        admin_id=token_data.user_id, admin_email=token_data.email,
+        action=AuditAction.SETTLEMENT_GENERATE, target_type="settlement_export",
+        target_id=period_key,
+        details={"rows": len(rows), "status_filter": status_filter},
+        request=None,
+    )
+
+    return Response(
+        content=body,
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="bookvia-spei-{period_key}.csv"',
+            "Cache-Control": "no-store",
+        },
+    )

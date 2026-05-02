@@ -307,6 +307,12 @@ export const adminAPI = {
   getHeldPayments: (params) => api.get('/admin/payments/held', { params }),
   getSettlements: (params) => api.get('/admin/settlements', { params }),
   generateSettlements: (year, month) => api.post(`/admin/settlements/generate?year=${year}&month=${month}`),
+  generateDay20Settlements: (force = false) => api.post(`/admin/settlements/generate-day20${force ? '?force=true' : ''}`),
+  exportSpeiCsv: (periodKey, statusFilter = 'pending') => api.get(`/admin/settlements/${periodKey}/export-spei.csv`, {
+    params: { status_filter: statusFilter },
+    responseType: 'text',
+    transformResponse: [(data) => data],
+  }),
   markSettlementPaid: (id, payout_reference) => api.put(`/admin/settlements/${id}/pay`, { payout_reference }),
   togglePayoutHold: (businessId, hold, reason) => api.put(`/admin/businesses/${businessId}/payout-hold`, { hold, reason }),
   exportTransactions: (year, month) => api.get(`/admin/export/transactions?year=${year}&month=${month}`, { responseType: 'blob' }),

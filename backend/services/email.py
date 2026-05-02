@@ -543,6 +543,68 @@ async def send_subscription_reminder(
         data={"business_name": business_name, "login_url": login_url}
     )
 
+async def send_settlement_notification(
+    business_email: str,
+    business_name: str,
+    amount_mxn: float,
+    period_key: str,
+    settlement_id: str,
+    booking_count: int,
+    transactions_count: int,
+) -> str:
+    """Email business with the details of a newly-generated day-20 settlement.
+
+    The email explains exactly what the business will receive, why some money
+    might still be retained (disputes / not yet cleared), and the expected
+    SPEI transfer window (1-3 business days after the 20th).
+    """
+    subject = f"Liquidacion Bookvia lista: ${amount_mxn:,.2f} MXN - {period_key}"
+
+    dashboard_url = "https://bookvia.vercel.app/business/finance"
+
+    content = f"""<p style="color:#334155;font-size:15px;line-height:1.6;">Hola <strong>{business_name}</strong>,</p>
+<p style="color:#334155;font-size:15px;line-height:1.6;">Tu liquidacion mensual de Bookvia ya esta preparada. Aqui estan los detalles:</p>
+<table width="100%" style="margin:16px 0;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;" cellpadding="0" cellspacing="0">
+<tr><td style="padding:12px 16px;background:#f8fafc;font-size:13px;color:#64748b;width:180px;">Periodo</td><td style="padding:12px 16px;font-size:14px;color:#1e293b;font-weight:600;">{period_key}</td></tr>
+<tr><td style="padding:12px 16px;background:#f8fafc;font-size:13px;color:#64748b;border-top:1px solid #e2e8f0;">Monto a depositar</td><td style="padding:12px 16px;font-size:16px;color:#059669;border-top:1px solid #e2e8f0;font-weight:700;">${amount_mxn:,.2f} MXN</td></tr>
+<tr><td style="padding:12px 16px;background:#f8fafc;font-size:13px;color:#64748b;border-top:1px solid #e2e8f0;">Citas incluidas</td><td style="padding:12px 16px;font-size:14px;color:#1e293b;border-top:1px solid #e2e8f0;">{booking_count} cita{'s' if booking_count != 1 else ''} / {transactions_count} transaccion{'es' if transactions_count != 1 else ''}</td></tr>
+<tr><td style="padding:12px 16px;background:#f8fafc;font-size:13px;color:#64748b;border-top:1px solid #e2e8f0;">Folio</td><td style="padding:12px 16px;font-size:13px;color:#1e293b;font-family:monospace;border-top:1px solid #e2e8f0;">{settlement_id}</td></tr>
+</table>
+<div style="margin:20px 0;padding:14px 16px;background:#ecfdf5;border-left:4px solid #059669;border-radius:6px;">
+<p style="margin:0 0 6px;color:#064e3b;font-size:13px;font-weight:700;">Como se calculo</p>
+<p style="margin:0;color:#065f46;font-size:13px;line-height:1.55;">
+El monto incluye el total que tus clientes pagaron como anticipo, menos el 8.5% (procesamiento Stripe estimado) y sin la cuota fija de Bookvia (la pagaron los clientes). Solo se liquido el dinero que paso el periodo de gracia de 24h sin disputas.
+</p>
+</div>
+<p style="color:#334155;font-size:14px;">La transferencia SPEI llegara a la CLABE que tienes registrada en Bookvia en un plazo de <strong>1 a 3 dias habiles</strong> despues del dia 20.</p>
+<table cellpadding="0" cellspacing="0" style="margin:24px 0;"><tr><td style="background:#F05D5E;border-radius:8px;padding:12px 28px;">
+<a href="{dashboard_url}" style="color:#ffffff;text-decoration:none;font-weight:bold;font-size:15px;">Ver mi panel de finanzas</a>
+</td></tr></table>
+<p style="color:#94a3b8;font-size:12px;margin-top:16px;">Si tienes alguna duda sobre la liquidacion, contactanos y menciona el folio {settlement_id}.</p>"""
+
+    text_body = (
+        f"Hola {business_name}, tu liquidacion Bookvia {period_key} esta lista.\n"
+        f"Monto: ${amount_mxn:,.2f} MXN ({booking_count} citas).\n"
+        f"Folio: {settlement_id}.\n"
+        f"La transferencia SPEI llegara en 1-3 dias habiles.\n"
+        f"Panel: {dashboard_url}"
+    )
+
+    return await send_email(
+        to=business_email,
+        subject=subject,
+        body=text_body,
+        html=email_html("Liquidacion Bookvia lista", content),
+        template="settlement_notification",
+        data={
+            "business_name": business_name,
+            "amount_mxn": amount_mxn,
+            "period_key": period_key,
+            "settlement_id": settlement_id,
+            "booking_count": booking_count,
+            "transactions_count": transactions_count,
+        },
+    )
 
 
 async def get_sent_emails(
