@@ -897,7 +897,12 @@ async def update_my_business(update: BusinessUpdate, token_data: TokenData = Dep
         raise HTTPException(status_code=400, detail="No data to update")
     
     if "deposit_amount" in update_data:
-        update_data["deposit_amount"] = max(update_data["deposit_amount"], MIN_DEPOSIT_AMOUNT)
+        # If also disabling requires_deposit in the same update, allow zero
+        requires_dep_in_update = update_data.get("requires_deposit")
+        if requires_dep_in_update is False:
+            update_data["deposit_amount"] = 0.0
+        else:
+            update_data["deposit_amount"] = max(update_data["deposit_amount"], MIN_DEPOSIT_AMOUNT)
     
     await db.businesses.update_one({"id": user["business_id"]}, {"$set": update_data})
     business = await db.businesses.find_one({"id": user["business_id"]}, {"_id": 0, "password_hash": 0})

@@ -63,6 +63,7 @@ Auth Social: Emergent-managed Google Auth (solo clientes)
 - [x] Codigo publico unico por cliente CL-XXXXX (auto-generado al registrar usuario, backfilled). Tickets de soporte ahora guardan reporter_code (CL- o BV- segun el rol) y business_public_code (negocio reportado). Email de confirmacion incluye codigo del negocio en el footer. Admin tickets view muestra ambos codigos clickeables para copiar y permite buscar tickets por codigo.
 - [x] Registro de negocio: pago de suscripcion como ultimo paso obligatorio
 - [x] Recordatorio automatico de suscripcion (email 24h despues si no pagaron)
+- [x] **FASE 1 Cobranza (Mayo 2026)**: anticipo minimo $100 MXN, cliente paga anticipo + $8.20 cuota Bookvia (IVA incluido), 8.5% procesamiento al negocio (recibe 91.5%). Transacciones guardan: client_paid, bookvia_fee, stripe_fee_estimated, business_amount, stripe_fee_actual (capturado del webhook Stripe balance_transaction). Endpoint publico /api/payments/fees/breakdown para previews. T&C actualizado con cobranza, liquidaciones dia 20, disclaimer legal de intermediacion.
 
 ### Frontend
 - [x] Busqueda "Cerca de ti" con OpenStreetMap, horarios apertura, badge Abierto/Cerrado
