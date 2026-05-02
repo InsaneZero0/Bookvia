@@ -100,9 +100,11 @@ class AuditAction(str, Enum):
 
 # ========================== CONSTANTS ==========================
 
-PLATFORM_FEE_PERCENT = 0.08
+PLATFORM_FEE_PERCENT = 0.08  # Legacy (unused in new model, keep for back-compat)
 HOLD_EXPIRATION_MINUTES = 30
-MIN_DEPOSIT_AMOUNT = 50.0
+MIN_DEPOSIT_AMOUNT = 100.0  # Minimum deposit amount (MXN) per service
+BOOKVIA_FEE_MXN = 8.20  # Fixed fee charged to client per booking with deposit (IVA included)
+STRIPE_FEE_PERCENT_ESTIMATED = 0.085  # Estimated Stripe fee (8.5%) charged to business
 SUBSCRIPTION_PRICE_MXN = 49.99
 SUBSCRIPTION_PRICE_USD = 4.99
 SUBSCRIPTION_TRIAL_DAYS = 30

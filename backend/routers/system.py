@@ -154,15 +154,31 @@ async def stripe_webhook(request: Request):
             if payment_status == "paid":
                 now = datetime.now(timezone.utc).isoformat()
                 
+                # Attempt to capture actual Stripe fee from payment intent balance transaction
+                stripe_fee_actual = None
+                payment_intent_id = session.payment_intent if hasattr(session, 'payment_intent') else None
+                try:
+                    if payment_intent_id:
+                        pi = stripe_lib.PaymentIntent.retrieve(payment_intent_id, expand=["latest_charge.balance_transaction"])
+                        charge = getattr(pi, "latest_charge", None)
+                        bt = getattr(charge, "balance_transaction", None) if charge else None
+                        if bt and getattr(bt, "fee", None) is not None:
+                            stripe_fee_actual = round(bt.fee / 100.0, 2)
+                except Exception as e:
+                    logger.warning(f"Could not fetch actual Stripe fee for tx {transaction['id']}: {e}")
+                
                 # Update transaction
+                update_set = {
+                    "status": TransactionStatus.PAID,
+                    "stripe_payment_intent_id": payment_intent_id,
+                    "paid_at": now,
+                    "updated_at": now
+                }
+                if stripe_fee_actual is not None:
+                    update_set["stripe_fee_actual"] = stripe_fee_actual
                 await db.transactions.update_one(
                     {"id": transaction["id"]},
-                    {"$set": {
-                        "status": TransactionStatus.PAID,
-                        "stripe_payment_intent_id": session.payment_intent if hasattr(session, 'payment_intent') else None,
-                        "paid_at": now,
-                        "updated_at": now
-                    }}
+                    {"$set": update_set}
                 )
                 
                 # Create ledger entries for payment

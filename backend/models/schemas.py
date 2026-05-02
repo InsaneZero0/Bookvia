@@ -101,7 +101,7 @@ class BusinessCreate(BaseModel):
     legal_name: str
     owner_birth_date: Optional[str] = None
     requires_deposit: bool = False
-    deposit_amount: float = 50.0
+    deposit_amount: float = 100.0
     cancellation_days: int = 1
     payout_schedule: Optional[str] = "monthly"
     min_time_between_appointments: int = 0
@@ -137,7 +137,7 @@ class BusinessResponse(BaseModel):
     completed_appointments: int = 0
     badges: List[str] = []
     requires_deposit: bool = False
-    deposit_amount: float = 50.0
+    deposit_amount: float = 100.0
     cancellation_days: int = 1
     payout_schedule: Optional[str] = "monthly"
     min_time_between_appointments: int = 0
@@ -627,9 +627,11 @@ class PlatformConfigUpdate(BaseModel):
 class PlatformConfigResponse(BaseModel):
     model_config = ConfigDict(extra="ignore")
     platform_fee_percent: float = 0.08
-    subscription_price_mxn: float = 39.00
+    subscription_price_mxn: float = 49.99
     subscription_trial_days: int = 30
-    min_deposit_amount: float = 50.0
+    min_deposit_amount: float = 100.0
+    bookvia_fee_mxn: float = 8.20
+    stripe_fee_percent_estimated: float = 0.085
     updated_at: Optional[str] = None
     updated_by: Optional[str] = None
 

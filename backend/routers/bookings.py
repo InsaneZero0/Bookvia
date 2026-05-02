@@ -632,11 +632,15 @@ async def create_booking(booking: BookingCreate, token_data: TokenData = Depends
         if not (end_time_dt <= ex_start or start_time_dt >= ex_end_with_buffer):
             raise HTTPException(status_code=409, detail="Slot conflicts with existing booking")
     
-    # Calculate deposit amount (minimum 50 MXN)
-    deposit_amount = max(
-        business.get("deposit_amount", MIN_DEPOSIT_AMOUNT) if business.get("requires_deposit") else MIN_DEPOSIT_AMOUNT,
-        MIN_DEPOSIT_AMOUNT
-    )
+    # Calculate deposit amount. Only charge deposit if business requires it
+    # AND the service price is >= minimum deposit. Otherwise no deposit.
+    business_deposit = float(business.get("deposit_amount") or 0)
+    if business.get("requires_deposit") and business_deposit >= MIN_DEPOSIT_AMOUNT and service["price"] >= MIN_DEPOSIT_AMOUNT:
+        deposit_amount = max(business_deposit, MIN_DEPOSIT_AMOUNT)
+        # Cap deposit to service price (can't ask more than the service costs)
+        deposit_amount = min(deposit_amount, float(service["price"]))
+    else:
+        deposit_amount = 0.0
     
     # Determine if this is a business-created booking (skip payment)
     is_biz_booking = booking.skip_payment and token_data.role == UserRole.BUSINESS

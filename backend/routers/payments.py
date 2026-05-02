@@ -39,6 +39,7 @@ from models.enums import (
     TransactionStatus, LedgerDirection, LedgerAccount, LedgerEntryStatus,
     SettlementStatus, AuditAction,
     PLATFORM_FEE_PERCENT, HOLD_EXPIRATION_MINUTES, MIN_DEPOSIT_AMOUNT,
+    BOOKVIA_FEE_MXN, STRIPE_FEE_PERCENT_ESTIMATED,
     SUBSCRIPTION_PRICE_MXN, SUBSCRIPTION_TRIAL_DAYS,
     VISIBLE_BUSINESS_FILTER, DEFAULT_MANAGER_PERMISSIONS
 )
@@ -54,11 +55,33 @@ if "sk_test_emergent" in (STRIPE_API_KEY or ""):
 
 router = APIRouter(prefix="/payments", tags=["Payments"])
 
-def calculate_fees(amount: float) -> dict:
-    """Calculate platform fee and payout amount for a given deposit."""
-    fee_amount = round(amount * PLATFORM_FEE_PERCENT, 2)
-    payout_amount = round(amount - fee_amount, 2)
-    return {"fee_amount": fee_amount, "payout_amount": payout_amount}
+def calculate_fees(deposit_amount: float) -> dict:
+    """
+    Calculate the payment breakdown for a booking with deposit.
+    
+    Model:
+      - client_paid       = deposit + Bookvia fixed fee ($8.20 MXN)
+      - bookvia_fee       = $8.20 MXN fixed (IVA included)
+      - stripe_fee_est    = 8.5% of deposit (charged to business, covers Stripe)
+      - business_amount   = deposit - stripe_fee_est (what business receives after payout)
+    
+    Returns dict with all amounts rounded to 2 decimals.
+    """
+    deposit_amount = round(float(deposit_amount or 0), 2)
+    bookvia_fee = round(BOOKVIA_FEE_MXN, 2)
+    stripe_fee_est = round(deposit_amount * STRIPE_FEE_PERCENT_ESTIMATED, 2)
+    business_amount = round(deposit_amount - stripe_fee_est, 2)
+    client_paid = round(deposit_amount + bookvia_fee, 2)
+    # Legacy keys kept for back-compat in callers (fee_amount / payout_amount)
+    return {
+        "deposit_amount": deposit_amount,
+        "bookvia_fee": bookvia_fee,
+        "stripe_fee_estimated": stripe_fee_est,
+        "business_amount": business_amount,
+        "client_paid": client_paid,
+        "fee_amount": stripe_fee_est,
+        "payout_amount": business_amount,
+    }
 
 
 async def expire_holds_task() -> int:
@@ -72,6 +95,29 @@ async def expire_holds_task() -> int:
     if result.modified_count > 0:
         logger.info(f"Expired {result.modified_count} hold bookings")
     return result.modified_count
+
+
+@router.get("/fees/breakdown")
+async def get_fees_breakdown(deposit_amount: float):
+    """Return fee breakdown for a given deposit amount. Public helper for UI previews."""
+    if deposit_amount <= 0:
+        return {
+            "deposit_amount": 0.0,
+            "bookvia_fee": 0.0,
+            "stripe_fee_estimated": 0.0,
+            "business_amount": 0.0,
+            "client_paid": 0.0,
+            "min_deposit_amount": MIN_DEPOSIT_AMOUNT,
+            "bookvia_fee_mxn": BOOKVIA_FEE_MXN,
+            "stripe_fee_percent_estimated": STRIPE_FEE_PERCENT_ESTIMATED,
+        }
+    fees = calculate_fees(deposit_amount)
+    return {
+        **fees,
+        "min_deposit_amount": MIN_DEPOSIT_AMOUNT,
+        "bookvia_fee_mxn": BOOKVIA_FEE_MXN,
+        "stripe_fee_percent_estimated": STRIPE_FEE_PERCENT_ESTIMATED,
+    }
 
 @router.post("/deposit/checkout")
 async def create_deposit_checkout(
@@ -128,6 +174,7 @@ async def create_deposit_checkout(
     
     deposit_amount = max(booking.get("deposit_amount", MIN_DEPOSIT_AMOUNT), MIN_DEPOSIT_AMOUNT)
     fees = calculate_fees(deposit_amount)
+    client_paid = fees["client_paid"]  # deposit + $8.20 Bookvia fee
     
     # Create transaction record
     transaction_id = generate_id()
@@ -138,9 +185,14 @@ async def create_deposit_checkout(
         "business_id": booking["business_id"],
         "stripe_session_id": None,
         "stripe_payment_intent_id": None,
-        "amount_total": deposit_amount,
-        "fee_amount": fees["fee_amount"],
-        "payout_amount": fees["payout_amount"],
+        "amount_total": deposit_amount,           # Deposit only (historical field)
+        "client_paid": client_paid,                # What client actually paid to Stripe
+        "bookvia_fee": fees["bookvia_fee"],        # $8.20 Bookvia retains
+        "stripe_fee_estimated": fees["stripe_fee_estimated"],  # 8.5% estimated charged to business
+        "stripe_fee_actual": None,                 # Populated by webhook from balance_transaction.fee
+        "business_amount": fees["business_amount"],# What the business will eventually receive
+        "fee_amount": fees["fee_amount"],          # Back-compat alias for stripe_fee_estimated
+        "payout_amount": fees["payout_amount"],    # Back-compat alias for business_amount
         "currency": "MXN",
         "status": TransactionStatus.CREATED,
         "refund_amount": None,
@@ -161,17 +213,30 @@ async def create_deposit_checkout(
         session = stripe_lib.checkout.Session.create(
             payment_method_types=["card"],
             mode="payment",
-            line_items=[{
-                "price_data": {
-                    "currency": "mxn",
-                    "unit_amount": int(deposit_amount * 100),
-                    "product_data": {
-                        "name": f"Anticipo - {service['name'] if service else 'Reserva'}" if service else "Anticipo de reserva",
-                        "description": f"Anticipo para {business['name']}" if business else "Anticipo de reserva"
-                    }
+            line_items=[
+                {
+                    "price_data": {
+                        "currency": "mxn",
+                        "unit_amount": int(deposit_amount * 100),
+                        "product_data": {
+                            "name": f"Anticipo - {service['name'] if service else 'Reserva'}" if service else "Anticipo de reserva",
+                            "description": f"Anticipo para {business['name']}" if business else "Anticipo de reserva"
+                        }
+                    },
+                    "quantity": 1
                 },
-                "quantity": 1
-            }],
+                {
+                    "price_data": {
+                        "currency": "mxn",
+                        "unit_amount": int(fees["bookvia_fee"] * 100),
+                        "product_data": {
+                            "name": "Servicio Bookvia",
+                            "description": "Gestion de reserva y recordatorios (IVA incluido)"
+                        }
+                    },
+                    "quantity": 1
+                }
+            ],
             success_url=success_url,
             cancel_url=cancel_url,
             metadata={
@@ -205,6 +270,9 @@ async def create_deposit_checkout(
         "session_id": session.id,
         "transaction_id": transaction_id,
         "amount": deposit_amount,
+        "client_paid": client_paid,
+        "bookvia_fee": fees["bookvia_fee"],
+        "business_amount": fees["business_amount"],
         "fee": fees["fee_amount"]
     }
 
@@ -226,15 +294,31 @@ async def get_checkout_status(session_id: str, request: Request):
         now = datetime.now(timezone.utc).isoformat()
         logger.info(f"Checkout status fallback: confirming payment for transaction {transaction['id']} (webhook may not have fired)")
         
+        # Attempt to capture actual Stripe fee from the payment intent's charge balance transaction
+        stripe_fee_actual = None
+        payment_intent_id = session.payment_intent if hasattr(session, 'payment_intent') else None
+        try:
+            if payment_intent_id:
+                pi = stripe_lib.PaymentIntent.retrieve(payment_intent_id, expand=["latest_charge.balance_transaction"])
+                charge = getattr(pi, "latest_charge", None)
+                bt = getattr(charge, "balance_transaction", None) if charge else None
+                if bt and getattr(bt, "fee", None) is not None:
+                    stripe_fee_actual = round(bt.fee / 100.0, 2)
+        except Exception as e:
+            logger.warning(f"Could not fetch actual Stripe fee for tx {transaction['id']}: {e}")
+        
         # Update transaction
+        update_set = {
+            "status": TransactionStatus.PAID,
+            "stripe_payment_intent_id": payment_intent_id,
+            "paid_at": now,
+            "updated_at": now
+        }
+        if stripe_fee_actual is not None:
+            update_set["stripe_fee_actual"] = stripe_fee_actual
         await db.transactions.update_one(
             {"id": transaction["id"]},
-            {"$set": {
-                "status": TransactionStatus.PAID,
-                "stripe_payment_intent_id": session.payment_intent if hasattr(session, 'payment_intent') else None,
-                "paid_at": now,
-                "updated_at": now
-            }}
+            {"$set": update_set}
         )
         
         # Create ledger entries

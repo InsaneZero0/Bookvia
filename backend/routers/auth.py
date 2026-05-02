@@ -496,7 +496,7 @@ async def register_business(business: BusinessCreate):
         "completed_appointments": 0,
         "badges": ["nuevo"],
         "requires_deposit": business.requires_deposit,
-        "deposit_amount": max(business.deposit_amount, 50.0),
+        "deposit_amount": max(business.deposit_amount, MIN_DEPOSIT_AMOUNT) if business.requires_deposit else 0.0,
         "cancellation_days": business.cancellation_days,
         "payout_schedule": business.payout_schedule if business.requires_deposit else None,
         "min_time_between_appointments": business.min_time_between_appointments,

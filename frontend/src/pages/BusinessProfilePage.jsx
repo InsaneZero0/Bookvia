@@ -1359,11 +1359,30 @@ export default function BusinessProfilePage() {
                   <span>{language === 'es' ? 'Total' : 'Total'}</span>
                   <span className="text-[#F05D5E] font-bold">{formatCurrency(selectedService?.price || 0)}</span>
                 </div>
-                {!isBizUser && business.requires_deposit && (
-                  <div className="flex justify-between text-xs text-muted-foreground">
-                    <span>{language === 'es' ? 'Anticipo' : 'Deposit'}</span>
-                    <span>{formatCurrency(business.deposit_amount)}</span>
-                  </div>
+                {!isBizUser && business.requires_deposit && business.deposit_amount >= 100 && (selectedService?.price || 0) >= 100 && (
+                  <>
+                    <div className="flex justify-between text-xs text-muted-foreground">
+                      <span>{language === 'es' ? 'Anticipo' : 'Deposit'}</span>
+                      <span>{formatCurrency(business.deposit_amount)}</span>
+                    </div>
+                    <div className="flex justify-between text-xs text-muted-foreground">
+                      <span className="flex items-center gap-1">
+                        {language === 'es' ? 'Servicio Bookvia' : 'Bookvia service'}
+                        <span title={language === 'es' ? 'Cuota unica de $8.20 (IVA incluido) que incluye gestion de la reserva y recordatorios.' : 'One-time $8.20 fee (VAT incl.) covering booking management & reminders.'} className="text-muted-foreground/60 cursor-help">ⓘ</span>
+                      </span>
+                      <span>$8.20 MXN</span>
+                    </div>
+                    <Separator />
+                    <div className="flex justify-between text-sm font-semibold">
+                      <span>{language === 'es' ? 'Total a pagar hoy' : 'Total to pay today'}</span>
+                      <span className="text-[#F05D5E]">{formatCurrency((business.deposit_amount || 0) + 8.20)}</span>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground leading-relaxed">
+                      {language === 'es'
+                        ? `El restante ${formatCurrency(Math.max((selectedService?.price || 0) - (business.deposit_amount || 0), 0))} se paga en el negocio. Consulta los terminos y condiciones para la politica de reembolso.`
+                        : `The remaining ${formatCurrency(Math.max((selectedService?.price || 0) - (business.deposit_amount || 0), 0))} is paid at the venue. See terms & conditions for refund policy.`}
+                    </p>
+                  </>
                 )}
                 {isBizUser && (
                   <div className="text-xs text-emerald-600 flex items-center gap-1">
