@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import NoShowAlertBanner from '@/components/NoShowAlertBanner';
 import { Calendar } from '@/components/ui/calendar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Separator } from '@/components/ui/separator';
@@ -715,6 +716,9 @@ export default function BusinessDashboardPage() {
             </Card>
           ))}
         </div>
+
+        {/* Pending no-show reports requiring business response */}
+        <NoShowAlertBanner bookings={dayBookings} onResolved={() => loadDayBookings()} />
 
         {/* ── Tabs ────────────────────────────────────── */}
         {(() => {

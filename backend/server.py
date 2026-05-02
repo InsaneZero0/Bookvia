@@ -263,11 +263,13 @@ async def funds_state_scheduler():
         try:
             from services.funds_state import auto_complete_appointments, auto_clear_after_grace
             from services.strikes import lift_expired_suspensions
+            from routers.bookings import process_expired_no_show_reports
             ac = await auto_complete_appointments()
             cl = await auto_clear_after_grace()
             ls = await lift_expired_suspensions()
-            if ac or cl or ls:
-                logger.info(f"Funds state cron: auto_completed={ac}, auto_cleared={cl}, suspensions_lifted={ls}")
+            ns = await process_expired_no_show_reports()
+            if ac or cl or ls or ns:
+                logger.info(f"Funds state cron: auto_completed={ac}, auto_cleared={cl}, suspensions_lifted={ls}, no_show_resolved={ns}")
         except Exception as e:
             logger.error(f"Funds state scheduler error: {e}")
         await asyncio.sleep(3600)  # Every 1 hour

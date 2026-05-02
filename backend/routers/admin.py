@@ -419,6 +419,105 @@ async def admin_clear_strike_endpoint(
     return cleared
 
 
+@router.get("/no-show-reports")
+async def admin_list_no_show_reports(token_data: TokenData = Depends(require_admin)):
+    """List all open (or recently resolved) no-show reports for admin review."""
+    bookings = await db.bookings.find(
+        {"no_show_report": {"$exists": True}},
+        {"_id": 0}
+    ).sort("no_show_report.reported_at", -1).limit(200).to_list(200)
+    
+    out = []
+    for bk in bookings:
+        biz = await db.businesses.find_one({"id": bk.get("business_id")}, {"_id": 0, "name": 1, "public_code": 1, "phone": 1})
+        user = await db.users.find_one({"id": bk.get("user_id")}, {"_id": 0, "full_name": 1, "email": 1, "public_code": 1})
+        out.append({
+            "booking_id": bk.get("id"),
+            "service_name": bk.get("service_name"),
+            "business_summary": biz,
+            "user_summary": user,
+            "report": bk.get("no_show_report"),
+            "appointment_date": f"{bk.get('date')} {bk.get('time')}",
+        })
+    return {"reports": out, "total": len(out)}
+
+
+@router.post("/no-show-reports/{booking_id}/resolve")
+async def admin_resolve_no_show(
+    booking_id: str,
+    body: dict,
+    request: Request,
+    token_data: TokenData = Depends(require_admin),
+):
+    """
+    Admin resolves a no-show report manually (overrides 24h auto-resolve).
+    Body: {outcome: 'favor_client'|'favor_business', reason}
+    favor_client -> refund + compensation + uphold strike
+    favor_business -> clear pending strike, no refund
+    """
+    outcome = (body or {}).get("outcome")
+    reason = (body or {}).get("reason") or "Admin manual resolution"
+    if outcome not in ("favor_client", "favor_business"):
+        raise HTTPException(status_code=400, detail="outcome must be 'favor_client' or 'favor_business'")
+    
+    booking = await db.bookings.find_one({"id": booking_id})
+    if not booking or not booking.get("no_show_report"):
+        raise HTTPException(status_code=404, detail="No-show report not found")
+    
+    report = booking["no_show_report"]
+    if report.get("resolved"):
+        raise HTTPException(status_code=400, detail="Report already resolved")
+    
+    strike_id = report.get("strike_id")
+    
+    if outcome == "favor_client":
+        # Reuse the auto-resolve logic via direct call
+        from routers.bookings import _process_no_show_report  # noqa: PLC0415
+        await _process_no_show_report(booking)
+    else:
+        # favor_business: clear the pending strike, restore funds to AVAILABLE/PENDING_HOLD
+        if strike_id:
+            from services.strikes import resolve_pending_strike
+            try:
+                await resolve_pending_strike(
+                    strike_id, outcome="cleared",
+                    resolved_by=f"admin:{token_data.email}", reason=reason
+                )
+            except ValueError:
+                pass
+        
+        # Restore transaction funds_state from DISPUTED back to AVAILABLE (if it was)
+        tx = await db.transactions.find_one({"booking_id": booking_id, "status": TransactionStatus.PAID}, {"_id": 0})
+        if tx and tx.get("funds_state") == "disputed":
+            try:
+                from services.funds_state import transition
+                await transition(tx["id"], "available", actor=f"admin:{token_data.email}", reason=f"No-show dispute resolved in favor of business: {reason}")
+            except Exception:
+                pass
+        
+        await db.bookings.update_one(
+            {"id": booking_id},
+            {"$set": {
+                "no_show_report.resolved": True,
+                "no_show_report.resolved_at": datetime.now(timezone.utc).isoformat(),
+                "no_show_report.outcome": "cleared",
+                "no_show_report.admin_reason": reason,
+            }}
+        )
+    
+    await create_audit_log(
+        admin_id=token_data.user_id,
+        admin_email=token_data.email,
+        action=AuditAction.PAYMENT_RELEASE if outcome == "favor_business" else AuditAction.PAYMENT_HOLD,
+        target_type="no_show_report",
+        target_id=booking_id,
+        details={"outcome": outcome, "reason": reason, "strike_id": strike_id},
+        request=request,
+    )
+    
+    return {"message": f"No-show report resolved: {outcome}", "outcome": outcome}
+
+
 
 
 

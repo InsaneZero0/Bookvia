@@ -151,6 +151,32 @@ export default function UserBookingsPage() {
   const [cancelDialog, setCancelDialog] = useState({ open: false, booking: null, refundTo: 'card' });
   const [disputeDialog, setDisputeDialog] = useState({ open: false, booking: null });
   const [disputeReason, setDisputeReason] = useState('');
+  const [noShowDialog, setNoShowDialog] = useState({ open: false, booking: null });
+  const [noShowDescription, setNoShowDescription] = useState('');
+
+  const submitNoShow = async () => {
+    const b = noShowDialog.booking;
+    if (!b) return;
+    const desc = noShowDescription.trim();
+    if (desc.length < 10) {
+      toast.error(language === 'es' ? 'Describe lo que paso con al menos 10 caracteres' : 'Please describe what happened (min 10 characters)');
+      return;
+    }
+    try {
+      await bookingsAPI.reportNoShow(b.id, desc);
+      toast.success(
+        language === 'es'
+          ? 'Reporte enviado. Bookvia notifico al negocio para responder en 24h.'
+          : 'Report sent. Bookvia notified the business to respond within 24h.'
+      );
+      setNoShowDialog({ open: false, booking: null });
+      setNoShowDescription('');
+      loadBookings();
+    } catch (err) {
+      const msg = err.response?.data?.detail || (language === 'es' ? 'Error al reportar' : 'Error reporting');
+      toast.error(msg);
+    }
+  };
 
   const submitDispute = async () => {
     const b = disputeDialog.booking;
@@ -494,6 +520,35 @@ export default function UserBookingsPage() {
                 </div>
               )}
 
+              {/* No-show button (visible from 30min before to 4h after, only confirmed bookings without report) */}
+              {booking.status === 'confirmed' && !booking.no_show_report && booking.deposit_paid && (() => {
+                const apptDate = new Date(booking.appointment_date || `${booking.date}T${booking.time}`);
+                const minSince = (Date.now() - apptDate.getTime()) / (1000 * 60);
+                if (minSince < -30 || minSince > 240) return null;
+                return (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="mt-3 text-rose-700 hover:bg-rose-50 px-2 border border-rose-200"
+                    onClick={() => setNoShowDialog({ open: true, booking })}
+                    data-testid={`no-show-booking-${booking.id}`}
+                  >
+                    <Ban className="h-3.5 w-3.5 mr-1" />
+                    {language === 'es' ? 'El negocio no me atendio' : 'Business didn\'t show up'}
+                  </Button>
+                );
+              })()}
+              {booking.no_show_report && !booking.no_show_report.resolved && (
+                <div className="mt-3 flex items-center gap-1 text-xs text-rose-700 bg-rose-50 px-2 py-1.5 rounded">
+                  <AlertTriangle className="h-3.5 w-3.5" />
+                  <span>
+                    {language === 'es'
+                      ? 'Reporte enviado. Bookvia esta esperando respuesta del negocio.'
+                      : 'Report sent. Bookvia is awaiting business response.'}
+                  </span>
+                </div>
+              )}
+
               {/* Dispute button (only completed bookings within 24h grace, no existing dispute) */}
               {booking.status === 'completed' && booking.completed_at && !booking.has_dispute && (() => {
                 const completedAt = new Date(booking.completed_at);
@@ -749,6 +804,50 @@ export default function UserBookingsPage() {
                 </div>
               );
             })()}
+          </DialogContent>
+        </Dialog>
+
+        {/* No-Show Dialog */}
+        <Dialog open={noShowDialog.open} onOpenChange={(open) => !open && (setNoShowDialog({ open: false, booking: null }), setNoShowDescription(''))}>
+          <DialogContent className="max-w-md" data-testid="no-show-dialog">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Ban className="h-5 w-5 text-rose-700" />
+                {language === 'es' ? 'El negocio no me atendio' : "Business didn't show up"}
+              </DialogTitle>
+              <DialogDescription>
+                {language === 'es'
+                  ? 'Si llegaste a tu cita y el negocio estaba cerrado o no te atendieron, repórtalo aquí. Bookvia notificara al negocio y tendra 24 horas para responder con evidencia.'
+                  : 'If you arrived to your appointment and the business was closed or did not attend, report it here. Bookvia will notify the business and they will have 24 hours to respond with evidence.'}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-xs text-amber-900 space-y-1">
+              <p className="font-semibold">
+                {language === 'es' ? '¿Que pasara despues?' : 'What happens next?'}
+              </p>
+              <ul className="list-disc pl-4 space-y-0.5">
+                <li>{language === 'es' ? 'Bookvia notifica al negocio inmediatamente.' : 'Bookvia notifies the business immediately.'}</li>
+                <li>{language === 'es' ? 'Si el negocio responde, Bookvia revisara ambas versiones.' : 'If the business responds, Bookvia will review both sides.'}</li>
+                <li>{language === 'es' ? 'Si NO responde en 24h: te reembolsamos automaticamente $108.20 + $50 de compensacion en tu saldo Bookvia.' : 'If they do NOT respond within 24h: we automatically refund $108.20 + $50 compensation to your Bookvia wallet.'}</li>
+              </ul>
+            </div>
+            <textarea
+              value={noShowDescription}
+              onChange={(e) => setNoShowDescription(e.target.value)}
+              placeholder={language === 'es' ? 'Describe que paso (minimo 10 caracteres). Ej: "Llegue a las 10:00 y el negocio estaba cerrado, toque y nadie respondio."' : 'Describe what happened (min 10 chars).'}
+              className="w-full min-h-[100px] p-3 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-rose-500"
+              maxLength={500}
+              data-testid="no-show-description-input"
+            />
+            <p className="text-[11px] text-muted-foreground">{noShowDescription.length}/500</p>
+            <div className="flex gap-2 pt-1">
+              <Button variant="outline" className="flex-1" onClick={() => { setNoShowDialog({ open: false, booking: null }); setNoShowDescription(''); }} data-testid="no-show-cancel">
+                {language === 'es' ? 'Cancelar' : 'Cancel'}
+              </Button>
+              <Button className="flex-1 bg-rose-700 hover:bg-rose-800" onClick={submitNoShow} data-testid="no-show-submit">
+                {language === 'es' ? 'Enviar reporte' : 'Submit report'}
+              </Button>
+            </div>
           </DialogContent>
         </Dialog>
 

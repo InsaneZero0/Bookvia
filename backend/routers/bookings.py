@@ -1207,6 +1207,332 @@ async def dispute_booking(
     return {"message": "Dispute opened. Admin will review.", "funds_state": "disputed"}
 
 
+# ────────────────────── FASE 6: Negocio cerrado ──────────────────────
+
+NO_SHOW_RESPONSE_WINDOW_HOURS = 24    # Business has 24h to respond to a no-show report
+NO_SHOW_AUTO_PROTECT_HOURS = 2        # If business responds within 2h with evidence, auto-recovery
+NO_SHOW_COMPENSATION_MXN = 50.0       # Bonus paid to client after auto-refund
+
+
+@router.post("/{booking_id}/no-show-business")
+async def report_business_no_show(
+    booking_id: str,
+    body: dict = None,
+    token_data: TokenData = Depends(require_auth),
+):
+    """
+    Client reports that the business never opened / didn't attend the appointment.
+    Creates a no_show_business strike in pending_review state and notifies the business.
+    The business has 24h to respond with evidence; if no response, auto-resolve in
+    favor of client (full refund + $50 compensation to wallet).
+    """
+    body = body or {}
+    booking = await db.bookings.find_one({"id": booking_id})
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    if booking["user_id"] != token_data.user_id:
+        raise HTTPException(status_code=403, detail="Not your booking")
+    if booking["status"] not in [AppointmentStatus.CONFIRMED, AppointmentStatus.COMPLETED]:
+        raise HTTPException(status_code=400, detail="Solo se puede reportar en citas confirmadas o completadas")
+    if booking.get("no_show_report"):
+        raise HTTPException(status_code=400, detail="Ya hay un reporte abierto para esta cita")
+    
+    # Time window: only allowed from 30min before appointment until 4h after
+    booking_dt = datetime.strptime(f"{booking['date']} {booking['time']}", "%Y-%m-%d %H:%M").replace(tzinfo=timezone.utc)
+    now = datetime.now(timezone.utc)
+    delta_min = (now - booking_dt).total_seconds() / 60
+    if delta_min < -30:
+        raise HTTPException(status_code=400, detail="Solo puedes reportar desde 30 min antes de la cita")
+    if delta_min > 240:  # 4h after
+        raise HTTPException(status_code=400, detail="Ya pasaron mas de 4 horas; usa el boton de reportar problema")
+    
+    transaction = await db.transactions.find_one(
+        {"booking_id": booking_id, "status": TransactionStatus.PAID}, {"_id": 0}
+    )
+    if not transaction:
+        raise HTTPException(status_code=400, detail="No hay pago asociado a esta cita")
+    if transaction.get("funds_state") in {"refunded", "paid_out"}:
+        raise HTTPException(status_code=400, detail=f"No se puede reportar: estado={transaction.get('funds_state')}")
+    
+    description = (body.get("description") or "").strip()
+    photo_url = (body.get("photo_url") or "").strip()
+    
+    # Issue pending_review strike
+    from services.strikes import issue_strike
+    try:
+        strike = await issue_strike(
+            business_id=booking["business_id"],
+            reason="no_show_business",
+            description=description or "Cliente reporto que el negocio no atendio",
+            booking_id=booking_id,
+            issued_by=f"client:{token_data.user_id}",
+            metadata={
+                "transaction_id": transaction["id"],
+                "client_description": description,
+                "photo_url": photo_url,
+                "reported_at": now.isoformat(),
+                "auto_resolve_at": (now + timedelta(hours=NO_SHOW_RESPONSE_WINDOW_HOURS)).isoformat(),
+            },
+            pending_review=True,
+        )
+    except Exception as e:
+        logger.error(f"Failed to create no-show strike: {e}")
+        raise HTTPException(status_code=500, detail="Error registrando el reporte")
+    
+    # Move funds to DISPUTED to freeze them
+    try:
+        from services.funds_state import mark_disputed
+        if transaction.get("funds_state") in {"pending_hold", "available"}:
+            await mark_disputed(transaction["id"], actor="client_no_show", reason=description or "Negocio no atendio")
+    except Exception as e:
+        logger.error(f"Funds state -> DISPUTED failed: {e}")
+    
+    # Mark the booking
+    auto_resolve_at = (now + timedelta(hours=NO_SHOW_RESPONSE_WINDOW_HOURS)).isoformat()
+    await db.bookings.update_one(
+        {"id": booking_id},
+        {"$set": {
+            "no_show_report": {
+                "reported_at": now.isoformat(),
+                "description": description,
+                "photo_url": photo_url,
+                "strike_id": strike["id"],
+                "auto_resolve_at": auto_resolve_at,
+                "business_response": None,
+                "resolved": False,
+            }
+        }}
+    )
+    
+    # Notify business immediately (push)
+    business = await db.businesses.find_one({"id": booking["business_id"]})
+    if business and business.get("user_id"):
+        try:
+            await create_notification(
+                business["user_id"],
+                "URGENTE: Cliente reporto que no atendiste",
+                f"Tienes 24h para responder con evidencia, de lo contrario se procesara reembolso automatico al cliente.",
+                "no_show_report",
+                {"booking_id": booking_id, "strike_id": strike["id"], "auto_resolve_at": auto_resolve_at}
+            )
+        except Exception as e:
+            logger.error(f"Failed to send no-show notification: {e}")
+    
+    return {
+        "message": "Reporte registrado. Bookvia notifico al negocio para que responda en 24h.",
+        "auto_resolve_at": auto_resolve_at,
+        "strike_id": strike["id"],
+    }
+
+
+@router.post("/{booking_id}/no-show-response")
+async def respond_business_no_show(
+    booking_id: str,
+    body: dict,
+    token_data: TokenData = Depends(require_business),
+):
+    """
+    Business responds to a no-show report with evidence (photo + description).
+    Body: {description, evidence_url}
+    The strike stays in pending_review until admin reviews.
+    """
+    body = body or {}
+    user = await db.users.find_one({"id": token_data.user_id})
+    if not user or not user.get("business_id"):
+        raise HTTPException(status_code=404, detail="Business not found")
+    
+    booking = await db.bookings.find_one({"id": booking_id})
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    if booking["business_id"] != user["business_id"]:
+        raise HTTPException(status_code=403, detail="Not your booking")
+    
+    report = booking.get("no_show_report")
+    if not report:
+        raise HTTPException(status_code=400, detail="No hay reporte abierto para esta cita")
+    if report.get("resolved"):
+        raise HTTPException(status_code=400, detail="El reporte ya fue resuelto")
+    if report.get("business_response"):
+        raise HTTPException(status_code=400, detail="Ya respondiste a este reporte")
+    
+    description = (body.get("description") or "").strip()
+    evidence_url = (body.get("evidence_url") or "").strip()
+    if len(description) < 10:
+        raise HTTPException(status_code=400, detail="Describe tu version con al menos 10 caracteres")
+    
+    now = datetime.now(timezone.utc)
+    response = {
+        "responded_at": now.isoformat(),
+        "description": description,
+        "evidence_url": evidence_url,
+    }
+    
+    await db.bookings.update_one(
+        {"id": booking_id},
+        {"$set": {"no_show_report.business_response": response}}
+    )
+    
+    # Update strike metadata so admin can see business's evidence
+    if report.get("strike_id"):
+        await db.business_strikes.update_one(
+            {"id": report["strike_id"]},
+            {"$set": {"metadata.business_response": response}}
+        )
+    
+    # Notify admin queue: the strike is in pending_review and now has business response
+    return {
+        "message": "Respuesta registrada. Bookvia revisara el caso y se pondra en contacto contigo.",
+        "responded_at": response["responded_at"],
+    }
+
+
+async def _process_no_show_report(booking: dict) -> bool:
+    """
+    Process a single no-show report whose 24h window has elapsed.
+    If business did NOT respond -> auto-resolve in favor of client (refund + $50 compensation).
+    If business responded -> leave for admin review (return False).
+    Returns True if auto-resolved.
+    """
+    report = booking.get("no_show_report") or {}
+    if report.get("resolved"):
+        return False
+    if report.get("business_response"):
+        # Business responded; leave pending for admin
+        return False
+    
+    booking_id = booking["id"]
+    business_id = booking["business_id"]
+    user_id = booking["user_id"]
+    
+    transaction = await db.transactions.find_one(
+        {"booking_id": booking_id, "status": TransactionStatus.PAID}, {"_id": 0}
+    )
+    if not transaction:
+        return False
+    
+    now_iso = datetime.now(timezone.utc).isoformat()
+    
+    # 1) Refund client_paid (or business_amount + bookvia_fee) to wallet (avoids Stripe fee loss)
+    try:
+        from services.wallet import credit_wallet, CREDIT_BUSINESS_NO_SHOW
+        client_paid = float(transaction.get("client_paid") or transaction.get("amount_total") or 0)
+        if client_paid > 0:
+            await credit_wallet(
+                user_id=user_id,
+                amount=client_paid,
+                tx_type=CREDIT_BUSINESS_NO_SHOW,
+                booking_id=booking_id,
+                description="Reembolso completo: el negocio no atendio tu cita",
+            )
+        # 2) Compensation $50 to client wallet
+        await credit_wallet(
+            user_id=user_id,
+            amount=NO_SHOW_COMPENSATION_MXN,
+            tx_type=CREDIT_BUSINESS_NO_SHOW,
+            booking_id=booking_id,
+            description="Compensacion de Bookvia por inconveniente",
+        )
+    except Exception as e:
+        logger.error(f"No-show wallet refund failed for booking {booking_id}: {e}")
+    
+    # 3) Mark transaction REFUNDED
+    try:
+        from services.funds_state import mark_refunded
+        if transaction.get("funds_state") in {"pending_hold", "available", "disputed"}:
+            await mark_refunded(transaction["id"], actor="auto_no_show", reason="Auto-resolved: business no-show, refund to client wallet")
+    except Exception as e:
+        logger.error(f"Funds state -> REFUNDED failed: {e}")
+    
+    await db.transactions.update_one(
+        {"id": transaction["id"]},
+        {"$set": {
+            "status": TransactionStatus.REFUND_FULL,
+            "refund_amount": float(transaction.get("client_paid") or 0),
+            "refund_to": "wallet",
+            "refund_reason": "auto_no_show_business",
+            "wallet_credited": True,
+            "cancelled_by": "system_no_show",
+            "updated_at": now_iso,
+        }}
+    )
+    
+    # 4) Apply the strike (uphold in favor of client)
+    if report.get("strike_id"):
+        try:
+            from services.strikes import resolve_pending_strike
+            await resolve_pending_strike(
+                report["strike_id"],
+                outcome="upheld",
+                resolved_by="system_auto_no_show",
+                reason="Business did not respond within 24h",
+            )
+        except Exception as e:
+            logger.error(f"Failed to uphold strike {report.get('strike_id')}: {e}")
+    
+    # 5) Mark booking
+    await db.bookings.update_one(
+        {"id": booking_id},
+        {"$set": {
+            "status": AppointmentStatus.CANCELLED,
+            "cancelled_by": "system_no_show",
+            "cancellation_reason": "Business did not attend",
+            "no_show_report.resolved": True,
+            "no_show_report.resolved_at": now_iso,
+            "no_show_report.outcome": "auto_refund",
+            "updated_at": now_iso,
+        }}
+    )
+    
+    # 6) Notifications
+    try:
+        await create_notification(
+            user_id,
+            "Reembolso procesado",
+            f"El negocio no respondio a tu reporte. Te depositamos $108.20 + $50 de compensacion en tu saldo Bookvia.",
+            "refund",
+            {"booking_id": booking_id, "amount": (float(transaction.get("client_paid") or 0) + NO_SHOW_COMPENSATION_MXN)}
+        )
+        biz = await db.businesses.find_one({"id": business_id})
+        if biz and biz.get("user_id"):
+            await create_notification(
+                biz["user_id"],
+                "Strike aplicado por no atender cliente",
+                "No respondiste al reporte en 24h. Se aplico strike y se reembolso al cliente.",
+                "strike",
+                {"booking_id": booking_id, "strike_id": report.get("strike_id")}
+            )
+    except Exception as e:
+        logger.error(f"Failed to send no-show resolution notifications: {e}")
+    
+    logger.info(f"[No-show] Auto-resolved booking={booking_id} biz={business_id}: refund + $50 compensation")
+    return True
+
+
+async def process_expired_no_show_reports() -> int:
+    """Cron task: auto-resolve no-show reports whose 24h window elapsed without business response."""
+    now_iso = datetime.now(timezone.utc).isoformat()
+    expired = await db.bookings.find(
+        {
+            "no_show_report.resolved": False,
+            "no_show_report.business_response": None,
+            "no_show_report.auto_resolve_at": {"$lte": now_iso},
+        },
+        {"_id": 0}
+    ).to_list(500)
+    
+    resolved = 0
+    for booking in expired:
+        try:
+            if await _process_no_show_report(booking):
+                resolved += 1
+        except Exception as e:
+            logger.error(f"Auto-resolve no-show failed for {booking.get('id')}: {e}")
+    
+    if resolved > 0:
+        logger.info(f"No-show: auto-resolved {resolved} expired reports")
+    return resolved
+
+
 @router.put("/{booking_id}/cancel/user")
 async def cancel_booking_by_user(
     booking_id: str,

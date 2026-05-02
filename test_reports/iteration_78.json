@@ -1,0 +1,49 @@
+{
+  "summary": "Fase 6 (negocio cerrado / no-show business + auto-resolve 24h + $50 compensation) fully tested at service and endpoint level. 22/22 pytest cases pass covering strikes.issue_strike(pending_review), strikes.resolve_pending_strike (upheld/cleared/invalid), POST /bookings/{id}/no-show-business, POST /bookings/{id}/no-show-response, _process_no_show_report + process_expired_no_show_reports, GET/POST /admin/no-show-reports.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "POST /api/bookings/{id}/no-show-business success notification",
+        "issue": "Spanish notification body hardcodes '$108.20' ('Te depositamos $108.20 + $50...') instead of the actual client_paid amount. Mostly cosmetic but misleads users when their payment differs. See bookings.py line ~1491."
+      },
+      {
+        "endpoint": "POST /api/admin/no-show-reports/{id}/resolve (favor_business)",
+        "issue": "Uses AuditAction.PAYMENT_RELEASE/PAYMENT_HOLD for no-show outcomes – slight misuse of audit taxonomy, consider adding NO_SHOW_RESOLVED* actions. Non-blocking."
+      },
+      {
+        "endpoint": "services.strikes.resolve_pending_strike (upheld)",
+        "issue": "When outcome='upheld' and severity later escalates (e.g., if 2 more strikes accrued while pending), the stored severity at issuance time is re-applied blindly. Edge case; acceptable for current flow but worth noting."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_fase6_no_show_business.py",
+    "/app/test_reports/pytest/fase6_no_show.xml"
+  ],
+  "action_items": [
+    "Consider parameterizing the refund amount in the client notification instead of the hardcoded $108.20.",
+    "(Optional) Add dedicated AuditAction entries for no-show dispute resolutions."
+  ],
+  "critical_code_review_comments": [
+    "routers/bookings.py `_process_no_show_report` silently logs and continues when wallet credit or funds_state transitions fail – the flow still marks the booking cancelled and strike upheld even if the user was not actually refunded. Consider short-circuiting or producing a pending-reconcile record so failures do not cause silent data inconsistency.",
+    "Hardcoded compensation notification string '$108.20 + $50' leaks test data assumptions; replace with formatted dynamic values.",
+    "admin.py resolve no-show favor_business path only transitions 'disputed' -> 'available' but not back to 'pending_hold' if that was the prior state; for early-reported disputes the funds may be moved forward in the lifecycle unintentionally.",
+    "routers/bookings.py no-show endpoints use lazy inline `from services.X import ...` inside handlers; fine functionally but could cause minor import duplication – move to module top."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_fase6_no_show_business.py"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "N/A"},
+  "test_credentials": "Admin/TOTP, testbiz_dashboard@test.com, testuser_stats@test.com – all from /app/memory/test_credentials.md",
+  "seed_data_creation": "Tests create TEST_F6_ prefixed bookings, transactions, wallet_transactions and strikes, all cleaned up in module teardown. No persistent seed data.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Fase 6 backend fully validated (22/22). Test file /app/backend/tests/test_fase6_no_show_business.py manipulates booking.date/time and no_show_report.auto_resolve_at directly in Mongo to simulate window edge cases and cron expiration. Frontend was intentionally skipped per request.",
+  "rca of the issue": "N/A – no failing cases; only minor code-quality observations above."
+}

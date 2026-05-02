@@ -75,10 +75,15 @@ async def issue_strike(
     booking_id: Optional[str] = None,
     issued_by: str = "system",
     metadata: Optional[dict] = None,
+    pending_review: bool = False,
 ) -> dict:
     """
     Apply a progressive strike to a business. Computes severity, records the strike,
     and applies side effects (suspension, financial penalty marker).
+    
+    If pending_review=True, the strike is recorded but no side effects (suspension
+    or financial penalty) are applied until an admin confirms it. Useful for cases
+    like "negocio cerrado" where the business should have a chance to provide evidence.
     
     Returns the created strike document.
     """
@@ -120,9 +125,14 @@ async def issue_strike(
         "description": description,
         "booking_id": booking_id,
         "issued_by": issued_by,
-        "financial_penalty_mxn": financial_penalty,
-        "penalty_settled": False,  # True once deducted from a payout
-        "suspension_until": suspension_until,
+        "financial_penalty_mxn": 0.0 if pending_review else financial_penalty,
+        "penalty_settled": False,
+        "suspension_until": None if pending_review else suspension_until,
+        "pending_review": pending_review,
+        "review_resolved": False,
+        "review_resolved_at": None,
+        "review_resolved_by": None,
+        "review_outcome": None,  # 'upheld' or 'cleared'
         "created_at": _now_iso(),
         # Strike rolls off automatically: 90 days after creation it no longer counts
         "expires_at": (now + timedelta(days=STRIKE_WINDOW_90_DAYS)).isoformat(),
@@ -130,6 +140,23 @@ async def issue_strike(
         "strike_number_30d": new_total_30d,
     }
     await db.business_strikes.insert_one(dict(strike))
+    
+    # If pending_review, do NOT apply side effects yet (counters only).
+    if pending_review:
+        await db.businesses.update_one(
+            {"id": business_id},
+            {"$set": {
+                "strike_count_30d": new_total_30d,
+                "strike_count_90d": new_total_90d,
+                "last_strike_at": strike["created_at"],
+                "last_strike_severity": severity,
+            }}
+        )
+        logger.info(
+            f"[Strike PENDING REVIEW] biz={business_id} reason={reason} severity={severity} "
+            f"(no side-effects applied yet)"
+        )
+        return strike
     
     # Apply side effects to business document
     update_fields = {
@@ -172,6 +199,114 @@ async def list_business_strikes(business_id: str, limit: int = 50) -> list:
     return await db.business_strikes.find(
         {"business_id": business_id}, {"_id": 0}
     ).sort("created_at", -1).limit(limit).to_list(limit)
+
+
+async def resolve_pending_strike(
+    strike_id: str,
+    *,
+    outcome: str,  # 'upheld' or 'cleared'
+    resolved_by: str,
+    reason: Optional[str] = None,
+) -> dict:
+    """
+    Resolve a strike that was placed in pending_review (e.g. closed-business report).
+      - outcome='upheld'  -> apply the original side effects (suspension/penalty)
+      - outcome='cleared' -> drop the strike completely (decrement counters)
+    """
+    if outcome not in ("upheld", "cleared"):
+        raise ValueError(f"Invalid outcome: {outcome}")
+    
+    strike = await db.business_strikes.find_one({"id": strike_id}, {"_id": 0})
+    if not strike:
+        raise ValueError(f"Strike not found: {strike_id}")
+    if not strike.get("pending_review"):
+        raise ValueError("Strike is not in pending_review state")
+    if strike.get("review_resolved"):
+        return strike
+    
+    now = _now_iso()
+    business_id = strike["business_id"]
+    severity = strike.get("severity")
+    
+    if outcome == "cleared":
+        # Drop the strike: decrement counters
+        await db.business_strikes.update_one(
+            {"id": strike_id},
+            {"$set": {
+                "review_resolved": True,
+                "review_resolved_at": now,
+                "review_resolved_by": resolved_by,
+                "review_outcome": "cleared",
+                "cleared": True,
+                "cleared_at": now,
+                "cleared_by": resolved_by,
+                "cleared_reason": reason or "Pending strike cleared after review",
+            }}
+        )
+        # Recompute counters (excluding cleared)
+        cutoff_30d = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+        cutoff_90d = (datetime.now(timezone.utc) - timedelta(days=90)).isoformat()
+        new_30d = await db.business_strikes.count_documents(
+            {"business_id": business_id, "created_at": {"$gte": cutoff_30d}, "cleared": {"$ne": True}}
+        )
+        new_90d = await db.business_strikes.count_documents(
+            {"business_id": business_id, "created_at": {"$gte": cutoff_90d}, "cleared": {"$ne": True}}
+        )
+        await db.businesses.update_one(
+            {"id": business_id},
+            {"$set": {"strike_count_30d": new_30d, "strike_count_90d": new_90d}}
+        )
+    else:
+        # Upheld: apply original side effects now
+        # Recompute suspension based on severity stored at creation time
+        nowdt = datetime.now(timezone.utc)
+        suspension_until = None
+        financial_penalty = 0.0
+        if severity == StrikeSeverity.MINOR.value:
+            financial_penalty = STRIKE_PENALTY_AMOUNT
+        elif severity == StrikeSeverity.SUSPENSION_7D.value:
+            suspension_until = (nowdt + timedelta(days=7)).isoformat()
+        elif severity == StrikeSeverity.SUSPENSION_30D.value:
+            suspension_until = (nowdt + timedelta(days=30)).isoformat()
+        elif severity == StrikeSeverity.PERMANENT_BAN.value:
+            suspension_until = "permanent"
+        
+        # Update strike doc
+        await db.business_strikes.update_one(
+            {"id": strike_id},
+            {"$set": {
+                "review_resolved": True,
+                "review_resolved_at": now,
+                "review_resolved_by": resolved_by,
+                "review_outcome": "upheld",
+                "pending_review": False,
+                "suspension_until": suspension_until,
+                "financial_penalty_mxn": financial_penalty,
+                "review_reason": reason,
+            }}
+        )
+        
+        # Apply side effects
+        update_fields = {}
+        if suspension_until:
+            update_fields["suspended_until"] = suspension_until
+            update_fields["suspended_reason"] = f"Strike upheld: {strike['reason']}"
+            if severity == StrikeSeverity.PERMANENT_BAN.value:
+                update_fields["status"] = BusinessStatus.REJECTED.value
+                update_fields["banned"] = True
+        
+        if financial_penalty > 0:
+            await db.businesses.update_one(
+                {"id": business_id},
+                {"$set": update_fields, "$inc": {"pending_strike_penalty_mxn": financial_penalty}}
+            )
+        elif update_fields:
+            await db.businesses.update_one({"id": business_id}, {"$set": update_fields})
+    
+    logger.info(
+        f"[Strike RESOLVED] strike={strike_id} outcome={outcome} by={resolved_by} biz={business_id}"
+    )
+    return await db.business_strikes.find_one({"id": strike_id}, {"_id": 0})
 
 
 async def get_active_suspension(business_id: str) -> Optional[dict]:
