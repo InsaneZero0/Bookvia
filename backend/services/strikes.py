@@ -143,7 +143,7 @@ async def issue_strike(
         update_fields["suspended_until"] = suspension_until
         update_fields["suspended_reason"] = f"Strike: {reason}"
         if severity == StrikeSeverity.PERMANENT_BAN.value:
-            update_fields["status"] = BusinessStatus.REJECTED  # blocks login + visibility
+            update_fields["status"] = BusinessStatus.REJECTED.value  # blocks login + visibility
             update_fields["banned"] = True
     
     if financial_penalty > 0:
