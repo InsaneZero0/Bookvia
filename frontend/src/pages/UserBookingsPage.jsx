@@ -277,8 +277,19 @@ export default function UserBookingsPage() {
     setRescheduleLoading(true);
     try {
       const dateStr = rescheduleDate.toISOString().split('T')[0];
-      await bookingsAPI.reschedule(bk.id, dateStr, rescheduleTime);
-      toast.success(language === 'es' ? 'Cita reagendada exitosamente' : 'Appointment rescheduled successfully');
+      const res = await bookingsAPI.reschedule(bk.id, dateStr, rescheduleTime);
+      const remaining = res.data?.remaining_reschedules;
+      let msg = language === 'es' ? 'Cita reagendada exitosamente' : 'Appointment rescheduled successfully';
+      if (typeof remaining === 'number') {
+        msg += language === 'es'
+          ? remaining > 0
+            ? `. Tienes ${remaining} reagendamiento${remaining === 1 ? '' : 's'} restante${remaining === 1 ? '' : 's'} para esta cita.`
+            : '. Este fue tu ultimo reagendamiento permitido para esta cita.'
+          : remaining > 0
+            ? `. You have ${remaining} reschedule${remaining === 1 ? '' : 's'} left for this booking.`
+            : '. This was the last allowed reschedule for this booking.';
+      }
+      toast.success(msg);
       setRescheduleModal({ open: false, booking: null });
       loadBookings();
     } catch (error) {
@@ -407,18 +418,38 @@ export default function UserBookingsPage() {
               {/* Action buttons */}
               {showActions && booking.can_cancel && (
                 <div className="flex flex-wrap gap-2 mt-4">
-                  {booking.status === 'confirmed' && booking.hours_until_appointment > 24 && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => openReschedule(booking)}
-                      className="text-blue-600 hover:bg-blue-50"
-                      data-testid={`reschedule-booking-${booking.id}`}
-                    >
-                      <RefreshCw className="h-4 w-4 mr-1" />
-                      {language === 'es' ? 'Reagendar' : 'Reschedule'}
-                    </Button>
-                  )}
+                  {(() => {
+                    if (booking.status !== 'confirmed') return null;
+                    const reschedulesUsed = Number(booking.reschedule_count || 0);
+                    const reschedulesLeft = Math.max(0, 2 - reschedulesUsed);
+                    const canReschedule = booking.hours_until_appointment > 2 && reschedulesLeft > 0;
+                    
+                    return (
+                      <>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => openReschedule(booking)}
+                          className="text-blue-600 hover:bg-blue-50"
+                          disabled={!canReschedule}
+                          title={
+                            booking.hours_until_appointment <= 2
+                              ? (language === 'es' ? 'Solo puedes reagendar con mas de 2 horas de anticipacion' : 'You can only reschedule more than 2 hours in advance')
+                              : reschedulesLeft === 0
+                              ? (language === 'es' ? 'Ya alcanzaste el limite de 2 reagendamientos' : 'You reached the 2-reschedule limit')
+                              : ''
+                          }
+                          data-testid={`reschedule-booking-${booking.id}`}
+                        >
+                          <RefreshCw className="h-4 w-4 mr-1" />
+                          {language === 'es' ? 'Reagendar' : 'Reschedule'}
+                          {reschedulesUsed > 0 && (
+                            <span className="ml-1 text-[10px] opacity-70">({reschedulesUsed}/2)</span>
+                          )}
+                        </Button>
+                      </>
+                    );
+                  })()}
                   <Button
                     variant="outline"
                     size="sm"
@@ -842,6 +873,28 @@ export default function UserBookingsPage() {
                   : 'Your deposit is already paid. No extra payment needed.'}
               </div>
             )}
+            
+            {(() => {
+              const used = Number(rescheduleModal.booking?.reschedule_count || 0);
+              const left = Math.max(0, 2 - used);
+              return (
+                <div className="flex items-start gap-2 p-3 bg-blue-50 text-blue-800 rounded-lg text-xs leading-relaxed" data-testid="reschedule-policy-notice">
+                  <RefreshCw className="h-4 w-4 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-semibold">
+                      {language === 'es' 
+                        ? `Te quedan ${left} reagendamiento${left === 1 ? '' : 's'} para esta cita`
+                        : `You have ${left} reschedule${left === 1 ? '' : 's'} left for this booking`}
+                    </p>
+                    <p>
+                      {language === 'es' 
+                        ? 'Politica: maximo 2 reagendamientos sin costo. Debes hacerlo con al menos 2 horas de anticipacion. Tu anticipo se mantiene.'
+                        : 'Policy: up to 2 free reschedules. Must be at least 2 hours in advance. Your deposit is preserved.'}
+                    </p>
+                  </div>
+                </div>
+              );
+            })()}
 
             <div className="space-y-4 mt-2">
               <div>

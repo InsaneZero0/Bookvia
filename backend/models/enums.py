@@ -84,6 +84,8 @@ class FundsState(str, Enum):
 
 GRACE_PERIOD_HOURS = 24            # Hours after appointment completion before money clears
 AUTO_COMPLETE_HOURS = 48           # Hours after scheduled end time to auto-mark completed if business hasn't
+MAX_RESCHEDULES_PER_BOOKING = 2    # Maximum number of times a booking can be rescheduled by the client
+RESCHEDULE_CUTOFF_HOURS = 2        # Client must reschedule at least N hours before the appointment
 
 
 class SettlementStatus(str, Enum):

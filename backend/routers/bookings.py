@@ -40,6 +40,7 @@ from models.enums import (
     SettlementStatus, AuditAction,
     PLATFORM_FEE_PERCENT, HOLD_EXPIRATION_MINUTES, MIN_DEPOSIT_AMOUNT,
     SUBSCRIPTION_PRICE_MXN, SUBSCRIPTION_TRIAL_DAYS,
+    MAX_RESCHEDULES_PER_BOOKING, RESCHEDULE_CUTOFF_HOURS,
     VISIBLE_BUSINESS_FILTER, DEFAULT_MANAGER_PERMISSIONS
 )
 from models.schemas import *
@@ -844,6 +845,18 @@ async def get_business_bookings(
 
 
 
+@router.get("/policies")
+async def get_booking_policies():
+    """Public: return booking-related policies for UI display."""
+    return {
+        "max_reschedules_per_booking": MAX_RESCHEDULES_PER_BOOKING,
+        "reschedule_cutoff_hours": RESCHEDULE_CUTOFF_HOURS,
+        "grace_period_hours": 24,  # GRACE_PERIOD_HOURS
+        "auto_complete_hours": 48,  # AUTO_COMPLETE_HOURS
+        "min_deposit_amount": MIN_DEPOSIT_AMOUNT,
+    }
+
+
 @router.put("/{booking_id}/reschedule")
 async def reschedule_booking(
     booking_id: str,
@@ -855,30 +868,96 @@ async def reschedule_booking(
     if not booking:
         raise HTTPException(status_code=404, detail="Booking not found")
     
-    # Check if >24h before
+    # Only confirmed or hold bookings can be rescheduled
+    if booking.get("status") not in [AppointmentStatus.CONFIRMED, AppointmentStatus.HOLD]:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot reschedule booking in status '{booking.get('status')}'"
+        )
+    
+    # Enforce reschedule limit (max 2 reschedules per booking)
+    reschedule_count = int(booking.get("reschedule_count") or 0)
+    if reschedule_count >= MAX_RESCHEDULES_PER_BOOKING:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Has alcanzado el limite de {MAX_RESCHEDULES_PER_BOOKING} reagendamientos para esta cita. Si necesitas cambiarla de nuevo, debes cancelarla."
+        )
+    
+    # Enforce minimum cutoff (must be > 2h before appointment)
     booking_datetime = datetime.strptime(f"{booking['date']} {booking['time']}", "%Y-%m-%d %H:%M")
     booking_datetime = booking_datetime.replace(tzinfo=timezone.utc)
     hours_until = (booking_datetime - datetime.now(timezone.utc)).total_seconds() / 3600
     
-    if hours_until <= 24:
-        raise HTTPException(status_code=400, detail="Cannot reschedule less than 24 hours before appointment")
+    if hours_until <= RESCHEDULE_CUTOFF_HOURS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"No puedes reagendar con menos de {RESCHEDULE_CUTOFF_HOURS} horas de anticipacion. Solo puedes cancelar."
+        )
+    
+    # Validate new datetime is in the future and at least RESCHEDULE_CUTOFF_HOURS away
+    try:
+        new_datetime = datetime.strptime(f"{new_date} {new_time}", "%Y-%m-%d %H:%M").replace(tzinfo=timezone.utc)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Formato de fecha u hora invalido")
+    
+    if new_datetime <= datetime.now(timezone.utc) + timedelta(hours=1):
+        raise HTTPException(status_code=400, detail="La nueva fecha debe ser al menos 1 hora en el futuro")
     
     # Calculate new end time
     service = await db.services.find_one({"id": booking["service_id"]})
+    if not service:
+        raise HTTPException(status_code=404, detail="Service not found")
     start_time = datetime.strptime(new_time, "%H:%M")
     end_time = start_time + timedelta(minutes=service["duration_minutes"])
     
+    now_iso = datetime.now(timezone.utc).isoformat()
+    history_entry = {
+        "from_date": booking["date"],
+        "from_time": booking["time"],
+        "to_date": new_date,
+        "to_time": new_time,
+        "by": "user",
+        "at": now_iso,
+    }
+    
     await db.bookings.update_one(
         {"id": booking_id},
-        {"$set": {
-            "date": new_date,
-            "time": new_time,
-            "end_time": end_time.strftime("%H:%M"),
-            "rescheduled_at": datetime.now(timezone.utc).isoformat()
-        }}
+        {
+            "$set": {
+                "date": new_date,
+                "time": new_time,
+                "end_time": end_time.strftime("%H:%M"),
+                "appointment_date": f"{new_date}T{new_time}:00+00:00",
+                "rescheduled_at": now_iso,
+                "rescheduled_by": "user",
+                "updated_at": now_iso,
+            },
+            "$inc": {"reschedule_count": 1},
+            "$push": {"reschedule_history": history_entry},
+        }
     )
     
-    return {"message": "Booking rescheduled"}
+    # Notify business
+    business = await db.businesses.find_one({"id": booking["business_id"]})
+    if business and business.get("user_id"):
+        try:
+            await create_notification(
+                business["user_id"],
+                "Cita reagendada por el cliente",
+                f"El cliente reagendo su cita: {booking['date']} {booking['time']} -> {new_date} {new_time}",
+                "booking",
+                {"booking_id": booking_id, "old_date": booking["date"], "new_date": new_date}
+            )
+        except Exception as e:
+            logger.error(f"Failed to send reschedule notification: {e}")
+    
+    return {
+        "message": "Booking rescheduled",
+        "reschedule_count": reschedule_count + 1,
+        "remaining_reschedules": MAX_RESCHEDULES_PER_BOOKING - (reschedule_count + 1),
+        "new_date": new_date,
+        "new_time": new_time,
+    }
 
 
 
@@ -935,15 +1014,30 @@ async def reschedule_booking_by_business(
         "date": req.new_date,
         "time": req.new_time,
         "end_time": new_end_time,
+        "appointment_date": f"{req.new_date}T{req.new_time}:00+00:00",
         "rescheduled_at": now,
         "rescheduled_by": "business",
+        "updated_at": now,
     }
     if req.new_worker_id:
         update_fields["worker_id"] = req.new_worker_id
     
+    business_history_entry = {
+        "from_date": old_date,
+        "from_time": old_time,
+        "to_date": req.new_date,
+        "to_time": req.new_time,
+        "by": "business",
+        "at": now,
+    }
+    
     await db.bookings.update_one(
         {"id": booking_id},
-        {"$set": update_fields}
+        {
+            "$set": update_fields,
+            "$inc": {"business_reschedule_count": 1},
+            "$push": {"reschedule_history": business_history_entry},
+        }
     )
     
     # Notify client

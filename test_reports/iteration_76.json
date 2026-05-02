@@ -1,0 +1,31 @@
+{
+  "summary": "Fase 4 (reschedule policy) backend testing: 15/15 tests PASSED. Covered /api/bookings/policies (public), client reschedule (success 1st/2nd, limit at 3rd, cutoff <2h, invalid new date formats, past dates, <1h in future, other user 404, cancelled/completed 400, notification to business owner), business reschedule (no increment on client count, increments business_reschedule_count, history by='business', client can still reschedule twice after business reschedule), and funds_state preservation across consecutive reschedules.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_fase4_reschedule.py",
+    "/app/test_reports/pytest/fase4_reschedule.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Client reschedule endpoint PUT /api/bookings/{id}/reschedule uses query params (new_date, new_time) while business variant uses a JSON body (RescheduleByBusinessRequest). Inconsistency between the two endpoints; consider unifying both to use request body for REST consistency.",
+    "MIN_DEPOSIT_AMOUNT constant is 100.0 (float) while policies response returns it as float; frontend consumers should handle float vs int comparison carefully (current test tolerates both)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_fase4_reschedule.py"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "skipped"},
+  "test_credentials": "User: testuser_stats@test.com / TestPass123!; Business: testbiz_dashboard@test.com / TestBiz123! (business_id=biz_dd14ed093b51, business owner user_id=user_c99007c570b4)",
+  "seed_data_creation": "Seeded service TEST_F4_SVC and worker TEST_F4_WK for biz_dd14ed093b51 (auto-cleaned at module teardown). Bookings use TEST_F4_BK_ prefix and are cleaned after every test via autouse fixture.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Fase 4 reschedule fully validated. Note: client reschedule endpoint accepts query params (new_date, new_time); business variant uses JSON body. Bookings were seeded directly into Mongo to manipulate hours_until (appointment_date/date/time). TEST_BIZ_ID=biz_dd14ed093b51 is owned by testbiz_dashboard user. Do not re-run previous iterations (iteration_75 finance ledger stands). Use same TEST_F4_BK_ prefix if extending.",
+  "rca_of_the_issue": "No issues. All endpoints behave per spec: reschedule_count increments only for client path, business_reschedule_count tracked separately, reschedule_history entries annotated with by='user'/'business', appointment_date updated to new ISO timestamp, funds_state untouched. Policies endpoint exposes constants correctly (max=2, cutoff=2h, grace=24h, auto_complete=48h, min_deposit=100)."
+}

@@ -70,6 +70,10 @@ export default function TermsPage() {
             'Each business defines its own cancellation window (e.g., 24 or 48 hours before the appointment). If the client cancels within the business\'s allowed window, the deposit (91.5%) is refunded. The $8.20 MXN Bookvia service fee is non-refundable because the management service has already been provided. The client may choose to receive the refund to their card (5 to 10 business days) or as credit in their Bookvia wallet (instantly available).'
           )}</p>
           <p>{t(
+            'Reagendamiento: el cliente puede reagendar su cita un maximo de 2 veces sin costo, siempre y cuando lo haga con al menos 2 horas de anticipacion. El anticipo pagado se mantiene en la nueva cita. Una vez alcanzado el limite, solo podra cancelar (sujeto a la politica de cancelacion del negocio).',
+            'Rescheduling: the client may reschedule their booking up to 2 times at no cost, provided it is done at least 2 hours in advance. The paid deposit is preserved on the new appointment. Once the limit is reached, only cancellation is available (subject to the business\'s cancellation policy).'
+          )}</p>
+          <p>{t(
             'Si el cliente cancela fuera de la ventana permitida o no se presenta, no hay reembolso. El anticipo se considera cobrado a favor del negocio.',
             'If the client cancels outside the allowed window or fails to show up, there is no refund. The deposit is considered collected in favor of the business.'
           )}</p>
