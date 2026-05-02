@@ -2000,5 +2000,124 @@ async def trigger_send_reminders(token_data: TokenData = Depends(require_admin))
     return {"message": "Reminders processed"}
 
 
+# ========================== CALENDAR (.ICS) ==========================
+
+def _calendar_token(booking_id: str) -> str:
+    """HMAC-SHA256 token to authorize public calendar download for a booking."""
+    import hmac
+    import hashlib
+    from core.config import JWT_SECRET
+    msg = f"calendar:{booking_id}".encode("utf-8")
+    secret = (JWT_SECRET or "dev").encode("utf-8")
+    return hmac.new(secret, msg, hashlib.sha256).hexdigest()[:32]
+
+
+def _ics_escape(value: str) -> str:
+    """Escape a string for inclusion in an ICS field per RFC 5545."""
+    return (
+        (value or "")
+        .replace("\\", "\\\\")
+        .replace(",", "\\,")
+        .replace(";", "\\;")
+        .replace("\n", "\\n")
+    )
+
+
+@router.get("/{booking_id}/calendar.ics")
+async def download_booking_calendar(booking_id: str, token: str = ""):
+    """Public endpoint that returns an .ics file for a booking.
+
+    Authentication is handled via an HMAC token tied to the booking id so the
+    link can be shared from email without requiring a session.
+    """
+    expected = _calendar_token(booking_id)
+    import hmac
+    if not token or not hmac.compare_digest(token, expected):
+        raise HTTPException(status_code=403, detail="Invalid calendar token")
+
+    booking = await db.bookings.find_one({"id": booking_id}, {"_id": 0})
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    if booking.get("status") in ("cancelled", "expired", "no_show"):
+        raise HTTPException(status_code=410, detail="Booking is no longer active")
+
+    business = await db.businesses.find_one(
+        {"id": booking["business_id"]},
+        {"_id": 0, "name": 1, "address": 1, "timezone": 1, "phone": 1},
+    ) or {}
+    service = await db.services.find_one(
+        {"id": booking.get("service_id")},
+        {"_id": 0, "name": 1, "duration_minutes": 1, "duration": 1},
+    ) or {}
+
+    tz_name = business.get("timezone") or "America/Mexico_City"
+    biz_tz = pytz.timezone(tz_name)
+
+    date_str = booking.get("date", "")
+    time_str = booking.get("time", "")
+    try:
+        naive_start = datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M")
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid booking datetime")
+
+    duration_min = int(
+        service.get("duration_minutes")
+        or service.get("duration")
+        or booking.get("duration_minutes")
+        or 60
+    )
+
+    local_start = biz_tz.localize(naive_start)
+    local_end = local_start + timedelta(minutes=duration_min)
+    utc_start = local_start.astimezone(pytz.utc)
+    utc_end = local_end.astimezone(pytz.utc)
+
+    dtstamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    dtstart = utc_start.strftime("%Y%m%dT%H%M%SZ")
+    dtend = utc_end.strftime("%Y%m%dT%H%M%SZ")
+
+    summary = _ics_escape(f"Cita en {business.get('name', 'Bookvia')}")
+    description_parts = [f"Servicio: {service.get('name', '')}"]
+    if business.get("phone"):
+        description_parts.append(f"Tel negocio: {business.get('phone')}")
+    description_parts.append("Reserva: https://bookvia.vercel.app/bookings")
+    description = _ics_escape("\n".join(description_parts))
+    location = _ics_escape(business.get("address") or "")
+
+    ics_lines = [
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        "PRODID:-//Bookvia//Reminders//ES",
+        "CALSCALE:GREGORIAN",
+        "METHOD:PUBLISH",
+        "BEGIN:VEVENT",
+        f"UID:{booking_id}@bookvia.app",
+        f"DTSTAMP:{dtstamp}",
+        f"DTSTART:{dtstart}",
+        f"DTEND:{dtend}",
+        f"SUMMARY:{summary}",
+        f"DESCRIPTION:{description}",
+        f"LOCATION:{location}",
+        "STATUS:CONFIRMED",
+        "BEGIN:VALARM",
+        "TRIGGER:-PT2H",
+        "ACTION:DISPLAY",
+        f"DESCRIPTION:{summary}",
+        "END:VALARM",
+        "END:VEVENT",
+        "END:VCALENDAR",
+    ]
+    body = "\r\n".join(ics_lines) + "\r\n"
+
+    return Response(
+        content=body,
+        media_type="text/calendar; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="bookvia-{booking_id}.ics"',
+            "Cache-Control": "no-store",
+        },
+    )
+
+
 
 

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -56,6 +56,7 @@ export default function UserBookingsPage() {
   const { language } = useI18n();
   const { user, isAuthenticated, loading: authLoading } = useAuth();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [upcomingBookings, setUpcomingBookings] = useState([]);
   const [pastBookings, setPastBookings] = useState([]);
@@ -87,6 +88,30 @@ export default function UserBookingsPage() {
     const interval = setInterval(loadBookings, 30000);
     return () => clearInterval(interval);
   }, [isAuthenticated, authLoading]);
+
+  // Deep-link from smart reminder email: ?action=cancel|reschedule&id=<booking_id>
+  useEffect(() => {
+    if (loading) return;
+    const action = searchParams.get('action');
+    const id = searchParams.get('id');
+    if (!action || !id) return;
+    const target = upcomingBookings.find(b => b.id === id);
+    if (!target) {
+      toast.error(language === 'es' ? 'No encontramos la cita en tu lista' : 'We could not find that booking');
+      setSearchParams({}, { replace: true });
+      return;
+    }
+    if (action === 'cancel') {
+      setCancelDialog({ open: true, booking: target, refundTo: 'card' });
+    } else if (action === 'reschedule') {
+      setRescheduleModal({ open: true, booking: target });
+      setRescheduleDate(null);
+      setRescheduleSlots([]);
+      setRescheduleTime(null);
+    }
+    setSearchParams({}, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, upcomingBookings, searchParams]);
 
   const loadBookings = async () => {
     try {

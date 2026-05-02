@@ -167,9 +167,8 @@ async def appointment_reminder_scheduler():
 
 async def send_appointment_reminders():
     import pytz
+    from routers.bookings import _calendar_token
     now = datetime.now(timezone.utc)
-    tomorrow_start = now + timedelta(hours=23)
-    tomorrow_end = now + timedelta(hours=25)
 
     bookings = await db.bookings.find({
         "status": "confirmed",
@@ -194,29 +193,87 @@ async def send_appointment_reminders():
             time_until = (utc_dt - now).total_seconds() / 3600
 
             if 0 < time_until <= 25:
-                user = await db.users.find_one({"id": booking["user_id"]}, {"_id": 0, "email": 1, "full_name": 1})
+                user = await db.users.find_one({"id": booking["user_id"]}, {"_id": 0, "email": 1, "full_name": 1, "notify_email": 1})
                 if not user:
                     continue
                 service = await db.services.find_one({"id": booking["service_id"]}, {"_id": 0, "name": 1})
 
+                # ---- Smart reminder data ----
+                # Cancellation policy: free refund only if cancelled >24h before appointment
+                cancel_cutoff_local = (local_dt - timedelta(hours=24))
+                # Reschedule policy: must be done >2h before appointment
+                from models.enums import RESCHEDULE_CUTOFF_HOURS, MAX_RESCHEDULES_PER_BOOKING
+                reschedule_cutoff_local = (local_dt - timedelta(hours=RESCHEDULE_CUTOFF_HOURS))
+
+                _MONTHS = {1:"ene",2:"feb",3:"mar",4:"abr",5:"may",6:"jun",7:"jul",8:"ago",9:"sep",10:"oct",11:"nov",12:"dic"}
+                def _fmt(local: datetime) -> str:
+                    return f"{local.day} {_MONTHS[local.month]} {local.strftime('%H:%M')} hrs"
+
+                cancel_text = _fmt(cancel_cutoff_local) if (cancel_cutoff_local.astimezone(pytz.utc) > now) else None
+                reschedule_text = _fmt(reschedule_cutoff_local) if (reschedule_cutoff_local.astimezone(pytz.utc) > now) else None
+
+                used = int(booking.get("reschedule_count") or 0)
+                remaining = max(0, MAX_RESCHEDULES_PER_BOOKING - used)
+                if reschedule_text is None:
+                    remaining = 0
+
+                token = _calendar_token(booking["id"])
+                public_api = os.environ.get("PUBLIC_API_URL") or "https://api.bookvia.app"
+                calendar_url = f"{public_api}/api/bookings/{booking['id']}/calendar.ics?token={token}"
+
                 try:
-                    from services.email import send_appointment_reminder
-                    worker = await db.workers.find_one({"id": booking.get("worker_id")}, {"_id": 0, "name": 1}) if booking.get("worker_id") else None
-                    await send_appointment_reminder(
-                        user_email=user["email"],
-                        user_name=user.get("full_name", ""),
-                        business_name=business.get("name", ""),
-                        service_name=service.get("name", "") if service else "",
-                        date=date_str,
-                        time=time_str,
-                        worker_name=worker.get("name", "") if worker else "",
-                        business_address=business.get("address", "")
-                    )
+                    if user.get("notify_email", True):
+                        from services.email import send_appointment_reminder
+                        worker = await db.workers.find_one({"id": booking.get("worker_id")}, {"_id": 0, "name": 1}) if booking.get("worker_id") else None
+                        await send_appointment_reminder(
+                            user_email=user["email"],
+                            user_name=user.get("full_name", ""),
+                            business_name=business.get("name", ""),
+                            service_name=service.get("name", "") if service else "",
+                            date=date_str,
+                            time=time_str,
+                            worker_name=worker.get("name", "") if worker else "",
+                            business_address=business.get("address", ""),
+                            booking_id=booking["id"],
+                            cancel_free_until_text=cancel_text,
+                            reschedule_until_text=reschedule_text,
+                            reschedule_remaining=remaining,
+                            calendar_url=calendar_url,
+                        )
+
+                    # Push notification (in-app) regardless of email pref
+                    try:
+                        from core.helpers import create_notification
+                        push_msg = (
+                            f"Tu cita en {business.get('name','')} es el {date_str} a las {time_str}."
+                        )
+                        if reschedule_text and remaining > 0:
+                            push_msg += f" Puedes reagendar gratis hasta el {reschedule_text}."
+                        elif cancel_text:
+                            push_msg += f" Cancelacion con reembolso hasta el {cancel_text}."
+                        await create_notification(
+                            user_id=booking["user_id"],
+                            title="Recordatorio de cita",
+                            message=push_msg,
+                            notif_type="booking_reminder",
+                            data={
+                                "booking_id": booking["id"],
+                                "business_id": booking["business_id"],
+                                "date": date_str,
+                                "time": time_str,
+                                "cancel_free_until": cancel_text,
+                                "reschedule_until": reschedule_text,
+                                "reschedule_remaining": remaining,
+                            },
+                        )
+                    except Exception as ne:
+                        logger.warning(f"Push reminder failed for booking {booking.get('id')}: {ne}")
+
                     await db.bookings.update_one(
                         {"id": booking["id"]},
-                        {"$set": {"reminder_sent": True}}
+                        {"$set": {"reminder_sent": True, "reminder_sent_at": now.isoformat()}}
                     )
-                    logger.info(f"Reminder sent for booking {booking['id']} to {user['email']}")
+                    logger.info(f"Smart reminder sent for booking {booking['id']} to {user['email']}")
                 except Exception as e:
                     logger.error(f"Failed to send reminder for booking {booking.get('id')}: {e}")
         except Exception as e:
