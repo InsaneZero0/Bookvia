@@ -1,0 +1,42 @@
+{
+  "summary": "Fase 2 Bookvia (Wallet/Saldo del cliente) - 15/15 backend tests PASSED. Covers GET /me/wallet & /me/wallet/transactions, services.wallet (credit/debit/expire_stale_balances), POST /bookings/{id}/cancel/user with refund_to=wallet|card (>24h, <24h policies), and POST /payments/deposit/checkout with use_wallet=true (zero balance, full coverage no Stripe, partial with Stripe remainder).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "POST /api/payments/deposit/checkout (regular Stripe path)",
+        "issue": "Response payload does NOT include wallet_applied/stripe_charge_amount fields (they are stored correctly in the transaction doc but not surfaced to the client). The wallet_only branch DOES return them. Consider adding wallet_applied and stripe_charge_amount to the standard response for FE consistency. File: /app/backend/routers/payments.py lines 375-384."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_fase2_wallet.py",
+    "/app/test_reports/pytest/pytest_fase2_wallet.xml"
+  ],
+  "action_items": [
+    "(Optional) Surface wallet_applied & stripe_charge_amount in /payments/deposit/checkout response when use_wallet=true and Stripe path is used (parity with wallet_only branch)."
+  ],
+  "critical_code_review_comments": [
+    "services/wallet.py is well-structured: explicit CREDIT_TYPES/DEBIT_TYPES whitelists prevent invalid tx types; atomic find_one_and_update with $gte balance guard prevents race-condition over-debit; expire_stale_balances delegates to debit_wallet so an audit trail is preserved.",
+    "Cancel /api/bookings/{id}/cancel/user with refund_to=wallet correctly skips Stripe refund and credits business_amount (91.5% of deposit) into wallet via credit_wallet(CREDIT_CANCELLATION); transaction.refund_to & wallet_credited persisted.",
+    "<24h cancellation correctly forces refund_to='card' even when user requested wallet (because refund_amount=0), preventing zero-amount wallet entries.",
+    "/payments/deposit/checkout wallet_only branch correctly: debits full client_paid (deposit + bookvia_fee), creates PAID transaction with stripe_session_id=None, marks booking CONFIRMED, posts ledger entries.",
+    "Partial wallet checkout: correctly persists wallet_applied + stripe_charge_amount in transaction, but does NOT debit wallet at checkout time (debit happens in webhook on confirmation, line 432-438 of payments.py). This is correct: avoids debiting wallet for an unfinished Stripe payment.",
+    "_compute_expires_at uses 30 days * months which is approximate (24*30=720 days vs ~730 actual). Acceptable for display but may drift ~10 days from a true 24-month anniversary."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_fase2_wallet.py (new)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "skipped"},
+  "test_credentials": "User: testuser_stats@test.com / TestPass123! | Business: testbiz_dashboard@test.com / TestBiz123!",
+  "seed_data_creation": "Inserted ephemeral TEST_F2_EXP service ($500), TEST_F2_WORKER (7-day schedule), and several TEST_F2_co_* bookings + paid transactions on biz_dd14ed093b51. All cleaned up via fixtures and explicit deletes after each test.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Fase 2 wallet fully validated end-to-end. Reusable test file at /app/backend/tests/test_fase2_wallet.py (15 tests). The reset_wallet autouse fixture clears suspension/cancellation_count for testuser_stats@test.com before/after each test (necessary since cancel tests bump cancellation_count and may auto-suspend). Frontend skipped per request.",
+  "rca of the issue": "N/A - no critical issues. Two initial test failures were due to over-asserting on response payload keys (wallet_applied/stripe_charge_amount) that the standard Stripe-path response doesn't expose; they ARE persisted to transaction doc. Adjusted tests to verify via DB."
+}

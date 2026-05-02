@@ -147,6 +147,7 @@ async def startup_event():
     # Start background schedulers
     asyncio.create_task(appointment_reminder_scheduler())
     asyncio.create_task(subscription_reminder_scheduler())
+    asyncio.create_task(wallet_expiration_scheduler())
 
 
 # ========================== BACKGROUND SCHEDULERS ==========================
@@ -231,6 +232,21 @@ async def subscription_reminder_scheduler():
         except Exception as e:
             logger.error(f"Subscription reminder scheduler error: {e}")
         await asyncio.sleep(21600)  # 6 hours
+
+
+async def wallet_expiration_scheduler():
+    """Daily task: expire wallet balances inactive for >= 24 months."""
+    logger.info("Wallet expiration scheduler started")
+    await asyncio.sleep(600)  # Wait 10 min after startup
+    while True:
+        try:
+            from services.wallet import expire_stale_balances
+            count = await expire_stale_balances()
+            if count > 0:
+                logger.info(f"Wallet expiration: zeroed out {count} balances")
+        except Exception as e:
+            logger.error(f"Wallet expiration scheduler error: {e}")
+        await asyncio.sleep(86400)  # 24 hours
 
 
 async def send_subscription_reminders():

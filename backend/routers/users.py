@@ -220,3 +220,30 @@ async def get_user_stats(token_data: TokenData = Depends(require_auth)):
         "member_since": user.get("created_at") if user else None,
         "recent_completed": recent,
     }
+
+
+
+# ========================== WALLET ENDPOINTS ==========================
+
+@router.get("/me/wallet")
+async def get_my_wallet(token_data: TokenData = Depends(require_auth)):
+    """Return wallet balance + recent transactions for the authenticated user."""
+    from services.wallet import get_wallet_balance, list_wallet_transactions
+    info = await get_wallet_balance(token_data.user_id)
+    txs = await list_wallet_transactions(token_data.user_id, page=1, limit=10)
+    info["transactions"] = txs["transactions"]
+    info["transactions_total"] = txs["total"]
+    return info
+
+
+@router.get("/me/wallet/transactions")
+async def list_my_wallet_transactions(
+    page: int = 1,
+    limit: int = 20,
+    token_data: TokenData = Depends(require_auth)
+):
+    """Paginated list of wallet transactions for the authenticated user."""
+    from services.wallet import list_wallet_transactions
+    page = max(1, int(page))
+    limit = max(1, min(100, int(limit)))
+    return await list_wallet_transactions(token_data.user_id, page=page, limit=limit)

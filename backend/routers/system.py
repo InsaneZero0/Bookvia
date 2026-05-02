@@ -181,6 +181,21 @@ async def stripe_webhook(request: Request):
                     {"$set": update_set}
                 )
                 
+                # If transaction had a wallet portion applied, debit it now (was reserved at checkout creation)
+                wallet_applied = float(transaction.get("wallet_applied") or 0)
+                if wallet_applied > 0:
+                    try:
+                        from services.wallet import debit_wallet, DEBIT_BOOKING
+                        await debit_wallet(
+                            user_id=transaction["user_id"],
+                            amount=wallet_applied,
+                            tx_type=DEBIT_BOOKING,
+                            booking_id=transaction["booking_id"],
+                            description=f"Saldo aplicado a reserva (resto pagado con tarjeta)",
+                        )
+                    except Exception as e:
+                        logger.error(f"Wallet debit on confirm failed for tx {transaction['id']}: {e}")
+                
                 # Create ledger entries for payment
                 await create_transaction_ledger_entries(transaction, TransactionStatus.PAID)
                 

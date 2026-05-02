@@ -11,12 +11,12 @@ import { Calendar as CalendarWidget } from '@/components/ui/calendar';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { useAuth } from '@/lib/auth';
 import { useI18n } from '@/lib/i18n';
-import { bookingsAPI, paymentsAPI, reviewsAPI } from '@/lib/api';
+import { bookingsAPI, paymentsAPI, reviewsAPI, usersAPI } from '@/lib/api';
 import { formatTime, getStatusColor } from '@/lib/utils';
 import { toast } from 'sonner';
 import {
   Calendar, Clock, User, ChevronRight, AlertTriangle, XCircle, 
-  CreditCard, Timer, CheckCircle2, AlertCircle, Ban, Star, RefreshCw
+  CreditCard, Timer, CheckCircle2, AlertCircle, Ban, Star, RefreshCw, Loader2
 } from 'lucide-react';
 
 const STATUS_CONFIG = {
@@ -103,11 +103,42 @@ export default function UserBookingsPage() {
     }
   };
 
+  const [walletBalance, setWalletBalance] = useState(0);
+
+  useEffect(() => {
+    // Best-effort fetch of wallet balance for booking checkout UX
+    (async () => {
+      try {
+        const res = await usersAPI.getWallet();
+        setWalletBalance(Number(res.data?.balance || 0));
+      } catch { /* ignore */ }
+    })();
+  }, []);
+
   const handlePayDeposit = async (booking) => {
     setPaymentLoading(booking.id);
+    
+    // If wallet has any balance, ask whether to use it
+    let useWallet = false;
+    if (walletBalance > 0) {
+      const totalNeeded = (Number(booking.deposit_amount) || 0) + 8.20;
+      const willCover = walletBalance >= totalNeeded;
+      const msg = language === 'es'
+        ? `Tienes $${walletBalance.toFixed(2)} MXN en tu saldo Bookvia.\n\n${willCover ? 'Tu saldo cubre el total ($' + totalNeeded.toFixed(2) + ' MXN). ¿Pagar con saldo?' : 'Tu saldo cubre $' + walletBalance.toFixed(2) + ' MXN, el resto ($' + (totalNeeded - walletBalance).toFixed(2) + ' MXN) se cobrara a tu tarjeta. ¿Aplicar saldo?'}`
+        : `You have $${walletBalance.toFixed(2)} MXN in your Bookvia wallet.\n\n${willCover ? 'Your wallet covers the total ($' + totalNeeded.toFixed(2) + ' MXN). Pay with wallet?' : 'Your wallet covers $' + walletBalance.toFixed(2) + ' MXN; the remainder ($' + (totalNeeded - walletBalance).toFixed(2) + ' MXN) will be charged to your card. Apply wallet?'}`;
+      useWallet = window.confirm(msg);
+    }
+    
     try {
-      const response = await paymentsAPI.createDepositCheckout(booking.id);
-      // Redirect to Stripe Checkout
+      const response = await paymentsAPI.createDepositCheckout(booking.id, useWallet);
+      // If paid entirely with wallet, redirect to local success page
+      if (response.data?.wallet_only) {
+        toast.success(language === 'es' ? 'Reserva confirmada con tu saldo Bookvia' : 'Booking confirmed with your Bookvia wallet');
+        // Navigate to success page instead of Stripe
+        window.location.href = response.data.redirect_url || '/bookings';
+        return;
+      }
+      // Otherwise redirect to Stripe Checkout
       window.location.href = response.data.url;
     } catch (error) {
       const message = error.response?.data?.detail || 
@@ -117,42 +148,43 @@ export default function UserBookingsPage() {
     }
   };
 
-  const handleCancel = async (bookingId) => {
-    const booking = upcomingBookings.find(b => b.id === bookingId);
-    const hoursUntil = booking?.hours_until_appointment;
-    
-    let message = language === 'es' ? '¿Estás seguro de cancelar esta cita?' : 'Are you sure you want to cancel this booking?';
-    
-    if (booking?.status === 'confirmed' && booking?.deposit_paid) {
-      if (hoursUntil > 24) {
-        message += language === 'es' 
-          ? '\n\nComo cancelas con más de 24h de anticipación, recibirás un reembolso del 92% del anticipo.'
-          : '\n\nSince you are cancelling more than 24h in advance, you will receive a 92% refund of the deposit.';
-      } else {
-        message += language === 'es'
-          ? '\n\nComo cancelas con menos de 24h de anticipación, NO recibirás reembolso del anticipo.'
-          : '\n\nSince you are cancelling less than 24h in advance, you will NOT receive a refund of the deposit.';
-      }
-    }
-    
-    if (!window.confirm(message)) {
-      return;
-    }
+  const [cancelDialog, setCancelDialog] = useState({ open: false, booking: null, refundTo: 'card' });
 
+  const handleCancelClick = (bookingId) => {
+    const booking = upcomingBookings.find(b => b.id === bookingId);
+    if (!booking) return;
+    setCancelDialog({ open: true, booking, refundTo: 'card' });
+  };
+
+  const confirmCancel = async () => {
+    const booking = cancelDialog.booking;
+    if (!booking) return;
+    const bookingId = booking.id;
     setCancelLoading(bookingId);
     try {
-      const response = await bookingsAPI.cancelByUser(bookingId, 'Usuario canceló');
+      const response = await bookingsAPI.cancelByUser(bookingId, 'Usuario canceló', cancelDialog.refundTo);
       
       if (response.data.refund) {
-        toast.success(
-          language === 'es' 
-            ? `Cita cancelada. Reembolso: $${response.data.refund.refund_amount} MXN` 
-            : `Booking cancelled. Refund: $${response.data.refund.refund_amount} MXN`
-        );
+        const r = response.data.refund;
+        const amt = r.refund_amount || 0;
+        if (amt > 0) {
+          if (r.refund_to === 'wallet') {
+            toast.success(language === 'es' 
+              ? `Cita cancelada. $${amt.toFixed(2)} MXN agregados a tu saldo Bookvia (disponible al instante).` 
+              : `Booking cancelled. $${amt.toFixed(2)} MXN added to your Bookvia wallet (instantly available).`);
+          } else {
+            toast.success(language === 'es' 
+              ? `Cita cancelada. Reembolso de $${amt.toFixed(2)} MXN a tu tarjeta (5-10 dias habiles).` 
+              : `Booking cancelled. Refund of $${amt.toFixed(2)} MXN to your card (5-10 business days).`);
+          }
+        } else {
+          toast.success(language === 'es' ? 'Cita cancelada (sin reembolso por politica de tiempo).' : 'Booking cancelled (no refund per time policy).');
+        }
       } else {
         toast.success(language === 'es' ? 'Cita cancelada' : 'Booking cancelled');
       }
       
+      setCancelDialog({ open: false, booking: null, refundTo: 'card' });
       loadBookings();
     } catch (error) {
       const message = error.response?.data?.detail || (language === 'es' ? 'Error al cancelar' : 'Error cancelling');
@@ -161,6 +193,8 @@ export default function UserBookingsPage() {
       setCancelLoading(null);
     }
   };
+
+  const handleCancel = (bookingId) => handleCancelClick(bookingId);
 
   const openReview = (booking) => {
     setReviewModal({ open: true, booking });
@@ -539,6 +573,106 @@ export default function UserBookingsPage() {
             )}
           </TabsContent>
         </Tabs>
+
+        {/* Cancel Dialog with Refund Choice */}
+        <Dialog open={cancelDialog.open} onOpenChange={(open) => !open && setCancelDialog({ open: false, booking: null, refundTo: 'card' })}>
+          <DialogContent className="max-w-md" data-testid="cancel-booking-dialog">
+            <DialogHeader>
+              <DialogTitle>{language === 'es' ? 'Cancelar cita' : 'Cancel booking'}</DialogTitle>
+              <DialogDescription>
+                {cancelDialog.booking && (
+                  <span>{cancelDialog.booking.service_name} — {cancelDialog.booking.business_name}</span>
+                )}
+              </DialogDescription>
+            </DialogHeader>
+            
+            {(() => {
+              const b = cancelDialog.booking;
+              if (!b) return null;
+              const hoursUntil = b.hours_until_appointment;
+              const hasDeposit = b.status === 'confirmed' && b.deposit_paid && (b.deposit_amount > 0);
+              const refundEligible = hasDeposit && hoursUntil > 24;
+              const refundAmount = refundEligible ? Number((b.deposit_amount * 0.915).toFixed(2)) : 0;
+              
+              return (
+                <div className="space-y-3 text-sm">
+                  {hasDeposit ? (
+                    refundEligible ? (
+                      <>
+                        <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-emerald-800">
+                          <p className="font-semibold">
+                            {language === 'es' ? 'Tienes derecho a reembolso' : 'You qualify for a refund'}
+                          </p>
+                          <p className="text-xs mt-1">
+                            {language === 'es' 
+                              ? `Estas cancelando con ${Math.round(hoursUntil)}h de anticipacion. Recibiras $${refundAmount.toFixed(2)} MXN (91.5% del anticipo). La cuota Bookvia ($8.20) no se reembolsa.`
+                              : `You are cancelling ${Math.round(hoursUntil)}h in advance. You will receive $${refundAmount.toFixed(2)} MXN (91.5% of deposit). Bookvia fee ($8.20) is non-refundable.`}
+                          </p>
+                        </div>
+                        
+                        <div>
+                          <p className="font-medium mb-2">
+                            {language === 'es' ? '¿Como quieres recibir el reembolso?' : 'How would you like your refund?'}
+                          </p>
+                          <div className="space-y-2">
+                            <label className={`flex items-start gap-2 p-3 rounded-lg border-2 cursor-pointer transition ${cancelDialog.refundTo === 'wallet' ? 'border-[#F05D5E] bg-[#F05D5E]/5' : 'border-slate-200'}`} data-testid="refund-option-wallet">
+                              <input type="radio" name="refundTo" value="wallet" checked={cancelDialog.refundTo === 'wallet'} onChange={() => setCancelDialog(d => ({ ...d, refundTo: 'wallet' }))} className="mt-0.5" />
+                              <div className="flex-1">
+                                <p className="font-semibold flex items-center gap-1">
+                                  💰 {language === 'es' ? 'Saldo Bookvia' : 'Bookvia Wallet'}
+                                  <Badge variant="secondary" className="text-[10px] h-4 ml-1">⚡ {language === 'es' ? 'Al instante' : 'Instant'}</Badge>
+                                </p>
+                                <p className="text-xs text-muted-foreground">
+                                  {language === 'es' 
+                                    ? `Disponible inmediatamente. Usa $${refundAmount.toFixed(2)} en tu proxima reserva.`
+                                    : `Available immediately. Use $${refundAmount.toFixed(2)} on your next booking.`}
+                                </p>
+                              </div>
+                            </label>
+                            <label className={`flex items-start gap-2 p-3 rounded-lg border-2 cursor-pointer transition ${cancelDialog.refundTo === 'card' ? 'border-[#F05D5E] bg-[#F05D5E]/5' : 'border-slate-200'}`} data-testid="refund-option-card">
+                              <input type="radio" name="refundTo" value="card" checked={cancelDialog.refundTo === 'card'} onChange={() => setCancelDialog(d => ({ ...d, refundTo: 'card' }))} className="mt-0.5" />
+                              <div className="flex-1">
+                                <p className="font-semibold">🏦 {language === 'es' ? 'A tu tarjeta' : 'To your card'}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  {language === 'es' 
+                                    ? `Llega en 5-10 dias habiles a la tarjeta original.`
+                                    : `Arrives in 5-10 business days to original card.`}
+                                </p>
+                              </div>
+                            </label>
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="bg-rose-50 border border-rose-200 rounded-lg p-3 text-rose-800 text-xs">
+                        {language === 'es' 
+                          ? `Estas cancelando con menos de 24h de anticipacion. Segun la politica del negocio, NO se reembolsa el anticipo.`
+                          : `You are cancelling less than 24h in advance. According to the business's policy, the deposit is NOT refunded.`}
+                      </div>
+                    )
+                  ) : (
+                    <p className="text-muted-foreground">
+                      {language === 'es' 
+                        ? '¿Estas seguro que deseas cancelar esta cita?'
+                        : 'Are you sure you want to cancel this booking?'}
+                    </p>
+                  )}
+                  
+                  <div className="flex gap-2 pt-2">
+                    <Button variant="outline" className="flex-1" onClick={() => setCancelDialog({ open: false, booking: null, refundTo: 'card' })} data-testid="cancel-dialog-back">
+                      {language === 'es' ? 'Volver' : 'Back'}
+                    </Button>
+                    <Button className="flex-1 bg-rose-600 hover:bg-rose-700" onClick={confirmCancel} disabled={cancelLoading === b.id} data-testid="cancel-dialog-confirm">
+                      {cancelLoading === b.id 
+                        ? <Loader2 className="h-4 w-4 animate-spin" /> 
+                        : (language === 'es' ? 'Confirmar cancelacion' : 'Confirm cancel')}
+                    </Button>
+                  </div>
+                </div>
+              );
+            })()}
+          </DialogContent>
+        </Dialog>
 
         {/* Review Modal */}
         <Dialog open={reviewModal.open} onOpenChange={(open) => !open && setReviewModal({ open: false, booking: null })}>

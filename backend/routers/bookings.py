@@ -1077,23 +1077,48 @@ async def cancel_booking_by_user(
     })
     
     refund_result = None
+    refund_to = (cancel_req.refund_to or "card").lower()
+    if refund_to not in ("card", "wallet"):
+        refund_to = "card"
     
     if transaction:
         # Apply cancellation policy
         if hours_until > 24:
-            # >24h: Refund amount - fee (8%)
-            refund_amount = transaction["payout_amount"]  # amount - fee
+            # >24h: Refund the deposit minus the 8.5% processing fee
+            # business_amount is what the business would have received (deposit * 0.915)
+            refund_amount = float(transaction.get("business_amount") or transaction.get("payout_amount") or 0)
             refund_status = TransactionStatus.REFUND_PARTIAL
-            refund_reason = "client_cancel_gt_24h"
+            refund_reason = f"client_cancel_gt_24h_{refund_to}"
             
-            logger.info(f"Partial refund: ${refund_amount} for booking {booking_id}")
+            logger.info(f"Partial refund (${refund_amount}) for booking {booking_id} -> {refund_to}")
         else:
-            # <24h: No refund (business keeps the deposit minus fee)
+            # <24h: No refund (business keeps the deposit)
             refund_amount = 0
-            refund_status = TransactionStatus.REFUND_PARTIAL  # 0 refund, business gets payout
+            refund_status = TransactionStatus.REFUND_PARTIAL
             refund_reason = "client_cancel_lt_24h"
+            refund_to = "card"  # Force card so we don't credit wallet for $0
             
             logger.info(f"No refund (<24h): booking {booking_id}")
+        
+        # If client chose wallet refund and we have an amount > 0:
+        # do NOT issue a Stripe refund (saves the unrecoverable Stripe fee).
+        # Instead, credit the wallet immediately with the refund amount.
+        wallet_credited = False
+        if refund_to == "wallet" and refund_amount > 0:
+            try:
+                from services.wallet import credit_wallet, CREDIT_CANCELLATION
+                await credit_wallet(
+                    user_id=token_data.user_id,
+                    amount=refund_amount,
+                    tx_type=CREDIT_CANCELLATION,
+                    booking_id=booking_id,
+                    description=f"Cancelacion de cita - reembolso a saldo Bookvia",
+                )
+                wallet_credited = True
+            except Exception as e:
+                logger.error(f"Wallet credit failed for booking {booking_id}: {e}")
+                # Fall back to card refund
+                refund_to = "card"
         
         # Update transaction
         await db.transactions.update_one(
@@ -1102,6 +1127,8 @@ async def cancel_booking_by_user(
                 "status": refund_status,
                 "refund_amount": refund_amount,
                 "refund_reason": refund_reason,
+                "refund_to": refund_to,
+                "wallet_credited": wallet_credited,
                 "cancelled_by": "user",
                 "updated_at": now.isoformat()
             }}
@@ -1109,11 +1136,13 @@ async def cancel_booking_by_user(
         
         # Create ledger entries for refund (if >24h)
         if hours_until > 24 and refund_amount > 0:
-            updated_tx = {**transaction, "refund_amount": refund_amount}
+            updated_tx = {**transaction, "refund_amount": refund_amount, "refund_to": refund_to}
             await create_transaction_ledger_entries(updated_tx, TransactionStatus.REFUND_PARTIAL)
         
         refund_result = {
             "refund_amount": refund_amount,
+            "refund_to": refund_to,
+            "wallet_credited": wallet_credited,
             "policy_applied": ">24h partial refund" if hours_until > 24 else "<24h no refund"
         }
     
