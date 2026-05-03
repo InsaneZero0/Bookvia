@@ -210,3 +210,18 @@ Dashboard del negocio orientado a activacion y retencion:
 - **Profile view tracking**: nueva coleccion `profile_views` con dedup idempotente por `(business_id, viewer_key, date)`. viewer_key = user_id si autenticado, X-Forwarded-For (para estabilidad tras k8s ingress) sino. Owners no incrementan sus propias vistas.
 - **Bug fix** `routers/bookings.py`: decorador `@router.get("/business/stats-detail")` estaba huerfano; `get_business_stats_detail` no estaba registrado como ruta. Corregido.
 - **Testing**: iteration_91 - 10/10 backend pass, frontend pass. Dedup verificado (5 curls anon = 1 row).
+
+## Phase 15 (May 2026) - Map + Mini-CRM
+Dos features P1 pensados para hacer crecer el marketplace sin depender de servicios pagados:
+- **Leaflet Map** (`/app/frontend/src/components/SearchLeafletMap.jsx`): reemplazo 100% de Google Maps por Leaflet + OpenStreetMap tiles (gratuito, sin API key). Pins con popup (nombre, rating, distance_km, CTA ver perfil), pin azul para ubicacion del usuario, auto-fit bounds, tile attribution de OSM.
+- **Mini-CRM del negocio** (`/app/frontend/src/components/BusinessClientsTab.jsx`): nueva pestana "Clientes" en Business Dashboard con:
+  * Tabla agregada desde `bookings` + `users` con total visitas, gasto, ultima cita, dias sin venir, tags automaticos (VIP 5+ visitas, Nuevo, No-show, Inactivo 90d+)
+  * Filtros: busqueda texto + filtro tag + 4 ordenamientos (recent/visits/spent/name)
+  * Notas privadas por cliente (max 500 chars, editables inline via modal) en coleccion `business_client_notes`
+  * Export CSV con derechos de portabilidad de datos
+- **Endpoints nuevos**:
+  * `GET /businesses/my/clients?q=&tag=&sort=&page=&limit=`
+  * `PUT /businesses/my/clients/{client_key}/note`
+  * `POST /businesses/my/clients/export` (CSV)
+- **Nueva coleccion**: `business_client_notes` con `(business_id, client_key, note, updated_at)`
+- **Testing**: iteration_92 - 12/12 backend pass, Clientes tab UI verificada con todos los data-testids (search, tag filter, sort, export, empty state), sin regresiones.
