@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
  * Auto-hides when `data.is_complete === true`.
  */
 export function ProfileCompletionBanner({ data, onGoToTab }) {
-  const { language } = useI18n();
+  const { t } = useI18n();
 
   if (!data || data.is_complete) return null;
 
@@ -52,12 +52,10 @@ export function ProfileCompletionBanner({ data, onGoToTab }) {
           <div className="min-w-0">
             <h3 className="font-heading text-base sm:text-lg font-bold flex items-center gap-2">
               <Sparkles className={`h-4 w-4 ${tone.text}`} />
-              {language === 'es' ? 'Completa tu perfil para recibir mas reservas' : 'Complete your profile to get more bookings'}
+              {t('Completa tu perfil para recibir mas reservas')}
             </h3>
             <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
-              {language === 'es'
-                ? `${data.done_count} de ${data.total_count} pasos listos. Los negocios al 100% reciben hasta 3x mas reservas.`
-                : `${data.done_count} of ${data.total_count} steps done. 100% profiles get up to 3x more bookings.`}
+              {data.done_count} {t('de')} {data.total_count} {t('pasos listos. Los negocios al 100% reciben hasta 3x mas reservas.')}
             </p>
           </div>
         </div>
@@ -67,7 +65,7 @@ export function ProfileCompletionBanner({ data, onGoToTab }) {
             className="shrink-0 bg-slate-900 hover:bg-slate-800 text-white"
             data-testid="profile-completion-cta"
           >
-            {language === 'es' ? firstPending.label_es : firstPending.label_en}
+            {firstPending.label_es}
             <ChevronRight className="h-4 w-4 ml-1" />
           </Button>
         )}
@@ -94,7 +92,7 @@ export function ProfileCompletionBanner({ data, onGoToTab }) {
               <Circle className="h-4 w-4 text-slate-400 shrink-0" />
             )}
             <span className={`truncate ${it.done ? 'line-through' : ''}`}>
-              {language === 'es' ? it.label_es : it.label_en}
+              {it.label_es}
             </span>
           </button>
         ))}

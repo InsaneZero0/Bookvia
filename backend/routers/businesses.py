@@ -192,9 +192,16 @@ async def _track_profile_view(
     try:
         if current_user and current_user.user_id == owner_user_id:
             return
-        viewer_key = current_user.user_id if current_user else (
-            request.client.host if request and request.client else "anonymous"
-        )
+        if current_user:
+            viewer_key = current_user.user_id
+        else:
+            # Behind k8s ingress `request.client.host` rotates across upstream
+            # hops; use the first X-Forwarded-For entry when present so anon
+            # dedup is stable per calendar day.
+            xff = (request.headers.get("x-forwarded-for", "") if request else "").split(",")
+            viewer_key = (xff[0].strip() if xff and xff[0].strip() else None) or (
+                request.client.host if request and request.client else "anonymous"
+            )
         day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         await db.profile_views.update_one(
             {"business_id": business_id, "viewer_key": viewer_key, "date": day},

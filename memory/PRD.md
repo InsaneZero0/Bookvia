@@ -201,3 +201,12 @@ Preparacion del sitio para lanzamiento abierto al publico:
 - **Testimonials** (`/app/frontend/src/components/Testimonials.jsx`): 3 cards con estrellas, quote, avatar, nombre, rol/ciudad y disclaimer. Placeholders realistas en MX espanol listos para reemplazar con reales tras obtener autorizacion de usuarios beta.
 - **HowItWorksModal ajustado**: ahora espera a que se cierre el BetaBanner antes de auto-abrirse en primera visita, evitando competencia por atencion.
 - **Testing**: iteration_90 - 100% passing en frontend, sin regresiones en /help, /beneficios, /dashboard.
+
+## Phase 14 (May 2026) - Business Activation + Metrics
+Dashboard del negocio orientado a activacion y retencion:
+- **ProfileCompletionBanner** (`/app/frontend/src/components/ProfileCompletionBanner.jsx`): checklist de 7 items con radial progress %, gradient segun completitud (rojo/amber/verde), CTA contextual al primer pendiente. Auto-hide al 100%.
+- **Endpoint nuevo**: `GET /businesses/my/profile-completion` retorna `{percentage, done_count, items:[{key,done,label_es,label_en,action_path}]}`. Items: cover, photos>=3, services_with_price, description, hours, team>=1, kyc.
+- **Metricas de adquisicion**: `/businesses/my/dashboard-summary` extendido con `profile_views_30d`, `bookings_30d`, `conversion_pct`, `top_services[3]`. Nuevo row de 3 cards en tab Overview.
+- **Profile view tracking**: nueva coleccion `profile_views` con dedup idempotente por `(business_id, viewer_key, date)`. viewer_key = user_id si autenticado, X-Forwarded-For (para estabilidad tras k8s ingress) sino. Owners no incrementan sus propias vistas.
+- **Bug fix** `routers/bookings.py`: decorador `@router.get("/business/stats-detail")` estaba huerfano; `get_business_stats_detail` no estaba registrado como ruta. Corregido.
+- **Testing**: iteration_91 - 10/10 backend pass, frontend pass. Dedup verificado (5 curls anon = 1 row).
