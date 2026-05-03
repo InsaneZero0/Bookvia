@@ -117,11 +117,12 @@ export function Navbar() {
   return (
     <nav 
       data-testid="navbar"
-      className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
+      className={`fixed left-0 right-0 z-50 transition-all duration-300 ${
         isTransparent 
           ? 'bg-transparent' 
           : 'glass border-b border-border/50'
       }`}
+      style={{ top: 'var(--beta-banner-h, 0px)' }}
     >
       <div className="container-app">
         <div className="flex items-center justify-between h-16 md:h-20">

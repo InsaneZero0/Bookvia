@@ -48,11 +48,13 @@ import CountryPage from '@/pages/seo/CountryPage';
 import CityPage from '@/pages/seo/CityPage';
 import CategoryPage from '@/pages/seo/CategoryPage';
 import BusinessSEOPage from '@/pages/seo/BusinessSEOPage';
+import { BetaBanner } from '@/components/BetaBanner';
 
 // Layout wrapper
 function Layout({ children, showFooter = true }) {
   return (
     <div className="flex flex-col min-h-screen">
+      <BetaBanner />
       <Navbar />
       <main className="flex-1">{children}</main>
       {showFooter && <Footer />}
