@@ -2361,7 +2361,9 @@ async def admin_export_spei_csv(
         request=None,
     )
 
-    safe_bank = bank.lower() if bank else "generic"
+    safe_bank = (bank or "").lower().strip()
+    if safe_bank not in ("generic", "bbva", "banorte", "santander"):
+        safe_bank = "generic"
     return Response(
         content=body,
         media_type="text/csv; charset=utf-8",
