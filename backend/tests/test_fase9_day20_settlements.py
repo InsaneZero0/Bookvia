@@ -382,7 +382,8 @@ class TestExportSpeiCsv:
         assert "text/csv" in r.headers.get("content-type", "")
         cd = r.headers.get("content-disposition", "")
         assert "attachment" in cd
-        assert f"bookvia-spei-{PERIOD_KEY}.csv" in cd
+        assert f"bookvia-spei-{PERIOD_KEY}" in cd
+        assert ".csv" in cd
 
         body = r.text
         lines = body.strip().split("\r\n")

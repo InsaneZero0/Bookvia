@@ -2219,33 +2219,110 @@ def _csv_escape(value: Any) -> str:
     return s
 
 
+# ---------------- SPEI bank templates (Fase 9) ----------------
+# Each template returns (headers, row_builder). The row_builder receives a
+# dict with normalized fields and returns a list of strings in template order.
+# Layouts are based on the most common commercial-banking SPEI batch uploads
+# in Mexico. They are sane defaults — admins can ask each bank for a sample
+# and we will tweak if any column needs to change.
+
+def _spei_template(bank: str):
+    bank = (bank or "generic").lower().strip()
+
+    if bank == "bbva":
+        # BBVA Multienlace - Pagos SPEI carga masiva
+        headers = [
+            "Banco beneficiario", "Cuenta beneficiario", "Tipo cuenta",
+            "Importe", "Concepto", "Referencia numerica",
+            "RFC beneficiario", "Beneficiario", "Email",
+        ]
+        def builder(d):
+            return [
+                "BBVA",  # Banco beneficiario - left as default text
+                d["clabe"],
+                "40",  # 40 = CLABE
+                f"{d['amount']:.2f}",
+                d["concepto"][:40],  # BBVA truncates concepto to 40 chars
+                "".join(ch for ch in d["referencia"] if ch.isdigit())[:7] or "1",
+                d["rfc"],
+                d["beneficiario"][:40],
+                d["email"],
+            ]
+        return headers, builder
+
+    if bank == "banorte":
+        # Banorte Banca Electronica Empresarial (BEM) - SPEI carga masiva
+        headers = [
+            "Tipo de pago", "Cuenta origen", "CLABE destino",
+            "Importe", "Concepto de pago", "Referencia",
+            "RFC beneficiario", "Beneficiario",
+        ]
+        def builder(d):
+            return [
+                "SPEI",
+                "",  # Cuenta origen left blank for admin to fill
+                d["clabe"],
+                f"{d['amount']:.2f}",
+                d["concepto"][:30],  # Banorte truncates to 30
+                "".join(ch for ch in d["referencia"] if ch.isalnum())[:10] or "BV1",
+                d["rfc"],
+                d["beneficiario"][:35],
+            ]
+        return headers, builder
+
+    if bank == "santander":
+        # Santander SuperNet Cash - SPEI carga masiva
+        headers = [
+            "CLABE", "Beneficiario", "RFC", "Monto",
+            "Concepto", "Referencia", "Email",
+        ]
+        def builder(d):
+            return [
+                d["clabe"],
+                d["beneficiario"][:50],
+                d["rfc"],
+                f"{d['amount']:.2f}",
+                d["concepto"][:35],
+                "".join(ch for ch in d["referencia"] if ch.isalnum())[:7] or "BV1",
+                d["email"],
+            ]
+        return headers, builder
+
+    # generic - the human-readable layout we shipped originally
+    headers = [
+        "Beneficiario", "CLABE", "RFC", "Monto",
+        "Concepto", "Referencia", "Email", "Citas", "Folio",
+    ]
+    def builder(d):
+        return [
+            d["beneficiario"], d["clabe"], d["rfc"],
+            f"{d['amount']:.2f}", d["concepto"], d["referencia"],
+            d["email"], str(d.get("booking_count", 0)), d.get("folio", ""),
+        ]
+    return headers, builder
+
+
 @router.get("/settlements/{period_key}/export-spei.csv")
 async def admin_export_spei_csv(
     period_key: str,
     status_filter: str = "pending",
+    bank: str = "generic",
     token_data: TokenData = Depends(require_admin),
 ):
     """Export a SPEI-ready CSV for every settlement in the given period.
 
-    The CSV layout is compatible with most Mexican banks' massive SPEI
-    uploaders: Beneficiario, CLABE, Banco, Monto, Concepto, RFC, Referencia.
+    `bank` selects a vendor-specific column layout:
+      * generic  - human-readable, default
+      * bbva     - BBVA Multienlace
+      * banorte  - Banorte BEM
+      * santander- Santander SuperNet Cash
     """
     filters = {"period_key": period_key}
     if status_filter and status_filter != "all":
         filters["status"] = status_filter
     rows = await db.settlements.find(filters, {"_id": 0}).sort("created_at", -1).to_list(5000)
 
-    headers = [
-        "Beneficiario",
-        "CLABE",
-        "RFC",
-        "Monto",
-        "Concepto",
-        "Referencia",
-        "Email",
-        "Citas",
-        "Folio",
-    ]
+    headers, builder = _spei_template(bank)
     lines = [",".join(headers)]
     for r in rows:
         business = await db.businesses.find_one(
@@ -2257,35 +2334,39 @@ async def admin_export_spei_csv(
         rfc = r.get("rfc") or business.get("rfc") or ""
         monto = r.get("net_payout") if r.get("net_payout") is not None else r.get("payout_amount", 0)
         concepto = f"Bookvia {period_key} {r.get('booking_count', 0)} citas"
-        referencia = r.get("id", "")[:20]
+        referencia = (r.get("id") or "")[:20]
         email = business.get("email", "")
-        row = [
-            _csv_escape(beneficiario),
-            _csv_escape(clabe),
-            _csv_escape(rfc),
-            _csv_escape(f"{float(monto):.2f}"),
-            _csv_escape(concepto),
-            _csv_escape(referencia),
-            _csv_escape(email),
-            _csv_escape(r.get("booking_count", 0)),
-            _csv_escape(r.get("id", "")),
-        ]
-        lines.append(",".join(row))
+
+        d = {
+            "beneficiario": beneficiario,
+            "clabe": clabe,
+            "rfc": rfc,
+            "amount": float(monto or 0),
+            "concepto": concepto,
+            "referencia": referencia,
+            "email": email,
+            "booking_count": r.get("booking_count", 0),
+            "folio": r.get("id", ""),
+        }
+        cells = builder(d)
+        lines.append(",".join(_csv_escape(c) for c in cells))
+
     body = "\r\n".join(lines) + "\r\n"
 
     await create_audit_log(
         admin_id=token_data.user_id, admin_email=token_data.email,
         action=AuditAction.SETTLEMENT_GENERATE, target_type="settlement_export",
         target_id=period_key,
-        details={"rows": len(rows), "status_filter": status_filter},
+        details={"rows": len(rows), "status_filter": status_filter, "bank": bank},
         request=None,
     )
 
+    safe_bank = bank.lower() if bank else "generic"
     return Response(
         content=body,
         media_type="text/csv; charset=utf-8",
         headers={
-            "Content-Disposition": f'attachment; filename="bookvia-spei-{period_key}.csv"',
+            "Content-Disposition": f'attachment; filename="bookvia-spei-{period_key}-{safe_bank}.csv"',
             "Cache-Control": "no-store",
         },
     )

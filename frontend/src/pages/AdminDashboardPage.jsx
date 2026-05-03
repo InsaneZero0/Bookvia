@@ -898,16 +898,23 @@ export default function AdminDashboardPage() {
     const defaultPeriod = `${exportYear}-${String(exportMonth).padStart(2, '0')}-D20`;
     const periodKey = window.prompt(t('Periodo a exportar (formato YYYY-MM-D20):', 'Period to export (format YYYY-MM-D20):'), defaultPeriod);
     if (!periodKey) return;
+    const bankPrompt = window.prompt(
+      t('Formato del CSV: 1=Generico, 2=BBVA, 3=Banorte, 4=Santander', 'CSV format: 1=Generic, 2=BBVA, 3=Banorte, 4=Santander'),
+      '1'
+    );
+    if (bankPrompt === null) return;
+    const bankMap = { '1': 'generic', '2': 'bbva', '3': 'banorte', '4': 'santander' };
+    const bank = bankMap[bankPrompt.trim()] || 'generic';
     try {
-      const res = await adminAPI.exportSpeiCsv(periodKey);
+      const res = await adminAPI.exportSpeiCsv(periodKey, 'pending', bank);
       const blob = new Blob([res.data], { type: 'text/csv;charset=utf-8' });
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `bookvia-spei-${periodKey}.csv`;
+      a.download = `bookvia-spei-${periodKey}-${bank}.csv`;
       a.click();
       window.URL.revokeObjectURL(url);
-      toast.success(t('CSV SPEI descargado', 'SPEI CSV downloaded'));
+      toast.success(t(`CSV SPEI (${bank}) descargado`, `SPEI CSV (${bank}) downloaded`));
     } catch (e) {
       toast.error(e?.response?.data?.detail || t('Error al exportar', 'Export error'));
     }

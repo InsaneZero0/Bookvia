@@ -1,0 +1,34 @@
+{
+  "summary": "Phase 9 - SPEI bank-specific CSV templates: 13/13 backend tests pass. Covered all 4 bank layouts (generic, bbva, banorte, santander), per-bank truncation rules, hardcoded values (BBVA banco='BBVA', BBVA tipo cuenta='40', Banorte tipo de pago='SPEI', empty cuenta origen), digits-only / alnum reference filtering with max-length caps (BBVA digits<=7 with fallback '1', Banorte alnum<=10, Santander alnum<=7), filename suffixes -<bank>.csv, invalid bank falls back to generic body (filename keeps the raw bank string), CSV escaping with legal_name 'Salon, \"El Mejor\" S.A. de C.V.' across all banks, audit log SETTLEMENT_GENERATE on settlement_export records details.bank, and auth gates (no token=>401/403, client/business=>403).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/admin/settlements/{period}/export-spei.csv?bank=invent", "issue": "Body falls back to generic columns (per spec), but Content-Disposition filename keeps the raw bank string (e.g. -invent.csv). Spec says 'cae a generic sin error' which is satisfied content-wise; consider normalizing filename suffix to 'generic' when bank is unknown for clarity."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_fase9_bank_templates.py",
+    "/app/test_reports/pytest/fase9_bank_templates.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "BBVA Referencia numerica is truncated to <=7 digits with fallback '1' if no digit present in settlement.id. Spec only said 'solo digitos extraidos del settlement.id' (no length); 7 matches BBVA Multienlace 7-digit numeric reference convention so the cap is sane, but worth documenting so it's not perceived as data loss.",
+    "Banorte Beneficiario truncated to 35 and Concepto to 30 - matches spec exactly. Cuenta origen left blank (admin must fill on portal) - acceptable per BEM workflow.",
+    "Santander Beneficiario<=50, Concepto<=35, Referencia alnum<=7 - matches spec. Note: 7-char alnum is short; if collisions become a concern across periods, consider hashing instead of prefix.",
+    "All 4 templates share the same _csv_escape helper, so quoting/double-quoting works identically (verified). _csv_escape correctly emits ',\"', double-quotes embedded quotes, and triggers on \\r/\\n too.",
+    "Filename uses safe_bank = bank.lower() unconditionally - so an invalid bank like 'invent' produces ...-invent.csv even though the body is generic. Minor cosmetic mismatch; recommend normalizing to 'generic' when not in {generic,bbva,banorte,santander}.",
+    "Audit log 'action=settlement_generate, target_type=settlement_export' for export feels overloaded - same action enum is reused for the actual generation. Consider distinct action SETTLEMENT_EXPORT for cleaner audit reads. Not blocking; confirmed details.bank flows through.",
+    "Endpoint accepts 'bank' as query string but does not validate against an allow-list in the response body - OK for graceful fallback, but a 400 on unknown bank would aid frontend debugging."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_fase9_bank_templates.py (new)"
+  ],
+  "success_rate": {"backend": "100% (13/13)", "frontend": "n/a"},
+  "test_credentials": "Admin zamorachapa50@gmail.com + TOTP via pyotp from db.users.totp_secret. Business/client tokens minted directly with HS256 + JWT_SECRET.",
+  "seed_data_creation": "Inserted 2 businesses (TEST_F9B_biz_plain with full SA de CV legal_name to exercise truncation; TEST_F9B_biz_comma with legal_name 'Salon, \"El Mejor\" S.A. de C.V.' to exercise CSV escaping), 3 users, and 2 db.settlements rows under period_key '2026-07-D20' (status=pending). Did NOT run generate_settlements_day20 - settlements are inserted directly so the export tests are isolated from job-side effects. Teardown cleans by TEST_F9B_ prefix and audit_logs for the period.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "test_fase9_bank_templates.py uses period_key 2026-07-D20 (distinct from iter_81's 2026-05-D20) so the two suites do not interfere. Settlements are inserted directly into Mongo (no generate-day20 call), so AUDIT_LOG entries on this period only come from the export endpoint. The BBVA reference cap is currently 7 digits with a '1' fallback - if the spec for BBVA reference length changes, only the test's `len(ref) <= 7` and digits assertions need updating.",
+  "rca of the issue": "N/A - all tests passed."
+}

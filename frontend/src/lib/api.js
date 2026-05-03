@@ -308,8 +308,8 @@ export const adminAPI = {
   getSettlements: (params) => api.get('/admin/settlements', { params }),
   generateSettlements: (year, month) => api.post(`/admin/settlements/generate?year=${year}&month=${month}`),
   generateDay20Settlements: (force = false) => api.post(`/admin/settlements/generate-day20${force ? '?force=true' : ''}`),
-  exportSpeiCsv: (periodKey, statusFilter = 'pending') => api.get(`/admin/settlements/${periodKey}/export-spei.csv`, {
-    params: { status_filter: statusFilter },
+  exportSpeiCsv: (periodKey, statusFilter = 'pending', bank = 'generic') => api.get(`/admin/settlements/${periodKey}/export-spei.csv`, {
+    params: { status_filter: statusFilter, bank },
     responseType: 'text',
     transformResponse: [(data) => data],
   }),
