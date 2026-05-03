@@ -447,9 +447,9 @@ async def delete_my_account(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    if not user.get("password_hash") or not verify_password(payload.password, user["password_hash"]):
-        raise HTTPException(status_code=401, detail="Contrasena incorrecta")
-
+    # Role gate first - saves a business owner from typing the password for
+    # nothing and avoids leaking password-validity on a flow they cannot
+    # complete.
     if user.get("role") == UserRole.BUSINESS and not user.get("is_manager"):
         raise HTTPException(
             status_code=400,
@@ -458,6 +458,9 @@ async def delete_my_account(
                 "Escribe a soporte@bookvia.app indicando tu motivo para iniciar el proceso."
             ),
         )
+
+    if not user.get("password_hash") or not verify_password(payload.password, user["password_hash"]):
+        raise HTTPException(status_code=401, detail="Contrasena incorrecta")
 
     # Block if there are upcoming bookings
     now_utc = datetime.now(timezone.utc)
@@ -521,6 +524,17 @@ async def delete_my_account(
     # Purge per-user collections that no longer make sense post-deletion
     await db.user_favorites.delete_many({"user_id": user["id"]})
     await db.notifications.delete_many({"user_id": user["id"]})
+
+    # Anonymize PII that lives on historical booking docs (businesses keep
+    # seeing them in their dashboard otherwise).
+    await db.bookings.update_many(
+        {"user_id": user["id"]},
+        {"$set": {
+            "client_name": "[Cuenta eliminada]",
+            "client_email": None,
+            "client_phone": None,
+        }},
+    )
 
     # Audit log (compliance - cannot be deleted by the user)
     try:
