@@ -483,8 +483,10 @@ async def stripe_webhook(request: Request):
         return {"status": "success"}
         
     except Exception as e:
-        logger.error(f"Webhook error: {e}")
-        return {"status": "error", "message": str(e)}
+        logger.exception(f"Webhook error: {e}")
+        # Return 500 so Stripe retries the event. Duplicate retries are
+        # de-duplicated by the `stripe_events` collection (Fase 11).
+        raise HTTPException(status_code=500, detail="Webhook processing error")
 
 
 

@@ -90,16 +90,54 @@ def calculate_fees(deposit_amount: float) -> dict:
 
 
 async def expire_holds_task() -> int:
-    """Expire bookings that have been in 'hold' status for too long."""
+    """Fase 11: expire stale bookings AND stripe checkouts that never made it to PAID.
+
+    Cleans two sources of garbage:
+      * bookings stuck in 'hold' beyond HOLD_EXPIRATION_MINUTES (client
+        abandoned the flow before paying).
+      * transactions stuck in 'created' with held_until < now (client
+        opened Stripe Checkout but never completed).
+
+    If the transaction had a wallet_applied amount, revert it so the
+    client doesn't lose saldo when Stripe expires the session silently.
+    """
     cutoff = datetime.now(timezone.utc) - timedelta(minutes=HOLD_EXPIRATION_MINUTES)
     cutoff_str = cutoff.isoformat()
-    result = await db.bookings.update_many(
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    # (1) Abandoned bookings
+    booking_result = await db.bookings.update_many(
         {"status": "hold", "created_at": {"$lt": cutoff_str}},
         {"$set": {"status": "cancelled", "cancelled_by": "system", "cancelled_reason": "Hold expired"}}
     )
-    if result.modified_count > 0:
-        logger.info(f"Expired {result.modified_count} hold bookings")
-    return result.modified_count
+
+    # (2) Stale transactions
+    stale_tx = await db.transactions.find(
+        {"status": "created", "held_until": {"$lt": now_iso}},
+        {"_id": 0},
+    ).to_list(500)
+
+    for tx in stale_tx:
+        await db.transactions.update_one(
+            {"id": tx["id"], "status": "created"},
+            {"$set": {"status": "expired", "updated_at": now_iso}},
+        )
+        wallet_applied = float(tx.get("wallet_applied") or 0)
+        if wallet_applied > 0:
+            try:
+                from services.wallet import credit_wallet, CREDIT_ADMIN_ADJUSTMENT
+                await credit_wallet(
+                    user_id=tx["user_id"], amount=wallet_applied,
+                    tx_type=CREDIT_ADMIN_ADJUSTMENT, booking_id=tx.get("booking_id"),
+                    description="Reversa de saldo: sesion de pago expirada",
+                )
+            except Exception as e:
+                logger.warning(f"Could not refund wallet on tx expiry {tx['id']}: {e}")
+
+    total = booking_result.modified_count + len(stale_tx)
+    if total > 0:
+        logger.info(f"Expired {booking_result.modified_count} bookings + {len(stale_tx)} stale transactions")
+    return total
 
 
 @router.get("/fees/breakdown")
@@ -297,7 +335,11 @@ async def create_deposit_checkout(
         "cancelled_by": None,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "updated_at": None,
-        "paid_at": None
+        "paid_at": None,
+        # Fase 11: initialise funds_state + held_until so expire_holds_task
+        # and funds_state helpers can transition correctly on webhook events.
+        "funds_state": "pending_hold",
+        "held_until": (datetime.now(timezone.utc) + timedelta(minutes=HOLD_EXPIRATION_MINUTES)).isoformat(),
     }
     
     await db.transactions.insert_one(transaction_doc)
