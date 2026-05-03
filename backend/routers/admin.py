@@ -2023,6 +2023,32 @@ async def reassign_business_category(
     return {"message": "Category reassigned", "new_category": category.get("name_es")}
 
 
+@router.get("/users/{user_id}/terms-history")
+async def admin_user_terms_history(user_id: str, token_data: TokenData = Depends(require_admin)):
+    """Admin - return the full T&C acceptance history for any user.
+
+    Used by legal/support staff to resolve disputes ("the user never
+    accepted this version").
+    """
+    user = await db.users.find_one(
+        {"id": user_id},
+        {"_id": 0, "id": 1, "email": 1, "full_name": 1, "role": 1,
+         "accepted_terms_version": 1, "accepted_terms_at": 1,
+         "terms_acceptance_history": 1},
+    )
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {
+        "user_id": user["id"],
+        "email": user.get("email"),
+        "full_name": user.get("full_name"),
+        "role": user.get("role"),
+        "current_accepted_version": user.get("accepted_terms_version"),
+        "current_accepted_at": user.get("accepted_terms_at"),
+        "history": user.get("terms_acceptance_history") or [],
+    }
+
+
 # ========================== FASE 9: DAY-20 SETTLEMENTS ==========================
 
 async def _build_day20_period_key(run_date: datetime) -> str:

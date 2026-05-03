@@ -165,6 +165,17 @@ export default function TermsPage() {
             'Para cualquier consulta sobre estos terminos, contactanos en: hola@bookvia.app',
             'For any questions about these terms, contact us at: hola@bookvia.app'
           )}</p>
+
+          <h2>{t('12. Historial de versiones', '12. Version history')}</h2>
+          <ul>
+            <li>
+              <strong>v2026-05-01</strong> (01 {t('mayo', 'May')} 2026) -{' '}
+              {t(
+                'Version inicial publica. Aclaracion del rol de Bookvia como intermediario; propinas y facturas (CFDI) se gestionan entre cliente y negocio; Aviso de Privacidad LFPDPPP y jurisdiccion CDMX.',
+                'Initial public version. Clarifies Bookvia\'s role as intermediary; tips and invoices (CFDI) are handled between client and business; LFPDPPP Privacy Notice and Mexico City jurisdiction.'
+              )}
+            </li>
+          </ul>
         </div>
       </section>
     </div>

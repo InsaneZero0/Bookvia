@@ -114,6 +114,12 @@ SMS_MAX_ATTEMPTS_PER_HOUR = 3
 # is required to re-accept the new version.
 # =============================================================================
 TERMS_VERSION = "2026-05-01"
+# ISO date when the current TERMS_VERSION was published. The grace period for
+# re-acceptance counts from here.
+TERMS_VERSION_PUBLISHED_AT = "2026-05-01T00:00:00+00:00"
+# Days during which the re-acceptance modal is dismissible after a T&C bump.
+# After this window, the modal becomes non-dismissible (hard block).
+TERMS_GRACE_DAYS = 7
 TERMS_SUMMARY = (
     "Plataforma intermediaria. Propinas y facturas son responsabilidad del negocio. "
     "Anticipo minimo $100 MXN + cuota $8.20. Wallet expira 24 meses."

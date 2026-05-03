@@ -503,6 +503,10 @@ async def create_booking(booking: BookingCreate, token_data: TokenData = Depends
     if not business.get("documents_verified", False):
         raise HTTPException(status_code=400, detail="El negocio aun no tiene sus documentos verificados por Bookvia")
 
+    # Fase 10: hard-gate critical action on outdated T&C (after grace period)
+    from routers.terms import require_terms_up_to_date
+    await require_terms_up_to_date(token_data.user_id)
+
     if business.get("subscription_status") in ("canceled", "past_due", "unpaid"):
         raise HTTPException(status_code=400, detail="Business subscription is not active")
     

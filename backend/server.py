@@ -169,6 +169,52 @@ async def startup_event():
     except Exception as e:
         logger.warning(f"Fase 8 grandfather backfill failed: {e}")
 
+    # ------------------------------------------------------------------
+    # Fase 10 migration: seed terms_acceptance_history for accounts that
+    # were created before the audit trail was introduced. We only seed
+    # when the account already has accepted_terms_version + at (so we
+    # never fabricate evidence for users who never accepted).
+    # ------------------------------------------------------------------
+    try:
+        from core.database import db
+        migrated_users = await db.users.update_many(
+            {
+                "accepted_terms_version": {"$exists": True, "$ne": None},
+                "accepted_terms_at": {"$exists": True, "$ne": None},
+                "terms_acceptance_history": {"$exists": False},
+            },
+            [{"$set": {
+                "terms_acceptance_history": [{
+                    "version": "$accepted_terms_version",
+                    "accepted_at": "$accepted_terms_at",
+                    "ip": "",
+                    "user_agent": "",
+                    "source": "migration",
+                }]
+            }}],
+        )
+        migrated_biz = await db.businesses.update_many(
+            {
+                "accepted_terms_version": {"$exists": True, "$ne": None},
+                "accepted_terms_at": {"$exists": True, "$ne": None},
+                "terms_acceptance_history": {"$exists": False},
+            },
+            [{"$set": {
+                "terms_acceptance_history": [{
+                    "version": "$accepted_terms_version",
+                    "accepted_at": "$accepted_terms_at",
+                    "ip": "",
+                    "user_agent": "",
+                    "source": "migration",
+                }]
+            }}],
+        )
+        total = migrated_users.modified_count + migrated_biz.modified_count
+        if total:
+            logger.info(f"Fase 10 terms history migration: seeded {total} documents")
+    except Exception as e:
+        logger.warning(f"Fase 10 terms history migration failed: {e}")
+
     # Start background schedulers
     asyncio.create_task(appointment_reminder_scheduler())
     asyncio.create_task(subscription_reminder_scheduler())

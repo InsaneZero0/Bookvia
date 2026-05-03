@@ -1023,6 +1023,10 @@ async def update_my_legal_docs(
     if token_data.is_manager:
         raise HTTPException(status_code=403, detail="Solo el dueno puede actualizar documentos")
 
+    # Fase 10: hard-gate this owner action if T&C are outdated and the grace period passed.
+    from routers.terms import require_terms_up_to_date
+    await require_terms_up_to_date(token_data.user_id)
+
     user = await db.users.find_one({"id": token_data.user_id}, {"_id": 0, "business_id": 1})
     if not user or not user.get("business_id"):
         raise HTTPException(status_code=404, detail="Business not found")

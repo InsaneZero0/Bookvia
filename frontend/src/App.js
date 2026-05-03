@@ -7,6 +7,7 @@ import { CountryProvider } from '@/lib/countryContext';
 import { useCountry } from '@/lib/countryContext';
 import { Navbar } from '@/components/Navbar';
 import { Footer } from '@/components/Footer';
+import TermsReAcceptModal from '@/components/TermsReAcceptModal';
 
 // Pages
 import HomePage from '@/pages/HomePage';
@@ -137,6 +138,7 @@ function App() {
               <Route path="*" element={<Layout><NotFoundPage /></Layout>} />
             </Routes>
             <Toaster position="top-center" richColors />
+            <TermsReAcceptModal />
           </BrowserRouter>
           </CountryProvider>
         </AuthProvider>

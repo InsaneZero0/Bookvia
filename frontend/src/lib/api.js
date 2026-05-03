@@ -63,6 +63,15 @@ api.interceptors.response.use(
         window.location.href = '/login';
       }
     }
+
+    // Fase 10: backend signals that T&C are outdated AND grace period is
+    // over. Fire a global event the TermsReAcceptModal listens for so the
+    // user is asked to re-accept immediately.
+    const detail = error.response?.data?.detail;
+    if (error.response?.status === 409 && detail && typeof detail === 'object' && detail.code === 'terms_outdated') {
+      try { window.dispatchEvent(new CustomEvent('bookvia:terms_outdated', { detail })); } catch { /* ignore */ }
+    }
+
     return Promise.reject(error);
   }
 );
