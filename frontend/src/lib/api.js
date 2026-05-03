@@ -119,6 +119,8 @@ export const usersAPI = {
     responseType: 'text',
     transformResponse: [(data) => data],
   }),
+  setMarketingOptOut: (optOut) => api.post('/users/me/marketing-consent', { opt_out: optOut }),
+  deleteAccount: (password, confirmation) => api.delete('/users/me/account', { data: { password, confirmation } }),
 };
 
 // Categories API

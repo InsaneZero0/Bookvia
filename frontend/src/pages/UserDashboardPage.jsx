@@ -9,6 +9,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Switch } from '@/components/ui/switch';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
 import WalletCard from '@/components/WalletCard';
 import { useAuth } from '@/lib/auth';
 import { useI18n } from '@/lib/i18n';
@@ -18,7 +20,8 @@ import { toast } from 'sonner';
 import {
   User, Mail, Phone, Calendar, Heart, Shield, Camera, Edit2, Check, X,
   Clock, ChevronRight, Star, Search, MapPin, ArrowUpRight, Bookmark,
-  CalendarDays, CreditCard, Bell, MessageSquare, Download, FileJson
+  CalendarDays, CreditCard, Bell, MessageSquare, Download, FileJson,
+  Pencil, Trash2, BellOff, AlertTriangle
 } from 'lucide-react';
 
 export default function UserDashboardPage() {
@@ -35,6 +38,12 @@ export default function UserDashboardPage() {
   const [userStats, setUserStats] = useState(null);
   const [savingPrefs, setSavingPrefs] = useState(false);
   const [exportingData, setExportingData] = useState(false);
+  const [marketingOptOut, setMarketingOptOut] = useState(false);
+  const [savingMarketing, setSavingMarketing] = useState(false);
+  const [deleteDialog, setDeleteDialog] = useState({ open: false });
+  const [deletePassword, setDeletePassword] = useState('');
+  const [deleteConfirm, setDeleteConfirm] = useState('');
+  const [deletingAccount, setDeletingAccount] = useState(false);
 
   const handleExportData = async () => {
     if (exportingData) return;
@@ -56,6 +65,47 @@ export default function UserDashboardPage() {
       toast.error(e?.response?.data?.detail || (language === 'es' ? 'No se pudo exportar' : 'Could not export'));
     } finally {
       setExportingData(false);
+    }
+  };
+
+  const handleToggleMarketing = async (optOut) => {
+    setSavingMarketing(true);
+    try {
+      await usersAPI.setMarketingOptOut(optOut);
+      setMarketingOptOut(optOut);
+      toast.success(language === 'es'
+        ? (optOut ? 'Preferencia guardada: te opusiste al marketing' : 'Preferencia actualizada')
+        : (optOut ? 'Preference saved: you opted out of marketing' : 'Preference updated'));
+    } catch {
+      toast.error(language === 'es' ? 'Error al guardar' : 'Error saving');
+    } finally {
+      setSavingMarketing(false);
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    if (deletingAccount) return;
+    if ((deleteConfirm || '').trim().toUpperCase() !== 'ELIMINAR') {
+      toast.error(language === 'es' ? 'Escribe ELIMINAR para confirmar' : 'Type ELIMINAR to confirm');
+      return;
+    }
+    if (!deletePassword) {
+      toast.error(language === 'es' ? 'Ingresa tu contrasena' : 'Enter your password');
+      return;
+    }
+    setDeletingAccount(true);
+    try {
+      await usersAPI.deleteAccount(deletePassword, deleteConfirm.trim().toUpperCase());
+      toast.success(language === 'es' ? 'Cuenta eliminada' : 'Account deleted');
+      setDeleteDialog({ open: false });
+      setDeletePassword('');
+      setDeleteConfirm('');
+      try { localStorage.clear(); } catch { /* ignore */ }
+      setTimeout(() => { window.location.href = '/'; }, 600);
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || (language === 'es' ? 'Error al eliminar' : 'Error deleting'));
+    } finally {
+      setDeletingAccount(false);
     }
   };
 
@@ -82,6 +132,7 @@ export default function UserDashboardPage() {
       setUpcomingBookings(Array.isArray(bookingsRes.data) ? bookingsRes.data.slice(0, 3) : []);
       setFavorites(Array.isArray(favsRes.data) ? favsRes.data.slice(0, 4) : []);
       setUserStats(statsRes?.data || null);
+      setMarketingOptOut(!!userData.marketing_opt_out);
     } catch (error) {
       console.error('Error loading user data:', error);
     } finally {
@@ -491,50 +542,191 @@ export default function UserDashboardPage() {
               </CardContent>
             </Card>
 
-            {/* Privacy & Personal Data Export (LFPDPPP Derecho de Acceso) */}
+            {/* Privacy & Personal Data (LFPDPPP Derechos ARCO) */}
             <Card data-testid="privacy-data-card">
               <CardHeader className="pb-3">
                 <CardTitle className="text-base font-heading flex items-center gap-2">
                   <Shield className="h-4 w-4 text-[#F05D5E]" />
-                  {language === 'es' ? 'Privacidad y mis datos' : 'Privacy & my data'}
+                  {language === 'es' ? 'Privacidad y mis datos (ARCO)' : 'Privacy & my data (ARCO)'}
                 </CardTitle>
                 <p className="text-xs text-muted-foreground leading-relaxed mt-1">
                   {language === 'es'
-                    ? 'Descarga un archivo con todos los datos personales que Bookvia tiene sobre ti: perfil, reservas, saldo, pagos, notificaciones y aceptaciones de Terminos. Es tu derecho de Acceso bajo la LFPDPPP.'
-                    : 'Download a file with every personal data point Bookvia has about you: profile, bookings, wallet, payments, notifications and Terms acceptances. Your ARCO "Access" right under LFPDPPP.'}
+                    ? 'Ejerce tus derechos ARCO bajo la LFPDPPP: Acceso, Rectificacion, Cancelacion y Oposicion.'
+                    : 'Exercise your ARCO rights under LFPDPPP: Access, Rectification, Cancellation, Opposition.'}
                 </p>
               </CardHeader>
               <CardContent className="space-y-3 pt-0">
-                <Button
-                  className="w-full justify-start h-11 gap-2"
-                  variant="outline"
-                  onClick={handleExportData}
-                  disabled={exportingData}
-                  data-testid="export-data-btn"
-                >
-                  {exportingData ? (
-                    <>
-                      <div className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                      {language === 'es' ? 'Preparando archivo...' : 'Preparing file...'}
-                    </>
-                  ) : (
-                    <>
-                      <FileJson className="h-4 w-4 text-[#F05D5E]" />
-                      <span>{language === 'es' ? 'Descargar mis datos (JSON)' : 'Download my data (JSON)'}</span>
-                      <Download className="h-4 w-4 ml-auto text-muted-foreground" />
-                    </>
-                  )}
-                </Button>
-                <p className="text-[11px] text-muted-foreground leading-relaxed">
-                  {language === 'es'
-                    ? 'Tu archivo incluye perfil, reservas, saldo, notificaciones, favoritos e historial de Terminos aceptados. Sensibles como tu contrasena o tokens de verificacion nunca se exportan.'
-                    : 'Your file includes profile, bookings, wallet, notifications, favorites and the history of accepted Terms. Sensitive data such as your password or verification tokens is never exported.'}
-                </p>
+                {/* A: Acceso */}
+                <div className="rounded-lg border p-3 bg-slate-50/50 dark:bg-slate-900/30">
+                  <p className="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2">
+                    A - {language === 'es' ? 'Acceso' : 'Access'}
+                  </p>
+                  <Button
+                    className="w-full justify-start h-10 gap-2"
+                    variant="outline"
+                    onClick={handleExportData}
+                    disabled={exportingData}
+                    data-testid="export-data-btn"
+                  >
+                    {exportingData ? (
+                      <>
+                        <div className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                        {language === 'es' ? 'Preparando...' : 'Preparing...'}
+                      </>
+                    ) : (
+                      <>
+                        <FileJson className="h-4 w-4 text-[#F05D5E]" />
+                        <span className="text-sm">{language === 'es' ? 'Descargar mis datos' : 'Download my data'}</span>
+                        <Download className="h-4 w-4 ml-auto text-muted-foreground" />
+                      </>
+                    )}
+                  </Button>
+                </div>
+
+                {/* R: Rectificacion */}
+                <div className="rounded-lg border p-3 bg-slate-50/50 dark:bg-slate-900/30">
+                  <p className="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2">
+                    R - {language === 'es' ? 'Rectificacion' : 'Rectification'}
+                  </p>
+                  <Button
+                    className="w-full justify-start h-10 gap-2"
+                    variant="outline"
+                    onClick={() => setEditing(true)}
+                    data-testid="rectify-profile-btn"
+                  >
+                    <Pencil className="h-4 w-4 text-[#F05D5E]" />
+                    <span className="text-sm">{language === 'es' ? 'Editar mi perfil' : 'Edit my profile'}</span>
+                    <ChevronRight className="h-4 w-4 ml-auto text-muted-foreground" />
+                  </Button>
+                </div>
+
+                {/* O: Oposicion */}
+                <div className="rounded-lg border p-3 bg-slate-50/50 dark:bg-slate-900/30">
+                  <p className="text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2">
+                    O - {language === 'es' ? 'Oposicion a marketing' : 'Marketing opposition'}
+                  </p>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium leading-none">
+                        {language === 'es' ? 'No recibir publicidad' : 'No marketing'}
+                      </p>
+                      <p className="text-[11px] text-muted-foreground mt-1 leading-relaxed">
+                        {language === 'es'
+                          ? 'Bookvia hoy no envia publicidad. Marcar esta opcion registra tu oposicion para cualquier campana futura.'
+                          : 'Bookvia does not send marketing today. Enabling this logs your opposition against any future campaign.'}
+                      </p>
+                    </div>
+                    <Switch
+                      checked={marketingOptOut}
+                      disabled={savingMarketing}
+                      onCheckedChange={handleToggleMarketing}
+                      data-testid="marketing-opt-out-switch"
+                    />
+                  </div>
+                </div>
+
+                {/* C: Cancelacion */}
+                <div className="rounded-lg border border-red-200 p-3 bg-red-50/50 dark:bg-red-900/10 dark:border-red-900/30">
+                  <p className="text-xs font-semibold text-red-700 dark:text-red-300 mb-2">
+                    C - {language === 'es' ? 'Cancelacion (eliminar cuenta)' : 'Cancellation (delete account)'}
+                  </p>
+                  <Button
+                    className="w-full justify-start h-10 gap-2 text-red-700 border-red-300 hover:bg-red-50 hover:text-red-800"
+                    variant="outline"
+                    onClick={() => setDeleteDialog({ open: true })}
+                    data-testid="delete-account-btn"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    <span className="text-sm">{language === 'es' ? 'Eliminar mi cuenta' : 'Delete my account'}</span>
+                  </Button>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed mt-2">
+                    {language === 'es'
+                      ? 'Tus datos personales seran redactados. Los registros contables (pagos, citas completadas) se conservan por obligacion fiscal.'
+                      : 'Your personal data will be redacted. Accounting records (payments, completed bookings) are kept for tax compliance.'}
+                  </p>
+                </div>
               </CardContent>
             </Card>
           </div>
         </div>
       </div>
+
+      {/* Delete account confirmation dialog (ARCO-C) */}
+      <Dialog open={deleteDialog.open} onOpenChange={(v) => { if (!deletingAccount) { setDeleteDialog({ open: v }); if (!v) { setDeletePassword(''); setDeleteConfirm(''); } } }}>
+        <DialogContent className="max-w-md" data-testid="delete-account-dialog">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-700">
+              <AlertTriangle className="h-5 w-5" />
+              {language === 'es' ? 'Eliminar mi cuenta' : 'Delete my account'}
+            </DialogTitle>
+            <DialogDescription className="text-xs pt-2 leading-relaxed">
+              {language === 'es'
+                ? 'Esta accion es irreversible. Tus datos personales seran redactados y ya no podras iniciar sesion. Los pagos y citas completadas se conservan por obligacion fiscal.'
+                : 'This action is irreversible. Your personal data will be redacted and you will no longer be able to log in. Payments and completed bookings are kept for tax compliance.'}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2">
+            <div className="rounded-lg bg-amber-50 border border-amber-200 p-3">
+              <p className="text-[11px] text-amber-900 leading-relaxed">
+                {language === 'es'
+                  ? 'Antes de eliminar: asegurate de no tener citas activas ni saldo en tu wallet (si tienes saldo, no sera recuperado).'
+                  : 'Before deleting: ensure you have no active bookings or wallet balance (balance cannot be recovered).'}
+              </p>
+            </div>
+
+            <div>
+              <Label htmlFor="delete-password" className="text-xs">
+                {language === 'es' ? 'Contrasena actual' : 'Current password'}
+              </Label>
+              <Input
+                id="delete-password"
+                type="password"
+                value={deletePassword}
+                onChange={(e) => setDeletePassword(e.target.value)}
+                disabled={deletingAccount}
+                autoComplete="current-password"
+                data-testid="delete-password-input"
+                className="mt-1"
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="delete-confirm" className="text-xs">
+                {language === 'es' ? 'Escribe ELIMINAR para confirmar' : 'Type ELIMINAR to confirm'}
+              </Label>
+              <Input
+                id="delete-confirm"
+                value={deleteConfirm}
+                onChange={(e) => setDeleteConfirm(e.target.value)}
+                disabled={deletingAccount}
+                placeholder="ELIMINAR"
+                data-testid="delete-confirm-input"
+                className="mt-1 font-mono"
+              />
+            </div>
+          </div>
+
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            <Button
+              variant="outline"
+              onClick={() => { setDeleteDialog({ open: false }); setDeletePassword(''); setDeleteConfirm(''); }}
+              disabled={deletingAccount}
+              data-testid="delete-cancel-btn"
+            >
+              {language === 'es' ? 'Cancelar' : 'Cancel'}
+            </Button>
+            <Button
+              className="bg-red-600 hover:bg-red-700 text-white"
+              onClick={handleDeleteAccount}
+              disabled={deletingAccount || !deletePassword || (deleteConfirm || '').trim().toUpperCase() !== 'ELIMINAR'}
+              data-testid="delete-confirm-btn"
+            >
+              {deletingAccount ? (language === 'es' ? 'Eliminando...' : 'Deleting...') : (language === 'es' ? 'Eliminar definitivamente' : 'Delete permanently')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

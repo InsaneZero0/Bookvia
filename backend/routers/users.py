@@ -381,3 +381,179 @@ async def export_my_personal_data(
             "Cache-Control": "no-store",
         },
     )
+
+
+
+# ========================== FASE 10d: ARCO R-C-O (LFPDPPP) ==========================
+
+
+class MarketingOptRequest(BaseModel):
+    opt_out: bool
+
+
+@router.post("/me/marketing-consent")
+async def update_marketing_consent(
+    payload: MarketingOptRequest,
+    token_data: TokenData = Depends(require_auth),
+):
+    """Derecho de Oposicion (ARCO-O).
+
+    Bookvia does not send marketing today, but we expose an explicit flag
+    so the user can record their opposition in advance. If we ever launch
+    marketing campaigns, this flag (`marketing_opt_out=True`) excludes the
+    user from every non-essential communication.
+    """
+    await db.users.update_one(
+        {"id": token_data.user_id},
+        {"$set": {
+            "marketing_opt_out": bool(payload.opt_out),
+            "marketing_opt_out_at": datetime.now(timezone.utc).isoformat(),
+        }},
+    )
+    return {"ok": True, "marketing_opt_out": bool(payload.opt_out)}
+
+
+class DeleteAccountRequest(BaseModel):
+    password: str
+    confirmation: str  # must be literally "ELIMINAR" to proceed
+
+
+@router.delete("/me/account")
+async def delete_my_account(
+    payload: DeleteAccountRequest,
+    request: Request,
+    token_data: TokenData = Depends(require_auth),
+):
+    """Derecho de Cancelacion (ARCO-C).
+
+    Soft-deletes the caller's account: redacts every PII field, forbids
+    future login, removes favorites and notifications, but keeps bookings
+    and payment records (anonymized via `user_id` -> redacted user) because
+    they are required for fiscal and business accounting reasons.
+
+    Blocks self-deletion when:
+      * Role is BUSINESS owner (delegated to admin - too complex to auto-
+        unwind subscriptions, settlements and pending payouts).
+      * The user has confirmed upcoming bookings that haven't happened yet.
+      * The user holds wallet balance > $0 (must spend or wait for expiry).
+
+    The confirmation string must be exactly "ELIMINAR" in Spanish, and the
+    password must match the account, to avoid accidental or CSRF deletions.
+    """
+    if (payload.confirmation or "").strip().upper() != "ELIMINAR":
+        raise HTTPException(status_code=400, detail="La palabra de confirmacion debe ser 'ELIMINAR'")
+
+    user = await db.users.find_one({"id": token_data.user_id})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if not user.get("password_hash") or not verify_password(payload.password, user["password_hash"]):
+        raise HTTPException(status_code=401, detail="Contrasena incorrecta")
+
+    if user.get("role") == UserRole.BUSINESS and not user.get("is_manager"):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Los duenos de negocio no pueden eliminar su cuenta automaticamente. "
+                "Escribe a soporte@bookvia.app indicando tu motivo para iniciar el proceso."
+            ),
+        )
+
+    # Block if there are upcoming bookings
+    now_utc = datetime.now(timezone.utc)
+    upcoming = await db.bookings.count_documents({
+        "user_id": user["id"],
+        "status": {"$in": ["confirmed", "pending"]},
+    })
+    if upcoming:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Tienes {upcoming} cita{'s' if upcoming != 1 else ''} activa{'s' if upcoming != 1 else ''}. "
+                f"Cancelalas o espera a que se completen antes de eliminar tu cuenta."
+            ),
+        )
+
+    # Block if there is wallet balance
+    wallet = await db.user_wallets.find_one({"user_id": user["id"]}, {"_id": 0, "balance_mxn": 1})
+    balance = float((wallet or {}).get("balance_mxn") or 0)
+    if balance > 0.0:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Tienes ${balance:.2f} MXN de saldo. Usalo en una cita o espera a que expire antes "
+                f"de eliminar tu cuenta. Una cuenta eliminada NO puede recuperar el saldo."
+            ),
+        )
+
+    ip = (
+        (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
+        or (request.client.host if request.client else "")
+    )
+    redacted_email = f"deleted_{user['id']}@bookvia.deleted"
+    original_email = user.get("email")
+
+    # Soft-delete + full PII redaction
+    await db.users.update_one(
+        {"id": user["id"]},
+        {"$set": {
+            "email": redacted_email,
+            "full_name": "[Cuenta eliminada]",
+            "phone": "",
+            "photo_url": None,
+            "birth_date": None,
+            "gender": None,
+            "city": None,
+            "country": None,
+            "favorites": [],
+            "stripe_customer_id": None,
+            "saved_cards": [],
+            "active": False,
+            "email_verified": False,
+            "phone_verified": False,
+            "account_deleted": True,
+            "account_deleted_at": now_utc.isoformat(),
+            "account_deleted_ip": ip,
+            "password_hash": hash_password(generate_id()),  # random unguessable
+        }},
+    )
+
+    # Purge per-user collections that no longer make sense post-deletion
+    await db.user_favorites.delete_many({"user_id": user["id"]})
+    await db.notifications.delete_many({"user_id": user["id"]})
+
+    # Audit log (compliance - cannot be deleted by the user)
+    try:
+        await db.audit_logs.insert_one({
+            "id": generate_id(),
+            "actor_id": user["id"],
+            "actor_email": original_email,
+            "action": "account_deleted_by_user",
+            "target_type": "user",
+            "target_id": user["id"],
+            "ip": ip,
+            "details": {"role": user.get("role")},
+            "created_at": now_utc.isoformat(),
+        })
+    except Exception as e:
+        logger.warning(f"Failed to audit account deletion for {user['id']}: {e}")
+
+    # Best-effort confirmation email
+    if original_email:
+        try:
+            from services.email import send_email, email_html
+            content = f"""<p style="color:#334155;font-size:15px;line-height:1.6;">Confirmamos que eliminamos tu cuenta de Bookvia el {now_utc.strftime('%d/%m/%Y %H:%M UTC')}.</p>
+<p style="color:#334155;font-size:14px;">Tus datos personales fueron redactados. Los registros contables (pagos, facturacion) se conservan el tiempo que la ley mexicana requiere.</p>
+<p style="color:#64748b;font-size:13px;">Si esta eliminacion no la hiciste tu, escribenos a soporte@bookvia.app lo antes posible.</p>"""
+            await send_email(
+                to=original_email,
+                subject="Tu cuenta de Bookvia fue eliminada",
+                body=f"Confirmamos la eliminacion de tu cuenta el {now_utc.isoformat()}. Tus datos personales fueron redactados.",
+                html=email_html("Cuenta eliminada", content),
+                template="account_deleted",
+                data={"deleted_at": now_utc.isoformat()},
+            )
+        except Exception as e:
+            logger.warning(f"Failed to send deletion confirmation to {original_email}: {e}")
+
+    return {"ok": True, "deleted_at": now_utc.isoformat()}
