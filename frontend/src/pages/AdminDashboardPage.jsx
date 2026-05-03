@@ -667,13 +667,13 @@ export default function AdminDashboardPage() {
   };
 
   const handleRunReconciliation = async () => {
-    const date = window.prompt(t('Fecha a reconciliar (YYYY-MM-DD, vacio = ayer):', 'Date to reconcile (YYYY-MM-DD, empty = yesterday):'), '');
+    const date = window.prompt(t('Fecha a reconciliar (YYYY-MM-DD, vacío = ayer):', 'Date to reconcile (YYYY-MM-DD, empty = yesterday):'), '');
     setReconRunning(true);
     try {
       const res = await adminAPI.runStripeReconciliation(date?.trim() || undefined);
       const d = res.data;
       if (d.ok === false) {
-        toast.error(d.error || t('Reconciliacion fallida', 'Reconciliation failed'));
+        toast.error(d.error || t('Reconciliación fallida', 'Reconciliation failed'));
       } else {
         toast.success(t(
           `Stripe=${d.stripe_transactions} | match=${d.matched} | faltan=${d.missing}`,
@@ -2721,7 +2721,7 @@ export default function AdminDashboardPage() {
             <Card data-testid="reconciliation-card">
               <CardHeader className="flex flex-row items-center justify-between">
                 <CardTitle className="font-heading flex items-center gap-2">
-                  <Shield className="h-5 w-5 text-indigo-500" />{t('Reconciliacion Stripe', 'Stripe Reconciliation')}
+                  <Shield className="h-5 w-5 text-indigo-500" />{t('Reconciliación Stripe', 'Stripe Reconciliation')}
                 </CardTitle>
                 <Button size="sm" onClick={handleRunReconciliation} disabled={reconRunning} data-testid="run-reconciliation-btn">
                   {reconRunning ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
@@ -2755,7 +2755,7 @@ export default function AdminDashboardPage() {
             <Card data-testid="refunds-audit-card">
               <CardHeader>
                 <CardTitle className="font-heading flex items-center gap-2">
-                  <DollarSign className="h-5 w-5 text-orange-500" />{t('Auditoria de Reembolsos', 'Refunds Audit')}
+                  <DollarSign className="h-5 w-5 text-orange-500" />{t('Auditoría de Reembolsos', 'Refunds Audit')}
                   {refundsAudit && <Badge className="bg-orange-100 text-orange-700 ml-2">{formatCurrency(refundsAudit.total_refunded_mxn)}</Badge>}
                 </CardTitle>
               </CardHeader>
@@ -2782,7 +2782,7 @@ export default function AdminDashboardPage() {
               <CardContent className="p-4">
                 <div className="flex flex-wrap items-end gap-4">
                   <div>
-                    <label className="text-sm font-medium mb-1 block">{t('Ano', 'Year')}</label>
+                    <label className="text-sm font-medium mb-1 block">{t('Año', 'Year')}</label>
                     <Input type="number" value={exportYear} onChange={e => setExportYear(parseInt(e.target.value))} className="w-24" />
                   </div>
                   <div>
@@ -2907,7 +2907,7 @@ export default function AdminDashboardPage() {
             <Card data-testid="terms-stats-card">
               <CardHeader>
                 <CardTitle className="font-heading flex items-center gap-2">
-                  <FileText className="h-5 w-5 text-indigo-500" />{t('Terminos y Condiciones', 'Terms & Conditions')}
+                  <FileText className="h-5 w-5 text-indigo-500" />{t('Términos y Condiciones', 'Terms & Conditions')}
                 </CardTitle>
               </CardHeader>
               <CardContent>
@@ -2917,7 +2917,7 @@ export default function AdminDashboardPage() {
                   <div className="space-y-4">
                     <div className="flex flex-wrap gap-4 text-sm">
                       <div>
-                        <span className="text-muted-foreground">{t('Version actual', 'Current version')}:</span>{' '}
+                        <span className="text-muted-foreground">{t('Versión actual', 'Current version')}:</span>{' '}
                         <Badge className="bg-indigo-100 text-indigo-700">{termsStats.current_version}</Badge>
                       </div>
                       <div>
@@ -2930,7 +2930,7 @@ export default function AdminDashboardPage() {
                         {termsStats.is_hard_block_now ? (
                           <Badge className="bg-red-100 text-red-700">{t('Bloqueo duro activo', 'Hard block active')}</Badge>
                         ) : (
-                          <Badge className="bg-yellow-100 text-yellow-700">{t('En periodo de gracia', 'In grace period')}</Badge>
+                          <Badge className="bg-yellow-100 text-yellow-700">{t('En período de gracia', 'In grace period')}</Badge>
                         )}
                       </div>
                     </div>
@@ -2951,10 +2951,10 @@ export default function AdminDashboardPage() {
                       </div>
                     </div>
                     <div className="rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground">
-                      <p><b>{t('Como publicar una nueva version:', 'How to publish a new version:')}</b></p>
+                      <p><b>{t('Cómo publicar una nueva versión:', 'How to publish a new version:')}</b></p>
                       <p>1. {t('Sube la copia nueva a', 'Upload the new copy to')} <code>frontend/src/pages/TermsPage.jsx</code>.</p>
                       <p>2. {t('Actualiza', 'Update')} <code>TERMS_VERSION</code> {t('y', 'and')} <code>TERMS_VERSION_PUBLISHED_AT</code> {t('en', 'in')} <code>backend/core/config.py</code>.</p>
-                      <p>3. {t('Agrega un bloque al CHANGELOG en', 'Add a block to the CHANGELOG in')} <code>backend/routers/terms.py</code>. {t('Se dispara el modal de re-aceptacion automaticamente.', 'The re-acceptance modal triggers automatically.')}</p>
+                      <p>3. {t('Agrega un bloque al CHANGELOG en', 'Add a block to the CHANGELOG in')} <code>backend/routers/terms.py</code>. {t('Se dispara el modal de re-aceptación automáticamente.', 'The re-acceptance modal triggers automatically.')}</p>
                     </div>
                     {termsPending.length > 0 && (
                       <details className="text-sm">
@@ -2998,7 +2998,7 @@ export default function AdminDashboardPage() {
                         <div key={i} className="text-xs rounded border p-2 bg-muted/30" data-testid={`arco-event-${i}`}>
                           <div className="flex justify-between">
                             <span className="font-medium">
-                              {ev.action === 'personal_data_export' ? t('Export de datos', 'Data export') : t('Cancelacion de cuenta', 'Account cancellation')}
+                              {ev.action === 'personal_data_export' ? t('Export de datos', 'Data export') : t('Cancelación de cuenta', 'Account cancellation')}
                             </span>
                             <span className="text-muted-foreground">{formatDate(ev.created_at)}</span>
                           </div>

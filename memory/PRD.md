@@ -139,12 +139,12 @@ Auth Social: Emergent-managed Google Auth (solo clientes)
 - [x] Cloudflare delante del dominio (DDoS, WAF, oculta IP Railway) - COMPLETADO Feb 2026
 - [x] Cloudflare Access configurado (solo emails autorizados - beta privada) - COMPLETADO Feb 2026
 - [x] Dominio bookvia.app conectado a Vercel via Cloudflare - COMPLETADO Feb 2026
-- [ ] Rate limiting backend con slowapi (2-3h dev)
-- [ ] Proteccion fuerza bruta login (bloqueo tras 5 intentos + CAPTCHA) (3-4h dev)
+- [x] Rate limiting backend con slowapi - COMPLETADO May 2026
+- [x] Proteccion fuerza bruta login (lockout 30min tras 10 intentos) - COMPLETADO May 2026
 - [ ] reCAPTCHA v3 en formularios criticos (registro, login, contacto) (2-3h dev)
-- [ ] Headers HSTS + security headers (15min dev)
+- [x] Headers HSTS + security headers - COMPLETADO May 2026
 - [ ] Sentry integration para monitoreo errores (1h dev)
-- [ ] Logs de auditoria de acciones admin (4-6h dev)
+- [x] Logs de auditoria de acciones admin - COMPLETADO Abril 2026
 - [ ] Backups automaticos MongoDB Atlas verificados
 
 ### P0 - Decisiones pendientes usuario
@@ -177,3 +177,11 @@ Auth Social: Emergent-managed Google Auth (solo clientes)
 - Recordatorios citas: Scheduler cada 30 min, timezone Mexico.
 - TIMEZONE PARSING: Siempre usar new Date(dateString + 'T12:00:00') en frontend.
 - Admin TOTP: usar script /app/scripts/get_admin_totp.py para generar codigos.
+
+## Phase 12 (May 2026) - Admin Panel Coverage
+Panel admin ampliado para cubrir las fases 7-11 de backend:
+- **Finanzas extendida**: P&L de plataforma (fee fijo + margen Stripe, cobertura), Reconciliacion Stripe on-demand, Auditoria de reembolsos (stripe_refund_id, fees reales), liquidaciones dia 20 con CSV SPEI por banco.
+- **Cumplimiento (nuevo tab)**: Cuentas bloqueadas por fuerza bruta con boton desbloquear, estadisticas T&C (aceptacion por version, usuarios pendientes), Derechos ARCO (audit trail LFPDPPP), log de webhooks Stripe (idempotencia).
+- **Endpoints nuevos admin**: `/admin/platform/pnl`, `/admin/platform/reconcile-stripe`, `/admin/platform/reconciliation-issues`, `/admin/security/locked-accounts`, `/admin/security/unlock`, `/admin/terms/stats`, `/admin/terms/pending-users`, `/admin/compliance/arco-events`, `/admin/finance/refunds`, `/admin/stripe/webhook-events`.
+- **Testing**: 26/26 pytest cases pass (iteration_89), test file `/app/backend/tests/test_fase12_admin_panel.py`.
+- **Enum nuevo**: `AuditAction.SECURITY_UNLOCK = "security_unlock"`.

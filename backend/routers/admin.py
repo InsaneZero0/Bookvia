@@ -2625,8 +2625,9 @@ async def admin_terms_stats(token_data: TokenData = Depends(require_admin)):
         "account_deleted": {"$ne": True},
         "accepted_terms_version": TERMS_VERSION,
     })
-    total_businesses = await db.businesses.count_documents({})
-    businesses_current = await db.businesses.count_documents({"accepted_terms_version": TERMS_VERSION})
+    biz_filter = {"status": {"$nin": ["suspended", "deleted"]}}
+    total_businesses = await db.businesses.count_documents(biz_filter)
+    businesses_current = await db.businesses.count_documents({**biz_filter, "accepted_terms_version": TERMS_VERSION})
 
     try:
         published = datetime.fromisoformat(TERMS_VERSION_PUBLISHED_AT)
