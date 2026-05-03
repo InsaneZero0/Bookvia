@@ -84,6 +84,7 @@ async def get_dashboard_summary(token_data: TokenData = Depends(require_business
     week_start = (now - timedelta(days=now.weekday())).strftime("%Y-%m-%d")
     prev_week_start = (now - timedelta(days=now.weekday() + 7)).strftime("%Y-%m-%d")
     month_start = now.replace(day=1).strftime("%Y-%m-%d")
+    thirty_days_ago = (now - timedelta(days=30)).strftime("%Y-%m-%d")
 
     # Today
     today_bookings = await db.bookings.count_documents({"business_id": bid, "date": today})
@@ -133,11 +134,126 @@ async def get_dashboard_summary(token_data: TokenData = Depends(require_business
 
     week_change = round(((week_bookings - prev_week_bookings) / max(prev_week_bookings, 1)) * 100) if prev_week_bookings else 0
 
+    # Phase 14: Profile views + conversion + top services (last 30d)
+    views_30d = await db.profile_views.count_documents({
+        "business_id": bid, "date": {"$gte": thirty_days_ago}
+    })
+    bookings_30d = await db.bookings.count_documents({
+        "business_id": bid, "date": {"$gte": thirty_days_ago}
+    })
+    conversion_pct = round((bookings_30d / views_30d) * 100, 1) if views_30d > 0 else 0.0
+
+    top_services_pipe = [
+        {"$match": {"business_id": bid, "date": {"$gte": thirty_days_ago},
+                    "service_id": {"$ne": None}}},
+        {"$group": {"_id": "$service_id", "count": {"$sum": 1},
+                    "revenue": {"$sum": {"$ifNull": ["$deposit_amount", 0]}}}},
+        {"$sort": {"count": -1}},
+        {"$limit": 3},
+    ]
+    top_rows = await db.bookings.aggregate(top_services_pipe).to_list(3)
+    top_services = []
+    for r in top_rows:
+        svc = await db.services.find_one({"id": r["_id"]}, {"_id": 0, "name": 1}) or {}
+        top_services.append({
+            "service_id": r["_id"],
+            "name": svc.get("name", "-"),
+            "bookings": r["count"],
+            "revenue": round(r.get("revenue", 0), 2),
+        })
+
     return {
         "today": {"bookings": today_bookings, "completed": today_completed, "revenue": round(today_revenue, 2)},
         "week": {"bookings": week_bookings, "revenue": round(week_revenue, 2), "change_pct": week_change},
         "month": {"bookings": month_bookings, "revenue": round(month_revenue, 2), "unique_clients": this_month_clients},
         "new_reviews": new_reviews,
+        "profile_views_30d": views_30d,
+        "bookings_30d": bookings_30d,
+        "conversion_pct": conversion_pct,
+        "top_services": top_services,
+    }
+
+
+# ========================== PHASE 14: PROFILE VIEW TRACKING ==========================
+
+
+async def _track_profile_view(
+    business_id: str,
+    request: Request,
+    current_user: Optional[TokenData],
+    owner_user_id: Optional[str],
+) -> None:
+    """Fire-and-forget best-effort tracker.
+
+    Deduped per (business, viewer, day) using an idempotent upsert. Owners
+    visiting their own profile do not count. Catches all errors so a
+    tracking failure never breaks the public read endpoint.
+    """
+    try:
+        if current_user and current_user.user_id == owner_user_id:
+            return
+        viewer_key = current_user.user_id if current_user else (
+            request.client.host if request and request.client else "anonymous"
+        )
+        day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        await db.profile_views.update_one(
+            {"business_id": business_id, "viewer_key": viewer_key, "date": day},
+            {"$setOnInsert": {
+                "business_id": business_id,
+                "viewer_key": viewer_key,
+                "date": day,
+                "first_seen_at": datetime.now(timezone.utc).isoformat(),
+            }},
+            upsert=True,
+        )
+    except Exception:
+        logger.debug("profile-view tracker failed", exc_info=True)
+
+
+@router.get("/my/profile-completion")
+async def get_profile_completion(token_data: TokenData = Depends(require_business)):
+    """Checklist + percentage for the Business Dashboard progress banner.
+
+    Each item has `done: bool`, `label`, `action_path` so the frontend can
+    wire contextual CTAs straight to the right tab.
+    """
+    business = await db.businesses.find_one({"user_id": token_data.user_id}, {"_id": 0})
+    if not business:
+        raise HTTPException(status_code=404, detail="Business not found")
+    bid = business["id"]
+
+    has_cover = bool(business.get("cover_image_url")) or bool(business.get("logo_url"))
+    photos_count = await db.business_photos.count_documents({"business_id": bid})
+    services_priced = await db.services.count_documents({
+        "business_id": bid, "active": {"$ne": False},
+        "$or": [{"price": {"$gt": 0}}, {"price_from": {"$gt": 0}}],
+    })
+    workers_count = await db.workers.count_documents({"business_id": bid, "active": True})
+    hours_set = bool(business.get("business_hours")) and any(
+        (v or {}).get("open") and (v or {}).get("close")
+        for v in (business.get("business_hours") or {}).values() if isinstance(v, dict)
+    )
+    docs_verified = bool(business.get("documents_verified", False))
+    description_set = bool((business.get("description") or "").strip())
+
+    items = [
+        {"key": "cover",       "done": has_cover,               "label_es": "Foto de portada o logo",             "label_en": "Cover photo or logo",        "action_path": "photos"},
+        {"key": "photos",      "done": photos_count >= 3,       "label_es": "Al menos 3 fotos del lugar",         "label_en": "At least 3 gallery photos",  "action_path": "photos"},
+        {"key": "services",    "done": services_priced >= 1,    "label_es": "Servicios con precio",               "label_en": "Services with price",        "action_path": "services"},
+        {"key": "description", "done": description_set,         "label_es": "Descripcion del negocio",            "label_en": "Business description",       "action_path": "overview"},
+        {"key": "hours",       "done": hours_set,               "label_es": "Horarios de atencion",               "label_en": "Operating hours",            "action_path": "overview"},
+        {"key": "team",        "done": workers_count >= 1,      "label_es": "Al menos 1 miembro del equipo",      "label_en": "At least 1 team member",     "action_path": "team"},
+        {"key": "kyc",         "done": docs_verified,           "label_es": "Documentos KYC verificados",         "label_en": "KYC documents verified",     "action_path": "subscription"},
+    ]
+    done_count = sum(1 for i in items if i["done"])
+    pct = round((done_count / len(items)) * 100)
+
+    return {
+        "percentage": pct,
+        "done_count": done_count,
+        "total_count": len(items),
+        "items": items,
+        "is_complete": pct == 100,
     }
 
 
@@ -844,7 +960,11 @@ async def get_featured_businesses(limit: int = 8, country_code: Optional[str] = 
 
 
 @router.get("/slug/{slug}", response_model=BusinessResponse)
-async def get_business_by_slug(slug: str, current_user: Optional[TokenData] = Depends(get_current_user)):
+async def get_business_by_slug(
+    slug: str,
+    request: Request,
+    current_user: Optional[TokenData] = Depends(get_current_user),
+):
     """Get business by slug or ID (fallback)."""
     business = await db.businesses.find_one(
         {"slug": slug},
@@ -868,12 +988,17 @@ async def get_business_by_slug(slug: str, current_user: Optional[TokenData] = De
         if cat:
             business["category_name"] = cat.get("name_es", "")
     
+    await _track_profile_view(business["id"], request, current_user, business.get("user_id"))
     return BusinessResponse(**business)
 
 
 
 @router.get("/{business_id}", response_model=BusinessResponse)
-async def get_business(business_id: str, current_user: Optional[TokenData] = Depends(get_current_user)):
+async def get_business(
+    business_id: str,
+    request: Request,
+    current_user: Optional[TokenData] = Depends(get_current_user),
+):
     business = await db.businesses.find_one(
         {"id": business_id},
         {"_id": 0, "password_hash": 0, "clabe": 0, "rfc": 0, "ine_url": 0, "proof_of_address_url": 0}
@@ -883,6 +1008,7 @@ async def get_business(business_id: str, current_user: Optional[TokenData] = Dep
     # Check blacklist
     if current_user and await is_user_blacklisted(business["id"], user_id=current_user.user_id):
         raise HTTPException(status_code=404, detail="Business not found")
+    await _track_profile_view(business["id"], request, current_user, business.get("user_id"))
     return BusinessResponse(**business)
 
 

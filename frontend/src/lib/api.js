@@ -210,6 +210,7 @@ export const businessesAPI = {
   getReports: (period = 'month') => api.get('/businesses/my/reports', { params: { period } }),
   exportReports: (period = 'month') => api.get('/businesses/my/reports/export', { params: { period }, responseType: 'blob' }),
   getDashboardSummary: () => api.get('/businesses/my/dashboard-summary'),
+  getProfileCompletion: () => api.get('/businesses/my/profile-completion'),
   getClientHistory: (userId) => api.get(`/businesses/my/client-history/${userId}`),
   getMyBusiness: () => api.get('/businesses/me'),
   updateBusiness: (data) => api.put('/businesses/me', data),

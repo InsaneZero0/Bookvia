@@ -118,8 +118,6 @@ async def send_pending_reminders():
         logger.error(f"Error in send_pending_reminders: {e}")
 
 
-@router.get("/business/stats-detail")
-
 @router.get("/search-clients")
 async def search_clients(
     q: str = "",
@@ -200,6 +198,7 @@ async def search_clients(
     return results[:20]
 
 
+@router.get("/business/stats-detail")
 async def get_business_stats_detail(
     stat_type: str,
     date_from: Optional[str] = None,
