@@ -1,0 +1,46 @@
+{
+  "summary": "Fase 12 backend tests (Seguridad P0 + P&L + Reconciliacion Stripe): 22/22 passing. Covered security headers middleware on /api/health and /api/terms/version, brute-force lockout over HTTP on /api/auth/login, /api/auth/business/login and /api/auth/admin/login, clear_login_failures reset flow, a direct-service test that validates the 10-attempt lockout with locked_until + 'Demasiados intentos' message (bypassing the pre-existing rate limiter), GET /api/admin/platform/pnl (401/403/shape/clamp/math), POST /api/admin/platform/reconcile-stripe (401/bad-date/default/valid-date, Stripe failure path returns 200 with ok:false), and GET /api/admin/platform/reconciliation-issues including persisted issue rendering.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "POST /api/auth/login, /api/auth/business/login, /api/auth/admin/login",
+        "issue": "Existing middleware/rate_limit.py enforces 10/min (20/min in dev) on /api/auth/login and 5/min (10/min in dev) on /api/auth/admin/login. In production this fires BEFORE the Fase 12 brute-force lockout (10 attempts in 15 min) could ever trigger, so the 'Demasiados intentos fallidos. Intenta de nuevo en X minutos.' branch is effectively unreachable via the HTTP layer in production. Client just sees the generic 'Too many requests. Please try again later.' from the older middleware. Either (a) raise the rate_limit cap on login endpoints so brute-force takes over around 10 attempts, or (b) drop the older middleware for login paths now that Fase 12 covers the same concern."
+      },
+      {
+        "endpoint": "core/security_hardening.py::record_login_failure",
+        "issue": "Uses find_one_and_update with $push + a subsequent $set that rewrites the trimmed attempts array. Under burst load this pattern is non-atomic and can drop concurrent $push writes when the second $set overwrites the array. Low risk in single-worker preview but worth revisiting if we scale to multiple workers."
+      },
+      {
+        "endpoint": "core/security_hardening.py::security_headers_middleware",
+        "issue": "HSTS header is set unconditionally, including on plain HTTP requests. Spec requirement is satisfied since the public URL is HTTPS, but strictly speaking HSTS should only be emitted on secure responses (RFC 6797 6.1). Not blocking."
+      }
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_fase12_security_pnl.py",
+    "/app/test_reports/pytest/fase12.xml"
+  ],
+  "action_items": [
+    "Decide on rate-limit layering: either loosen middleware/rate_limit.py login caps to let brute-force 429 surface, or remove the older middleware for login endpoints now that Fase 12 provides stronger lockout with a localized Spanish message.",
+    "Consider using $pull for expired attempts + $push atomically (or aggregation pipeline update) instead of read-modify-write in record_login_failure.",
+    "Optionally gate HSTS on request.url.scheme == 'https'."
+  ],
+  "critical_code_review_comments": [
+    "security_hardening.py: brute-force logic is correct and DB-verifiable (TestBruteForceDBState), but its user-facing 429 message is shadowed by middleware/rate_limit.py in production. This is a UX/defense-in-depth issue, not a correctness bug.",
+    "reconciliation.py::compute_platform_pnl: math is internally consistent (fee_margin == est - act; gross == bookvia_fee + fee_margin) and verified via real DB aggregation in test_pnl_math_with_seeded_txs. Query correctly scopes to status in ('paid','refund_partial','refund_full').",
+    "reconciliation.py::reconcile_with_stripe: properly catches Stripe SDK errors and returns {ok:false, error, date} without leaking a 500. Upsert into reconciliation_issues is keyed on stripe_charge_id, idempotent across re-runs.",
+    "admin.py::admin_platform_pnl: clamps days to [1, 365] correctly; require_admin gates 401/403 as expected."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_fase12_security_pnl.py (new - 22 pytest cases)"
+  ],
+  "success_rate": {"backend": "100% (22/22)", "frontend": "N/A"},
+  "test_credentials": "Super admin zamorachapa50@gmail.com + TOTP read from DB.users.totp_secret via pyotp. Test user created dynamically with TEST_F12_ prefix.",
+  "seed_data_creation": "Tests insert only TEST_F12_-prefixed users (for login-reset flow), transactions (for PnL math) and reconciliation_issues (for issues listing). Cleaned up in module-scoped autouse fixture.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "test_fase12_security_pnl.py runs in ~50s including admin-login rate-limit backoff. Admin login fixture retries on 429 (waits 10s per retry) because the brute-force test class consumes the pre-existing 10/min rate limit on /api/auth/admin/login. TestBruteForceDBState is the authoritative validator of the Fase 12 lockout math (10 attempts -> locked_until set, check_brute_force raises 429 'Demasiados intentos', clear_login_failures deletes the doc) because over-HTTP the older middleware rate-limit fires first.",
+  "rca of the issue": "No active bugs. Finding: middleware/rate_limit.py (pre-existing) triggers at 10/min for /api/auth/login (and 5/min for admin) using a generic 'Too many requests' message. Fase 12 brute-force (10 attempts within 15 min) never gets a chance to produce its Spanish 'Demasiados intentos fallidos' message over HTTP in production. Fix options listed in action_items."
+}

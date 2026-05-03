@@ -83,6 +83,15 @@ class HTTPSRedirectMiddleware(BaseHTTPMiddleware):
 
 app.add_middleware(HTTPSRedirectMiddleware)
 
+# Fase 12a: security headers (HSTS, X-Content-Type-Options, etc.)
+from core.security_hardening import limiter, security_headers_middleware  # noqa: E402
+from slowapi.errors import RateLimitExceeded  # noqa: E402
+from slowapi import _rate_limit_exceeded_handler  # noqa: E402
+
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.middleware("http")(security_headers_middleware)
+
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
@@ -222,6 +231,7 @@ async def startup_event():
     asyncio.create_task(funds_state_scheduler())
     asyncio.create_task(settlement_day20_scheduler())
     asyncio.create_task(expire_holds_scheduler())
+    asyncio.create_task(stripe_reconciliation_scheduler())
 
 
 # ========================== BACKGROUND SCHEDULERS ==========================
@@ -503,3 +513,26 @@ async def expire_holds_scheduler():
         except Exception as e:
             logger.error(f"expire_holds scheduler error: {e}")
         await asyncio.sleep(300)
+
+
+async def stripe_reconciliation_scheduler():
+    """Fase 12c: runs daily at ~04:00 UTC (22:00 CDMX, low traffic) a
+    reconciliation against stripe.BalanceTransaction.list for the
+    previous UTC day.
+    """
+    logger.info("Stripe reconciliation scheduler started")
+    last_run_date = None
+    await asyncio.sleep(60)
+    while True:
+        try:
+            now = datetime.now(timezone.utc)
+            today_key = now.strftime("%Y-%m-%d")
+            if now.hour >= 4 and last_run_date != today_key:
+                from services.reconciliation import reconcile_with_stripe
+                res = await reconcile_with_stripe()
+                logger.info(f"[stripe_reconcile] {res}")
+                last_run_date = today_key
+        except Exception as e:
+            logger.error(f"Stripe reconciliation scheduler error: {e}")
+        await asyncio.sleep(1800)  # every 30 min check if it's time to run
+

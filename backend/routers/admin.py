@@ -2512,3 +2512,47 @@ async def admin_set_payout_hold(
         request=request,
     )
     return {"ok": True, "payout_hold": bool(hold)}
+
+
+
+# ========================== FASE 12b/c: P&L + STRIPE RECONCILIATION ==========================
+
+
+@router.get("/platform/pnl")
+async def admin_platform_pnl(
+    days: int = 30,
+    token_data: TokenData = Depends(require_admin),
+):
+    """P&L de Bookvia: ingreso fee fijo + margen sobre fees Stripe."""
+    from services.reconciliation import compute_platform_pnl
+    end = datetime.now(timezone.utc)
+    start = end - timedelta(days=max(1, min(days, 365)))
+    return await compute_platform_pnl(start=start, end=end)
+
+
+@router.post("/platform/reconcile-stripe")
+async def admin_reconcile_stripe(
+    date: Optional[str] = None,
+    token_data: TokenData = Depends(require_admin),
+):
+    """Reconciliacion manual contra stripe.BalanceTransaction.list para
+    una fecha (formato YYYY-MM-DD, default: ayer)."""
+    target = None
+    if date:
+        try:
+            target = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="date format must be YYYY-MM-DD")
+    from services.reconciliation import reconcile_with_stripe
+    return await reconcile_with_stripe(target_date=target)
+
+
+@router.get("/platform/reconciliation-issues")
+async def admin_reconciliation_issues(
+    limit: int = 50,
+    token_data: TokenData = Depends(require_admin),
+):
+    """Lista de discrepancias entre Stripe y nuestra DB detectadas por el
+    cron nocturno - para que el admin pueda investigar una por una."""
+    rows = await db.reconciliation_issues.find({}, {"_id": 0}).sort("detected_at", -1).limit(limit).to_list(limit)
+    return {"count": len(rows), "items": rows}

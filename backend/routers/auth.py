@@ -121,13 +121,17 @@ async def register_user(user: UserCreate, request: Request):
 
 
 @router.post("/login", response_model=dict)
-async def login_user(credentials: UserLogin):
+async def login_user(credentials: UserLogin, request: Request):
+    # Fase 12a: brute-force / rate-limit guard.
+    from core.security_hardening import check_brute_force, record_login_failure, clear_login_failures
+    await check_brute_force(request, credentials.email)
+
     user = await db.users.find_one({"email": credentials.email})
-    if not user:
+    if not user or not verify_password(credentials.password, user["password_hash"]):
+        await record_login_failure(request, credentials.email)
         raise HTTPException(status_code=401, detail="Invalid credentials")
-    
-    if not verify_password(credentials.password, user["password_hash"]):
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    await clear_login_failures(request, credentials.email)
     
     # Check email verification
     if not user.get("email_verified", True):
@@ -144,8 +148,11 @@ async def login_user(credentials: UserLogin):
 
 
 @router.post("/unified-login", response_model=dict)
-async def unified_login(credentials: UserLogin):
+async def unified_login(credentials: UserLogin, request: Request):
     """Unified login - auto detects if user or business owner."""
+    from core.security_hardening import check_brute_force, record_login_failure, clear_login_failures
+    await check_brute_force(request, credentials.email)
+
     email = credentials.email
     password = credentials.password
 
@@ -153,7 +160,9 @@ async def unified_login(credentials: UserLogin):
     user = await db.users.find_one({"email": email, "role": UserRole.USER})
     if user:
         if not verify_password(password, user["password_hash"]):
+            await record_login_failure(request, email)
             raise HTTPException(status_code=401, detail="Invalid credentials")
+        await clear_login_failures(request, email)
         if not user.get("email_verified", True):
             raise HTTPException(status_code=403, detail="email_not_verified")
         if user.get("suspended_until"):
@@ -167,7 +176,9 @@ async def unified_login(credentials: UserLogin):
     business = await db.businesses.find_one({"email": email})
     if business:
         if not verify_password(password, business["password_hash"]):
+            await record_login_failure(request, email)
             raise HTTPException(status_code=401, detail="Invalid credentials")
+        await clear_login_failures(request, email)
         biz_user = await db.users.find_one({"business_id": business["id"]})
         if not biz_user:
             raise HTTPException(status_code=500, detail="User account not found")
@@ -705,13 +716,16 @@ async def verify_registration_subscription(data: dict):
 
 
 @router.post("/business/login", response_model=dict)
-async def login_business(credentials: UserLogin):
+async def login_business(credentials: UserLogin, request: Request):
+    from core.security_hardening import check_brute_force, record_login_failure, clear_login_failures
+    await check_brute_force(request, credentials.email)
+
     business = await db.businesses.find_one({"email": credentials.email})
-    if not business:
+    if not business or not verify_password(credentials.password, business["password_hash"]):
+        await record_login_failure(request, credentials.email)
         raise HTTPException(status_code=401, detail="Invalid credentials")
-    
-    if not verify_password(credentials.password, business["password_hash"]):
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    await clear_login_failures(request, credentials.email)
     
     user = await db.users.find_one({"business_id": business["id"]})
     if not user:
@@ -897,12 +911,15 @@ async def verify_admin_2fa(verify: Admin2FAVerify, token_data: TokenData = Depen
 
 @router.post("/admin/login", response_model=dict)
 async def admin_login(credentials: AdminLogin, request: Request):
+    from core.security_hardening import check_brute_force, record_login_failure, clear_login_failures
+    await check_brute_force(request, credentials.email)
+
     user = await db.users.find_one({"email": credentials.email, "role": {"$in": [UserRole.ADMIN, UserRole.STAFF]}})
-    if not user:
+    if not user or not verify_password(credentials.password, user["password_hash"]):
+        await record_login_failure(request, credentials.email)
         raise HTTPException(status_code=401, detail="Invalid credentials")
-    
-    if not verify_password(credentials.password, user["password_hash"]):
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+    await clear_login_failures(request, credentials.email)
     
     user_role = user.get("role", UserRole.ADMIN)
 
