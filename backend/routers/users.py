@@ -247,3 +247,137 @@ async def list_my_wallet_transactions(
     page = max(1, int(page))
     limit = max(1, min(100, int(limit)))
     return await list_wallet_transactions(token_data.user_id, page=page, limit=limit)
+
+
+
+# ========================== FASE 10c: PERSONAL DATA EXPORT (LFPDPPP ARCO-A) ==========================
+
+
+def _sanitize_doc(doc: dict, drop: set = None) -> dict:
+    """Drop MongoDB internal fields and caller-specified sensitive fields."""
+    drop = drop or set()
+    drop = drop | {"_id", "password_hash", "email_verification_token",
+                   "reset_password_token", "totp_secret"}
+    return {k: v for k, v in (doc or {}).items() if k not in drop}
+
+
+@router.get("/me/export-data")
+async def export_my_personal_data(
+    request: Request,
+    token_data: TokenData = Depends(require_auth),
+):
+    """LFPDPPP-compliant data export (derecho de Acceso - 'A' en ARCO).
+
+    Packs every piece of personal data the platform has stored about the
+    caller into a single JSON that the client can download. Includes:
+      * User profile (password_hash and tokens removed)
+      * Bookings they created (as client)
+      * Wallet transactions
+      * Notifications history (last 500)
+      * Terms of Service acceptance history
+      * Favorites
+      * Payment transactions where they are the payer
+      * For business owners: business profile, settlements, and ledger
+        entries where the business is the beneficiary.
+
+    The response is delivered as an attachment so the browser downloads it
+    immediately. Each export is audited for support traceability.
+    """
+    user = await db.users.find_one({"id": token_data.user_id}, {"_id": 0})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    ip = (
+        (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
+        or (request.client.host if request.client else "")
+    )
+    generated_at = datetime.now(timezone.utc).isoformat()
+
+    # --- Core collections the client has rows in ---
+    bookings = await db.bookings.find({"user_id": user["id"]}, {"_id": 0}).sort("created_at", -1).to_list(500)
+    notifications = await db.notifications.find({"user_id": user["id"]}, {"_id": 0}).sort("created_at", -1).to_list(500)
+    favorites = await db.user_favorites.find({"user_id": user["id"]}, {"_id": 0}).to_list(500)
+    wallet = await db.user_wallets.find_one({"user_id": user["id"]}, {"_id": 0})
+    payments = await db.payment_transactions.find(
+        {"user_id": user["id"]},
+        {"_id": 0, "stripe_secret": 0},
+    ).sort("created_at", -1).to_list(500)
+
+    export_payload = {
+        "meta": {
+            "generated_at": generated_at,
+            "generated_ip": ip,
+            "schema_version": "1.0",
+            "user_id": user["id"],
+            "note": "Export completo de tus datos personales segun LFPDPPP (derecho de Acceso)",
+            "truncation_cap_per_section": 500,
+            "truncated": any(len(x) >= 500 for x in (bookings, notifications, payments)),
+        },
+        "profile": _sanitize_doc(user),
+        "bookings": [_sanitize_doc(b) for b in bookings],
+        "wallet": _sanitize_doc(wallet) if wallet else None,
+        "payments": [_sanitize_doc(p) for p in payments],
+        "notifications": [_sanitize_doc(n) for n in notifications],
+        "favorites": [_sanitize_doc(f) for f in favorites],
+        "terms_acceptance_history": (user or {}).get("terms_acceptance_history") or [],
+    }
+
+    # --- Business-owner extras (only true owner, not managers) ---
+    if (
+        user.get("role") == UserRole.BUSINESS
+        and user.get("business_id")
+        and not user.get("is_manager")
+    ):
+        business = await db.businesses.find_one(
+            {"id": user["business_id"]},
+            {"_id": 0},
+        )
+        settlements = await db.settlements.find(
+            {"business_id": user["business_id"]},
+            {"_id": 0},
+        ).sort("created_at", -1).to_list(500)
+        tx_out = await db.transactions.find(
+            {"business_id": user["business_id"]},
+            {"_id": 0},
+        ).sort("created_at", -1).to_list(500)
+        strikes = await db.business_strikes.find(
+            {"business_id": user["business_id"]},
+            {"_id": 0},
+        ).to_list(200)
+
+        export_payload["business_profile"] = _sanitize_doc(business) if business else None
+        export_payload["business_settlements"] = [_sanitize_doc(s) for s in settlements]
+        export_payload["business_transactions"] = [_sanitize_doc(t) for t in tx_out]
+        export_payload["business_strikes"] = [_sanitize_doc(s) for s in strikes]
+
+    # Audit
+    try:
+        await db.audit_logs.insert_one({
+            "id": generate_id(),
+            "actor_id": user["id"],
+            "actor_email": user.get("email"),
+            "action": "personal_data_export",
+            "target_type": "user",
+            "target_id": user["id"],
+            "ip": ip,
+            "details": {
+                "bookings": len(bookings),
+                "payments": len(payments),
+                "notifications": len(notifications),
+                "is_business": user.get("role") == UserRole.BUSINESS,
+            },
+            "created_at": generated_at,
+        })
+    except Exception as e:
+        logger.warning(f"Failed to audit personal_data_export for {user['id']}: {e}")
+
+    body = json.dumps(export_payload, ensure_ascii=False, indent=2, default=str)
+    filename = f"bookvia-mis-datos-{user['id'][:8]}-{generated_at[:10]}.json"
+    return Response(
+        content=body,
+        media_type="application/json; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store",
+        },
+    )

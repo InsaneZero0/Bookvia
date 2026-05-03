@@ -37,6 +37,7 @@ export default function RegisterPage() {
   const [loading, setLoading] = useState(false);
   const [countrySearch, setCountrySearch] = useState('');
   const [ageValid, setAgeValid] = useState(false);
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
 
   const selectedCountry = getCountryByCode(formData.country) || countries[0];
 
@@ -97,6 +98,11 @@ export default function RegisterPage() {
 
     if (!ageValid) {
       toast.error(language === 'es' ? 'Debes tener al menos 16 años para registrarte' : 'You must be at least 16 years old to register');
+      return;
+    }
+
+    if (!acceptedTerms) {
+      toast.error(language === 'es' ? 'Debes aceptar los Terminos y Aviso de Privacidad' : 'You must accept the Terms and Privacy Notice');
       return;
     }
 
@@ -361,10 +367,39 @@ export default function RegisterPage() {
                 </div>
               </div>
 
+              <label className="flex items-start gap-2 mt-6 cursor-pointer select-none" data-testid="register-accept-terms-label">
+                <input
+                  type="checkbox"
+                  checked={acceptedTerms}
+                  onChange={(e) => setAcceptedTerms(e.target.checked)}
+                  className="mt-1 h-4 w-4 accent-[#F05D5E] cursor-pointer"
+                  data-testid="register-accept-terms"
+                />
+                <span className="text-xs text-muted-foreground leading-relaxed">
+                  {language === 'es' ? (
+                    <>
+                      He leido y acepto los{' '}
+                      <Link to="/terms" target="_blank" className="text-[#F05D5E] font-medium hover:underline">Terminos y Condiciones</Link>
+                      {' '}y el{' '}
+                      <Link to="/privacy" target="_blank" className="text-[#F05D5E] font-medium hover:underline">Aviso de Privacidad</Link>.
+                      Entiendo que Bookvia es un intermediario y que propinas y facturas las gestiono directamente con el negocio.
+                    </>
+                  ) : (
+                    <>
+                      I have read and accept the{' '}
+                      <Link to="/terms" target="_blank" className="text-[#F05D5E] font-medium hover:underline">Terms</Link>
+                      {' '}and{' '}
+                      <Link to="/privacy" target="_blank" className="text-[#F05D5E] font-medium hover:underline">Privacy Notice</Link>.
+                      I understand that Bookvia is an intermediary and that tips and invoices are handled directly with the business.
+                    </>
+                  )}
+                </span>
+              </label>
+
               <Button 
                 type="submit" 
-                className="w-full h-12 btn-coral text-lg mt-6"
-                disabled={loading}
+                className="w-full h-12 btn-coral text-lg mt-4"
+                disabled={loading || !acceptedTerms}
                 data-testid="register-submit"
               >
                 {loading ? (language === 'es' ? 'Creando cuenta...' : 'Creating account...') : t('auth.register.button')}
@@ -377,12 +412,6 @@ export default function RegisterPage() {
                 {t('nav.login')}
               </Link>
             </div>
-
-            <p className="text-xs text-muted-foreground text-center mt-4">
-              {language === 'es' 
-                ? 'Al registrarte, aceptas nuestros Términos de Servicio y Política de Privacidad'
-                : 'By signing up, you agree to our Terms of Service and Privacy Policy'}
-            </p>
           </CardContent>
         </Card>
       </div>

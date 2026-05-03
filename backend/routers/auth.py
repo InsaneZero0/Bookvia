@@ -19,7 +19,7 @@ import pyotp
 from bson import ObjectId
 
 from core.database import db
-from core.config import ENV, BASE_URL, ADMIN_EMAIL
+from core.config import ENV, BASE_URL, ADMIN_EMAIL, TERMS_VERSION
 from core.security import (
     TokenData, create_token, decode_token,
     hash_password, verify_password,
@@ -58,7 +58,7 @@ import httpx
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
 @router.post("/register", response_model=dict)
-async def register_user(user: UserCreate):
+async def register_user(user: UserCreate, request: Request):
     # Check if email exists
     existing = await db.users.find_one({"email": user.email})
     if existing:
@@ -67,7 +67,17 @@ async def register_user(user: UserCreate):
     # Generate unique client code (CL-XXXXX)
     from services.public_code import generate_unique_user_code
     public_code = await generate_unique_user_code(db)
-    
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    ip = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip() or (request.client.host if request.client else "")
+    terms_entry = {
+        "version": TERMS_VERSION,
+        "accepted_at": now_iso,
+        "ip": ip,
+        "user_agent": (request.headers.get("user-agent") or "")[:255],
+        "source": "register",
+    }
+
     user_doc = {
         "id": generate_id(),
         "email": user.email,
@@ -91,7 +101,10 @@ async def register_user(user: UserCreate):
         "stripe_customer_id": None,
         "saved_cards": [],
         "public_code": public_code,
-        "created_at": datetime.now(timezone.utc).isoformat()
+        "accepted_terms_version": TERMS_VERSION,
+        "accepted_terms_at": now_iso,
+        "terms_acceptance_history": [terms_entry],
+        "created_at": now_iso
     }
     
     await db.users.insert_one(user_doc)
@@ -443,7 +456,7 @@ async def get_current_user_profile(token_data: TokenData = Depends(require_auth)
 
 
 @router.post("/business/register", response_model=dict)
-async def register_business(business: BusinessCreate):
+async def register_business(business: BusinessCreate, request: Request):
     existing = await db.businesses.find_one({"email": business.email})
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
@@ -457,6 +470,16 @@ async def register_business(business: BusinessCreate):
     # Generate unique public code (BV-XXXXX)
     from services.public_code import generate_unique_public_code
     public_code = await generate_unique_public_code(db)
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    ip = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip() or (request.client.host if request.client else "")
+    terms_entry = {
+        "version": TERMS_VERSION,
+        "accepted_at": now_iso,
+        "ip": ip,
+        "user_agent": (request.headers.get("user-agent") or "")[:255],
+        "source": "business_register",
+    }
     
     # Normalize country code
     country_code = business.country.upper()[:2] if business.country else "MX"
@@ -515,7 +538,10 @@ async def register_business(business: BusinessCreate):
         "is_featured": False,
         "payout_hold": False,
         "public_code": public_code,
-        "created_at": datetime.now(timezone.utc).isoformat()
+        "accepted_terms_version": TERMS_VERSION,
+        "accepted_terms_at": now_iso,
+        "terms_acceptance_history": [terms_entry],
+        "created_at": now_iso
     }
     
     user_doc = {
@@ -530,7 +556,10 @@ async def register_business(business: BusinessCreate):
         "role": UserRole.BUSINESS,
         "business_id": business_id,
         "preferred_language": "es",
-        "created_at": datetime.now(timezone.utc).isoformat()
+        "accepted_terms_version": TERMS_VERSION,
+        "accepted_terms_at": now_iso,
+        "terms_acceptance_history": [terms_entry],
+        "created_at": now_iso
     }
     
     await db.businesses.insert_one(business_doc)

@@ -17,7 +17,8 @@ import { toast } from 'sonner';
 import {
   ArrowLeft, Mail, Phone, User, ShieldX, MapPin, Search, Loader2,
   Ban, Trash2, Plus, FileText, CreditCard, Building2, Eye, EyeOff,
-  Calendar, Shield, ExternalLink, Save, Pencil, Clock, Bell, MessageSquare
+  Calendar, Shield, ExternalLink, Save, Pencil, Clock, Bell, MessageSquare,
+  Upload, AlertTriangle, CheckCircle2, XCircle
 } from 'lucide-react';
 
 export default function BusinessSettingsPage() {
@@ -117,6 +118,72 @@ export default function BusinessSettingsPage() {
       toast.error(t('Error al guardar', 'Error saving'));
     }
     setSavingPrefs(false);
+  };
+
+  // --- Fase 8: Legal documents editing ---
+  const [docsEditMode, setDocsEditMode] = useState(false);
+  const [docsForm, setDocsForm] = useState({});
+  const [savingDocs, setSavingDocs] = useState(false);
+  const [uploadingDoc, setUploadingDoc] = useState(null); // 'ine' | 'proof' | 'bank' | null
+
+  const startDocsEdit = () => {
+    setDocsForm({
+      legal_name: privateInfo?.legal_name || '',
+      rfc: privateInfo?.rfc || '',
+      clabe: privateInfo?.clabe || '',
+      ine_url: privateInfo?.ine_url || '',
+      proof_of_address_url: privateInfo?.proof_of_address_url || '',
+      bank_proof_url: privateInfo?.bank_proof_url || '',
+    });
+    setDocsEditMode(true);
+  };
+
+  const uploadLegalDoc = async (field, file) => {
+    if (!file) return;
+    setUploadingDoc(field);
+    try {
+      const res = await businessesAPI.uploadPublicFile(file);
+      const url = res.data?.url;
+      setDocsForm(prev => ({ ...prev, [field]: url }));
+      toast.success(t('Archivo subido', 'File uploaded'));
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || t('Error al subir archivo', 'Error uploading'));
+    } finally {
+      setUploadingDoc(null);
+    }
+  };
+
+  const saveLegalDocs = async () => {
+    setSavingDocs(true);
+    try {
+      const payload = {};
+      const fields = ['legal_name', 'rfc', 'clabe', 'ine_url', 'proof_of_address_url', 'bank_proof_url'];
+      for (const f of fields) {
+        if ((docsForm[f] || '') !== (privateInfo?.[f] || '')) payload[f] = docsForm[f] || '';
+      }
+      if (Object.keys(payload).length === 0) {
+        toast.info(t('Sin cambios', 'No changes'));
+        setDocsEditMode(false);
+        setSavingDocs(false);
+        return;
+      }
+      const res = await businessesAPI.updateLegalDocs(payload);
+      setPrivateInfo(prev => ({
+        ...prev,
+        ...payload,
+        documents_verified: res.data?.documents_verified ?? false,
+        documents_rejection_reason: null,
+      }));
+      setDocsEditMode(false);
+      if (res.data?.requires_review) {
+        toast.success(t('Documentos enviados a revision. Bookvia te notificara cuando sean verificados.', 'Documents sent for review. You will be notified when they are verified.'));
+      } else {
+        toast.success(t('Documentos actualizados', 'Documents updated'));
+      }
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || t('Error al guardar', 'Error saving'));
+    }
+    setSavingDocs(false);
   };
 
   // Location handlers
@@ -429,82 +496,222 @@ export default function BusinessSettingsPage() {
         {activeTab === 'documents' && privateInfo && !isManager && (
           <Card data-testid="documents-section">
             <CardHeader>
-              <CardTitle className="text-base font-heading flex items-center gap-2">
-                <FileText className="h-5 w-5 text-[#F05D5E]" />
-                {t('Documentos legales', 'Legal documents')}
-              </CardTitle>
-              <p className="text-xs text-muted-foreground">
-                {t('Solo tu como dueno puedes ver esta informacion.', 'Only you as the owner can see this information.')}
-              </p>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <CardTitle className="text-base font-heading flex items-center gap-2">
+                    <FileText className="h-5 w-5 text-[#F05D5E]" />
+                    {t('Documentos legales', 'Legal documents')}
+                  </CardTitle>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {t('Solo tu como dueno puedes ver esta informacion.', 'Only you as the owner can see this information.')}
+                  </p>
+                </div>
+                {!docsEditMode && (
+                  <Button size="sm" variant="outline" onClick={startDocsEdit} data-testid="edit-docs-btn">
+                    <Pencil className="h-4 w-4 mr-1" /> {t('Editar', 'Edit')}
+                  </Button>
+                )}
+              </div>
             </CardHeader>
             <CardContent className="space-y-4">
-              <InfoRow icon={User} label={t('Razon Social', 'Legal Name')} value={privateInfo.legal_name} />
-              
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 min-w-0">
-                  <Shield className="h-4 w-4 text-muted-foreground shrink-0" />
-                  <div className="min-w-0">
-                    <p className="text-xs text-muted-foreground">RFC</p>
-                    <p className="text-sm font-medium font-mono" data-testid="rfc-value">
-                      {showRfc ? privateInfo.rfc : maskValue(privateInfo.rfc)}
+              {/* VERIFICATION STATUS BANNER */}
+              {privateInfo.documents_verified ? (
+                <div className="flex items-start gap-2 p-3 rounded-lg bg-green-50 border border-green-200 dark:bg-green-900/20 dark:border-green-800" data-testid="docs-verified-banner">
+                  <CheckCircle2 className="h-5 w-5 text-green-600 shrink-0 mt-0.5" />
+                  <div className="text-sm">
+                    <p className="font-medium text-green-800 dark:text-green-300">{t('Documentos verificados', 'Documents verified')}</p>
+                    <p className="text-xs text-green-700 dark:text-green-400 mt-0.5">
+                      {t('Tu negocio puede recibir reservas y pagos. Si cambias tu CLABE u otros documentos, pasaras a revision de nuevo.',
+                         'Your business can receive bookings and payments. If you change your CLABE or other documents you will need re-verification.')}
                     </p>
                   </div>
                 </div>
-                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setShowRfc(!showRfc)} data-testid="toggle-rfc">
-                  {showRfc ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </Button>
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2 min-w-0">
-                  <CreditCard className="h-4 w-4 text-muted-foreground shrink-0" />
-                  <div className="min-w-0">
-                    <p className="text-xs text-muted-foreground">CLABE</p>
-                    <p className="text-sm font-medium font-mono" data-testid="clabe-value">
-                      {showClabe ? privateInfo.clabe : maskValue(privateInfo.clabe)}
+              ) : privateInfo.documents_rejection_reason ? (
+                <div className="flex items-start gap-2 p-3 rounded-lg bg-red-50 border border-red-200 dark:bg-red-900/20 dark:border-red-800" data-testid="docs-rejected-banner">
+                  <XCircle className="h-5 w-5 text-red-600 shrink-0 mt-0.5" />
+                  <div className="text-sm">
+                    <p className="font-medium text-red-800 dark:text-red-300">{t('Documentos rechazados', 'Documents rejected')}</p>
+                    <p className="text-xs text-red-700 dark:text-red-400 mt-0.5">
+                      {t('Motivo:', 'Reason:')} <span className="italic">{privateInfo.documents_rejection_reason}</span>
+                    </p>
+                    <p className="text-xs text-red-700 dark:text-red-400 mt-1">
+                      {t('No podras recibir reservas hasta que corrijas y vuelvas a enviar.', 'You cannot accept bookings until you correct and resubmit.')}
                     </p>
                   </div>
                 </div>
-                <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setShowClabe(!showClabe)} data-testid="toggle-clabe">
-                  {showClabe ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </Button>
-              </div>
+              ) : (
+                <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 border border-amber-200 dark:bg-amber-900/20 dark:border-amber-800" data-testid="docs-pending-banner">
+                  <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+                  <div className="text-sm">
+                    <p className="font-medium text-amber-800 dark:text-amber-300">{t('Documentos en revision', 'Documents under review')}</p>
+                    <p className="text-xs text-amber-700 dark:text-amber-400 mt-0.5">
+                      {t('Bookvia esta revisando tus documentos. Tu negocio no recibira reservas hasta que sean aprobados.',
+                         'Bookvia is reviewing your documents. Your business will not receive bookings until they are approved.')}
+                    </p>
+                  </div>
+                </div>
+              )}
 
-              <InfoRow icon={Calendar} label={t('Fecha de nacimiento', 'Birth date')} value={privateInfo.owner_birth_date || '---'} />
+              {!docsEditMode ? (
+                <>
+                  <InfoRow icon={User} label={t('Razon Social', 'Legal Name')} value={privateInfo.legal_name} />
 
-              <Separator />
-
-              <div className="space-y-3">
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{t('Archivos subidos', 'Uploaded files')}</p>
-                
-                {privateInfo.ine_url ? (
-                  <a href={privateInfo.ine_url} target="_blank" rel="noopener noreferrer"
-                    className="flex items-center gap-3 p-3 rounded-lg border hover:bg-muted/50 transition-colors" data-testid="ine-link">
-                    <FileText className="h-5 w-5 text-blue-600 shrink-0" />
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium">{t('Identificacion oficial (INE)', 'Official ID (INE)')}</p>
-                      <p className="text-xs text-muted-foreground truncate">{t('Clic para ver', 'Click to view')}</p>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Shield className="h-4 w-4 text-muted-foreground shrink-0" />
+                      <div className="min-w-0">
+                        <p className="text-xs text-muted-foreground">RFC</p>
+                        <p className="text-sm font-medium font-mono" data-testid="rfc-value">
+                          {showRfc ? privateInfo.rfc : maskValue(privateInfo.rfc)}
+                        </p>
+                      </div>
                     </div>
-                    <ExternalLink className="h-4 w-4 text-muted-foreground shrink-0" />
-                  </a>
-                ) : (
-                  <p className="text-sm text-muted-foreground italic">{t('INE no subida', 'INE not uploaded')}</p>
-                )}
+                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setShowRfc(!showRfc)} data-testid="toggle-rfc">
+                      {showRfc ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </Button>
+                  </div>
 
-                {privateInfo.proof_of_address_url ? (
-                  <a href={privateInfo.proof_of_address_url} target="_blank" rel="noopener noreferrer"
-                    className="flex items-center gap-3 p-3 rounded-lg border hover:bg-muted/50 transition-colors" data-testid="proof-link">
-                    <FileText className="h-5 w-5 text-green-600 shrink-0" />
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium">{t('Constancia de Situacion Fiscal', 'Tax Status Certificate')}</p>
-                      <p className="text-xs text-muted-foreground truncate">{t('Clic para ver', 'Click to view')}</p>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <CreditCard className="h-4 w-4 text-muted-foreground shrink-0" />
+                      <div className="min-w-0">
+                        <p className="text-xs text-muted-foreground">CLABE</p>
+                        <p className="text-sm font-medium font-mono" data-testid="clabe-value">
+                          {showClabe ? privateInfo.clabe : maskValue(privateInfo.clabe)}
+                        </p>
+                      </div>
                     </div>
-                    <ExternalLink className="h-4 w-4 text-muted-foreground shrink-0" />
-                  </a>
-                ) : (
-                  <p className="text-sm text-muted-foreground italic">{t('Constancia no subida', 'Certificate not uploaded')}</p>
-                )}
-              </div>
+                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setShowClabe(!showClabe)} data-testid="toggle-clabe">
+                      {showClabe ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </Button>
+                  </div>
+
+                  <InfoRow icon={Calendar} label={t('Fecha de nacimiento', 'Birth date')} value={privateInfo.owner_birth_date || '---'} />
+
+                  <Separator />
+
+                  <div className="space-y-3">
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{t('Archivos subidos', 'Uploaded files')}</p>
+
+                    {privateInfo.ine_url ? (
+                      <a href={privateInfo.ine_url} target="_blank" rel="noopener noreferrer"
+                        className="flex items-center gap-3 p-3 rounded-lg border hover:bg-muted/50 transition-colors" data-testid="ine-link">
+                        <FileText className="h-5 w-5 text-blue-600 shrink-0" />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium">{t('Identificacion oficial (INE)', 'Official ID (INE)')}</p>
+                          <p className="text-xs text-muted-foreground truncate">{t('Clic para ver', 'Click to view')}</p>
+                        </div>
+                        <ExternalLink className="h-4 w-4 text-muted-foreground shrink-0" />
+                      </a>
+                    ) : (
+                      <p className="text-sm text-muted-foreground italic">{t('INE no subida', 'INE not uploaded')}</p>
+                    )}
+
+                    {privateInfo.proof_of_address_url ? (
+                      <a href={privateInfo.proof_of_address_url} target="_blank" rel="noopener noreferrer"
+                        className="flex items-center gap-3 p-3 rounded-lg border hover:bg-muted/50 transition-colors" data-testid="proof-link">
+                        <FileText className="h-5 w-5 text-green-600 shrink-0" />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium">{t('Constancia de Situacion Fiscal', 'Tax Status Certificate')}</p>
+                          <p className="text-xs text-muted-foreground truncate">{t('Clic para ver', 'Click to view')}</p>
+                        </div>
+                        <ExternalLink className="h-4 w-4 text-muted-foreground shrink-0" />
+                      </a>
+                    ) : (
+                      <p className="text-sm text-muted-foreground italic">{t('Constancia no subida', 'Certificate not uploaded')}</p>
+                    )}
+
+                    {privateInfo.bank_proof_url ? (
+                      <a href={privateInfo.bank_proof_url} target="_blank" rel="noopener noreferrer"
+                        className="flex items-center gap-3 p-3 rounded-lg border hover:bg-muted/50 transition-colors" data-testid="bank-proof-link">
+                        <FileText className="h-5 w-5 text-indigo-600 shrink-0" />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium">{t('Comprobante bancario (CLABE)', 'Bank proof (CLABE)')}</p>
+                          <p className="text-xs text-muted-foreground truncate">{t('Clic para ver', 'Click to view')}</p>
+                        </div>
+                        <ExternalLink className="h-4 w-4 text-muted-foreground shrink-0" />
+                      </a>
+                    ) : (
+                      <p className="text-sm text-red-600 italic" data-testid="bank-proof-missing">
+                        {t('Comprobante bancario NO subido (obligatorio para verificar tu CLABE)', 'Bank proof NOT uploaded (required to verify your CLABE)')}
+                      </p>
+                    )}
+                  </div>
+                </>
+              ) : (
+                /* ======= EDIT MODE ======= */
+                <div className="space-y-4" data-testid="docs-edit-form">
+                  <div className="flex items-start gap-2 p-3 rounded-lg bg-blue-50 border border-blue-200 dark:bg-blue-900/20 dark:border-blue-800">
+                    <AlertTriangle className="h-5 w-5 text-blue-600 shrink-0 mt-0.5" />
+                    <p className="text-xs text-blue-800 dark:text-blue-300">
+                      {t('Al modificar cualquier documento o la CLABE, Bookvia revisara tu cuenta antes de que puedas recibir nuevas reservas.',
+                         'When you change any document or the CLABE, Bookvia will re-review your account before you can accept new bookings.')}
+                    </p>
+                  </div>
+
+                  <div>
+                    <Label>{t('Razon Social', 'Legal Name')}</Label>
+                    <Input data-testid="docs-legal-name-input" value={docsForm.legal_name || ''} onChange={(e) => setDocsForm(p => ({ ...p, legal_name: e.target.value }))} />
+                  </div>
+
+                  <div>
+                    <Label>RFC</Label>
+                    <Input data-testid="docs-rfc-input" value={docsForm.rfc || ''} onChange={(e) => setDocsForm(p => ({ ...p, rfc: e.target.value.toUpperCase() }))} maxLength={13} />
+                  </div>
+
+                  <div>
+                    <Label>CLABE</Label>
+                    <Input data-testid="docs-clabe-input" value={docsForm.clabe || ''} onChange={(e) => setDocsForm(p => ({ ...p, clabe: e.target.value.replace(/\D/g, '').slice(0, 18) }))} maxLength={18} />
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {t('18 digitos. Cambiar la CLABE requiere subir nuevo comprobante bancario y volver a verificacion.',
+                         '18 digits. Changing CLABE requires uploading a new bank proof and re-verification.')}
+                    </p>
+                  </div>
+
+                  {/* File uploads */}
+                  {[
+                    { field: 'ine_url', label: t('Identificacion oficial (INE)', 'Official ID (INE)'), testid: 'upload-ine' },
+                    { field: 'proof_of_address_url', label: t('Constancia Situacion Fiscal', 'Tax Status Certificate'), testid: 'upload-proof' },
+                    { field: 'bank_proof_url', label: t('Comprobante bancario (debe mostrar la CLABE)', 'Bank proof (must show the CLABE)'), testid: 'upload-bank', required: true },
+                  ].map(({ field, label, testid, required }) => (
+                    <div key={field}>
+                      <Label>{label}{required && <span className="text-red-600 ml-1">*</span>}</Label>
+                      <div className="flex items-center gap-2 mt-1">
+                        <input type="file" id={`file-${field}`} accept="image/*,application/pdf"
+                          onChange={(e) => uploadLegalDoc(field, e.target.files?.[0])}
+                          className="hidden" data-testid={`${testid}-input`} />
+                        <label htmlFor={`file-${field}`} className="flex-1 cursor-pointer">
+                          <div className="flex items-center gap-2 p-2 border rounded-lg hover:bg-muted/50 transition-colors">
+                            {uploadingDoc === field ? (
+                              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                            ) : (
+                              <Upload className="h-4 w-4 text-muted-foreground" />
+                            )}
+                            <span className="text-sm truncate">
+                              {docsForm[field] ? t('Archivo listo (clic para reemplazar)', 'File ready (click to replace)') : t('Subir archivo (JPG, PNG o PDF)', 'Upload file (JPG, PNG or PDF)')}
+                            </span>
+                          </div>
+                        </label>
+                        {docsForm[field] && (
+                          <a href={docsForm[field]} target="_blank" rel="noopener noreferrer">
+                            <Button size="icon" variant="ghost" className="h-9 w-9"><ExternalLink className="h-4 w-4" /></Button>
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+
+                  <div className="flex gap-2 pt-2">
+                    <Button className="btn-coral" onClick={saveLegalDocs} disabled={savingDocs} data-testid="save-docs-btn">
+                      {savingDocs ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
+                      {t('Guardar y enviar a revision', 'Save and submit for review')}
+                    </Button>
+                    <Button variant="outline" onClick={() => setDocsEditMode(false)} disabled={savingDocs} data-testid="cancel-docs-btn">
+                      {t('Cancelar', 'Cancel')}
+                    </Button>
+                  </div>
+                </div>
+              )}
             </CardContent>
           </Card>
         )}

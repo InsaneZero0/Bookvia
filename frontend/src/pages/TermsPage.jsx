@@ -25,7 +25,7 @@ export default function TermsPage() {
             </div>
             <div>
               <h1 className="text-3xl md:text-4xl font-heading font-bold">{t('Terminos y Condiciones', 'Terms & Conditions')}</h1>
-              <p className="text-slate-600 mt-1">{t('Ultima actualizacion: Mayo 2026', 'Last updated: May 2026')}</p>
+              <p className="text-slate-600 mt-1">{t('Ultima actualizacion: 01 Mayo 2026 - Version 2026-05-01', 'Last updated: May 1, 2026 - Version 2026-05-01')}</p>
             </div>
           </div>
         </div>
@@ -102,8 +102,24 @@ export default function TermsPage() {
 
           <h2>{t('7. Conducta del Usuario', '7. User Conduct')}</h2>
           <p>{t(
-            'Los usuarios se comprometen a: no publicar contenido falso o enganoso, no hacer reservas fraudulentas, respetar a los profesionales y otros usuarios, y no utilizar la plataforma para fines ilegales.',
-            'Users agree to: not publish false or misleading content, not make fraudulent bookings, respect professionals and other users, and not use the platform for illegal purposes.'
+            'Los usuarios se comprometen a: no publicar contenido falso o enganoso, no hacer reservas fraudulentas, respetar a los profesionales y otros usuarios, y no utilizar la plataforma para fines ilegales. El usuario declara ser mayor de edad (18 anos cumplidos) al momento de crear una cuenta. Las cuentas creadas por menores de edad seran suspendidas sin previo aviso.',
+            'Users agree to: not publish false or misleading content, not make fraudulent bookings, respect professionals and other users, and not use the platform for illegal purposes. The user declares that they are of legal age (18 years or older) at the time of creating an account. Accounts created by minors will be suspended without notice.'
+          )}</p>
+
+          <h2>{t('7.1 Propinas', '7.1 Tips')}</h2>
+          <p>{t(
+            'Bookvia NO intermedia ni procesa propinas. Si el cliente desea entregar una propina al profesional o al negocio, debera hacerlo directamente en el establecimiento, en efectivo o por el medio que el negocio ofrezca. Las propinas no se registran ni se muestran en Bookvia, y su cobro, reparto y fiscalizacion son responsabilidad exclusiva del negocio.',
+            'Bookvia does NOT intermediate or process tips. If the client wishes to leave a tip for the professional or business, it must be done directly at the establishment, in cash or through whatever method the business offers. Tips are neither recorded nor displayed on Bookvia, and their collection, distribution, and tax treatment are the exclusive responsibility of the business.'
+          )}</p>
+
+          <h2>{t('7.2 Facturacion (CFDI)', '7.2 Invoicing (CFDI)')}</h2>
+          <p>{t(
+            'El comprobante fiscal (factura / CFDI) por el servicio prestado debe solicitarse directamente al negocio que ejecuto la cita, ya que es quien presta el servicio final al cliente. Bookvia no emite facturas a nombre de los clientes por servicios contratados a los negocios.',
+            'The tax receipt (invoice / CFDI) for the service rendered must be requested directly from the business that performed the appointment, since they are the final service provider to the client. Bookvia does not issue invoices to clients for services contracted with businesses.'
+          )}</p>
+          <p>{t(
+            'Bookvia puede emitir un comprobante fiscal exclusivamente por las cuotas de servicio que cobra a sus clientes ($8.20 MXN por cita confirmada) y a sus negocios (suscripcion mensual y cuota de procesamiento), solicitandolo al correo hola@bookvia.app con los datos fiscales correspondientes dentro del mes calendario de la operacion.',
+            'Bookvia may issue a tax receipt exclusively for the service fees it charges its clients ($8.20 MXN per confirmed booking) and its businesses (monthly subscription and processing fee), by requesting it at hola@bookvia.app with the corresponding tax details within the calendar month of the transaction.'
           )}</p>
 
           <h2>{t('8. Propiedad Intelectual', '8. Intellectual Property')}</h2>
@@ -126,6 +142,18 @@ export default function TermsPage() {
             'To the maximum extent permitted by applicable law, Bookvia\'s total liability to a user for any claim related to the use of the platform shall be limited to the amount of fees effectively paid by such user to Bookvia during the 3 months prior to the event giving rise to the claim.'
           )}</p>
 
+          <h2>{t('9.1 Privacidad y Datos Personales', '9.1 Privacy & Personal Data')}</h2>
+          <p>{t(
+            'Bookvia trata los datos personales proporcionados por los usuarios y negocios conforme a la Ley Federal de Proteccion de Datos Personales en Posesion de los Particulares (LFPDPPP) de Mexico. El Aviso de Privacidad completo, asi como los medios para ejercer los derechos ARCO (Acceso, Rectificacion, Cancelacion y Oposicion), estan disponibles en la pagina /privacy. Los datos estrictamente necesarios para la operacion (nombre, correo, telefono, direccion, CLABE, RFC en el caso de negocios) se comparten unicamente con el negocio reservado y los procesadores (Stripe, Resend, Cloudinary).',
+            'Bookvia processes personal data provided by users and businesses in accordance with the Mexican Federal Law on Protection of Personal Data Held by Private Parties (LFPDPPP). The full Privacy Notice and the means to exercise ARCO rights (Access, Rectification, Cancellation, and Opposition) are available at /privacy. Strictly necessary data for operation (name, email, phone, address, CLABE, RFC for businesses) is shared only with the booked business and the processors (Stripe, Resend, Cloudinary).'
+          )}</p>
+
+          <h2>{t('9.2 Ley Aplicable y Jurisdiccion', '9.2 Governing Law & Jurisdiction')}</h2>
+          <p>{t(
+            'Los presentes Terminos se rigen por las leyes de los Estados Unidos Mexicanos. Para cualquier controversia, las partes se someten a la jurisdiccion de los tribunales competentes de la Ciudad de Mexico, renunciando expresamente a cualquier otro fuero que pudiera corresponderles por razon de sus domicilios presentes o futuros.',
+            'These Terms are governed by the laws of the United Mexican States. For any dispute, the parties submit to the jurisdiction of the competent courts of Mexico City, expressly waiving any other jurisdiction that may apply due to their current or future domiciles.'
+          )}</p>
+
           <h2>{t('10. Modificaciones', '10. Modifications')}</h2>
           <p>{t(
             'Bookvia se reserva el derecho de modificar estos terminos en cualquier momento. Los cambios seran notificados a los usuarios registrados por correo electronico.',
@@ -137,6 +165,17 @@ export default function TermsPage() {
             'Para cualquier consulta sobre estos terminos, contactanos en: hola@bookvia.app',
             'For any questions about these terms, contact us at: hola@bookvia.app'
           )}</p>
+
+          <h2>{t('12. Historial de versiones', '12. Version history')}</h2>
+          <ul>
+            <li>
+              <strong>v2026-05-01</strong> (01 {t('mayo', 'May')} 2026) -{' '}
+              {t(
+                'Version inicial publica. Aclaracion del rol de Bookvia como intermediario; propinas y facturas (CFDI) se gestionan entre cliente y negocio; Aviso de Privacidad LFPDPPP y jurisdiccion CDMX.',
+                'Initial public version. Clarifies Bookvia\'s role as intermediary; tips and invoices (CFDI) are handled between client and business; LFPDPPP Privacy Notice and Mexico City jurisdiction.'
+              )}
+            </li>
+          </ul>
         </div>
       </section>
     </div>

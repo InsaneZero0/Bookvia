@@ -1006,6 +1006,136 @@ async def suspend_business(business_id: str, request: Request, reason: str = "",
     return {"message": "Business suspended"}
 
 
+# ========================== BUSINESS DOCUMENTS VERIFICATION ==========================
+
+@router.post("/businesses/{business_id}/verify-documents")
+async def verify_business_documents(
+    business_id: str,
+    request: Request,
+    token_data: TokenData = Depends(require_admin),
+):
+    """Admin marks a business's legal+banking documents as verified.
+
+    Once verified, the business appears in search and can accept bookings
+    (gated by `documents_verified: True` in VISIBLE_BUSINESS_FILTER and in
+    create_booking).
+    """
+    business = await db.businesses.find_one({"id": business_id})
+    if not business:
+        raise HTTPException(status_code=404, detail="Business not found")
+
+    required = ["rfc", "clabe", "legal_name", "ine_url", "proof_of_address_url", "bank_proof_url"]
+    missing = [f for f in required if not business.get(f)]
+    if missing:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Documentos faltantes: {', '.join(missing)}",
+        )
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    await db.businesses.update_one(
+        {"id": business_id},
+        {"$set": {
+            "documents_verified": True,
+            "documents_verified_at": now_iso,
+            "documents_verified_by": token_data.user_id,
+            "documents_rejection_reason": None,
+        }},
+    )
+
+    await create_audit_log(
+        admin_id=token_data.user_id,
+        admin_email=token_data.email,
+        action=AuditAction.DOCS_VERIFY,
+        target_type="business",
+        target_id=business_id,
+        details={"business_name": business.get("name")},
+        request=request,
+    )
+
+    if business.get("user_id"):
+        await create_notification(
+            business["user_id"],
+            "Documentos verificados",
+            "Tus documentos legales y bancarios han sido verificados. Ya puedes recibir reservas en Bookvia.",
+            "docs_verified",
+            {"business_id": business_id},
+        )
+
+    return {"message": "Documents verified", "documents_verified": True}
+
+
+@router.post("/businesses/{business_id}/reject-documents")
+async def reject_business_documents(
+    business_id: str,
+    payload: DocumentsRejectRequest,
+    request: Request,
+    token_data: TokenData = Depends(require_admin),
+):
+    """Admin rejects business documents with a reason. The business stays
+    unverified and cannot receive bookings until new docs are resubmitted.
+    """
+    business = await db.businesses.find_one({"id": business_id})
+    if not business:
+        raise HTTPException(status_code=404, detail="Business not found")
+
+    reason = (payload.reason or "").strip()
+    if len(reason) < 5:
+        raise HTTPException(status_code=400, detail="Reason too short")
+
+    await db.businesses.update_one(
+        {"id": business_id},
+        {"$set": {
+            "documents_verified": False,
+            "documents_rejection_reason": reason,
+            "documents_verified_at": None,
+            "documents_verified_by": None,
+        }},
+    )
+
+    await create_audit_log(
+        admin_id=token_data.user_id,
+        admin_email=token_data.email,
+        action=AuditAction.DOCS_REJECT,
+        target_type="business",
+        target_id=business_id,
+        details={"business_name": business.get("name"), "reason": reason},
+        request=request,
+    )
+
+    if business.get("user_id"):
+        await create_notification(
+            business["user_id"],
+            "Documentos rechazados",
+            f"Revisa y reenvia tus documentos. Motivo: {reason}",
+            "docs_rejected",
+            {"business_id": business_id, "reason": reason},
+        )
+
+    return {"message": "Documents rejected"}
+
+
+@router.get("/businesses/pending-docs")
+async def list_businesses_pending_docs(
+    limit: int = 50,
+    token_data: TokenData = Depends(require_admin),
+):
+    """List approved businesses that still need documents verification.
+
+    Includes businesses that have submitted (or changed) documents but are
+    not yet `documents_verified`. Excludes rejected/pending-onboarding ones.
+    """
+    cursor = db.businesses.find(
+        {
+            "status": BusinessStatus.APPROVED,
+            "documents_verified": {"$ne": True},
+        },
+        {"_id": 0, "password_hash": 0},
+    ).sort("documents_submitted_at", -1).limit(limit)
+    rows = await cursor.to_list(limit)
+    return {"count": len(rows), "items": rows}
+
+
 
 @router.put("/users/{user_id}/suspend")
 async def suspend_user(user_id: str, request: Request, days: int = 15, reason: str = "", token_data: TokenData = Depends(require_admin)):
@@ -1891,3 +2021,380 @@ async def reassign_business_category(
         request=request
     )
     return {"message": "Category reassigned", "new_category": category.get("name_es")}
+
+
+@router.get("/users/{user_id}/terms-history")
+async def admin_user_terms_history(user_id: str, token_data: TokenData = Depends(require_admin)):
+    """Admin - return the full T&C acceptance history for any user.
+
+    Used by legal/support staff to resolve disputes ("the user never
+    accepted this version").
+    """
+    user = await db.users.find_one(
+        {"id": user_id},
+        {"_id": 0, "id": 1, "email": 1, "full_name": 1, "role": 1,
+         "accepted_terms_version": 1, "accepted_terms_at": 1,
+         "terms_acceptance_history": 1},
+    )
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {
+        "user_id": user["id"],
+        "email": user.get("email"),
+        "full_name": user.get("full_name"),
+        "role": user.get("role"),
+        "current_accepted_version": user.get("accepted_terms_version"),
+        "current_accepted_at": user.get("accepted_terms_at"),
+        "history": user.get("terms_acceptance_history") or [],
+    }
+
+
+# ========================== FASE 9: DAY-20 SETTLEMENTS ==========================
+
+async def _build_day20_period_key(run_date: datetime) -> str:
+    """Period key for day-20 settlements: YYYY-MM-D20 of the month being paid.
+
+    The day-20 settlement pays out all CLEARED transactions that were not
+    settled previously. We key the period by the month on which the run
+    happens (e.g. 2026-05-D20) so repeated runs on the same month are
+    idempotent.
+    """
+    return f"{run_date.year}-{str(run_date.month).zfill(2)}-D20"
+
+
+async def generate_settlements_day20(
+    run_date: Optional[datetime] = None,
+    force: bool = False,
+    admin_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Generate day-20 settlements for every business that has CLEARED funds.
+
+    Behavior:
+      * Only runs on day 20 unless `force=True`.
+      * Groups every `transactions` document with `funds_state=CLEARED`
+        and no `settlement_id` by business_id.
+      * For each business, creates one settlement doc and stamps the
+        included transactions with `settlement_id` so they will not be
+        picked up again.
+      * Sends an email to each business with the details.
+      * Returns a summary with counts and per-business payouts.
+    """
+    run_date = run_date or datetime.now(timezone.utc)
+    if not force and run_date.day != 20:
+        return {"skipped": True, "reason": f"day={run_date.day}", "period": None, "settlements": []}
+
+    period_key = await _build_day20_period_key(run_date)
+
+    # Fetch all CLEARED transactions that have not been paid out yet
+    txs = await db.transactions.find(
+        {"funds_state": "cleared", "settlement_id": {"$in": [None, ""]}},
+        {"_id": 0},
+    ).to_list(5000)
+
+    # Legacy docs may not have settlement_id field at all
+    legacy_txs = await db.transactions.find(
+        {"funds_state": "cleared", "settlement_id": {"$exists": False}},
+        {"_id": 0},
+    ).to_list(5000)
+    seen = {t["id"] for t in txs}
+    for t in legacy_txs:
+        if t["id"] not in seen:
+            txs.append(t)
+
+    # Group by business
+    groups: Dict[str, List[Dict[str, Any]]] = {}
+    for t in txs:
+        bid = t.get("business_id")
+        if not bid:
+            continue
+        groups.setdefault(bid, []).append(t)
+
+    results = []
+    created = 0
+    for bid, items in groups.items():
+        # Skip businesses with active payout_hold
+        business = await db.businesses.find_one(
+            {"id": bid}, {"_id": 0, "name": 1, "email": 1, "clabe": 1, "legal_name": 1, "rfc": 1, "payout_hold": 1}
+        )
+        if not business:
+            continue
+        if business.get("payout_hold"):
+            results.append({"business_id": bid, "skipped": True, "reason": "payout_hold"})
+            continue
+
+        net_payout = round(sum(float(t.get("business_amount") or 0) for t in items), 2)
+        if net_payout <= 0:
+            continue
+
+        booking_ids = list({t.get("booking_id") for t in items if t.get("booking_id")})
+        tx_ids = [t["id"] for t in items]
+
+        settlement_id = generate_id()
+        settlement = {
+            "id": settlement_id,
+            "business_id": bid,
+            "business_name": business.get("name"),
+            "period_key": period_key,
+            "idempotency_key": f"day20-{period_key}",
+            "total_amount": net_payout,
+            "fee_amount": 0.0,  # Fees already deducted in business_amount
+            "payout_amount": net_payout,
+            "net_payout": net_payout,
+            "booking_count": len(booking_ids),
+            "booking_ids": booking_ids,
+            "transaction_ids": tx_ids,
+            "status": SettlementStatus.PENDING,
+            "clabe": business.get("clabe"),
+            "legal_name": business.get("legal_name"),
+            "rfc": business.get("rfc"),
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_by": admin_id or "cron_day20",
+        }
+        await db.settlements.insert_one(settlement)
+        # Tag transactions so they are not re-included
+        await db.transactions.update_many(
+            {"id": {"$in": tx_ids}},
+            {"$set": {"settlement_id": settlement_id, "settlement_period": period_key}},
+        )
+
+        # Email the business (best effort)
+        try:
+            if business.get("email"):
+                from services.email import send_settlement_notification
+                await send_settlement_notification(
+                    business_email=business["email"],
+                    business_name=business.get("name", ""),
+                    amount_mxn=net_payout,
+                    period_key=period_key,
+                    settlement_id=settlement_id,
+                    booking_count=len(booking_ids),
+                    transactions_count=len(tx_ids),
+                )
+        except Exception as e:
+            logger.warning(f"Failed to email settlement to {business.get('email')}: {e}")
+
+        # Push notification for the business owner (not the manager)
+        try:
+            owner = await db.users.find_one(
+                {"business_id": bid, "role": UserRole.BUSINESS, "is_manager": {"$ne": True}},
+                {"_id": 0, "id": 1},
+            )
+            if owner:
+                await create_notification(
+                    owner["id"],
+                    "Liquidacion lista",
+                    f"Tu liquidacion de ${net_payout:,.2f} MXN para {period_key} esta agendada. Se depositara via SPEI en 1-3 dias habiles.",
+                    "settlement_ready",
+                    {"settlement_id": settlement_id, "period_key": period_key, "amount_mxn": net_payout},
+                )
+        except Exception as e:
+            logger.warning(f"Failed to push settlement notification: {e}")
+
+        results.append({
+            "business_id": bid,
+            "settlement_id": settlement_id,
+            "amount": net_payout,
+            "booking_count": len(booking_ids),
+            "transactions_count": len(tx_ids),
+        })
+        created += 1
+
+    return {
+        "skipped": False,
+        "period": period_key,
+        "run_date": run_date.isoformat(),
+        "settlements_created": created,
+        "total_transactions": sum(len(items) for items in groups.values()),
+        "settlements": results,
+    }
+
+
+@router.post("/settlements/generate-day20")
+async def admin_generate_day20_settlements(
+    request: Request,
+    force: bool = False,
+    token_data: TokenData = Depends(require_admin),
+):
+    """Admin endpoint to run the day-20 settlement job manually.
+
+    Pass `force=true` to bypass the "is it the 20th today?" check (useful for
+    early previews or ad-hoc reruns).
+    """
+    result = await generate_settlements_day20(
+        run_date=datetime.now(timezone.utc),
+        force=force,
+        admin_id=token_data.user_id,
+    )
+    if not result.get("skipped"):
+        await create_audit_log(
+            admin_id=token_data.user_id, admin_email=token_data.email,
+            action=AuditAction.SETTLEMENT_GENERATE, target_type="settlement",
+            target_id=result.get("period") or "",
+            details={"created": result.get("settlements_created"), "force": force},
+            request=request,
+        )
+    return result
+
+
+def _csv_escape(value: Any) -> str:
+    if value is None:
+        return ""
+    s = str(value)
+    if any(ch in s for ch in [',', '"', '\n', '\r']):
+        return '"' + s.replace('"', '""') + '"'
+    return s
+
+
+# ---------------- SPEI bank templates (Fase 9) ----------------
+# Each template returns (headers, row_builder). The row_builder receives a
+# dict with normalized fields and returns a list of strings in template order.
+# Layouts are based on the most common commercial-banking SPEI batch uploads
+# in Mexico. They are sane defaults — admins can ask each bank for a sample
+# and we will tweak if any column needs to change.
+
+def _spei_template(bank: str):
+    bank = (bank or "generic").lower().strip()
+
+    if bank == "bbva":
+        # BBVA Multienlace - Pagos SPEI carga masiva
+        headers = [
+            "Banco beneficiario", "Cuenta beneficiario", "Tipo cuenta",
+            "Importe", "Concepto", "Referencia numerica",
+            "RFC beneficiario", "Beneficiario", "Email",
+        ]
+        def builder(d):
+            return [
+                "BBVA",  # Banco beneficiario - left as default text
+                d["clabe"],
+                "40",  # 40 = CLABE
+                f"{d['amount']:.2f}",
+                d["concepto"][:40],  # BBVA truncates concepto to 40 chars
+                "".join(ch for ch in d["referencia"] if ch.isdigit())[:7] or "1",
+                d["rfc"],
+                d["beneficiario"][:40],
+                d["email"],
+            ]
+        return headers, builder
+
+    if bank == "banorte":
+        # Banorte Banca Electronica Empresarial (BEM) - SPEI carga masiva
+        headers = [
+            "Tipo de pago", "Cuenta origen", "CLABE destino",
+            "Importe", "Concepto de pago", "Referencia",
+            "RFC beneficiario", "Beneficiario",
+        ]
+        def builder(d):
+            return [
+                "SPEI",
+                "",  # Cuenta origen left blank for admin to fill
+                d["clabe"],
+                f"{d['amount']:.2f}",
+                d["concepto"][:30],  # Banorte truncates to 30
+                "".join(ch for ch in d["referencia"] if ch.isalnum())[:10] or "BV1",
+                d["rfc"],
+                d["beneficiario"][:35],
+            ]
+        return headers, builder
+
+    if bank == "santander":
+        # Santander SuperNet Cash - SPEI carga masiva
+        headers = [
+            "CLABE", "Beneficiario", "RFC", "Monto",
+            "Concepto", "Referencia", "Email",
+        ]
+        def builder(d):
+            return [
+                d["clabe"],
+                d["beneficiario"][:50],
+                d["rfc"],
+                f"{d['amount']:.2f}",
+                d["concepto"][:35],
+                "".join(ch for ch in d["referencia"] if ch.isalnum())[:7] or "BV1",
+                d["email"],
+            ]
+        return headers, builder
+
+    # generic - the human-readable layout we shipped originally
+    headers = [
+        "Beneficiario", "CLABE", "RFC", "Monto",
+        "Concepto", "Referencia", "Email", "Citas", "Folio",
+    ]
+    def builder(d):
+        return [
+            d["beneficiario"], d["clabe"], d["rfc"],
+            f"{d['amount']:.2f}", d["concepto"], d["referencia"],
+            d["email"], str(d.get("booking_count", 0)), d.get("folio", ""),
+        ]
+    return headers, builder
+
+
+@router.get("/settlements/{period_key}/export-spei.csv")
+async def admin_export_spei_csv(
+    period_key: str,
+    status_filter: str = "pending",
+    bank: str = "generic",
+    token_data: TokenData = Depends(require_admin),
+):
+    """Export a SPEI-ready CSV for every settlement in the given period.
+
+    `bank` selects a vendor-specific column layout:
+      * generic  - human-readable, default
+      * bbva     - BBVA Multienlace
+      * banorte  - Banorte BEM
+      * santander- Santander SuperNet Cash
+    """
+    filters = {"period_key": period_key}
+    if status_filter and status_filter != "all":
+        filters["status"] = status_filter
+    rows = await db.settlements.find(filters, {"_id": 0}).sort("created_at", -1).to_list(5000)
+
+    headers, builder = _spei_template(bank)
+    lines = [",".join(headers)]
+    for r in rows:
+        business = await db.businesses.find_one(
+            {"id": r.get("business_id")},
+            {"_id": 0, "name": 1, "email": 1, "clabe": 1, "legal_name": 1, "rfc": 1},
+        ) or {}
+        beneficiario = r.get("legal_name") or business.get("legal_name") or business.get("name") or ""
+        clabe = r.get("clabe") or business.get("clabe") or ""
+        rfc = r.get("rfc") or business.get("rfc") or ""
+        monto = r.get("net_payout") if r.get("net_payout") is not None else r.get("payout_amount", 0)
+        concepto = f"Bookvia {period_key} {r.get('booking_count', 0)} citas"
+        referencia = (r.get("id") or "")[:20]
+        email = business.get("email", "")
+
+        d = {
+            "beneficiario": beneficiario,
+            "clabe": clabe,
+            "rfc": rfc,
+            "amount": float(monto or 0),
+            "concepto": concepto,
+            "referencia": referencia,
+            "email": email,
+            "booking_count": r.get("booking_count", 0),
+            "folio": r.get("id", ""),
+        }
+        cells = builder(d)
+        lines.append(",".join(_csv_escape(c) for c in cells))
+
+    body = "\r\n".join(lines) + "\r\n"
+
+    await create_audit_log(
+        admin_id=token_data.user_id, admin_email=token_data.email,
+        action=AuditAction.SETTLEMENT_GENERATE, target_type="settlement_export",
+        target_id=period_key,
+        details={"rows": len(rows), "status_filter": status_filter, "bank": bank},
+        request=None,
+    )
+
+    safe_bank = (bank or "").lower().strip()
+    if safe_bank not in ("generic", "bbva", "banorte", "santander"):
+        safe_bank = "generic"
+    return Response(
+        content=body,
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": f'attachment; filename="bookvia-spei-{period_key}-{safe_bank}.csv"',
+            "Cache-Control": "no-store",
+        },
+    )

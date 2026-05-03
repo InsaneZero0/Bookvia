@@ -115,10 +115,10 @@ class BusinessResponse(BaseModel):
     model_config = ConfigDict(extra="ignore")
     id: str
     name: str
-    email: str
-    phone: str
+    email: str = ""
+    phone: str = ""
     phone_verified: bool = False
-    description: str
+    description: str = ""
     category_id: str
     category_name: Optional[str] = None
     address: str
@@ -184,6 +184,25 @@ class BusinessUpdate(BaseModel):
     logo_url: Optional[str] = None
     notify_email: Optional[bool] = None
     notify_sms: Optional[bool] = None
+
+
+class BusinessLegalDocsUpdate(BaseModel):
+    """Payload for the business owner to update its legal/banking documents.
+
+    Any change submitted here ALWAYS flips `documents_verified` back to False
+    and notifies admins for re-verification.
+    """
+    legal_name: Optional[str] = None
+    rfc: Optional[str] = None
+    clabe: Optional[str] = None
+    ine_url: Optional[str] = None
+    proof_of_address_url: Optional[str] = None
+    bank_proof_url: Optional[str] = None
+    owner_birth_date: Optional[str] = None
+
+
+class DocumentsRejectRequest(BaseModel):
+    reason: str
 
 class CategoryCreate(BaseModel):
     name_es: str

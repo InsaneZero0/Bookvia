@@ -54,8 +54,47 @@ function SectionTitle({ children }) {
   return <h4 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mt-5 mb-2 border-b pb-1">{children}</h4>;
 }
 
+/* Inline preview of an uploaded doc (PDF/image). Falls back to a link if
+   the URL is missing or the content type cannot be embedded. */
+function DocPreviewCard({ url, label, testid, highlight, t }) {
+  const isPdf = url && /\.pdf(\?|$)/i.test(url);
+  const isImage = url && /\.(png|jpg|jpeg|webp|gif)(\?|$)/i.test(url);
+  const borderCls = highlight ? 'border-indigo-300 ring-1 ring-indigo-200' : 'border-border';
+  return (
+    <div className={`rounded-lg border ${borderCls} p-2 bg-muted/30 flex flex-col`} data-testid={testid}>
+      <div className="flex items-center justify-between mb-1">
+        <p className="text-xs font-medium truncate">{label}</p>
+        {url && (
+          <a href={url} target="_blank" rel="noopener noreferrer"
+            className="text-[10px] text-blue-600 hover:underline flex items-center gap-0.5 shrink-0"
+            data-testid={`${testid}-open`}>
+            {t('Abrir', 'Open')} <ExternalLink className="h-3 w-3" />
+          </a>
+        )}
+      </div>
+      {!url ? (
+        <div className="h-28 rounded bg-muted/60 flex items-center justify-center text-center text-xs text-muted-foreground italic px-2">
+          {t('No subido', 'Not uploaded')}
+        </div>
+      ) : isImage ? (
+        <a href={url} target="_blank" rel="noopener noreferrer" className="block">
+          <img src={url} alt={label} className="h-28 w-full object-cover rounded bg-white"
+            onError={(e) => { e.target.style.display = 'none'; }} />
+        </a>
+      ) : isPdf ? (
+        <iframe src={url + '#toolbar=0'} title={label} className="h-28 w-full rounded bg-white" />
+      ) : (
+        <a href={url} target="_blank" rel="noopener noreferrer"
+          className="h-28 rounded bg-white border flex items-center justify-center text-xs text-blue-600 hover:underline">
+          {t('Abrir archivo', 'Open file')}
+        </a>
+      )}
+    </div>
+  );
+}
+
 /* ─── Business Detail Dialog ─── */
-function BusinessDetailDialog({ businessId, open, onClose, onApprove, onReject, t, language }) {
+function BusinessDetailDialog({ businessId, open, onClose, onApprove, onReject, onVerifyDocs, onRejectDocs, refreshKey, t, language }) {
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(false);
   const [allCategories, setAllCategories] = useState([]);
@@ -81,7 +120,7 @@ function BusinessDetailDialog({ businessId, open, onClose, onApprove, onReject, 
       setAllCategories(catsRes.data || []);
     }).catch(() => toast.error('Error loading detail'))
       .finally(() => setLoading(false));
-  }, [open, businessId]);
+  }, [open, businessId, refreshKey]);
 
   const reloadCategories = async () => {
     try {
@@ -248,26 +287,59 @@ function BusinessDetailDialog({ businessId, open, onClose, onApprove, onReject, 
             <InfoRow icon={FileText} label="CURP" value={biz.curp || t('No proporcionado', 'Not provided')} />
             <InfoRow icon={CreditCard} label="CLABE" value={biz.clabe || t('No proporcionada', 'Not provided')} />
             <InfoRow icon={FileText} label={t('Razon Social', 'Legal Name')} value={biz.legal_name || t('No proporcionado', 'Not provided')} />
-            {biz.ine_url && (
-              <div className="flex items-center gap-2 py-1.5">
-                <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
-                <span className="text-sm text-muted-foreground w-28 shrink-0">INE</span>
-                <a href={biz.ine_url} target="_blank" rel="noopener noreferrer"
-                  className="text-sm text-blue-600 hover:underline flex items-center gap-1" data-testid="ine-link">
-                  {t('Ver documento', 'View document')} <ExternalLink className="h-3 w-3" />
-                </a>
+
+            {/* Fase 8 improvement: inline preview of uploaded docs */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-3" data-testid="docs-preview-grid">
+              {[
+                { url: biz.ine_url, label: 'INE', testid: 'ine-preview' },
+                { url: biz.proof_of_address_url, label: t('Constancia fiscal', 'Tax Cert'), testid: 'proof-preview' },
+                { url: biz.bank_proof_url, label: t('Comprob. bancario', 'Bank proof'), testid: 'bank-preview', highlight: true },
+              ].map((d, i) => (
+                <DocPreviewCard key={i} url={d.url} label={d.label} testid={d.testid} highlight={d.highlight} t={t} />
+              ))}
+            </div>
+
+            {/* Documents verification status + actions (Fase 8) */}
+            <div className="mt-3 p-3 rounded-lg border" data-testid="docs-verification-box">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm font-medium">{t('Verificacion de documentos', 'Documents verification')}</p>
+                {biz.documents_verified ? (
+                  <Badge className="bg-green-100 text-green-700">{t('Verificados', 'Verified')}</Badge>
+                ) : biz.documents_rejection_reason ? (
+                  <Badge className="bg-red-100 text-red-700">{t('Rechazados', 'Rejected')}</Badge>
+                ) : (
+                  <Badge className="bg-amber-100 text-amber-700">{t('Pendientes', 'Pending')}</Badge>
+                )}
               </div>
-            )}
-            {biz.rfc_document_url && (
-              <div className="flex items-center gap-2 py-1.5">
-                <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
-                <span className="text-sm text-muted-foreground w-28 shrink-0">{t('Doc. RFC', 'RFC Doc')}</span>
-                <a href={biz.rfc_document_url} target="_blank" rel="noopener noreferrer"
-                  className="text-sm text-blue-600 hover:underline flex items-center gap-1" data-testid="rfc-doc-link">
-                  {t('Ver documento', 'View document')} <ExternalLink className="h-3 w-3" />
-                </a>
+              {biz.clabe_changed_at && (
+                <p className="text-xs text-amber-700 mb-2">
+                  {t('La CLABE fue modificada:', 'CLABE was changed:')} {formatDate(biz.clabe_changed_at, language === 'es' ? 'es-MX' : 'en-US')}
+                </p>
+              )}
+              {biz.documents_rejection_reason && (
+                <p className="text-xs text-red-700 mb-2 italic">{t('Motivo de rechazo anterior:', 'Previous rejection reason:')} {biz.documents_rejection_reason}</p>
+              )}
+              <div className="flex gap-2">
+                {!biz.documents_verified && (
+                  <Button size="sm" className="bg-green-600 hover:bg-green-700 text-white"
+                    onClick={() => onVerifyDocs && onVerifyDocs(biz.id)} data-testid="verify-docs-btn">
+                    <CheckCircle2 className="h-4 w-4 mr-1" />{t('Verificar documentos', 'Verify documents')}
+                  </Button>
+                )}
+                {biz.documents_verified && (
+                  <Button size="sm" variant="outline" className="text-red-600 hover:bg-red-50"
+                    onClick={() => onRejectDocs && onRejectDocs(biz.id)} data-testid="reject-docs-btn">
+                    <XCircle className="h-4 w-4 mr-1" />{t('Marcar como rechazados', 'Mark as rejected')}
+                  </Button>
+                )}
+                {!biz.documents_verified && (
+                  <Button size="sm" variant="outline" className="text-red-600 hover:bg-red-50"
+                    onClick={() => onRejectDocs && onRejectDocs(biz.id)} data-testid="reject-docs-btn">
+                    <XCircle className="h-4 w-4 mr-1" />{t('Rechazar', 'Reject')}
+                  </Button>
+                )}
               </div>
-            )}
+            </div>
 
             {/* Subscription */}
             <SectionTitle>{t('Suscripcion', 'Subscription')}</SectionTitle>
@@ -734,6 +806,33 @@ export default function AdminDashboardPage() {
     } catch { toast.error(t('Error', 'Error')); }
   };
 
+  const [detailRefreshKey, setDetailRefreshKey] = useState(0);
+
+  const handleVerifyDocs = async (id) => {
+    if (!window.confirm(t('Confirmar que los documentos son correctos y permitir al negocio recibir reservas?',
+                          'Confirm documents are correct and let the business accept bookings?'))) return;
+    try {
+      await adminAPI.verifyBusinessDocuments(id);
+      toast.success(t('Documentos verificados', 'Documents verified'));
+      setDetailRefreshKey(k => k + 1);
+      loadOverview();
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || t('Error al verificar documentos', 'Error verifying documents'));
+    }
+  };
+
+  const handleRejectDocs = async (id) => {
+    const reason = window.prompt(t('Motivo para rechazar documentos:', 'Reason to reject documents:'));
+    if (!reason || reason.trim().length < 5) return;
+    try {
+      await adminAPI.rejectBusinessDocuments(id, reason.trim());
+      toast.success(t('Documentos rechazados', 'Documents rejected'));
+      setDetailRefreshKey(k => k + 1);
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || t('Error al rechazar documentos', 'Error rejecting documents'));
+    }
+  };
+
   const handleSuspendUser = async (id) => {
     const days = window.prompt(t('Dias de suspension:', 'Suspension days:'), '15');
     if (days === null) return;
@@ -775,6 +874,50 @@ export default function AdminDashboardPage() {
       toast.success(res.data.message);
       loadFinance();
     } catch { toast.error(t('Error al generar', 'Error generating')); }
+  };
+
+  const handleGenerateDay20 = async () => {
+    const today = new Date();
+    const force = today.getDate() !== 20;
+    if (force && !window.confirm(t('Hoy no es dia 20. Ejecutar de todas formas? (Se marcaran los fondos CLEARED actuales)',
+                                    'Today is not day 20. Run anyway? (Current CLEARED funds will be locked in)'))) return;
+    try {
+      const res = await adminAPI.generateDay20Settlements(force);
+      if (res.data.skipped) {
+        toast.info(t('Saltado: hoy no es dia 20', 'Skipped: today is not day 20'));
+      } else {
+        toast.success(t(`Liquidaciones creadas: ${res.data.settlements_created}`, `Settlements created: ${res.data.settlements_created}`));
+        loadFinance();
+      }
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || t('Error al generar day-20', 'Error generating day-20'));
+    }
+  };
+
+  const handleExportSpeiCsv = async () => {
+    const defaultPeriod = `${exportYear}-${String(exportMonth).padStart(2, '0')}-D20`;
+    const periodKey = window.prompt(t('Periodo a exportar (formato YYYY-MM-D20):', 'Period to export (format YYYY-MM-D20):'), defaultPeriod);
+    if (!periodKey) return;
+    const bankPrompt = window.prompt(
+      t('Formato del CSV: 1=Generico, 2=BBVA, 3=Banorte, 4=Santander', 'CSV format: 1=Generic, 2=BBVA, 3=Banorte, 4=Santander'),
+      '1'
+    );
+    if (bankPrompt === null) return;
+    const bankMap = { '1': 'generic', '2': 'bbva', '3': 'banorte', '4': 'santander' };
+    const bank = bankMap[bankPrompt.trim()] || 'generic';
+    try {
+      const res = await adminAPI.exportSpeiCsv(periodKey, 'pending', bank);
+      const blob = new Blob([res.data], { type: 'text/csv;charset=utf-8' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `bookvia-spei-${periodKey}-${bank}.csv`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+      toast.success(t(`CSV SPEI (${bank}) descargado`, `SPEI CSV (${bank}) downloaded`));
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || t('Error al exportar', 'Export error'));
+    }
   };
 
   const handleMarkPaid = async (id) => {
@@ -924,6 +1067,9 @@ export default function AdminDashboardPage() {
           onClose={() => setDetailOpen(false)}
           onApprove={handleApproveBusiness}
           onReject={handleRejectBusiness}
+          onVerifyDocs={handleVerifyDocs}
+          onRejectDocs={handleRejectDocs}
+          refreshKey={detailRefreshKey}
           t={t}
           language={language}
         />
@@ -2452,6 +2598,12 @@ export default function AdminDashboardPage() {
                   </Button>
                   <Button onClick={handleGenerateSettlements} data-testid="generate-settlements-btn">
                     <DollarSign className="h-4 w-4 mr-2" />{t('Generar liquidaciones', 'Generate settlements')}
+                  </Button>
+                  <Button variant="secondary" onClick={handleGenerateDay20} data-testid="generate-day20-btn">
+                    <DollarSign className="h-4 w-4 mr-2" />{t('Generar dia 20', 'Generate day-20')}
+                  </Button>
+                  <Button variant="outline" onClick={handleExportSpeiCsv} data-testid="export-spei-csv-btn">
+                    <Download className="h-4 w-4 mr-2" />{t('Exportar CSV SPEI', 'Export SPEI CSV')}
                   </Button>
                 </div>
               </CardContent>

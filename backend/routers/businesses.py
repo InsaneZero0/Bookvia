@@ -625,11 +625,12 @@ async def search_businesses(
             cat = await db.categories.find_one({"id": b["category_id"]})
             if cat:
                 b["category_name"] = cat.get("name_es", "")
-        # Mark if business can accept bookings (must be approved + subscription active/trialing or legacy)
+        # Mark if business can accept bookings (must be approved + subscription active/trialing or legacy + documents verified)
         sub_status = b.get("subscription_status", "none")
         b["can_accept_bookings"] = (
-            b.get("status") == BusinessStatus.APPROVED 
+            b.get("status") == BusinessStatus.APPROVED
             and (sub_status in ("active", "trialing", "none", None) or sub_status is None)
+            and bool(b.get("documents_verified", False))
         )
     
     # Filter out businesses where the current user is blacklisted
@@ -975,6 +976,14 @@ async def get_my_private_info(token_data: TokenData = Depends(require_business))
         except Exception as e:
             logger.warning(f"Failed to fetch subscription info: {e}")
     
+    # Also include the bank_proof fields so it loads with the rest of the profile
+    business_full = await db.businesses.find_one(
+        {"id": user["business_id"]},
+        {"_id": 0, "bank_proof_url": 1, "documents_verified": 1,
+         "documents_verified_at": 1, "documents_rejection_reason": 1,
+         "clabe_changed_at": 1}
+    ) or {}
+
     return {
         "name": business.get("name", ""),
         "email": business.get("email", ""),
@@ -985,6 +994,11 @@ async def get_my_private_info(token_data: TokenData = Depends(require_business))
         "clabe": business.get("clabe", ""),
         "ine_url": business.get("ine_url", ""),
         "proof_of_address_url": business.get("proof_of_address_url", ""),
+        "bank_proof_url": business_full.get("bank_proof_url", ""),
+        "documents_verified": bool(business_full.get("documents_verified", False)),
+        "documents_verified_at": business_full.get("documents_verified_at"),
+        "documents_rejection_reason": business_full.get("documents_rejection_reason"),
+        "clabe_changed_at": business_full.get("clabe_changed_at"),
         "owner_birth_date": business.get("owner_birth_date", ""),
         "subscription_status": business.get("subscription_status", "none"),
         "subscription_started_at": business.get("subscription_started_at"),
@@ -992,6 +1006,81 @@ async def get_my_private_info(token_data: TokenData = Depends(require_business))
         "notify_email": business.get("notify_email", True),
         "notify_sms": business.get("notify_sms", True),
         "public_code": business.get("public_code"),
+    }
+
+
+@router.put("/me/legal-docs")
+async def update_my_legal_docs(
+    payload: BusinessLegalDocsUpdate,
+    token_data: TokenData = Depends(require_business),
+):
+    """Business owner updates its legal/banking documents.
+
+    Any change to these fields ALWAYS sets `documents_verified=false` and
+    notifies admins so the new documentation can be re-reviewed. A CLABE
+    change is recorded with `clabe_changed_at`.
+    """
+    if token_data.is_manager:
+        raise HTTPException(status_code=403, detail="Solo el dueno puede actualizar documentos")
+
+    # Fase 10: hard-gate this owner action if T&C are outdated and the grace period passed.
+    from routers.terms import require_terms_up_to_date
+    await require_terms_up_to_date(token_data.user_id)
+
+    user = await db.users.find_one({"id": token_data.user_id}, {"_id": 0, "business_id": 1})
+    if not user or not user.get("business_id"):
+        raise HTTPException(status_code=404, detail="Business not found")
+
+    business = await db.businesses.find_one({"id": user["business_id"]}, {"_id": 0})
+    if not business:
+        raise HTTPException(status_code=404, detail="Business not found")
+
+    data = {k: v for k, v in payload.model_dump().items() if v is not None}
+    if not data:
+        raise HTTPException(status_code=400, detail="No data to update")
+
+    sensitive_fields = {"rfc", "clabe", "legal_name", "ine_url", "proof_of_address_url", "bank_proof_url"}
+    changed_sensitive = any(
+        f in data and str(data.get(f, "")).strip() != str(business.get(f, "")).strip()
+        for f in sensitive_fields
+    )
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    update_set = dict(data)
+    if changed_sensitive:
+        update_set.update({
+            "documents_verified": False,
+            "documents_verified_at": None,
+            "documents_rejection_reason": None,
+            "documents_submitted_at": now_iso,
+        })
+    if "clabe" in data and str(data["clabe"]).strip() != str(business.get("clabe", "")).strip():
+        update_set["clabe_changed_at"] = now_iso
+
+    await db.businesses.update_one({"id": business["id"]}, {"$set": update_set})
+
+    # Notify every admin for review (best-effort)
+    if changed_sensitive:
+        try:
+            admin_users = await db.users.find(
+                {"role": UserRole.ADMIN},
+                {"_id": 0, "id": 1},
+            ).to_list(50)
+            for admin in admin_users:
+                await create_notification(
+                    admin["id"],
+                    "Documentos pendientes de revision",
+                    f"El negocio {business.get('name','(sin nombre)')} actualizo sus documentos legales o bancarios.",
+                    "docs_review",
+                    {"business_id": business["id"], "changed_clabe": "clabe" in data},
+                )
+        except Exception as e:
+            logger.warning(f"Failed to notify admins about docs change: {e}")
+
+    return {
+        "message": "Documentos actualizados",
+        "documents_verified": False if changed_sensitive else bool(business.get("documents_verified", False)),
+        "requires_review": changed_sensitive,
     }
 
 

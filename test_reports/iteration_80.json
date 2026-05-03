@@ -1,0 +1,47 @@
+{
+  "summary": "Phase 8 (business documents verification, no $1 deposit) backend tests: 19/19 pass. Covered admin verify/reject/pending-docs endpoints, owner-only PUT /me/legal-docs with CLABE re-verification + admin docs_review notifications, booking gate on documents_verified, visibility filter exclusion in /api/businesses and /api/businesses/featured, grandfather migration query, /me/private-info new fields, PDF upload in /api/upload/public, and the Fase 7 extra Google Calendar button URL in the smart reminder email HTML.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "GET /api/businesses (search)",
+        "issue": "Pre-existing seeded business biz_dd14ed093b51 (and one other) were missing `description` field, causing BusinessResponse pydantic validation 500 in list endpoints. Backfilled `description=''` directly in Mongo so the visibility tests could run. Main agent should add a schema-level default or a backfill step in startup for legacy docs missing description/email/phone."
+      },
+      {
+        "endpoint": "BusinessResponse / businesses collection schema",
+        "issue": "BusinessResponse requires email and phone but seeded/legacy businesses can have them missing. Consider making them Optional[str]='' in BusinessResponse or adding a startup migration."
+      }
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_fase8_docs_verification.py",
+    "/app/test_reports/pytest/fase8_docs.xml"
+  ],
+  "action_items": [
+    "Make BusinessResponse.email/phone/description Optional (default '') OR add a startup migration that backfills empty strings for legacy businesses. Without this, /api/businesses search 500s whenever any legacy doc is in the result set.",
+    "Audit log action is stored lowercased as 'docs_verify' / 'docs_reject' (enum string values). If admin UI filters by enum name (DOCS_VERIFY) it won't match; align on a single convention."
+  ],
+  "critical_code_review_comments": [
+    "admin.verify_business_documents correctly validates required fields list ['rfc','clabe','legal_name','ine_url','proof_of_address_url','bank_proof_url']; 400 with 'Documentos faltantes: ...' returns only the missing fields.",
+    "admin.reject_business_documents enforces reason >=5 chars and wipes documents_verified/_at/_by while storing documents_rejection_reason. Audit log + owner notification (type='docs_rejected') created.",
+    "GET /api/admin/businesses/pending-docs filters status=approved + documents_verified!=True and excludes Mongo _id. Correct.",
+    "businesses.update_my_legal_docs: manager tokens rejected with 403 as required. Only sensitive-field diff flips documents_verified=False + documents_rejection_reason=null + documents_submitted_at. clabe change also sets clabe_changed_at. owner_birth_date-only update leaves verification untouched (requires_review=false). Admins are fanned out with type='docs_review' notifications including changed_clabe flag.",
+    "bookings.create_booking: hard 400 with 'El negocio aun no tiene sus documentos verificados por Bookvia' when business.documents_verified is False. Gate evaluated AFTER status/approved check and BEFORE subscription/blacklist checks.",
+    "VISIBLE_BUSINESS_FILTER now includes documents_verified=True. /api/businesses and /api/businesses/featured both exclude unverified businesses via visible_business_filter_now().",
+    "Grandfather query in server.startup correctly targets docs where documents_verified does not exist and sets documents_grandfathered=True. Running it a second time is idempotent because the field now exists. Newly-seeded businesses with documents_verified explicitly set do NOT receive the grandfathered flag.",
+    "/api/businesses/me/private-info returns bank_proof_url, documents_verified, documents_verified_at, documents_rejection_reason, clabe_changed_at sourced from a second fetch on the business doc. Good.",
+    "/api/upload/public accepts ext=pdf and sets content-type application/pdf; non-supported ext (.txt) => 400. Size guard (5MB) unchanged.",
+    "services.email.send_appointment_reminder renders both an Apple/.ics button AND a Google Calendar button when google_calendar_url is supplied. server.send_appointment_reminders builds the RFC-compliant compact UTC url https://calendar.google.com/calendar/render?action=TEMPLATE&text=...&dates=YYYYMMDDTHHMMSSZ/YYYYMMDDTHHMMSSZ&details=...&location=... and passes it through."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_fase8_docs_verification.py (new)"
+  ],
+  "success_rate": {"backend": "100% (19/19)", "frontend": "n/a"},
+  "test_credentials": "Admin zamorachapa50@gmail.com + TOTP via pyotp from db.users.totp_secret. Business owner/manager/client tokens minted directly with HS256 + JWT_SECRET.",
+  "seed_data_creation": "TEST_F8_biz_pending, TEST_F8_biz_verified (both approved + subscription active), TEST_F8_owner (role=business), TEST_F8_manager (role=business + is_manager via JWT), TEST_F8_client (role=user), TEST_F8_svc + TEST_F8_worker. Also backfilled description='' for 2 legacy business docs that were breaking /api/businesses pydantic validation. All prefixed data cleaned up in teardown.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "test_fase8_docs_verification.py is self-contained (mints JWTs directly). AuditAction enum values are lowercase strings ('docs_verify', 'docs_reject'); query audit_logs by lowercase value. Some legacy business docs in this environment are missing required BusinessResponse fields (email/phone/description) and will 500 /api/businesses; main agent should fix schema or add migration.",
+  "rca of the issue": "N/A - all tests green. See backend_issues.minor for two schema/data-hygiene observations that are orthogonal to Phase 8 logic."
+}

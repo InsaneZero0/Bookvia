@@ -1,0 +1,33 @@
+{
+  "summary": "Phase 9 (day-20 settlements + SPEI CSV export) backend tests: 17/17 pass. Covered direct invocation of generate_settlements_day20 (skip when day != 20, force creates settlement per business, copies clabe/legal_name/rfc, stamps tx with settlement_id+settlement_period, idempotent second run, payout_hold exclusion, decoy tx with prior settlement_id untouched), email mock-stored as template='settlement_notification' with proper data fields, push notification type='settlement_ready' delivered to owner only (manager excluded), HTTP endpoint POST /api/admin/settlements/generate-day20 auth (401/403 for none/client/business), GET /api/admin/settlements/{period}/export-spei.csv with correct headers, attachment Content-Disposition, comma/quote CSV escaping, status_filter=pending default vs status_filter=all, and scheduler startup log + asyncio.create_task registration.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_fase9_day20_settlements.py",
+    "/app/test_reports/pytest/fase9_day20.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "generate_settlements_day20 correctly enforces force gate (run_date.day != 20 -> skipped:true with reason='day=N') and computes period_key as YYYY-MM-D20 of the run month.",
+    "Tx selector covers both legacy docs (settlement_id missing) and new docs (settlement_id null/empty); duplicates de-duped by id before grouping. Good.",
+    "Settlement doc fields are complete: total_amount=payout_amount=net_payout=sum(business_amount), booking_count=len(unique booking_ids), transaction_ids list, clabe/legal_name/rfc copied from business snapshot, status=PENDING, idempotency_key='day20-{period_key}'.",
+    "tx update_many sets settlement_id+settlement_period only on tx_ids of the just-created settlement => idempotency works (second force run produced settlements_created=0).",
+    "payout_hold business returns results entry with skipped=true + reason='payout_hold' and writes no settlement; its tx remain with no settlement_id (correctly retried on next run when hold lifts).",
+    "Owner-only push: query filters role=BUSINESS + is_manager != True; manager (is_manager=True) is excluded as required.",
+    "Email send_settlement_notification stored via send_email mock path with template='settlement_notification' and data={business_name, amount_mxn, period_key, settlement_id, booking_count, transactions_count}.",
+    "CSV export: text/csv content-type, Content-Disposition: attachment; filename=\"bookvia-spei-{period}.csv\". Header order matches spec (Beneficiario,CLABE,RFC,Monto,Concepto,Referencia,Email,Citas,Folio). _csv_escape handles , \" \\n \\r and double-quotes embedded quotes.",
+    "status_filter='pending' is default; 'all' bypasses status filter. Verified by flipping a settlement to paid and re-fetching.",
+    "Auth: require_admin returns 403 for client/business tokens, 401/403 for missing token. Audit logs created for both generate (action=settlement_generate, target_type=settlement) and export (target_type=settlement_export).",
+    "Scheduler: asyncio.create_task(settlement_day20_scheduler()) is in server.startup_event; logs 'Settlement day-20 scheduler started' on boot; loop sleeps 3600s and re-runs only when day==20 and last_run_date != today_key (idempotent within a day)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_fase9_day20_settlements.py (new)"
+  ],
+  "success_rate": {"backend": "100% (17/17)", "frontend": "n/a"},
+  "test_credentials": "Admin zamorachapa50@gmail.com + TOTP via pyotp from db.users.totp_secret. Business owner/client tokens minted directly with HS256 + JWT_SECRET.",
+  "seed_data_creation": "Created 3 businesses (TEST_F9_biz_a normal with 2 cleared tx, TEST_F9_biz_b payout_hold=true with 1 cleared tx, TEST_F9_biz_comma with name+legal_name containing commas/quotes for escape testing), 4 users (owner_a, mgr_a, owner_b, owner_comma), 1 client, 4 cleared transactions + 1 decoy tx already pre-stamped with settlement_id='OLD_PAID_SETTLEMENT'. All seeded with TEST_F9_ prefix and cleaned up in teardown (also cleans db.settlements for period_key 2026-05-D20).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "test_fase9_day20_settlements.py uses run_date=datetime(2026,5,20,UTC) so the period_key (2026-05-D20) is unique to the test and won't collide with real data. Direct-call tests use asyncio.get_event_loop().run_until_complete to avoid an event loop dependency on the FastAPI app. The Resend integration is in mock mode in this env (no RESEND_API_KEY), so emails are auto-stored to db.sent_emails by send_email's mock branch — no monkeypatch needed. Frontend Fase 8 inline preview (DocPreviewCard / data-testid='bank-preview') was NOT exercised since this run was 'backend only'.",
+  "rca of the issue": "N/A - no failures."
+}

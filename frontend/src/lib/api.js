@@ -63,6 +63,15 @@ api.interceptors.response.use(
         window.location.href = '/login';
       }
     }
+
+    // Fase 10: backend signals that T&C are outdated AND grace period is
+    // over. Fire a global event the TermsReAcceptModal listens for so the
+    // user is asked to re-accept immediately.
+    const detail = error.response?.data?.detail;
+    if (error.response?.status === 409 && detail && typeof detail === 'object' && detail.code === 'terms_outdated') {
+      try { window.dispatchEvent(new CustomEvent('bookvia:terms_outdated', { detail })); } catch { /* ignore */ }
+    }
+
     return Promise.reject(error);
   }
 );
@@ -106,6 +115,10 @@ export const usersAPI = {
   getMyStats: () => api.get('/users/my-stats'),
   getWallet: () => api.get('/users/me/wallet'),
   getWalletTransactions: (page = 1, limit = 20) => api.get('/users/me/wallet/transactions', { params: { page, limit } }),
+  exportMyData: () => api.get('/users/me/export-data', {
+    responseType: 'text',
+    transformResponse: [(data) => data],
+  }),
 };
 
 // Categories API
@@ -125,6 +138,7 @@ export const businessesAPI = {
   updateMe: (data) => api.put('/businesses/me', data),
   getDashboard: () => api.get('/businesses/me/dashboard'),
   getPrivateInfo: () => api.get('/businesses/me/private-info'),
+  updateLegalDocs: (data) => api.put('/businesses/me/legal-docs', data),
   getBusinessHours: () => api.get('/businesses/me/hours'),
   updateBusinessHours: (hours) => api.put('/businesses/me/hours', hours),
   // Workers (for specific business - public)
@@ -197,6 +211,13 @@ export const businessesAPI = {
   getClientHistory: (userId) => api.get(`/businesses/my/client-history/${userId}`),
   getMyBusiness: () => api.get('/businesses/me'),
   updateBusiness: (data) => api.put('/businesses/me', data),
+  uploadPublicFile: (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api.post('/upload/public', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
 };
 
 // Services API
@@ -278,6 +299,12 @@ export const notificationsAPI = {
 };
 
 // Admin API
+export const termsAPI = {
+  getVersion: () => api.get('/terms/version'),
+  myStatus: () => api.get('/terms/me'),
+  accept: (version) => api.post('/terms/accept', { version }),
+};
+
 export const adminAPI = {
   getStats: () => api.get('/admin/stats'),
   getPendingBusinesses: () => api.get('/admin/businesses/pending'),
@@ -286,6 +313,9 @@ export const adminAPI = {
   approveBusiness: (id) => api.put(`/admin/businesses/${id}/approve`),
   rejectBusiness: (id, reason) => api.put(`/admin/businesses/${id}/reject`, null, { params: { reason } }),
   suspendBusiness: (id, reason) => api.put(`/admin/businesses/${id}/suspend`, null, { params: { reason } }),
+  verifyBusinessDocuments: (id) => api.post(`/admin/businesses/${id}/verify-documents`),
+  rejectBusinessDocuments: (id, reason) => api.post(`/admin/businesses/${id}/reject-documents`, { reason }),
+  getPendingDocsBusinesses: (limit = 50) => api.get('/admin/businesses/pending-docs', { params: { limit } }),
   suspendUser: (id, days, reason) => api.put(`/admin/users/${id}/suspend`, null, { params: { days, reason } }),
   deleteReview: (id, reason) => api.delete(`/admin/reviews/${id}`, { params: { reason } }),
   getAuditLogs: (params) => api.get('/admin/audit-logs', { params }),
@@ -296,6 +326,12 @@ export const adminAPI = {
   getHeldPayments: (params) => api.get('/admin/payments/held', { params }),
   getSettlements: (params) => api.get('/admin/settlements', { params }),
   generateSettlements: (year, month) => api.post(`/admin/settlements/generate?year=${year}&month=${month}`),
+  generateDay20Settlements: (force = false) => api.post(`/admin/settlements/generate-day20${force ? '?force=true' : ''}`),
+  exportSpeiCsv: (periodKey, statusFilter = 'pending', bank = 'generic') => api.get(`/admin/settlements/${periodKey}/export-spei.csv`, {
+    params: { status_filter: statusFilter, bank },
+    responseType: 'text',
+    transformResponse: [(data) => data],
+  }),
   markSettlementPaid: (id, payout_reference) => api.put(`/admin/settlements/${id}/pay`, { payout_reference }),
   togglePayoutHold: (businessId, hold, reason) => api.put(`/admin/businesses/${businessId}/payout-hold`, { hold, reason }),
   exportTransactions: (year, month) => api.get(`/admin/export/transactions?year=${year}&month=${month}`, { responseType: 'blob' }),

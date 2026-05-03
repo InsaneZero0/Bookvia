@@ -592,12 +592,14 @@ async def upload_public_image(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="File too large. Maximum 5MB")
     
     ext = file.filename.split(".")[-1].lower() if "." in file.filename else ""
-    if ext not in ("jpg", "jpeg", "png", "webp", "jfif"):
-        raise HTTPException(status_code=400, detail="Only JPG, PNG, WebP allowed")
-    
+    if ext not in ("jpg", "jpeg", "png", "webp", "jfif", "pdf"):
+        raise HTTPException(status_code=400, detail="Only JPG, PNG, WebP or PDF allowed")
+
     content_type = file.content_type or "image/jpeg"
     if ext in ("jfif", "jpg", "jpeg", "pjpeg"):
         content_type = "image/jpeg"
+    elif ext == "pdf":
+        content_type = "application/pdf"
     
     path = generate_upload_path("registration", file.filename)
     try:

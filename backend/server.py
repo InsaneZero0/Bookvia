@@ -41,6 +41,7 @@ from routers.notifications import router as notifications_router
 from routers.finance import router as finance_router
 from routers.system import router as system_router
 from routers.seo import seo_router
+from routers.terms import router as terms_router  # Fase 10
 
 api_router.include_router(auth_router)
 api_router.include_router(users_router)
@@ -54,6 +55,7 @@ api_router.include_router(admin_router)
 api_router.include_router(notifications_router)
 api_router.include_router(finance_router)
 api_router.include_router(system_router)
+api_router.include_router(terms_router)
 
 # SEO routes at root level (no /api prefix for sitemap/robots)
 app.include_router(seo_router)
@@ -144,11 +146,81 @@ async def startup_event():
             logger.info(f"Backfilled CL public_code for {len(missing_users)} users")
     except Exception as e:
         logger.warning(f"public_code backfill failed: {e}")
+
+    # ------------------------------------------------------------------
+    # Fase 8 grandfather clause: any business that was already APPROVED
+    # before the documents_verified flag existed keeps receiving bookings.
+    # New businesses will flip to documents_verified=False on first legal
+    # doc update (see /businesses/me/legal-docs) until admin approves.
+    # ------------------------------------------------------------------
+    try:
+        from core.database import db
+        grandfather = await db.businesses.update_many(
+            {
+                "status": "approved",
+                "documents_verified": {"$exists": False},
+            },
+            {"$set": {"documents_verified": True, "documents_grandfathered": True}},
+        )
+        if grandfather.modified_count:
+            logger.info(
+                f"Fase 8 grandfather: marked {grandfather.modified_count} businesses as documents_verified=True"
+            )
+    except Exception as e:
+        logger.warning(f"Fase 8 grandfather backfill failed: {e}")
+
+    # ------------------------------------------------------------------
+    # Fase 10 migration: seed terms_acceptance_history for accounts that
+    # were created before the audit trail was introduced. We only seed
+    # when the account already has accepted_terms_version + at (so we
+    # never fabricate evidence for users who never accepted).
+    # ------------------------------------------------------------------
+    try:
+        from core.database import db
+        migrated_users = await db.users.update_many(
+            {
+                "accepted_terms_version": {"$exists": True, "$ne": None},
+                "accepted_terms_at": {"$exists": True, "$ne": None},
+                "terms_acceptance_history": {"$exists": False},
+            },
+            [{"$set": {
+                "terms_acceptance_history": [{
+                    "version": "$accepted_terms_version",
+                    "accepted_at": "$accepted_terms_at",
+                    "ip": "",
+                    "user_agent": "",
+                    "source": "migration",
+                }]
+            }}],
+        )
+        migrated_biz = await db.businesses.update_many(
+            {
+                "accepted_terms_version": {"$exists": True, "$ne": None},
+                "accepted_terms_at": {"$exists": True, "$ne": None},
+                "terms_acceptance_history": {"$exists": False},
+            },
+            [{"$set": {
+                "terms_acceptance_history": [{
+                    "version": "$accepted_terms_version",
+                    "accepted_at": "$accepted_terms_at",
+                    "ip": "",
+                    "user_agent": "",
+                    "source": "migration",
+                }]
+            }}],
+        )
+        total = migrated_users.modified_count + migrated_biz.modified_count
+        if total:
+            logger.info(f"Fase 10 terms history migration: seeded {total} documents")
+    except Exception as e:
+        logger.warning(f"Fase 10 terms history migration failed: {e}")
+
     # Start background schedulers
     asyncio.create_task(appointment_reminder_scheduler())
     asyncio.create_task(subscription_reminder_scheduler())
     asyncio.create_task(wallet_expiration_scheduler())
     asyncio.create_task(funds_state_scheduler())
+    asyncio.create_task(settlement_day20_scheduler())
 
 
 # ========================== BACKGROUND SCHEDULERS ==========================
@@ -221,6 +293,23 @@ async def send_appointment_reminders():
                 public_api = os.environ.get("PUBLIC_API_URL") or "https://api.bookvia.app"
                 calendar_url = f"{public_api}/api/bookings/{booking['id']}/calendar.ics?token={token}"
 
+                # Google Calendar "add event" URL (RFC-compliant compact UTC format)
+                from urllib.parse import quote
+                utc_end = (utc_dt + timedelta(minutes=int(
+                    (service or {}).get("duration_minutes")
+                    or (service or {}).get("duration")
+                    or booking.get("duration_minutes")
+                    or 60
+                )))
+                gcal_dates = f"{utc_dt.strftime('%Y%m%dT%H%M%SZ')}/{utc_end.strftime('%Y%m%dT%H%M%SZ')}"
+                gcal_text = quote(f"Cita en {business.get('name','Bookvia')}")
+                gcal_details = quote(f"Servicio: {(service or {}).get('name','')}\\nReserva: https://bookvia.vercel.app/bookings")
+                gcal_location = quote(business.get("address", "") or "")
+                google_calendar_url = (
+                    f"https://calendar.google.com/calendar/render?action=TEMPLATE"
+                    f"&text={gcal_text}&dates={gcal_dates}&details={gcal_details}&location={gcal_location}"
+                )
+
                 try:
                     if user.get("notify_email", True):
                         try:
@@ -240,6 +329,7 @@ async def send_appointment_reminders():
                                 reschedule_until_text=reschedule_text,
                                 reschedule_remaining=remaining,
                                 calendar_url=calendar_url,
+                                google_calendar_url=google_calendar_url,
                             )
                         except Exception as email_err:
                             # Do not block push + reminder_sent flag if email provider fails
@@ -367,3 +457,30 @@ async def send_subscription_reminders():
             logger.info(f"Subscription reminder sent to {biz['email']}")
         except Exception as e:
             logger.error(f"Failed to send subscription reminder to {biz.get('email')}: {e}")
+
+
+
+async def settlement_day20_scheduler():
+    """Run the day-20 settlement job once per day; only acts on day 20.
+
+    We re-use the idempotency of `generate_settlements_day20`: if the job
+    was already run in this calendar month, the CLEARED transactions are
+    already tagged with `settlement_id` and won't be picked up again.
+    """
+    logger.info("Settlement day-20 scheduler started")
+    await asyncio.sleep(120)
+    last_run_date = None
+    while True:
+        try:
+            now = datetime.now(timezone.utc)
+            today_key = now.strftime("%Y-%m-%d")
+            if now.day == 20 and last_run_date != today_key:
+                logger.info(f"[day20] Running settlement generation for {today_key}")
+                from routers.admin import generate_settlements_day20
+                result = await generate_settlements_day20(run_date=now, force=False, admin_id="cron_day20")
+                logger.info(f"[day20] Finished: {result.get('settlements_created', 0)} settlements created")
+                last_run_date = today_key
+        except Exception as e:
+            logger.error(f"Settlement day-20 scheduler error: {e}")
+        # Check every hour
+        await asyncio.sleep(3600)
