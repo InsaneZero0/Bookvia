@@ -472,6 +472,22 @@ export default function AdminDashboardPage() {
   const [exportYear, setExportYear] = useState(new Date().getFullYear());
   const [exportMonth, setExportMonth] = useState(new Date().getMonth() + 1);
 
+  // Platform P&L / Reconciliation / Refunds (Phase 12)
+  const [pnl, setPnl] = useState(null);
+  const [pnlDays, setPnlDays] = useState(30);
+  const [pnlLoading, setPnlLoading] = useState(false);
+  const [reconIssues, setReconIssues] = useState([]);
+  const [reconRunning, setReconRunning] = useState(false);
+  const [refundsAudit, setRefundsAudit] = useState(null);
+
+  // Compliance tab (security + T&C + ARCO + webhooks)
+  const [complianceLoading, setComplianceLoading] = useState(false);
+  const [lockedAccounts, setLockedAccounts] = useState([]);
+  const [termsStats, setTermsStats] = useState(null);
+  const [termsPending, setTermsPending] = useState([]);
+  const [arcoEvents, setArcoEvents] = useState(null);
+  const [webhookEvents, setWebhookEvents] = useState([]);
+
   // Reviews tab
   const [reviews, setReviews] = useState([]);
   const [reviewsTotal, setReviewsTotal] = useState(0);
@@ -614,11 +630,72 @@ export default function AdminDashboardPage() {
 
   const loadFinance = async () => {
     setFinanceLoading(true);
+    setPnlLoading(true);
     try {
-      const res = await adminAPI.getSettlements({ page: 1, limit: 50 });
-      setSettlements(res.data);
+      const [settlRes, pnlRes, issuesRes, refundsRes] = await Promise.all([
+        adminAPI.getSettlements({ page: 1, limit: 50 }),
+        adminAPI.getPlatformPnl(pnlDays),
+        adminAPI.getReconciliationIssues(50),
+        adminAPI.getRefundsAudit(50),
+      ]);
+      setSettlements(settlRes.data);
+      setPnl(pnlRes.data);
+      setReconIssues(issuesRes.data.items || []);
+      setRefundsAudit(refundsRes.data);
     } catch { /* silent */ }
     setFinanceLoading(false);
+    setPnlLoading(false);
+  };
+
+  const loadCompliance = async () => {
+    setComplianceLoading(true);
+    try {
+      const [locksRes, termsRes, pendingRes, arcoRes, hooksRes] = await Promise.all([
+        adminAPI.getLockedAccounts(),
+        adminAPI.getTermsStats(),
+        adminAPI.getTermsPendingUsers(50),
+        adminAPI.getArcoEvents(50),
+        adminAPI.getStripeWebhookEvents(50),
+      ]);
+      setLockedAccounts(locksRes.data.items || []);
+      setTermsStats(termsRes.data);
+      setTermsPending(pendingRes.data.items || []);
+      setArcoEvents(arcoRes.data);
+      setWebhookEvents(hooksRes.data.items || []);
+    } catch { /* silent */ }
+    setComplianceLoading(false);
+  };
+
+  const handleRunReconciliation = async () => {
+    const date = window.prompt(t('Fecha a reconciliar (YYYY-MM-DD, vacio = ayer):', 'Date to reconcile (YYYY-MM-DD, empty = yesterday):'), '');
+    setReconRunning(true);
+    try {
+      const res = await adminAPI.runStripeReconciliation(date?.trim() || undefined);
+      const d = res.data;
+      if (d.ok === false) {
+        toast.error(d.error || t('Reconciliacion fallida', 'Reconciliation failed'));
+      } else {
+        toast.success(t(
+          `Stripe=${d.stripe_transactions} | match=${d.matched} | faltan=${d.missing}`,
+          `Stripe=${d.stripe_transactions} | matched=${d.matched} | missing=${d.missing}`,
+        ));
+        loadFinance();
+      }
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || t('Error', 'Error'));
+    }
+    setReconRunning(false);
+  };
+
+  const handleUnlockAccount = async (key) => {
+    if (!window.confirm(t(`Desbloquear ${key}?`, `Unlock ${key}?`))) return;
+    try {
+      await adminAPI.unlockAccount(key);
+      toast.success(t('Cuenta desbloqueada', 'Account unlocked'));
+      loadCompliance();
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || t('Error', 'Error'));
+    }
   };
 
   const loadReviews = useCallback(async (page = 1) => {
@@ -710,6 +787,7 @@ export default function AdminDashboardPage() {
     if (activeTab === 'businesses') loadBusinesses(1);
     if (activeTab === 'users') loadUsers(1);
     if (activeTab === 'finance') loadFinance();
+    if (activeTab === 'compliance') loadCompliance();
     if (activeTab === 'reviews') loadReviews(1);
     if (activeTab === 'subscriptions') loadSubscriptions();
     if (activeTab === 'categories') loadCategories();
@@ -1020,6 +1098,7 @@ export default function AdminDashboardPage() {
     { id: 'reports', label: t('Reportes', 'Reports'), icon: FileBarChart },
     { id: 'subscriptions', label: t('Suscripciones', 'Subscriptions'), icon: CreditCard },
     { id: 'finance', label: t('Finanzas', 'Finance'), icon: Wallet },
+    { id: 'compliance', label: t('Cumplimiento', 'Compliance'), icon: Shield },
     ...(isSuperAdmin ? [{ id: 'staff', label: t('Equipo', 'Team'), icon: UserPlus }] : []),
   ];
   const tabs = allTabs.filter(tab => hasTabPerm(tab.id));
@@ -2469,7 +2548,7 @@ export default function AdminDashboardPage() {
                   <div>
                     <label className="text-sm font-medium mb-2 block">{t('Permisos (tabs accesibles)', 'Permissions (accessible tabs)')}</label>
                     <div className="grid grid-cols-3 md:grid-cols-4 gap-2">
-                      {['overview','businesses','users','reviews','categories','rankings','cities','config','support','reports','subscriptions','finance'].map(perm => (
+                      {['overview','businesses','users','reviews','categories','rankings','cities','config','support','reports','subscriptions','finance','compliance'].map(perm => (
                         <label key={perm} className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer transition-colors text-sm ${
                           staffForm.permissions.includes(perm) ? 'bg-blue-50 border border-blue-200 text-blue-700' : 'bg-muted/50 border border-transparent'
                         }`}>
@@ -2491,7 +2570,7 @@ export default function AdminDashboardPage() {
                       ))}
                     </div>
                     <div className="flex gap-2 mt-2">
-                      <Button size="sm" variant="ghost" className="text-xs" onClick={() => setStaffForm(f => ({ ...f, permissions: ['overview','businesses','users','reviews','categories','rankings','cities','config','support','reports','subscriptions','finance'] }))}>
+                      <Button size="sm" variant="ghost" className="text-xs" onClick={() => setStaffForm(f => ({ ...f, permissions: ['overview','businesses','users','reviews','categories','rankings','cities','config','support','reports','subscriptions','finance','compliance'] }))}>
                         {t('Seleccionar todos', 'Select all')}
                       </Button>
                       <Button size="sm" variant="ghost" className="text-xs" onClick={() => setStaffForm(f => ({ ...f, permissions: [] }))}>
@@ -2572,6 +2651,133 @@ export default function AdminDashboardPage() {
         {/* ============ FINANCE TAB ============ */}
         {activeTab === 'finance' && (
           <div className="space-y-6">
+            {/* P&L Card */}
+            <Card data-testid="pnl-card">
+              <CardHeader className="flex flex-row items-center justify-between">
+                <CardTitle className="font-heading flex items-center gap-2">
+                  <TrendingUp className="h-5 w-5 text-emerald-500" />{t('P&L de la Plataforma', 'Platform P&L')}
+                </CardTitle>
+                <div className="flex items-center gap-2">
+                  <Select value={String(pnlDays)} onValueChange={(v) => setPnlDays(parseInt(v))}>
+                    <SelectTrigger className="w-28" data-testid="pnl-days-select"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {[7, 15, 30, 60, 90, 180, 365].map(d => (
+                        <SelectItem key={d} value={String(d)}>{d} {t('dias', 'days')}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button size="sm" variant="outline" onClick={loadFinance} data-testid="pnl-refresh-btn">
+                    {t('Actualizar', 'Refresh')}
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {pnlLoading ? (
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">{[1,2,3,4].map(i => <Skeleton key={i} className="h-20" />)}</div>
+                ) : pnl ? (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <div className="rounded-xl border p-4">
+                        <p className="text-xs text-muted-foreground">{t('Ingreso bruto Bookvia', 'Bookvia gross income')}</p>
+                        <p className="text-2xl font-heading font-bold text-emerald-600">{formatCurrency(pnl.gross_income_bookvia)}</p>
+                        <p className="text-[11px] text-muted-foreground mt-1">{t('fee fijo + margen Stripe', 'fixed fee + Stripe margin')}</p>
+                      </div>
+                      <div className="rounded-xl border p-4">
+                        <p className="text-xs text-muted-foreground">{t('Fee fijo $8.20', 'Fixed fee $8.20')}</p>
+                        <p className="text-2xl font-heading font-bold">{formatCurrency(pnl.bookvia_fee_income)}</p>
+                        <p className="text-[11px] text-muted-foreground mt-1">{pnl.transaction_count} {t('transacciones', 'transactions')}</p>
+                      </div>
+                      <div className="rounded-xl border p-4">
+                        <p className="text-xs text-muted-foreground">{t('Margen Stripe', 'Stripe margin')}</p>
+                        <p className={`text-2xl font-heading font-bold ${pnl.fee_margin < 0 ? 'text-red-600' : 'text-emerald-600'}`}>{formatCurrency(pnl.fee_margin)}</p>
+                        <p className="text-[11px] text-muted-foreground mt-1">{t('estimado vs real', 'estimated vs actual')}</p>
+                      </div>
+                      <div className="rounded-xl border p-4">
+                        <p className="text-xs text-muted-foreground">{t('Reembolsos', 'Refunds')}</p>
+                        <p className="text-2xl font-heading font-bold text-orange-500">{formatCurrency(pnl.refund_amount_total)}</p>
+                        <p className="text-[11px] text-muted-foreground mt-1">{t('del periodo', 'in period')}</p>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                      <div><span className="text-muted-foreground">{t('Cliente pago', 'Client paid')}:</span> <b>{formatCurrency(pnl.client_paid_total)}</b></div>
+                      <div><span className="text-muted-foreground">{t('Fee estimado Stripe', 'Stripe fee est.')}:</span> <b>{formatCurrency(pnl.stripe_fee_estimated_total)}</b></div>
+                      <div><span className="text-muted-foreground">{t('Fee real Stripe', 'Stripe fee actual')}:</span> <b>{formatCurrency(pnl.stripe_fee_actual_total)}</b></div>
+                      <div><span className="text-muted-foreground">{t('Cobertura fee real', 'Actual fee coverage')}:</span> <b>{pnl.coverage_pct}%</b></div>
+                    </div>
+                    {pnl.transactions_margin_negative > 0 && (
+                      <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700">
+                        <AlertCircle className="h-4 w-4 inline mr-1" />
+                        {pnl.transactions_margin_negative} {t('transacciones con margen negativo (Stripe cobro mas de lo estimado)', 'transactions with negative margin (Stripe charged more than estimated)')}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">{t('Sin datos', 'No data')}</p>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Reconciliation */}
+            <Card data-testid="reconciliation-card">
+              <CardHeader className="flex flex-row items-center justify-between">
+                <CardTitle className="font-heading flex items-center gap-2">
+                  <Shield className="h-5 w-5 text-indigo-500" />{t('Reconciliacion Stripe', 'Stripe Reconciliation')}
+                </CardTitle>
+                <Button size="sm" onClick={handleRunReconciliation} disabled={reconRunning} data-testid="run-reconciliation-btn">
+                  {reconRunning ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
+                  {t('Correr ahora', 'Run now')}
+                </Button>
+              </CardHeader>
+              <CardContent>
+                {reconIssues.length === 0 ? (
+                  <div className="text-center py-8 text-sm text-muted-foreground">
+                    <CheckCircle2 className="h-10 w-10 text-green-500 mx-auto mb-2" />
+                    {t('No hay discrepancias pendientes. El ultimo cron nocturno encontro todo cuadrado.', 'No pending discrepancies. Last nightly cron matched everything.')}
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <p className="text-sm text-muted-foreground mb-2">{reconIssues.length} {t('discrepancias', 'discrepancies')}:</p>
+                    {reconIssues.slice(0, 20).map((r, i) => (
+                      <div key={i} className="text-xs rounded border border-orange-200 bg-orange-50 p-3 flex justify-between" data-testid={`recon-issue-${i}`}>
+                        <div>
+                          <div className="font-mono">{r.stripe_charge_id}</div>
+                          <div className="text-muted-foreground">{r.issue} · {formatDate(r.detected_at)}</div>
+                        </div>
+                        <div className="font-bold">{formatCurrency(r.amount)}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Refunds audit */}
+            <Card data-testid="refunds-audit-card">
+              <CardHeader>
+                <CardTitle className="font-heading flex items-center gap-2">
+                  <DollarSign className="h-5 w-5 text-orange-500" />{t('Auditoria de Reembolsos', 'Refunds Audit')}
+                  {refundsAudit && <Badge className="bg-orange-100 text-orange-700 ml-2">{formatCurrency(refundsAudit.total_refunded_mxn)}</Badge>}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {!refundsAudit || refundsAudit.items.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-6">{t('Sin reembolsos recientes.', 'No recent refunds.')}</p>
+                ) : (
+                  <div className="space-y-2">
+                    {refundsAudit.items.slice(0, 20).map((r, i) => (
+                      <div key={r.id || i} className="flex items-center justify-between p-3 rounded-lg bg-muted/40 text-sm" data-testid={`refund-row-${i}`}>
+                        <div className="min-w-0">
+                          <div className="font-mono text-xs text-muted-foreground truncate">{r.stripe_refund_id || '-'}</div>
+                          <div className="text-xs text-muted-foreground">{r.reason} · {t('por', 'by')} {r.actor} · {formatDate(r.created_at)}</div>
+                        </div>
+                        <div className="font-bold shrink-0">{formatCurrency(r.amount_mxn)}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
             <Card>
               <CardContent className="p-4">
                 <div className="flex flex-wrap items-end gap-4">
@@ -2650,6 +2856,180 @@ export default function AdminDashboardPage() {
                   <div className="text-center py-12">
                     <Wallet className="h-12 w-12 text-muted-foreground/30 mx-auto mb-3" />
                     <p className="text-muted-foreground">{t('No hay liquidaciones. Genera una para el periodo seleccionado.', 'No settlements. Generate one for the selected period.')}</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* ============ COMPLIANCE TAB ============ */}
+        {activeTab === 'compliance' && (
+          <div className="space-y-6" data-testid="compliance-tab">
+            {/* Locked accounts */}
+            <Card data-testid="lockouts-card">
+              <CardHeader className="flex flex-row items-center justify-between">
+                <CardTitle className="font-heading flex items-center gap-2">
+                  <Ban className="h-5 w-5 text-red-500" />{t('Cuentas bloqueadas por fuerza bruta', 'Brute-force locked accounts')}
+                  <Badge variant="outline">{lockedAccounts.length}</Badge>
+                </CardTitle>
+                <Button size="sm" variant="outline" onClick={loadCompliance} data-testid="compliance-refresh-btn">
+                  {t('Actualizar', 'Refresh')}
+                </Button>
+              </CardHeader>
+              <CardContent>
+                {complianceLoading ? (
+                  <div className="space-y-2">{[1,2].map(i => <Skeleton key={i} className="h-14" />)}</div>
+                ) : lockedAccounts.length === 0 ? (
+                  <div className="text-center py-6 text-sm text-muted-foreground">
+                    <CheckCircle2 className="h-10 w-10 text-green-500 mx-auto mb-2" />
+                    {t('No hay cuentas bloqueadas ahora.', 'No accounts are locked right now.')}
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {lockedAccounts.map((a) => (
+                      <div key={a.key} className="flex items-center justify-between p-3 rounded-lg bg-red-50 border border-red-200 gap-3" data-testid={`locked-${a.email}`}>
+                        <div className="min-w-0">
+                          <p className="font-medium truncate">{a.email || t('(sin email)', '(no email)')}</p>
+                          <p className="text-xs text-muted-foreground">IP {a.ip} · {t('hasta', 'until')} {formatDate(a.locked_until)}</p>
+                        </div>
+                        <Button size="sm" variant="outline" onClick={() => handleUnlockAccount(a.key)} data-testid={`unlock-${a.email}`}>
+                          <Key className="h-4 w-4 mr-1" />{t('Desbloquear', 'Unlock')}
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* T&C stats */}
+            <Card data-testid="terms-stats-card">
+              <CardHeader>
+                <CardTitle className="font-heading flex items-center gap-2">
+                  <FileText className="h-5 w-5 text-indigo-500" />{t('Terminos y Condiciones', 'Terms & Conditions')}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {!termsStats ? (
+                  <Skeleton className="h-20" />
+                ) : (
+                  <div className="space-y-4">
+                    <div className="flex flex-wrap gap-4 text-sm">
+                      <div>
+                        <span className="text-muted-foreground">{t('Version actual', 'Current version')}:</span>{' '}
+                        <Badge className="bg-indigo-100 text-indigo-700">{termsStats.current_version}</Badge>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">{t('Publicada', 'Published')}:</span> <b>{formatDate(termsStats.published_at)}</b>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">{t('Fin de gracia', 'Grace ends')}:</span> <b>{formatDate(termsStats.grace_period_ends_at)}</b>
+                      </div>
+                      <div>
+                        {termsStats.is_hard_block_now ? (
+                          <Badge className="bg-red-100 text-red-700">{t('Bloqueo duro activo', 'Hard block active')}</Badge>
+                        ) : (
+                          <Badge className="bg-yellow-100 text-yellow-700">{t('En periodo de gracia', 'In grace period')}</Badge>
+                        )}
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="rounded-xl border p-4">
+                        <p className="text-xs text-muted-foreground">{t('Usuarios', 'Users')}</p>
+                        <p className="text-2xl font-heading font-bold">{termsStats.users.acceptance_pct}%</p>
+                        <p className="text-xs text-muted-foreground">
+                          {termsStats.users.accepted_current}/{termsStats.users.total} {t('aceptaron', 'accepted')} · {termsStats.users.pending} {t('pendientes', 'pending')}
+                        </p>
+                      </div>
+                      <div className="rounded-xl border p-4">
+                        <p className="text-xs text-muted-foreground">{t('Negocios', 'Businesses')}</p>
+                        <p className="text-2xl font-heading font-bold">{termsStats.businesses.acceptance_pct}%</p>
+                        <p className="text-xs text-muted-foreground">
+                          {termsStats.businesses.accepted_current}/{termsStats.businesses.total} {t('aceptaron', 'accepted')} · {termsStats.businesses.pending} {t('pendientes', 'pending')}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground">
+                      <p><b>{t('Como publicar una nueva version:', 'How to publish a new version:')}</b></p>
+                      <p>1. {t('Sube la copia nueva a', 'Upload the new copy to')} <code>frontend/src/pages/TermsPage.jsx</code>.</p>
+                      <p>2. {t('Actualiza', 'Update')} <code>TERMS_VERSION</code> {t('y', 'and')} <code>TERMS_VERSION_PUBLISHED_AT</code> {t('en', 'in')} <code>backend/core/config.py</code>.</p>
+                      <p>3. {t('Agrega un bloque al CHANGELOG en', 'Add a block to the CHANGELOG in')} <code>backend/routers/terms.py</code>. {t('Se dispara el modal de re-aceptacion automaticamente.', 'The re-acceptance modal triggers automatically.')}</p>
+                    </div>
+                    {termsPending.length > 0 && (
+                      <details className="text-sm">
+                        <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
+                          {t('Ver usuarios pendientes', 'View pending users')} ({termsPending.length})
+                        </summary>
+                        <div className="mt-2 max-h-64 overflow-y-auto space-y-1">
+                          {termsPending.map(u => (
+                            <div key={u.id} className="text-xs flex justify-between py-1 border-b" data-testid={`terms-pending-${u.email}`}>
+                              <span className="truncate">{u.full_name} · {u.email}</span>
+                              <span className="text-muted-foreground shrink-0 ml-2">{u.accepted_terms_version || t('nunca', 'never')}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </details>
+                    )}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* ARCO events */}
+            <Card data-testid="arco-card">
+              <CardHeader>
+                <CardTitle className="font-heading flex items-center gap-2">
+                  <Shield className="h-5 w-5 text-purple-500" />{t('Derechos ARCO (LFPDPPP)', 'ARCO Rights (LFPDPPP)')}
+                  {arcoEvents && <Badge variant="outline">{arcoEvents.count}</Badge>}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {!arcoEvents || arcoEvents.items.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-6">{t('Aun no hay eventos ARCO registrados.', 'No ARCO events recorded yet.')}</p>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="flex gap-3 text-sm">
+                      <Badge className="bg-blue-100 text-blue-700">{t('Exportes', 'Exports')}: {arcoEvents.summary.personal_data_export || 0}</Badge>
+                      <Badge className="bg-red-100 text-red-700">{t('Cancelaciones', 'Cancellations')}: {arcoEvents.summary.account_deleted_by_user || 0}</Badge>
+                    </div>
+                    <div className="max-h-96 overflow-y-auto space-y-2">
+                      {arcoEvents.items.map((ev, i) => (
+                        <div key={i} className="text-xs rounded border p-2 bg-muted/30" data-testid={`arco-event-${i}`}>
+                          <div className="flex justify-between">
+                            <span className="font-medium">
+                              {ev.action === 'personal_data_export' ? t('Export de datos', 'Data export') : t('Cancelacion de cuenta', 'Account cancellation')}
+                            </span>
+                            <span className="text-muted-foreground">{formatDate(ev.created_at)}</span>
+                          </div>
+                          <div className="text-muted-foreground">{ev.actor_email || '-'} · IP {ev.ip || '-'}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Stripe webhook events */}
+            <Card data-testid="webhook-events-card">
+              <CardHeader>
+                <CardTitle className="font-heading flex items-center gap-2">
+                  <CreditCard className="h-5 w-5 text-fuchsia-500" />{t('Log de Webhooks Stripe', 'Stripe Webhooks Log')}
+                  <Badge variant="outline">{webhookEvents.length}</Badge>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {webhookEvents.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-6">{t('Sin eventos recientes.', 'No recent events.')}</p>
+                ) : (
+                  <div className="max-h-96 overflow-y-auto space-y-1">
+                    {webhookEvents.map((e, i) => (
+                      <div key={e.event_id || i} className="text-xs flex justify-between py-1.5 border-b font-mono" data-testid={`webhook-${i}`}>
+                        <span className="truncate">{e.event_type}</span>
+                        <span className="text-muted-foreground shrink-0 ml-2">{formatDate(e.received_at)}</span>
+                      </div>
+                    ))}
                   </div>
                 )}
               </CardContent>

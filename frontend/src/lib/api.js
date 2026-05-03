@@ -373,6 +373,17 @@ export const adminAPI = {
   resetStaffPassword: (id) => api.put(`/admin/staff/${id}/reset-password`),
   getMyPermissions: () => api.get('/admin/my-permissions'),
   reassignCategory: (bizId, categoryId) => api.put(`/admin/businesses/${bizId}/reassign-category`, null, { params: { category_id: categoryId } }),
+  // Phase 12: P&L, reconciliation, security, compliance, refunds, webhook events
+  getPlatformPnl: (days = 30) => api.get('/admin/platform/pnl', { params: { days } }),
+  runStripeReconciliation: (date) => api.post('/admin/platform/reconcile-stripe', null, { params: date ? { date } : {} }),
+  getReconciliationIssues: (limit = 50) => api.get('/admin/platform/reconciliation-issues', { params: { limit } }),
+  getLockedAccounts: () => api.get('/admin/security/locked-accounts'),
+  unlockAccount: (key) => api.post('/admin/security/unlock', { key }),
+  getTermsStats: () => api.get('/admin/terms/stats'),
+  getTermsPendingUsers: (limit = 50) => api.get('/admin/terms/pending-users', { params: { limit } }),
+  getArcoEvents: (limit = 50) => api.get('/admin/compliance/arco-events', { params: { limit } }),
+  getRefundsAudit: (limit = 50) => api.get('/admin/finance/refunds', { params: { limit } }),
+  getStripeWebhookEvents: (limit = 50) => api.get('/admin/stripe/webhook-events', { params: { limit } }),
 };
 
 // Utility API

@@ -2556,3 +2556,185 @@ async def admin_reconciliation_issues(
     cron nocturno - para que el admin pueda investigar una por una."""
     rows = await db.reconciliation_issues.find({}, {"_id": 0}).sort("detected_at", -1).limit(limit).to_list(limit)
     return {"count": len(rows), "items": rows}
+
+
+# ========================== FASE 12d: SECURITY (BRUTE-FORCE LOCKOUTS) ==========================
+
+
+@router.get("/security/locked-accounts")
+async def admin_list_locked_accounts(token_data: TokenData = Depends(require_admin)):
+    """Accounts currently locked out by the brute-force guard.
+
+    Returns every `brute_force_attempts` doc whose `locked_until` is in
+    the future so the admin can unlock legitimate users that got caught
+    (e.g., shared NAT / office IP)."""
+    now_iso = datetime.now(timezone.utc).isoformat()
+    cursor = db.brute_force_attempts.find(
+        {"locked_until": {"$gt": now_iso}},
+        {"attempts": 0},  # trim the potentially-large list
+    ).sort("last_at", -1).limit(200)
+    rows = []
+    async for d in cursor:
+        rows.append({
+            "key": d.get("_id"),
+            "ip": d.get("ip"),
+            "email": d.get("email"),
+            "last_attempt_at": d.get("last_at"),
+            "locked_until": d.get("locked_until"),
+        })
+    return {"count": len(rows), "items": rows}
+
+
+class UnlockAccountRequest(BaseModel):
+    key: str
+
+
+@router.post("/security/unlock")
+async def admin_unlock_account(
+    payload: UnlockAccountRequest,
+    request: Request,
+    token_data: TokenData = Depends(require_admin),
+):
+    """Admin-unlock a brute-force-locked account (key = `ip|email`)."""
+    res = await db.brute_force_attempts.delete_one({"_id": payload.key})
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Lockout entry not found")
+    await create_audit_log(
+        admin_id=token_data.user_id, admin_email=token_data.email,
+        action=AuditAction.SECURITY_UNLOCK, target_type="brute_force_lockout",
+        target_id=payload.key, details={"unlocked": True}, request=request,
+    )
+    return {"ok": True, "key": payload.key}
+
+
+# ========================== FASE 10e: T&C ACCEPTANCE STATS ==========================
+
+
+@router.get("/terms/stats")
+async def admin_terms_stats(token_data: TokenData = Depends(require_admin)):
+    """Acceptance rate for the current TERMS_VERSION.
+
+    Returns totals for users (active only) and businesses, plus the
+    published version metadata so the panel can show "published on X,
+    grace ends on Y"."""
+    from core.config import TERMS_VERSION, TERMS_VERSION_PUBLISHED_AT, TERMS_GRACE_DAYS
+
+    total_users = await db.users.count_documents({"active": {"$ne": False}, "account_deleted": {"$ne": True}})
+    users_current = await db.users.count_documents({
+        "active": {"$ne": False},
+        "account_deleted": {"$ne": True},
+        "accepted_terms_version": TERMS_VERSION,
+    })
+    total_businesses = await db.businesses.count_documents({})
+    businesses_current = await db.businesses.count_documents({"accepted_terms_version": TERMS_VERSION})
+
+    try:
+        published = datetime.fromisoformat(TERMS_VERSION_PUBLISHED_AT)
+        grace_ends = (published + timedelta(days=TERMS_GRACE_DAYS)).isoformat()
+        hard_block = datetime.now(timezone.utc) >= published + timedelta(days=TERMS_GRACE_DAYS)
+    except ValueError:
+        grace_ends = TERMS_VERSION_PUBLISHED_AT
+        hard_block = False
+
+    def _pct(n, d):
+        return round(100 * n / d, 1) if d else 0.0
+
+    return {
+        "current_version": TERMS_VERSION,
+        "published_at": TERMS_VERSION_PUBLISHED_AT,
+        "grace_period_days": TERMS_GRACE_DAYS,
+        "grace_period_ends_at": grace_ends,
+        "is_hard_block_now": hard_block,
+        "users": {
+            "total": total_users,
+            "accepted_current": users_current,
+            "pending": max(0, total_users - users_current),
+            "acceptance_pct": _pct(users_current, total_users),
+        },
+        "businesses": {
+            "total": total_businesses,
+            "accepted_current": businesses_current,
+            "pending": max(0, total_businesses - businesses_current),
+            "acceptance_pct": _pct(businesses_current, total_businesses),
+        },
+    }
+
+
+@router.get("/terms/pending-users")
+async def admin_terms_pending_users(
+    limit: int = 50,
+    token_data: TokenData = Depends(require_admin),
+):
+    """Users that have NOT accepted the current TERMS_VERSION (for
+    support outreach). Excludes deleted/inactive accounts."""
+    from core.config import TERMS_VERSION
+    cursor = db.users.find(
+        {
+            "active": {"$ne": False},
+            "account_deleted": {"$ne": True},
+            "accepted_terms_version": {"$ne": TERMS_VERSION},
+        },
+        {"_id": 0, "id": 1, "email": 1, "full_name": 1, "role": 1,
+         "accepted_terms_version": 1, "accepted_terms_at": 1, "created_at": 1},
+    ).sort("created_at", -1).limit(max(1, min(limit, 500)))
+    return {"items": await cursor.to_list(limit)}
+
+
+# ========================== FASE 10f: ARCO EVENTS (COMPLIANCE AUDIT) ==========================
+
+
+@router.get("/compliance/arco-events")
+async def admin_arco_events(
+    limit: int = 50,
+    token_data: TokenData = Depends(require_admin),
+):
+    """Audit trail of ARCO rights exercised by users.
+
+    Combines personal_data_export (Access) and account_deleted_by_user
+    (Cancellation) audit rows so the admin can report compliance."""
+    actions = ["personal_data_export", "account_deleted_by_user"]
+    cursor = db.audit_logs.find(
+        {"action": {"$in": actions}},
+        {"_id": 0},
+    ).sort("created_at", -1).limit(max(1, min(limit, 500)))
+    rows = await cursor.to_list(limit)
+    summary = {a: 0 for a in actions}
+    for r in rows:
+        summary[r.get("action", "")] = summary.get(r.get("action", ""), 0) + 1
+    return {"count": len(rows), "summary": summary, "items": rows}
+
+
+# ========================== FASE 11b: REFUND AUDIT ==========================
+
+
+@router.get("/finance/refunds")
+async def admin_list_refunds(
+    limit: int = 50,
+    token_data: TokenData = Depends(require_admin),
+):
+    """Recent Stripe refunds issued by Bookvia (from `refund_events`)."""
+    cursor = db.refund_events.find({}, {"_id": 0}).sort("created_at", -1).limit(max(1, min(limit, 500)))
+    rows = await cursor.to_list(limit)
+    total = sum(float(r.get("amount_mxn") or 0) for r in rows)
+    return {"count": len(rows), "total_refunded_mxn": round(total, 2), "items": rows}
+
+
+# ========================== FASE 11c: STRIPE WEBHOOK EVENTS LOG ==========================
+
+
+@router.get("/stripe/webhook-events")
+async def admin_stripe_webhook_events(
+    limit: int = 50,
+    token_data: TokenData = Depends(require_admin),
+):
+    """Last N Stripe webhook events received (for idempotency audit)."""
+    # stripe_events uses event.id as _id; we must include it for display.
+    cursor = db.stripe_events.find({}).sort("received_at", -1).limit(max(1, min(limit, 200)))
+    rows = []
+    async for d in cursor:
+        rows.append({
+            "event_id": d.get("_id"),
+            "event_type": d.get("event_type"),
+            "received_at": d.get("received_at"),
+        })
+    return {"count": len(rows), "items": rows}
