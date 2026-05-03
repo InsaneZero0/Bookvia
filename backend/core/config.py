@@ -109,6 +109,17 @@ SMS_CODE_EXPIRATION_MINUTES = 5
 SMS_MAX_ATTEMPTS_PER_HOUR = 3
 
 # =============================================================================
+# TERMS & CONDITIONS (Fase 10)
+# Increment this string whenever the Terms page is updated so every account
+# is required to re-accept the new version.
+# =============================================================================
+TERMS_VERSION = "2026-05-01"
+TERMS_SUMMARY = (
+    "Plataforma intermediaria. Propinas y facturas son responsabilidad del negocio. "
+    "Anticipo minimo $100 MXN + cuota $8.20. Wallet expira 24 meses."
+)
+
+# =============================================================================
 # STARTUP VALIDATION
 # =============================================================================
 def validate_production_config():

@@ -362,6 +362,12 @@ export default function BusinessRegisterPage() {
   };
 
   const handleRegister = async () => {
+    if (!formData.accepts_terms) {
+      toast.error(language === 'es'
+        ? 'Debes aceptar los Terminos y el Aviso de Privacidad para continuar'
+        : 'You must accept the Terms and Privacy Notice to continue');
+      return;
+    }
     setLoading(true);
     try {
       let ineUrl = '';
@@ -1133,6 +1139,38 @@ export default function BusinessRegisterPage() {
                           : 'This is where you\'ll receive payments (18 digits)')}
                     </p>
                   </div>
+
+                  <label className="flex items-start gap-2 pt-2 cursor-pointer select-none" data-testid="business-accept-terms-label">
+                    <input
+                      type="checkbox"
+                      name="accepts_terms"
+                      checked={!!formData.accepts_terms}
+                      onChange={(e) => setFormData(prev => ({ ...prev, accepts_terms: e.target.checked }))}
+                      className="mt-1 h-4 w-4 accent-[#F05D5E] cursor-pointer"
+                      data-testid="business-accept-terms"
+                    />
+                    <span className="text-xs text-muted-foreground leading-relaxed">
+                      {language === 'es' ? (
+                        <>
+                          Como duen@ del negocio, acepto los{' '}
+                          <Link to="/terms" target="_blank" className="text-[#F05D5E] font-medium hover:underline">Terminos</Link>
+                          {' '}y el{' '}
+                          <Link to="/privacy" target="_blank" className="text-[#F05D5E] font-medium hover:underline">Aviso de Privacidad</Link>.
+                          Entiendo que Bookvia es un intermediario tecnologico, que yo soy el responsable del servicio prestado a mis clientes,
+                          y que las propinas y facturas (CFDI) de las citas las gestiono directamente con ellos.
+                        </>
+                      ) : (
+                        <>
+                          As the business owner, I accept the{' '}
+                          <Link to="/terms" target="_blank" className="text-[#F05D5E] font-medium hover:underline">Terms</Link>
+                          {' '}and{' '}
+                          <Link to="/privacy" target="_blank" className="text-[#F05D5E] font-medium hover:underline">Privacy Notice</Link>.
+                          I understand that Bookvia is a technology intermediary, that I am the responsible party for the service
+                          provided to my clients, and that tips and invoices (CFDI) are handled directly with them.
+                        </>
+                      )}
+                    </span>
+                  </label>
 
                   {/* ── Política de reservas y cancelación ─────── */}
                   <div className="pt-4 space-y-4">

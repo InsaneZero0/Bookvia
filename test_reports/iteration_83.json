@@ -1,0 +1,34 @@
+{
+  "summary": "Phase 10 - Terms & Conditions versioned acceptance: 10/10 backend tests pass. Validated public GET /api/terms/version (version='2026-05-01', summary, terms_url='/terms', privacy_url='/privacy'), GET /api/terms/me shape (current_version/accepted_version/accepted_at/up_to_date) before and after acceptance, POST /api/terms/accept with empty body stamps user doc and returns {ok, version, accepted_at}, POST /api/terms/accept with version='2999-01-01' returns 409 mismatch, business-owner acceptance (is_manager=False) mirrors on db.businesses while business-manager acceptance (is_manager=True) does NOT touch the business doc, unauthenticated access to /terms/me and /terms/accept is rejected (401/403), POST /api/auth/register stamps the new client with accepted_terms_version+accepted_terms_at, and POST /api/auth/business/register stamps BOTH db.users and db.businesses with the current TERMS_VERSION.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/terms/accept", "issue": "TokenData.is_manager is parsed from the JWT payload, but the acceptance handler only consults db.users.is_manager (token value is ignored). Behavior is correct because db is the source of truth, but the duplicated flag (JWT vs DB) is a footgun - if the two ever diverge, admins may get confused about why a manager accepted and the business doc was/was not mirrored. Consider dropping is_manager from the JWT or deriving it from DB consistently."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_fase10_terms_acceptance.py",
+    "/app/test_reports/pytest/fase10_terms.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "routers/terms.py accept_terms correctly scopes the business mirror to owners (is_manager falsy) and keeps the manager path limited to db.users - matches spec exactly.",
+    "accept_terms uses `claimed = (payload.version or TERMS_VERSION).strip()`; when the client omits the version it silently accepts the current one. That is the documented behavior (frontend-friendly) but worth noting: a buggy client sending an empty string '' will also be accepted as current, not rejected. If strictness is wanted, branch on `payload.version is None` vs empty string.",
+    "get_terms_version is public and returns identical response every time - safe to CDN-cache; consider adding Cache-Control headers to reduce DB-free hits.",
+    "my_terms_status returns accepted_at=None and accepted_version=None for accounts that predate Fase 10 - verified. The frontend should treat up_to_date=false on legacy accounts as a prompt to re-accept.",
+    "register_user (auth.py L94-95) and register_business (auth.py L520-521, 537-538) stamp the same datetime.now(timezone.utc).isoformat() separately for user and business doc; they are close but not guaranteed equal to the microsecond. Not a functional issue, but e2e tests that assert `user.accepted_terms_at == business.accepted_terms_at` would fail - our tests only assert both are iso strings.",
+    "TERMS_VERSION is a plain string constant; no migration hook when bumping. The app depends on my_terms_status returning up_to_date=False to drive re-acceptance UI - make sure the frontend guards every critical action (booking, payout) on that flag or the versioning is purely advisory.",
+    "No endpoint exposes the historical versions a user accepted (only the most recent is stored). For LFPDPPP audit trails it may be worth persisting a list `terms_acceptance_history: [{version, at}]` instead of overwriting. Not blocking for Fase 10 scope."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_fase10_terms_acceptance.py (new)"
+  ],
+  "success_rate": {"backend": "100% (10/10)", "frontend": "n/a"},
+  "test_credentials": "No admin/TOTP needed. Business/client/manager tokens are minted directly with HS256+JWT_SECRET (user_id, role, email, is_manager, exp). POST /auth/register and /auth/business/register exercised with freshly generated emails (TEST_F10_*_<uuid8>@test.com).",
+  "seed_data_creation": "Inserted 3 users (TEST_F10_client, TEST_F10_owner, TEST_F10_manager) and 2 businesses (TEST_F10_biz_owner, TEST_F10_biz_manager) directly into Mongo; additionally created 1 user via POST /auth/register and 1 user+business via POST /auth/business/register (emails prefixed TEST_F10_reg_ / TEST_F10_bizreg_ + uuid tag). Teardown deletes by id prefix TEST_F10_ and by email regex matching the run's uuid tag so reruns don't leak rows.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "test_fase10_terms_acceptance.py is fully isolated via TEST_F10_ prefix + per-run uuid tag; safe to rerun anytime. The register_business test looks up an existing category (db.categories.find_one) and falls back to 'generic' - if future phases add strict category validation this may need a dedicated TEST_F10_ category fixture. Frontend content test for /terms sections 7.1 (Propinas) and 7.2 (Facturacion) was intentionally skipped per review-request note (backend has no endpoint exposing T&C HTML; that is a frontend-only check).",
+  "rca of the issue": "N/A - all tests passed."
+}

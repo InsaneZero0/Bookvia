@@ -19,7 +19,7 @@ import pyotp
 from bson import ObjectId
 
 from core.database import db
-from core.config import ENV, BASE_URL, ADMIN_EMAIL
+from core.config import ENV, BASE_URL, ADMIN_EMAIL, TERMS_VERSION
 from core.security import (
     TokenData, create_token, decode_token,
     hash_password, verify_password,
@@ -91,6 +91,8 @@ async def register_user(user: UserCreate):
         "stripe_customer_id": None,
         "saved_cards": [],
         "public_code": public_code,
+        "accepted_terms_version": TERMS_VERSION,
+        "accepted_terms_at": datetime.now(timezone.utc).isoformat(),
         "created_at": datetime.now(timezone.utc).isoformat()
     }
     
@@ -515,6 +517,8 @@ async def register_business(business: BusinessCreate):
         "is_featured": False,
         "payout_hold": False,
         "public_code": public_code,
+        "accepted_terms_version": TERMS_VERSION,
+        "accepted_terms_at": datetime.now(timezone.utc).isoformat(),
         "created_at": datetime.now(timezone.utc).isoformat()
     }
     
@@ -530,6 +534,8 @@ async def register_business(business: BusinessCreate):
         "role": UserRole.BUSINESS,
         "business_id": business_id,
         "preferred_language": "es",
+        "accepted_terms_version": TERMS_VERSION,
+        "accepted_terms_at": datetime.now(timezone.utc).isoformat(),
         "created_at": datetime.now(timezone.utc).isoformat()
     }
     

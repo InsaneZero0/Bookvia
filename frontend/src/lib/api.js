@@ -286,6 +286,12 @@ export const notificationsAPI = {
 };
 
 // Admin API
+export const termsAPI = {
+  getVersion: () => api.get('/terms/version'),
+  myStatus: () => api.get('/terms/me'),
+  accept: (version) => api.post('/terms/accept', { version }),
+};
+
 export const adminAPI = {
   getStats: () => api.get('/admin/stats'),
   getPendingBusinesses: () => api.get('/admin/businesses/pending'),

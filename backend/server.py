@@ -41,6 +41,7 @@ from routers.notifications import router as notifications_router
 from routers.finance import router as finance_router
 from routers.system import router as system_router
 from routers.seo import seo_router
+from routers.terms import router as terms_router  # Fase 10
 
 api_router.include_router(auth_router)
 api_router.include_router(users_router)
@@ -54,6 +55,7 @@ api_router.include_router(admin_router)
 api_router.include_router(notifications_router)
 api_router.include_router(finance_router)
 api_router.include_router(system_router)
+api_router.include_router(terms_router)
 
 # SEO routes at root level (no /api prefix for sitemap/robots)
 app.include_router(seo_router)
