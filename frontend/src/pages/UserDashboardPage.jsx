@@ -18,7 +18,7 @@ import { toast } from 'sonner';
 import {
   User, Mail, Phone, Calendar, Heart, Shield, Camera, Edit2, Check, X,
   Clock, ChevronRight, Star, Search, MapPin, ArrowUpRight, Bookmark,
-  CalendarDays, CreditCard, Bell, MessageSquare
+  CalendarDays, CreditCard, Bell, MessageSquare, Download, FileJson
 } from 'lucide-react';
 
 export default function UserDashboardPage() {
@@ -34,6 +34,30 @@ export default function UserDashboardPage() {
   const [favorites, setFavorites] = useState([]);
   const [userStats, setUserStats] = useState(null);
   const [savingPrefs, setSavingPrefs] = useState(false);
+  const [exportingData, setExportingData] = useState(false);
+
+  const handleExportData = async () => {
+    if (exportingData) return;
+    setExportingData(true);
+    try {
+      const res = await usersAPI.exportMyData();
+      const blob = new Blob([res.data], { type: 'application/json;charset=utf-8' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const stamp = new Date().toISOString().slice(0, 10);
+      a.download = `bookvia-mis-datos-${stamp}.json`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+      toast.success(language === 'es'
+        ? 'Tus datos personales fueron descargados'
+        : 'Your personal data has been downloaded');
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || (language === 'es' ? 'No se pudo exportar' : 'Could not export'));
+    } finally {
+      setExportingData(false);
+    }
+  };
 
   useEffect(() => {
     if (authLoading) return;
@@ -464,6 +488,48 @@ export default function UserDashboardPage() {
                       : 'We recommend keeping at least one enabled so you don\'t miss your appointments. We won\'t send ads.'}
                   </p>
                 </div>
+              </CardContent>
+            </Card>
+
+            {/* Privacy & Personal Data Export (LFPDPPP Derecho de Acceso) */}
+            <Card data-testid="privacy-data-card">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base font-heading flex items-center gap-2">
+                  <Shield className="h-4 w-4 text-[#F05D5E]" />
+                  {language === 'es' ? 'Privacidad y mis datos' : 'Privacy & my data'}
+                </CardTitle>
+                <p className="text-xs text-muted-foreground leading-relaxed mt-1">
+                  {language === 'es'
+                    ? 'Descarga un archivo con todos los datos personales que Bookvia tiene sobre ti: perfil, reservas, saldo, pagos, notificaciones y aceptaciones de Terminos. Es tu derecho de Acceso bajo la LFPDPPP.'
+                    : 'Download a file with every personal data point Bookvia has about you: profile, bookings, wallet, payments, notifications and Terms acceptances. Your ARCO "Access" right under LFPDPPP.'}
+                </p>
+              </CardHeader>
+              <CardContent className="space-y-3 pt-0">
+                <Button
+                  className="w-full justify-start h-11 gap-2"
+                  variant="outline"
+                  onClick={handleExportData}
+                  disabled={exportingData}
+                  data-testid="export-data-btn"
+                >
+                  {exportingData ? (
+                    <>
+                      <div className="h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                      {language === 'es' ? 'Preparando archivo...' : 'Preparing file...'}
+                    </>
+                  ) : (
+                    <>
+                      <FileJson className="h-4 w-4 text-[#F05D5E]" />
+                      <span>{language === 'es' ? 'Descargar mis datos (JSON)' : 'Download my data (JSON)'}</span>
+                      <Download className="h-4 w-4 ml-auto text-muted-foreground" />
+                    </>
+                  )}
+                </Button>
+                <p className="text-[11px] text-muted-foreground leading-relaxed">
+                  {language === 'es'
+                    ? 'Tu archivo incluye perfil, reservas, saldo, notificaciones, favoritos e historial de Terminos aceptados. Sensibles como tu contrasena o tokens de verificacion nunca se exportan.'
+                    : 'Your file includes profile, bookings, wallet, notifications, favorites and the history of accepted Terms. Sensitive data such as your password or verification tokens is never exported.'}
+                </p>
               </CardContent>
             </Card>
           </div>

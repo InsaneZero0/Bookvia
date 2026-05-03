@@ -115,6 +115,10 @@ export const usersAPI = {
   getMyStats: () => api.get('/users/my-stats'),
   getWallet: () => api.get('/users/me/wallet'),
   getWalletTransactions: (page = 1, limit = 20) => api.get('/users/me/wallet/transactions', { params: { page, limit } }),
+  exportMyData: () => api.get('/users/me/export-data', {
+    responseType: 'text',
+    transformResponse: [(data) => data],
+  }),
 };
 
 // Categories API
