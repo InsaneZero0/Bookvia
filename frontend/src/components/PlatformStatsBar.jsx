@@ -28,13 +28,13 @@ export function PlatformStatsBar({ stats }) {
     ? [
         { icon: Building2, value: format(businesses), label: language === 'es' ? 'Negocios verificados' : 'Verified businesses' },
         { icon: CalendarCheck, value: format(bookings), label: language === 'es' ? 'Reservas completadas' : 'Bookings completed' },
-        { icon: Star, value: avgRating > 0 ? `${avgRating.toFixed(1)} / 5` : '—', label: language === 'es' ? 'Calificacion promedio' : 'Average rating', accent: true },
+        { icon: Star, value: avgRating > 0 ? `${avgRating.toFixed(1)} / 5` : '—', label: language === 'es' ? 'Calificación promedio' : 'Average rating', accent: true },
         { icon: ShieldCheck, value: language === 'es' ? '100%' : '100%', label: language === 'es' ? 'Pagos protegidos' : 'Protected payments' },
       ]
     : [
         { icon: Building2, value: businesses > 0 ? `${businesses}` : '—', label: language === 'es' ? 'Negocios activos' : 'Active businesses' },
-        { icon: ShieldCheck, value: language === 'es' ? 'Si' : 'Yes', label: language === 'es' ? 'Reembolso garantizado' : 'Guaranteed refund' },
-        { icon: CalendarCheck, value: language === 'es' ? '$50 MXN' : '$50 MXN', label: language === 'es' ? 'Compensacion por no-show' : 'No-show compensation' },
+        { icon: ShieldCheck, value: language === 'es' ? 'Sí' : 'Yes', label: language === 'es' ? 'Reembolso garantizado' : 'Guaranteed refund' },
+        { icon: CalendarCheck, value: language === 'es' ? '$50 MXN' : '$50 MXN', label: language === 'es' ? 'Compensación por no-show' : 'No-show compensation' },
         { icon: Star, value: language === 'es' ? 'CDMX' : 'Mexico City', label: language === 'es' ? 'Beta abierta' : 'Open beta' },
       ];
 

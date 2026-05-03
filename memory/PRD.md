@@ -193,3 +193,11 @@ Panel admin ampliado para cubrir las fases 7-11 de backend:
 - **UI**: Nuevo card "Reporte Ejecutivo Mensual" en tab Finanzas con boton "Enviar ahora" que pregunta destinatarios y muestra sent_to/failed con razon de fallo (util para detectar Resend domain no verificado).
 - **Testing**: 4/4 pytest pass en `/app/backend/tests/test_fase12d_pnl_report.py`.
 - **Nota produccion**: Requiere verificar dominio en Resend (tarea P2 pendiente). Mientras tanto el servicio reporta correctamente el error "domain not verified" al admin.
+
+## Phase 13 (May 2026) - Public Acquisition UX
+Preparacion del sitio para lanzamiento abierto al publico:
+- **BetaBanner** (`/app/frontend/src/components/BetaBanner.jsx`): banner fixed top dismissible anunciando "Bookvia esta en beta en CDMX". Coordina con Navbar via CSS var `--beta-banner-h` para apilarse sin overlap. Persiste dismissal en localStorage.
+- **PlatformStatsBar** (`/app/frontend/src/components/PlatformStatsBar.jsx`): 4 KPIs abajo del hero en homepage. Modo dual: cuando `bookings >= 50` o `reviews >= 10` muestra metricas reales con sufijo k/+; sino modo "early days" con "Reembolso garantizado Si / $50 MXN compensacion / CDMX beta" para no lucir vacio.
+- **Testimonials** (`/app/frontend/src/components/Testimonials.jsx`): 3 cards con estrellas, quote, avatar, nombre, rol/ciudad y disclaimer. Placeholders realistas en MX espanol listos para reemplazar con reales tras obtener autorizacion de usuarios beta.
+- **HowItWorksModal ajustado**: ahora espera a que se cierre el BetaBanner antes de auto-abrirse en primera visita, evitando competencia por atencion.
+- **Testing**: iteration_90 - 100% passing en frontend, sin regresiones en /help, /beneficios, /dashboard.
