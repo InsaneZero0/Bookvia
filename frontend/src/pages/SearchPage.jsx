@@ -15,73 +15,9 @@ import { useAuth } from '@/lib/auth';
 import { useCountry } from '@/lib/countryContext';
 import { businessesAPI, categoriesAPI, usersAPI } from '@/lib/api';
 import { Search, SlidersHorizontal, MapPin, X, Filter, List, Map as MapIcon, Star, ArrowRight, ChevronRight } from 'lucide-react';
+import { SearchLeafletMap } from '@/components/SearchLeafletMap';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { toast } from 'sonner';
-import { GoogleMap, Marker, useJsApiLoader } from '@react-google-maps/api';
-
-const GMAP_LIBRARIES = ['places'];
-
-function SearchGoogleMap({ businesses, navigate, language }) {
-  const { isLoaded } = useJsApiLoader({
-    googleMapsApiKey: process.env.REACT_APP_GOOGLE_MAPS_KEY,
-    libraries: GMAP_LIBRARIES,
-  });
-  const [selectedBiz, setSelectedBiz] = useState(null);
-  const mapRef = useRef(null);
-
-  useEffect(() => {
-    if (!isLoaded || !mapRef.current || businesses.length === 0) return;
-    const bounds = new window.google.maps.LatLngBounds();
-    businesses.forEach(b => {
-      if (b.latitude && b.longitude) bounds.extend({ lat: b.latitude, lng: b.longitude });
-    });
-    if (!bounds.isEmpty()) mapRef.current.fitBounds(bounds, { padding: 50 });
-  }, [isLoaded, businesses]);
-
-  if (!isLoaded) {
-    return <div className="h-full flex items-center justify-center bg-muted"><p className="text-sm text-muted-foreground">Cargando mapa...</p></div>;
-  }
-
-  return (
-    <GoogleMap
-      mapContainerStyle={{ height: '100%', width: '100%' }}
-      center={{ lat: 23.6345, lng: -102.5528 }}
-      zoom={5}
-      onLoad={map => { mapRef.current = map; }}
-      options={{ streetViewControl: false, mapTypeControl: false, fullscreenControl: false }}
-    >
-      {businesses.map(biz => (
-        <Marker
-          key={biz.id}
-          position={{ lat: biz.latitude, lng: biz.longitude }}
-          onClick={() => setSelectedBiz(biz)}
-        />
-      ))}
-      {selectedBiz && (
-        <div style={{
-          position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)',
-          background: 'white', borderRadius: 12, padding: '12px 16px', boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
-          minWidth: 220, zIndex: 10,
-        }}>
-          <button onClick={() => setSelectedBiz(null)} style={{ position: 'absolute', top: 6, right: 8, background: 'none', border: 'none', cursor: 'pointer', fontSize: 16 }}>x</button>
-          <p style={{ fontWeight: 600, fontSize: 14 }}>{selectedBiz.name}</p>
-          <p style={{ fontSize: 12, color: '#666' }}>{selectedBiz.address}, {selectedBiz.city}</p>
-          {selectedBiz.rating > 0 && (
-            <p style={{ fontSize: 12, marginTop: 4 }}>
-              <Star style={{ width: 12, height: 12, display: 'inline', fill: '#facc15', color: '#facc15' }} /> {selectedBiz.rating.toFixed(1)}
-            </p>
-          )}
-          <button
-            onClick={() => navigate(`/business/${selectedBiz.slug}`)}
-            style={{ fontSize: 12, color: '#F05D5E', fontWeight: 600, marginTop: 6, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
-          >
-            {language === 'es' ? 'Ver perfil' : 'View profile'} →
-          </button>
-        </div>
-      )}
-    </GoogleMap>
-  );
-}
 
 export default function SearchPage() {
   const { t, language } = useI18n();
@@ -814,7 +750,7 @@ export default function SearchPage() {
               <div className="grid lg:grid-cols-2 gap-4" data-testid="results-map-view">
                 {/* Map */}
                 <div className="h-[500px] lg:h-[calc(100vh-200px)] rounded-xl overflow-hidden border sticky top-24" data-testid="search-map">
-                  <SearchGoogleMap businesses={filteredMappable} navigate={navigate} language={language} />
+                  <SearchLeafletMap businesses={filteredMappable} navigate={navigate} userLocation={userLocation} />
                 </div>
 
                 {/* Side List */}

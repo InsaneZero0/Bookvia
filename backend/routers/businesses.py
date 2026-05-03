@@ -484,6 +484,230 @@ async def get_client_history(user_id: str, token_data: TokenData = Depends(requi
     }
 
 
+# ========================== PHASE 15: MINI-CRM (MY CLIENTS) ==========================
+
+
+@router.get("/my/clients")
+async def list_my_clients(
+    q: str = "",
+    tag: Optional[str] = None,  # "vip" | "new" | "noshow" | "inactive"
+    sort: str = "recent",       # "recent" | "visits" | "spent" | "name"
+    page: int = 1,
+    limit: int = 50,
+    token_data: TokenData = Depends(require_business),
+):
+    """Mini-CRM: aggregated client list with last visit, total visits,
+    total spent, no-show count and a private note. Powers the new
+    "Mis Clientes" tab on the Business Dashboard.
+
+    Rules:
+      * only clients who have at least one booking with THIS business
+      * clients without user_id (walk-ins booked by recepcion) are still
+        surfaced using their stored name/phone/email
+      * `tag=vip` means 5+ completed visits, `tag=new` means 1 visit only,
+        `tag=noshow` means >=2 no-shows, `tag=inactive` >= 90d since last
+    """
+    business = await db.businesses.find_one({"user_id": token_data.user_id}, {"_id": 0, "id": 1})
+    if not business:
+        raise HTTPException(status_code=404, detail="Business not found")
+    bid = business["id"]
+
+    pipeline = [
+        {"$match": {"business_id": bid}},
+        {"$addFields": {
+            "_client_key": {
+                "$ifNull": [
+                    "$user_id",
+                    {"$concat": [
+                        {"$ifNull": ["$client_phone", ""]},
+                        "|",
+                        {"$toLower": {"$ifNull": ["$client_name", ""]}},
+                    ]},
+                ]
+            },
+            "_is_completed": {"$in": ["$status", ["completed", "confirmed"]]},
+            "_is_noshow": {"$eq": ["$status", "no_show"]},
+            "_paid_amount": {
+                "$cond": [
+                    {"$in": ["$status", ["completed", "confirmed"]]},
+                    {"$ifNull": ["$total_amount", {"$ifNull": ["$deposit_amount", 0]}]},
+                    0,
+                ]
+            },
+        }},
+        {"$group": {
+            "_id": "$_client_key",
+            "user_id": {"$first": "$user_id"},
+            "fallback_name": {"$first": "$client_name"},
+            "fallback_phone": {"$first": "$client_phone"},
+            "fallback_email": {"$first": "$client_email"},
+            "total_bookings": {"$sum": 1},
+            "total_visits": {"$sum": {"$cond": ["$_is_completed", 1, 0]}},
+            "noshow_count": {"$sum": {"$cond": ["$_is_noshow", 1, 0]}},
+            "total_spent": {"$sum": "$_paid_amount"},
+            "first_visit": {"$min": "$date"},
+            "last_visit": {"$max": "$date"},
+        }},
+        {"$match": {"_id": {"$ne": None}}},
+    ]
+    rows = await db.bookings.aggregate(pipeline).to_list(5000)
+
+    # Resolve user profile data and attach private note
+    user_ids = [r["user_id"] for r in rows if r.get("user_id")]
+    users_map = {}
+    if user_ids:
+        async for u in db.users.find(
+            {"id": {"$in": user_ids}},
+            {"_id": 0, "id": 1, "full_name": 1, "email": 1, "phone": 1, "profile_image_url": 1},
+        ):
+            users_map[u["id"]] = u
+
+    notes_map = {}
+    async for n in db.business_client_notes.find({"business_id": bid}, {"_id": 0}):
+        notes_map[n.get("client_key")] = n
+
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    ninety_ago = (datetime.now(timezone.utc) - timedelta(days=90)).strftime("%Y-%m-%d")
+
+    clients = []
+    for r in rows:
+        uid = r.get("user_id")
+        profile = users_map.get(uid) or {}
+        name = profile.get("full_name") or r.get("fallback_name") or "-"
+        email = profile.get("email") or r.get("fallback_email") or ""
+        phone = profile.get("phone") or r.get("fallback_phone") or ""
+        note = notes_map.get(r["_id"], {})
+        tags = []
+        if r["total_visits"] >= 5:
+            tags.append("vip")
+        if r["total_visits"] == 1 and r["noshow_count"] == 0:
+            tags.append("new")
+        if r["noshow_count"] >= 2:
+            tags.append("noshow")
+        if r.get("last_visit") and r["last_visit"] < ninety_ago:
+            tags.append("inactive")
+
+        clients.append({
+            "client_key": r["_id"],
+            "user_id": uid,
+            "name": name,
+            "email": email,
+            "phone": phone,
+            "avatar_url": profile.get("profile_image_url"),
+            "is_registered": bool(uid),
+            "total_bookings": r["total_bookings"],
+            "total_visits": r["total_visits"],
+            "noshow_count": r["noshow_count"],
+            "total_spent": round(float(r.get("total_spent") or 0), 2),
+            "first_visit": r.get("first_visit"),
+            "last_visit": r.get("last_visit"),
+            "days_since_last": None if not r.get("last_visit") else (
+                (datetime.strptime(today, "%Y-%m-%d") - datetime.strptime(r["last_visit"], "%Y-%m-%d")).days
+            ),
+            "private_note": note.get("note", ""),
+            "note_updated_at": note.get("updated_at"),
+            "tags": tags,
+        })
+
+    # Search filter (name / phone / email contains q)
+    if q:
+        ql = q.lower().strip()
+        clients = [c for c in clients if
+                   ql in (c["name"] or "").lower()
+                   or ql in (c["phone"] or "").lower()
+                   or ql in (c["email"] or "").lower()]
+
+    # Tag filter
+    if tag:
+        clients = [c for c in clients if tag in c["tags"]]
+
+    # Sorting
+    if sort == "recent":
+        clients.sort(key=lambda c: c["last_visit"] or "", reverse=True)
+    elif sort == "visits":
+        clients.sort(key=lambda c: c["total_visits"], reverse=True)
+    elif sort == "spent":
+        clients.sort(key=lambda c: c["total_spent"], reverse=True)
+    elif sort == "name":
+        clients.sort(key=lambda c: (c["name"] or "").lower())
+
+    total = len(clients)
+    page = max(1, page)
+    limit = max(1, min(limit, 200))
+    start = (page - 1) * limit
+    page_rows = clients[start:start + limit]
+
+    # Aggregate KPIs for the header
+    vip_count = sum(1 for c in clients if "vip" in c["tags"])
+    new_count = sum(1 for c in clients if "new" in c["tags"])
+    inactive_count = sum(1 for c in clients if "inactive" in c["tags"])
+
+    return {
+        "total": total,
+        "page": page,
+        "limit": limit,
+        "kpis": {
+            "total_clients": total,
+            "vip": vip_count,
+            "new": new_count,
+            "inactive": inactive_count,
+        },
+        "items": page_rows,
+    }
+
+
+class ClientNoteUpdate(BaseModel):
+    note: str
+
+
+@router.put("/my/clients/{client_key:path}/note")
+async def update_client_note(
+    client_key: str,
+    payload: ClientNoteUpdate,
+    token_data: TokenData = Depends(require_business),
+):
+    """Upsert a private note for a specific client (max 500 chars)."""
+    business = await db.businesses.find_one({"user_id": token_data.user_id}, {"_id": 0, "id": 1})
+    if not business:
+        raise HTTPException(status_code=404, detail="Business not found")
+
+    note = (payload.note or "").strip()[:500]
+    now_iso = datetime.now(timezone.utc).isoformat()
+    await db.business_client_notes.update_one(
+        {"business_id": business["id"], "client_key": client_key},
+        {"$set": {"note": note, "updated_at": now_iso},
+         "$setOnInsert": {"created_at": now_iso}},
+        upsert=True,
+    )
+    return {"ok": True, "note": note, "updated_at": now_iso}
+
+
+@router.post("/my/clients/export")
+async def export_my_clients(token_data: TokenData = Depends(require_business)):
+    """Return plain CSV of the entire client list for the business (data
+    portability — Fase LFPDPPP). The frontend downloads the file."""
+    from fastapi.responses import Response as _Response
+    import csv as _csv
+    import io as _io
+
+    result = await list_my_clients(token_data=token_data, limit=1000)
+    buf = _io.StringIO()
+    w = _csv.writer(buf)
+    w.writerow(["name", "email", "phone", "total_visits", "total_spent",
+                "last_visit", "noshow_count", "tags", "private_note"])
+    for c in result["items"]:
+        w.writerow([
+            c["name"], c["email"], c["phone"], c["total_visits"],
+            c["total_spent"], c["last_visit"] or "",
+            c["noshow_count"], ",".join(c["tags"]), c["private_note"],
+        ])
+    return _Response(
+        content=buf.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=clientes.csv"},
+    )
+
+
 
 
 @router.get("/my/reports/export")

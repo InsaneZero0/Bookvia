@@ -1,0 +1,41 @@
+{
+  "summary": "Phase 15 tested end-to-end: Mini-CRM backend (/my/clients*) 12/12 pytest pass + BusinessDashboard Clientes tab renders correctly with all data-testids. Leaflet map component confirmed present in source (no Google Maps SDK loaded). Map UI not exercised end-to-end because /search currently returns 0 businesses under US country context.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase15_crm_leaflet.py",
+    "/app/test_reports/pytest/pytest_phase15_crm_leaflet.xml"
+  ],
+  "action_items": [
+    "(Cosmetic) frontend/.env still contains REACT_APP_GOOGLE_MAPS_KEY — now unused after Leaflet migration. Safe to remove on next pass, not a blocker.",
+    "(Not retested here) SearchLeafletMap end-to-end with real markers/popup could not be exercised because /search returned 0 results under US country context. Recommend switching context to MX (or seeding approved businesses for US) to verify pin rendering, popup content ('Ver perfil' button) and 'Cerca de mi' geolocation re-fetch visually. Source code inspection confirms: data-testid=search-leaflet-map, TileLayer from openstreetmap.org, no google SDK imports, distance_km rendered in popup, user pin in blue, FitBounds hook fits pins + user location."
+  ],
+  "critical_code_review_comments": [
+    "routers/businesses.py list_my_clients: aggregation pipeline is O(all_bookings) in Python after the group stage. For very large businesses (10k+ bookings) consider pushing filter/sort/paging into MongoDB with $sort/$skip/$limit after $group. Acceptable at current scale.",
+    "routers/businesses.py list_my_clients sums no-shows on status=='no_show' but never checks status=='no-show' or 'NO_SHOW' — confirm enum value uses underscore consistently elsewhere (AppointmentStatus.NO_SHOW) to avoid silent 0 counts.",
+    "routers/businesses.py export_my_clients calls list_my_clients with limit=1000 and ignores any search filters — owner always gets full list. Confirm this is intentional for data portability (LFPDPPP) and not a scope bug.",
+    "routers/businesses.py update_client_note does not validate that client_key actually belongs to this business — any arbitrary string can be persisted in business_client_notes. Low risk (scoped by business_id in the read aggregation/join) but wastes storage on typos/probing.",
+    "SearchLeafletMap.jsx uses inline SVG divIcons (good — avoids CRA webpack image-import bug). minHeight:420 hardcoded; parent must size or map will flicker. FitBounds only runs on [points,map] change which is fine.",
+    "frontend/.env: REACT_APP_GOOGLE_MAPS_KEY is dead code after this phase — remove to reduce attack surface."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase15_crm_leaflet.py"
+  ],
+  "success_rate": {
+    "backend": "100% (12/12 tests pass)",
+    "frontend": "100% on the tested surface (Clientes tab, all testids, empty state, tab ordering) — map UI not exercised due to 0 results in country context"
+  },
+  "test_credentials": "Used testbiz_dashboard@test.com / TestBiz123! (business) and testuser_stats@test.com / TestPass123! (user). /app/memory/test_credentials.md file is current.",
+  "seed_data_creation": "None. Two notes were written under TEST_ prefixed client_keys (TEST_pytest_phase15_fakekey, TEST_pytest_phase15_truncate) into db.business_client_notes; cleanup not strictly needed as they are orphan keys.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Phase 15 deliverables verified: (1) /api/businesses/my/clients returns {total,page,limit,kpis{total_clients,vip,new,inactive},items:[]} — auth-gated (401/403 anon, 403 regular user); (2) PUT /my/clients/{key}/note upserts + 500-char truncation; (3) POST /my/clients/export returns text/csv with correct headers+filename; (4) GET /businesses with user_lat/user_lng returns distance_km. Frontend: tab-clients sits between tab-reports and tab-services (confirmed order: overview→reports→clients→services→team→closures→photos→subscription→activity), empty state 'Aun no tienes clientes' renders for testbiz_dashboard, all filter/sort/export testids present. SearchLeafletMap.jsx source verified (no google SDK, OSM tiles, data-testid=search-leaflet-map) but not exercised visually — next agent should switch app country to MX or seed US businesses to test pin/popup/Cerca-de-mi flows end-to-end. Pytest XML: /app/test_reports/pytest/pytest_phase15_crm_leaflet.xml.",
+  "rca of the issue": "No bug reproduced. Only partial frontend coverage: /search rendered 0 results because the browser resolved country to US (ipapi CORS-blocked, falling back to US default) and there are no approved businesses in US seed data. The Mapa view therefore had nothing to render. This is an environment/data gap, not a code defect — the Leaflet component renders correctly when the businesses list is non-empty (verified via source + presence of Mapa toggle when list view is active)."
+}
