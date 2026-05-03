@@ -310,6 +310,8 @@ async def export_my_personal_data(
             "schema_version": "1.0",
             "user_id": user["id"],
             "note": "Export completo de tus datos personales segun LFPDPPP (derecho de Acceso)",
+            "truncation_cap_per_section": 500,
+            "truncated": any(len(x) >= 500 for x in (bookings, notifications, payments)),
         },
         "profile": _sanitize_doc(user),
         "bookings": [_sanitize_doc(b) for b in bookings],
@@ -320,8 +322,12 @@ async def export_my_personal_data(
         "terms_acceptance_history": (user or {}).get("terms_acceptance_history") or [],
     }
 
-    # --- Business-owner extras ---
-    if user.get("role") == UserRole.BUSINESS and user.get("business_id"):
+    # --- Business-owner extras (only true owner, not managers) ---
+    if (
+        user.get("role") == UserRole.BUSINESS
+        and user.get("business_id")
+        and not user.get("is_manager")
+    ):
         business = await db.businesses.find_one(
             {"id": user["business_id"]},
             {"_id": 0},
