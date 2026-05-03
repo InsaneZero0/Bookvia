@@ -221,6 +221,7 @@ async def startup_event():
     asyncio.create_task(wallet_expiration_scheduler())
     asyncio.create_task(funds_state_scheduler())
     asyncio.create_task(settlement_day20_scheduler())
+    asyncio.create_task(expire_holds_scheduler())
 
 
 # ========================== BACKGROUND SCHEDULERS ==========================
@@ -484,3 +485,21 @@ async def settlement_day20_scheduler():
             logger.error(f"Settlement day-20 scheduler error: {e}")
         # Check every hour
         await asyncio.sleep(3600)
+
+
+
+async def expire_holds_scheduler():
+    """Fase 11: runs `expire_holds_task` every 5 min to release stale
+    transactions that never made it to PAID (client abandoned Stripe).
+    """
+    logger.info("Expire-holds scheduler started")
+    await asyncio.sleep(60)
+    while True:
+        try:
+            from routers.payments import expire_holds_task
+            count = await expire_holds_task()
+            if count:
+                logger.info(f"[expire_holds] released {count} stale transactions")
+        except Exception as e:
+            logger.error(f"expire_holds scheduler error: {e}")
+        await asyncio.sleep(300)

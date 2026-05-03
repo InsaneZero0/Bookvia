@@ -2398,3 +2398,117 @@ async def admin_export_spei_csv(
             "Cache-Control": "no-store",
         },
     )
+
+
+
+# ========================== FASE 11: MANUAL REFUND ==========================
+
+
+class ManualRefundRequest(BaseModel):
+    amount: float
+    reason: str
+    destination: str = "card"  # card | wallet
+
+
+@router.post("/bookings/{booking_id}/refund-manual")
+async def admin_manual_refund(
+    booking_id: str,
+    payload: ManualRefundRequest,
+    request: Request,
+    token_data: TokenData = Depends(require_admin),
+):
+    """Admin-initiated refund - e.g. to settle a dispute won by the client
+    or correct a pricing bug. Emits a real Stripe refund if destination is
+    'card' and writes a matching wallet credit if 'wallet'.
+    """
+    if payload.amount <= 0:
+        raise HTTPException(status_code=400, detail="Amount must be positive")
+    if len(payload.reason.strip()) < 5:
+        raise HTTPException(status_code=400, detail="Reason too short (min 5 chars)")
+    if payload.destination not in ("card", "wallet"):
+        raise HTTPException(status_code=400, detail="destination must be 'card' or 'wallet'")
+
+    booking = await db.bookings.find_one({"id": booking_id}, {"_id": 0})
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+
+    transaction = await db.transactions.find_one(
+        {"booking_id": booking_id, "status": {"$in": ["paid", "refund_partial"]}},
+        {"_id": 0},
+    )
+    if not transaction:
+        raise HTTPException(status_code=404, detail="No paid transaction found for this booking")
+
+    result = {"destination": payload.destination, "amount": payload.amount}
+    if payload.destination == "card":
+        try:
+            from services.stripe_refunds import issue_stripe_refund
+            res = await issue_stripe_refund(
+                transaction=transaction,
+                amount_mxn=payload.amount,
+                reason=f"admin:{payload.reason[:100]}",
+                metadata={"admin_email": token_data.email},
+                actor=f"admin:{token_data.user_id}",
+            )
+            result.update(res)
+            await db.transactions.update_one(
+                {"id": transaction["id"]},
+                {"$inc": {"refund_amount": float(res["amount_refunded_on_card"])},
+                 "$set": {"status": "refund_partial"}},
+            )
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"Stripe refund failed: {e}")
+    else:
+        from services.wallet import credit_wallet, CREDIT_ADMIN_ADJUSTMENT
+        tx = await credit_wallet(
+            user_id=transaction["user_id"], amount=payload.amount,
+            tx_type=CREDIT_ADMIN_ADJUSTMENT, booking_id=booking_id,
+            description=f"Reembolso manual admin: {payload.reason[:120]}",
+        )
+        result["wallet_tx_id"] = tx["id"]
+        await db.transactions.update_one(
+            {"id": transaction["id"]},
+            {"$inc": {"refund_amount": float(payload.amount)},
+             "$set": {"status": "refund_partial"}},
+        )
+
+    await create_audit_log(
+        admin_id=token_data.user_id, admin_email=token_data.email,
+        action=AuditAction.MANUAL_REFUND, target_type="booking",
+        target_id=booking_id,
+        details={
+            "amount": payload.amount, "destination": payload.destination,
+            "reason": payload.reason, "transaction_id": transaction["id"],
+            "stripe_refund_id": result.get("stripe_refund_id"),
+        },
+        request=request,
+    )
+    return {"ok": True, **result}
+
+
+@router.post("/businesses/{business_id}/payout-hold")
+async def admin_set_payout_hold(
+    business_id: str,
+    request: Request,
+    hold: bool = True,
+    reason: Optional[str] = None,
+    token_data: TokenData = Depends(require_admin),
+):
+    """Toggle payout_hold for a business (used to release it after a
+    dispute has been resolved in the business's favor)."""
+    biz = await db.businesses.find_one({"id": business_id}, {"_id": 0, "id": 1})
+    if not biz:
+        raise HTTPException(status_code=404, detail="Business not found")
+    set_fields = {"payout_hold": bool(hold)}
+    if hold:
+        set_fields["payout_hold_reason"] = reason or "admin"
+    else:
+        set_fields["payout_hold_reason"] = None
+    await db.businesses.update_one({"id": business_id}, {"$set": set_fields})
+    await create_audit_log(
+        admin_id=token_data.user_id, admin_email=token_data.email,
+        action=AuditAction.PAYOUT_HOLD_TOGGLE, target_type="business",
+        target_id=business_id, details={"hold": hold, "reason": reason},
+        request=request,
+    )
+    return {"ok": True, "payout_hold": bool(hold)}

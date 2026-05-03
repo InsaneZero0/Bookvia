@@ -1,0 +1,53 @@
+{
+  "summary": "Fase 11 payments hardening backend tests: 24/24 passing after one critical webhook parsing fix. Covered: strong webhook idempotency via stripe_events collection, handlers for charge.refunded / charge.dispute.created / charge.dispute.closed (won & lost) / payment_intent.payment_failed / checkout.session.expired (with wallet reversal), admin manual-refund (wallet + card destinations, 404/400/401 paths, audit log), admin payout-hold toggle (true/false/reason + 404 + audit log), issue_stripe_refund idempotency key & card-portion math (via monkeypatch on stripe_lib.Refund.create), record_stripe_event double-insert, and expire_holds_task scheduler task.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "POST /api/webhook/stripe",
+        "issue": "When STRIPE_WEBHOOK_SECRET is not set, the fallback event parser used stripe_lib.util.convert_to_stripe_object which no longer exists in installed Stripe SDK. Every incoming webhook event raised AttributeError and was silently swallowed by the generic except (returning 200 {status:error,message:''}), so NONE of the handlers (refund, dispute, payment_failed, checkout.expired) ever executed in preview. Fixed in routers/system.py by calling stripe_lib.Event.construct_from(json.loads(body), stripe_lib.api_key) directly (verified working in live Stripe SDK).",
+        "priority": "CRITICAL"
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "routers/payments.py::expire_holds_task",
+        "issue": "Implementation only expires bookings (status='hold', created_at<cutoff) and does NOT expire transactions with status='created' and held_until<now as described in the review request. It also returns result.modified_count, not a transaction count. Admin may want to expand this scheduler to cover stale transactions too."
+      },
+      {
+        "endpoint": "POST /api/webhook/stripe",
+        "issue": "All exceptions are swallowed with logger.error(f'Webhook error: {e}') - but str(AttributeError()) is empty, so the prior production log showed 'Webhook error: ' with no hint. Consider logger.exception() for stacktrace on webhook errors."
+      },
+      {
+        "endpoint": "services/funds_state.py::transition",
+        "issue": "Accepts only whitelisted source states. Transactions stored with funds_state='pending' (not 'pending_hold') fail silently inside mark_refunded when charge.refunded arrives, so funds_state is never updated to 'refunded'. All new transactions must initialise funds_state via set_initial_funds_state() otherwise webhook sync is a no-op."
+      }
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_fase11_payments_hardening.py",
+    "/app/test_reports/pytest/fase11.xml"
+  ],
+  "action_items": [
+    "Main agent should review the fix I applied to routers/system.py (stripe.util.convert_to_stripe_object removal). The fix is minimal and functionally equivalent: stripe_lib.Event.construct_from already accepts raw dicts in current SDK.",
+    "Consider expanding expire_holds_task to also expire stale transactions (status='created', held_until<now) per the Fase 11 spec, and returning the combined count.",
+    "Improve webhook error logging: use logger.exception so future compatibility breaks are visible.",
+    "Confirm new transactions are initialised with funds_state='pending_hold' (via set_initial_funds_state) so charge.refunded -> mark_refunded can transition them."
+  ],
+  "critical_code_review_comments": [
+    "routers/system.py:130 used stripe_lib.util.convert_to_stripe_object which was removed in the pinned Stripe python SDK version. This broke ALL non-signed webhook processing - treated as critical because in preview STRIPE_WEBHOOK_SECRET is unset. Fixed.",
+    "The global except in stripe_webhook returns {status:'error'} with 200 OK; combined with empty str(AttributeError) this hid the bug from logs for a long time. Suggest logger.exception and returning 500 on parse errors so Stripe retries.",
+    "services/stripe_refunds.issue_stripe_refund correctly implements idempotency_key='refund-{tx_id}-{cents}' and card-portion cap + surplus-to-wallet - verified by monkeypatch tests."
+  ],
+  "updated_files": [
+    "/app/backend/routers/system.py (removed stripe.util.convert_to_stripe_object; pass dict directly to Event.construct_from)",
+    "/app/backend/tests/test_fase11_payments_hardening.py (new file - 24 pytest cases)"
+  ],
+  "success_rate": {"backend": "100% (24/24)", "frontend": "N/A (backend-only task)"},
+  "test_credentials": "Super admin zamorachapa50@gmail.com + TOTP from DB.users.totp_secret (via pyotp). Pytest reads creds from backend/.env (ADMIN_EMAIL, ADMIN_INITIAL_PASSWORD).",
+  "seed_data_creation": "Tests insert only TEST_F11_-prefixed data (transactions, bookings, businesses, users, wallet_transactions, stripe_events) and clean them up in the autouse module fixture.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "test_fase11_payments_hardening.py is idempotent (cleans TEST_F11_ prefix). Runs in ~4s. Uses a shared asyncio loop (_run helper) so Motor does not hit 'Event loop is closed' across service-layer tests. The critical webhook parse fix in routers/system.py is required for webhook handler tests to work - don't revert it.",
+  "rca of the issue": "Root cause for the critical webhook bug: the installed stripe python SDK (modern version) exposes a narrow public API via __getattr__ and does NOT include the legacy stripe.util.convert_to_stripe_object helper. The fallback branch (no STRIPE_WEBHOOK_SECRET) attempted to call it, which raised AttributeError, was caught by the broad try/except at the end of stripe_webhook, and returned 200 with an empty error message. Result: every webhook event was acknowledged to Stripe as 'success' yet no handler logic executed. Fix: call stripe_lib.Event.construct_from(json.loads(body), stripe_lib.api_key) directly - the current SDK accepts a plain dict as the values argument and constructs the nested StripeObject graph automatically. Verified by reproducing locally and by 24/24 pytest pass."
+}

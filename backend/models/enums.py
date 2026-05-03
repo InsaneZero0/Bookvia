@@ -147,6 +147,8 @@ class AuditAction(str, Enum):
     STAFF_DELETE = "staff_delete"
     DOCS_VERIFY = "docs_verify"
     DOCS_REJECT = "docs_reject"
+    MANUAL_REFUND = "manual_refund"
+    PAYOUT_HOLD_TOGGLE = "payout_hold_toggle"
 
 
 # ========================== CONSTANTS ==========================
