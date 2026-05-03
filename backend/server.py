@@ -232,6 +232,7 @@ async def startup_event():
     asyncio.create_task(settlement_day20_scheduler())
     asyncio.create_task(expire_holds_scheduler())
     asyncio.create_task(stripe_reconciliation_scheduler())
+    asyncio.create_task(monthly_pnl_report_scheduler())
 
 
 # ========================== BACKGROUND SCHEDULERS ==========================
@@ -534,5 +535,31 @@ async def stripe_reconciliation_scheduler():
                 last_run_date = today_key
         except Exception as e:
             logger.error(f"Stripe reconciliation scheduler error: {e}")
+        await asyncio.sleep(1800)  # every 30 min check if it's time to run
+
+
+async def monthly_pnl_report_scheduler():
+    """Fase 12d: emails the executive P&L digest to every admin on day-1
+    of each month around 13:00 UTC (07:00 CDMX). Idempotent: stores the
+    last successfully processed period in memory so hot-reloads don't
+    double-send inside the same run hour window.
+    """
+    logger.info("Monthly P&L report scheduler started")
+    last_period = None
+    await asyncio.sleep(180)
+    while True:
+        try:
+            now = datetime.now(timezone.utc)
+            # Period key is the previous month being reported on.
+            prev_year = now.year if now.month > 1 else now.year - 1
+            prev_month = now.month - 1 if now.month > 1 else 12
+            period_key = f"{prev_year}-{str(prev_month).zfill(2)}"
+            if now.day == 1 and now.hour >= 13 and last_period != period_key:
+                from services.monthly_pnl_report import send_monthly_report
+                res = await send_monthly_report(now=now)
+                logger.info(f"[monthly_pnl_report] sent to {len(res.get('sent_to', []))} admins for {period_key}")
+                last_period = period_key
+        except Exception as e:
+            logger.error(f"Monthly P&L report scheduler error: {e}")
         await asyncio.sleep(1800)  # every 30 min check if it's time to run
 

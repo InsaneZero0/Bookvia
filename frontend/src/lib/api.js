@@ -384,6 +384,8 @@ export const adminAPI = {
   getArcoEvents: (limit = 50) => api.get('/admin/compliance/arco-events', { params: { limit } }),
   getRefundsAudit: (limit = 50) => api.get('/admin/finance/refunds', { params: { limit } }),
   getStripeWebhookEvents: (limit = 50) => api.get('/admin/stripe/webhook-events', { params: { limit } }),
+  previewPnlReport: () => api.get('/admin/platform/pnl-report/preview'),
+  sendPnlReport: (recipients) => api.post('/admin/platform/pnl-report/send', { recipients: recipients || null }),
 };
 
 // Utility API

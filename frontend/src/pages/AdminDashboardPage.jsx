@@ -698,6 +698,44 @@ export default function AdminDashboardPage() {
     }
   };
 
+  const [pnlReportSending, setPnlReportSending] = useState(false);
+  const handleSendPnlReport = async () => {
+    const customTo = window.prompt(
+      t('Destinatarios (emails separados por coma). Vacío = todos los admins:',
+        'Recipients (comma-separated emails). Empty = all admins:'),
+      '',
+    );
+    const list = (customTo || '').split(',').map(s => s.trim()).filter(Boolean);
+    if (!window.confirm(
+      list.length
+        ? t(`Enviar reporte P&L a ${list.length} destinatarios?`, `Send P&L report to ${list.length} recipients?`)
+        : t('Enviar reporte P&L del mes anterior a TODOS los admins?', 'Send last-month P&L report to ALL admins?'),
+    )) return;
+    setPnlReportSending(true);
+    try {
+      const res = await adminAPI.sendPnlReport(list.length ? list : null);
+      const { sent_to = [], failed = [], period } = res.data;
+      if (sent_to.length) {
+        toast.success(t(
+          `Reporte "${period}" enviado a ${sent_to.length} admin(s)`,
+          `Report "${period}" sent to ${sent_to.length} admin(s)`,
+        ));
+      }
+      if (failed.length) {
+        toast.error(t(
+          `${failed.length} fallaron: ${failed[0].error}`,
+          `${failed.length} failed: ${failed[0].error}`,
+        ), { duration: 8000 });
+      }
+      if (!sent_to.length && !failed.length) {
+        toast.info(t('No hay admins registrados para enviar', 'No admins registered to send to'));
+      }
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || t('Error al enviar reporte', 'Failed to send report'));
+    }
+    setPnlReportSending(false);
+  };
+
   const loadReviews = useCallback(async (page = 1) => {
     setReviewsLoading(true);
     try {
@@ -2775,6 +2813,30 @@ export default function AdminDashboardPage() {
                     ))}
                   </div>
                 )}
+              </CardContent>
+            </Card>
+
+            {/* Monthly P&L Email Report */}
+            <Card data-testid="pnl-report-card">
+              <CardHeader className="flex flex-row items-center justify-between">
+                <CardTitle className="font-heading flex items-center gap-2">
+                  <Mail className="h-5 w-5 text-blue-500" />{t('Reporte Ejecutivo Mensual', 'Monthly Executive Report')}
+                </CardTitle>
+                <Button size="sm" onClick={handleSendPnlReport} disabled={pnlReportSending} data-testid="send-pnl-report-btn">
+                  {pnlReportSending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Send className="h-4 w-4 mr-1" />}
+                  {t('Enviar ahora', 'Send now')}
+                </Button>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-muted-foreground mb-2">
+                  {t(
+                    'Cada día 1 a las 07:00 CDMX los admins reciben el P&L cerrado del mes anterior + discrepancias Stripe + top reembolsos + liquidaciones pendientes.',
+                    'On the 1st of every month at 07:00 CDMX all admins get the closed P&L of the previous month plus Stripe discrepancies, top refunds and pending settlements.',
+                  )}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {t('Usa', 'Use')} <b>{t('Enviar ahora', 'Send now')}</b> {t('para previsualizarlo o mandarlo a un correo de prueba.', 'to preview it or dispatch to a test email.')}
+                </p>
               </CardContent>
             </Card>
 

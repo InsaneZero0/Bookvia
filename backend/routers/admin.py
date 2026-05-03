@@ -2739,3 +2739,44 @@ async def admin_stripe_webhook_events(
             "received_at": d.get("received_at"),
         })
     return {"count": len(rows), "items": rows}
+
+
+# ========================== FASE 12d: MONTHLY P&L EMAIL REPORT ==========================
+
+
+@router.get("/platform/pnl-report/preview")
+async def admin_pnl_report_preview(token_data: TokenData = Depends(require_admin)):
+    """Return the full payload of the monthly report for the previous
+    calendar month (same data that would be emailed). For admins to
+    preview before triggering the send."""
+    from services.monthly_pnl_report import build_monthly_report
+    return await build_monthly_report()
+
+
+class SendPnlReportRequest(BaseModel):
+    recipients: Optional[List[str]] = None  # if empty -> all admin emails
+
+
+@router.post("/platform/pnl-report/send")
+async def admin_pnl_report_send(
+    payload: SendPnlReportRequest,
+    request: Request,
+    token_data: TokenData = Depends(require_admin),
+):
+    """Manually trigger the monthly P&L email (previous calendar month)
+    to every admin, or to a custom recipients list for testing."""
+    from services.monthly_pnl_report import send_monthly_report
+    result = await send_monthly_report(recipients=payload.recipients or None)
+    await create_audit_log(
+        admin_id=token_data.user_id, admin_email=token_data.email,
+        action="pnl_report_send", target_type="monthly_pnl",
+        target_id=result["report"]["period_label"],
+        details={"sent_to_count": len(result["sent_to"])},
+        request=request,
+    )
+    return {
+        "ok": True,
+        "period": result["report"]["period_label"],
+        "sent_to": result["sent_to"],
+        "failed": result.get("failed", []),
+    }

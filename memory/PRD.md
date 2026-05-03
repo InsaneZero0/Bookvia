@@ -185,3 +185,11 @@ Panel admin ampliado para cubrir las fases 7-11 de backend:
 - **Endpoints nuevos admin**: `/admin/platform/pnl`, `/admin/platform/reconcile-stripe`, `/admin/platform/reconciliation-issues`, `/admin/security/locked-accounts`, `/admin/security/unlock`, `/admin/terms/stats`, `/admin/terms/pending-users`, `/admin/compliance/arco-events`, `/admin/finance/refunds`, `/admin/stripe/webhook-events`.
 - **Testing**: 26/26 pytest cases pass (iteration_89), test file `/app/backend/tests/test_fase12_admin_panel.py`.
 - **Enum nuevo**: `AuditAction.SECURITY_UNLOCK = "security_unlock"`.
+
+## Phase 12d (May 2026) - Reporte Ejecutivo Mensual
+- **Servicio**: `/app/backend/services/monthly_pnl_report.py` (`build_monthly_report` + `send_monthly_report`) genera HTML ejecutivo con P&L cerrado del mes anterior, discrepancias Stripe, top-5 reembolsos y liquidaciones pendientes.
+- **Scheduler**: `monthly_pnl_report_scheduler` en `server.py` corre cada 30 min, se activa dia-1 de cada mes >= 13:00 UTC (07:00 CDMX), idempotente por `period_key`.
+- **Endpoints admin**: `GET /admin/platform/pnl-report/preview` (vista previa JSON), `POST /admin/platform/pnl-report/send` (envio manual, acepta `recipients` custom para test).
+- **UI**: Nuevo card "Reporte Ejecutivo Mensual" en tab Finanzas con boton "Enviar ahora" que pregunta destinatarios y muestra sent_to/failed con razon de fallo (util para detectar Resend domain no verificado).
+- **Testing**: 4/4 pytest pass en `/app/backend/tests/test_fase12d_pnl_report.py`.
+- **Nota produccion**: Requiere verificar dominio en Resend (tarea P2 pendiente). Mientras tanto el servicio reporta correctamente el error "domain not verified" al admin.
