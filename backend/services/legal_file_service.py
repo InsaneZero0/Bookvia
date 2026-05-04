@@ -23,7 +23,10 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 import qrcode
-from weasyprint import HTML
+# WeasyPrint is imported lazily inside generate_business_legal_file() so that
+# a missing native library (Pango/Cairo/HarfBuzz) on a freshly provisioned
+# Railway/Nixpacks container does NOT crash the whole FastAPI boot — only
+# the PDF endpoints will fail until the system libs are available.
 
 from core.database import db
 
@@ -464,6 +467,8 @@ async def generate_business_legal_file(
         content_hash=content_hash, qr_data_uri=qr_data_uri,
     )
 
+    # Lazy import — see top of file for rationale.
+    from weasyprint import HTML
     buf = io.BytesIO()
     HTML(string=final_html).write_pdf(buf)
     pdf_bytes = buf.getvalue()

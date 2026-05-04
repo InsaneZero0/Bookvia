@@ -24,7 +24,10 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from weasyprint import HTML
+# WeasyPrint is imported lazily inside generate_payout_statement_pdf() so a
+# missing native library (Pango/Cairo) on cold Railway containers does NOT
+# crash the whole FastAPI boot — only this PDF endpoint fails until the
+# system libs are available.
 
 from core.database import db
 
@@ -394,6 +397,8 @@ async def generate_payout_statement_pdf(settlement_id: str) -> Optional[Dict[str
     content_hash = hashlib.sha256(placeholder_html.encode("utf-8")).hexdigest()
     final_html = _render_template(data, content_hash=content_hash)
 
+    # Lazy import — see top of file for rationale.
+    from weasyprint import HTML
     buf = io.BytesIO()
     HTML(string=final_html).write_pdf(buf)
 
