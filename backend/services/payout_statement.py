@@ -66,32 +66,44 @@ def _mask_clabe(clabe: Optional[str]) -> str:
     return f"{s[:4]}••••••••••{s[-4:]}" if len(s) >= 8 else "••••"
 
 
-def _period_label_es(period_key: Optional[str]) -> str:
-    """Convert a period_key like '2026-02' into 'del 1 al 20 de febrero de 2026'."""
+def _parse_period_key(period_key: Optional[str]):
+    """Parse period_key in formats 'YYYY-MM' or 'MX-YYYY-MM' (any country prefix).
+    Returns (year:int, month:int) or None on malformed input."""
     if not period_key:
-        return "—"
+        return None
     try:
-        y, m = period_key.split("-")[:2]
-        month_name = MONTHS_ES.get(int(m), m)
-        return f"del 1 al 20 de {month_name} de {y}"
-    except Exception:
-        return period_key
+        parts = str(period_key).split("-")
+        if len(parts) < 2:
+            return None
+        y = int(parts[-2])
+        m = int(parts[-1])
+        if not (1 <= m <= 12):
+            return None
+        return y, m
+    except (ValueError, TypeError):
+        return None
+
+
+def _period_label_es(period_key: Optional[str]) -> str:
+    """Convert a period_key like 'MX-2026-02' or '2026-02' into 'del 1 al 20 de febrero de 2026'."""
+    parsed = _parse_period_key(period_key)
+    if not parsed:
+        return period_key or "—"
+    y, m = parsed
+    return f"del 1 al 20 de {MONTHS_ES[m]} de {y}"
 
 
 def _deposit_date_es(period_key: Optional[str]) -> str:
     """Return the scheduled deposit date (1st of the month AFTER period_key)."""
-    if not period_key:
+    parsed = _parse_period_key(period_key)
+    if not parsed:
         return "—"
-    try:
-        y, m = period_key.split("-")[:2]
-        y, m = int(y), int(m)
-        m += 1
-        if m > 12:
-            m = 1
-            y += 1
-        return f"1 de {MONTHS_ES.get(m, m)} de {y}"
-    except Exception:
-        return "—"
+    y, m = parsed
+    m += 1
+    if m > 12:
+        m = 1
+        y += 1
+    return f"1 de {MONTHS_ES[m]} de {y}"
 
 
 HTML_TEMPLATE = r"""

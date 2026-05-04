@@ -366,3 +366,34 @@ Generador de expediente legal autoservicio para los negocios + acceso admin para
 - `poppler-utils` instalado en el sistema (apt) para utilidades de PDF.
 - Nueva colección MongoDB `business_legal_files`.
 
+
+## Phase 21 (Feb 2026) - Estado de cuenta del corte día 1° (PDF por negocio)
+Prerrequisito operacional para el primer corte real del 1° de marzo 2026 — cada negocio puede descargar un PDF con el detalle completo de cada liquidación día-20 para conciliar con su contador.
+
+### Componentes
+- **Servicio** `/app/backend/services/payout_statement.py` con WeasyPrint. PDF de 2 páginas con:
+  * Header Bookvia + folio
+  * Hero box verde con **"Neto a depositar"** + fecha de depósito programada
+  * 5 secciones: datos del beneficiario, resumen financiero, tabla de transacciones (fecha/cita/cliente/cobrado/stripe/neto), info adicional, política + footer con hash SHA-256 del documento
+  * Subtítulo tipo "Estado de cuenta del periodo del 1 al 20 de febrero de 2026 · Depósito programado el 1 de marzo de 2026"
+- **3 endpoints nuevos**:
+  * `GET /api/businesses/me/settlements` (lista de cortes del negocio)
+  * `GET /api/businesses/me/settlements/{id}/statement.pdf` (owner, ownership check con 404 cross-business)
+  * `GET /api/admin/settlements/{id}/statement.pdf` (admin, cualquier negocio)
+  * Audit log `action=payout_statement_download` con `by` ∈ {owner, admin}
+- **Email mejorado**: `send_settlement_notification` ahora envía 2 CTAs — "Descargar estado de cuenta" (deep-link `/business/finance?statement=<id>` con auto-download) + "Ver panel".
+- **Frontend**:
+  * `BusinessFinancePage`: botón `download-statement-<id>` con `FileDown` en cada row + auto-download cuando la URL tiene `?statement=<id>` (limpia el param con `history.replaceState`).
+  * `AdminDashboardPage`: botón `admin-download-statement-<id>` en cada row de la lista de liquidaciones.
+
+### Bugs encontrados y resueltos
+- **CRITICAL (fix aplicado)**: `_period_label_es` y `_deposit_date_es` no manejaban el prefijo `MX-` del `period_key` real en producción (`MX-2026-02`). Generaba texto sin sentido "del 1 al 20 de 2026 de MX" y fecha de depósito "—". Reemplazado por `_parse_period_key` que toma `parts[-2:]` y valida `1 <= month <= 12`. Verificado con PDF renderizado: "del 1 al 20 de febrero de 2026" + "1 de marzo de 2026" ✅.
+
+### Testing
+- **iteration_98: 13/13 pytest pass** (tras fix del period_key). Backend 100%.
+- Frontend source review verde (Playwright bloqueado por auth-context storage — mismo patrón que fases 20 y 97).
+- PDF verificado visualmente por `analyze_file_tool` con las 3 aserciones clave de fecha pasando.
+
+### Reutilización Fase 20
+- ~70% del boilerplate de template/branding/hash reutilizado del legal_file_service. Mantuvimos separación de servicios para testeabilidad y claridad.
+
