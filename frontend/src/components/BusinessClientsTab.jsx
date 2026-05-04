@@ -10,7 +10,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
   Search, Users, Crown, Sparkle, AlertTriangle, Clock3,
-  Mail, Phone, Pencil, Download, UserX,
+  Mail, Phone, Pencil, Download, UserX, Copy, IdCard,
 } from 'lucide-react';
 import { businessesAPI } from '@/lib/api';
 import { useI18n } from '@/lib/i18n';
@@ -110,7 +110,7 @@ export default function BusinessClientsTab() {
             <Input
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder={t('Busca por nombre, telefono o email')}
+              placeholder={t('Busca por nombre, teléfono, email o código CL-XXXXX')}
               className="pl-9"
               data-testid="clients-search-input"
             />
@@ -230,6 +230,21 @@ function ClientRow({ c, onEditNote }) {
           <div className="min-w-0">
             <p className="font-heading font-bold text-sm truncate">{c.name}</p>
             <div className="flex flex-wrap gap-1 mt-0.5">
+              {c.public_code && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(c.public_code);
+                    toast.success(t('Código copiado'));
+                  }}
+                  className="inline-flex items-center gap-1 px-1.5 py-0 rounded bg-slate-100 hover:bg-slate-200 border border-slate-200 font-mono text-[10px] text-slate-700 transition-colors"
+                  title={t('Click para copiar')}
+                  data-testid={`client-code-${c.public_code}`}
+                >
+                  <IdCard className="h-3 w-3" />
+                  {c.public_code}
+                </button>
+              )}
               {c.tags.map(tg => {
                 const meta = TAG_MAP[tg];
                 if (!meta) return null;

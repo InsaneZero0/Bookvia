@@ -558,7 +558,7 @@ async def list_my_clients(
     if user_ids:
         async for u in db.users.find(
             {"id": {"$in": user_ids}},
-            {"_id": 0, "id": 1, "full_name": 1, "email": 1, "phone": 1, "profile_image_url": 1},
+            {"_id": 0, "id": 1, "full_name": 1, "email": 1, "phone": 1, "profile_image_url": 1, "public_code": 1},
         ):
             users_map[u["id"]] = u
 
@@ -593,6 +593,7 @@ async def list_my_clients(
             "name": name,
             "email": email,
             "phone": phone,
+            "public_code": profile.get("public_code") or None,
             "avatar_url": profile.get("profile_image_url"),
             "is_registered": bool(uid),
             "total_bookings": r["total_bookings"],
@@ -609,13 +610,14 @@ async def list_my_clients(
             "tags": tags,
         })
 
-    # Search filter (name / phone / email contains q)
+    # Search filter (name / phone / email / public_code contains q)
     if q:
         ql = q.lower().strip()
         clients = [c for c in clients if
                    ql in (c["name"] or "").lower()
                    or ql in (c["phone"] or "").lower()
-                   or ql in (c["email"] or "").lower()]
+                   or ql in (c["email"] or "").lower()
+                   or ql in (c.get("public_code") or "").lower()]
 
     # Tag filter
     if tag:
@@ -693,10 +695,11 @@ async def export_my_clients(token_data: TokenData = Depends(require_business)):
     result = await list_my_clients(token_data=token_data, limit=1000)
     buf = _io.StringIO()
     w = _csv.writer(buf)
-    w.writerow(["name", "email", "phone", "total_visits", "total_spent",
+    w.writerow(["bookvia_code", "name", "email", "phone", "total_visits", "total_spent",
                 "last_visit", "noshow_count", "tags", "private_note"])
     for c in result["items"]:
         w.writerow([
+            c.get("public_code") or "",
             c["name"], c["email"], c["phone"], c["total_visits"],
             c["total_spent"], c["last_visit"] or "",
             c["noshow_count"], ",".join(c["tags"]), c["private_note"],
@@ -706,6 +709,63 @@ async def export_my_clients(token_data: TokenData = Depends(require_business)):
         media_type="text/csv",
         headers={"Content-Disposition": "attachment; filename=clientes.csv"},
     )
+
+
+@router.get("/my/clients/lookup")
+async def lookup_client_by_code(
+    code: str,
+    token_data: TokenData = Depends(require_business),
+):
+    """Lookup a single client by their public Bookvia code (CL-XXXXX).
+    Returns aggregated stats scoped to THIS business only — walk-in /
+    unregistered clients are excluded (no user_id means no code)."""
+    from services.public_code import normalize_public_code, is_valid_public_code
+
+    normalized = normalize_public_code(code)
+    if not is_valid_public_code(normalized) or not normalized.startswith("CL-"):
+        raise HTTPException(status_code=400, detail="Código inválido. Formato esperado: CL-XXXXX")
+
+    business = await db.businesses.find_one({"user_id": token_data.user_id}, {"_id": 0, "id": 1})
+    if not business:
+        raise HTTPException(status_code=404, detail="Business not found")
+
+    user = await db.users.find_one(
+        {"public_code": normalized},
+        {"_id": 0, "id": 1, "full_name": 1, "email": 1, "phone": 1,
+         "profile_image_url": 1, "public_code": 1},
+    )
+    if not user:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado")
+
+    # Aggregate this business's history with the client
+    bookings = await db.bookings.find(
+        {"business_id": business["id"], "user_id": user["id"]},
+        {"_id": 0, "id": 1, "date": 1, "status": 1, "total_amount": 1, "deposit_amount": 1},
+    ).sort("date", -1).to_list(500)
+
+    total_visits = sum(1 for b in bookings if b.get("status") in ("completed", "confirmed"))
+    noshow_count = sum(1 for b in bookings if b.get("status") == "no_show")
+    total_spent = sum(
+        float(b.get("total_amount") or b.get("deposit_amount") or 0)
+        for b in bookings if b.get("status") in ("completed", "confirmed")
+    )
+    last_visit = bookings[0]["date"] if bookings else None
+    has_history = len(bookings) > 0
+
+    return {
+        "found": True,
+        "has_history_with_you": has_history,
+        "public_code": user["public_code"],
+        "name": user.get("full_name") or "-",
+        "email": user.get("email"),
+        "phone": user.get("phone"),
+        "avatar_url": user.get("profile_image_url"),
+        "total_bookings": len(bookings),
+        "total_visits": total_visits,
+        "noshow_count": noshow_count,
+        "total_spent": round(total_spent, 2),
+        "last_visit": last_visit,
+    }
 
 
 

@@ -23,8 +23,9 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { 
   ArrowLeft, ArrowRight, Mail, Lock, Phone, Building2, MapPin, 
   FileText, CreditCard, Upload, CheckCircle2, AlertTriangle, Eye, EyeOff,
-  HelpCircle, CalendarX, Banknote, Globe, Search, Camera
+  HelpCircle, CalendarX, Banknote, Globe, Search, Camera, Calendar, ShieldCheck
 } from 'lucide-react';
+import CommissionBreakdownModal, { COMMISSION_TERMS_VERSION } from '@/components/CommissionBreakdownModal';
 
 const STEPS = [
   { id: 'business', title: { es: 'Datos del negocio', en: 'Business info' } },
@@ -53,6 +54,7 @@ export default function BusinessRegisterPage() {
   // File upload states
   const [ineFile, setIneFile] = useState(null);
   const [proofFile, setProofFile] = useState(null);
+  const [showCommissionModal, setShowCommissionModal] = useState(false);
   const [inePreview, setInePreview] = useState(null);
   const [proofPreview, setProofPreview] = useState(null);
   const [logoFile, setLogoFile] = useState(null);
@@ -102,7 +104,9 @@ export default function BusinessRegisterPage() {
     requires_deposit: false,
     deposit_amount: 100,
     cancellation_days: 1,
-    payout_schedule: 'monthly',
+    payout_schedule: 'monthly_cutoff_20',
+    commission_terms_accepted: false,
+    commission_terms_version: null,
     // Settings
     accepts_terms: false,
   });
@@ -338,6 +342,13 @@ export default function BusinessRegisterPage() {
             : 'Deposit amount must be at least $100 MXN');
           return false;
         }
+        // Commission terms: if requires_deposit, must accept the breakdown
+        if (formData.requires_deposit && !formData.commission_terms_accepted) {
+          toast.error(language === 'es'
+            ? 'Debes leer y aceptar el desglose de comisiones para continuar'
+            : 'You must read and accept the fee breakdown to continue');
+          return false;
+        }
         return true;
         
       default:
@@ -396,7 +407,9 @@ export default function BusinessRegisterPage() {
         requires_deposit: formData.requires_deposit,
         deposit_amount: formData.requires_deposit ? Number(formData.deposit_amount) : 100,
         cancellation_days: Number(formData.cancellation_days) || 1,
-        payout_schedule: formData.requires_deposit ? formData.payout_schedule : null,
+        payout_schedule: formData.requires_deposit ? 'monthly_cutoff_20' : null,
+        commission_terms_accepted: formData.requires_deposit ? !!formData.commission_terms_accepted : false,
+        commission_terms_version: formData.requires_deposit && formData.commission_terms_accepted ? formData.commission_terms_version : null,
         owner_birth_date: ownerBirthDate,
         logo_url: logoUrl,
         cover_photo: coverUrl,
@@ -1282,73 +1295,70 @@ export default function BusinessRegisterPage() {
                             </p>
                           </div>
 
-                          {/* Selector de frecuencia de depósito */}
+                          {/* Calendario fijo de liquidaciones + acceso al desglose de comisiones */}
                           <div className="rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 p-4 space-y-3" data-testid="commission-info-block">
                             <h4 className="text-sm font-semibold flex items-center gap-1.5">
                               <CreditCard className="h-4 w-4 text-[#F05D5E]" />
-                              {language === 'es' ? 'Comisiones de Bookvia' : 'Bookvia Fees'}
+                              {language === 'es' ? 'Comisiones y liquidaciones' : 'Fees and payouts'}
                             </h4>
-                            <p className="text-xs text-muted-foreground leading-relaxed">
-                              {language === 'es'
-                                ? 'Bookvia cobra una comisión por procesar los pagos y gestionar las reservas. Los anticipos se depositarán en la cuenta bancaria que registraste (CLABE).'
-                                : 'Bookvia charges a fee for processing payments and managing bookings. Deposits will be transferred to the bank account you registered (CLABE).'}
-                            </p>
 
-                            <div className="space-y-1.5">
-                              <div className="flex items-center gap-1.5">
-                                <Label className="text-sm font-medium">
-                                  {language === 'es' ? '¿Cada cuánto quieres recibir tu dinero?' : 'How often do you want to receive your money?'}
-                                </Label>
-                                <Popover>
-                                  <PopoverTrigger asChild>
-                                    <button type="button" className="text-muted-foreground hover:text-[#F05D5E] transition-colors" data-testid="help-payout-schedule">
-                                      <HelpCircle className="h-4 w-4" />
-                                    </button>
-                                  </PopoverTrigger>
-                                  <PopoverContent className="w-72 text-sm" side="top">
-                                    <p className="font-medium mb-1">{language === 'es' ? 'Frecuencia de depósito' : 'Payout frequency'}</p>
-                                    <p className="text-muted-foreground text-xs leading-relaxed">
-                                      {language === 'es'
-                                        ? 'Elige cada cuánto quieres recibir los anticipos acumulados en tu cuenta bancaria. Entre más frecuente, mayor es la comisión de Bookvia por los costos operativos de las transferencias.'
-                                        : 'Choose how often you want to receive accumulated deposits. More frequent payouts have higher fees due to transfer costs.'}
-                                    </p>
-                                  </PopoverContent>
-                                </Popover>
-                              </div>
-
-                              <div className="space-y-2">
-                                {[
-                                  { value: 'triday', label: language === 'es' ? 'Cada 3 días' : 'Every 3 days', fee: '10%', desc: language === 'es' ? 'Recibe tu dinero rápido' : 'Get your money fast' },
-                                  { value: 'biweekly', label: language === 'es' ? 'Quincenal' : 'Biweekly', fee: '8%', desc: language === 'es' ? 'Balance entre rapidez y costo' : 'Balance of speed and cost' },
-                                  { value: 'monthly', label: language === 'es' ? 'Mensual' : 'Monthly', fee: '4%', desc: language === 'es' ? 'La comisión más baja' : 'Lowest fee' },
-                                ].map(opt => (
-                                  <div
-                                    key={opt.value}
-                                    className={`flex items-center justify-between p-3 rounded-lg border-2 cursor-pointer transition-all ${formData.payout_schedule === opt.value ? 'border-[#F05D5E] bg-[#F05D5E]/5' : 'border-border hover:border-muted-foreground/30'}`}
-                                    onClick={() => setFormData(prev => ({ ...prev, payout_schedule: opt.value }))}
-                                    data-testid={`payout-${opt.value}`}
-                                  >
-                                    <div className="flex items-center gap-2.5">
-                                      <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center ${formData.payout_schedule === opt.value ? 'border-[#F05D5E]' : 'border-muted-foreground/40'}`}>
-                                        {formData.payout_schedule === opt.value && <div className="w-2 h-2 rounded-full bg-[#F05D5E]" />}
-                                      </div>
-                                      <div>
-                                        <p className="text-sm font-medium">{opt.label}</p>
-                                        <p className="text-[11px] text-muted-foreground">{opt.desc}</p>
-                                      </div>
-                                    </div>
-                                    <Badge variant={formData.payout_schedule === opt.value ? 'default' : 'outline'} className={`text-xs ${formData.payout_schedule === opt.value ? 'bg-[#F05D5E]' : ''}`}>
-                                      {opt.fee}
-                                    </Badge>
-                                  </div>
-                                ))}
+                            <div className="rounded-md border-2 border-blue-200 bg-blue-50/60 p-3 flex items-start gap-2.5">
+                              <Calendar className="h-4 w-4 text-blue-600 shrink-0 mt-0.5" />
+                              <div className="text-xs leading-relaxed">
+                                <p className="font-semibold text-blue-900 mb-0.5">
+                                  {language === 'es' ? 'Calendario fijo' : 'Fixed calendar'}
+                                </p>
+                                <p className="text-blue-900/80">
+                                  {language === 'es'
+                                    ? 'Corte el día 20 de cada mes · Depósito el día 1° del mes siguiente. Este calendario es igual para todos los negocios.'
+                                    : 'Cutoff day 20 each month · Payout on the 1st of the following month. Same schedule for every business.'}
+                                </p>
                               </div>
                             </div>
 
-                            <p className="text-[11px] text-muted-foreground/70 pt-2 border-t border-slate-200 dark:border-slate-700">
+                            <div className="flex items-start justify-between gap-3 rounded-md border border-slate-200 bg-white dark:bg-slate-900 dark:border-slate-700 p-3">
+                              <div className="min-w-0 flex-1">
+                                <p className="text-sm font-medium">
+                                  {language === 'es'
+                                    ? '¿Qué se cobra exactamente?'
+                                    : 'What exactly is charged?'}
+                                </p>
+                                <p className="text-xs text-muted-foreground mt-0.5 leading-snug">
+                                  {language === 'es'
+                                    ? 'Revisa el desglose completo: qué paga el cliente, qué retiene Stripe, qué se queda Bookvia y cuánto recibes tú neto en tu CLABE.'
+                                    : 'Review the full breakdown: what the client pays, what Stripe keeps, what Bookvia keeps and your net payout.'}
+                                </p>
+                                {formData.commission_terms_accepted && (
+                                  <div className="flex items-center gap-1.5 mt-2">
+                                    <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
+                                    <span className="text-[11px] text-emerald-700 font-medium">
+                                      {language === 'es' ? 'Términos aceptados' : 'Terms accepted'}
+                                      <span className="text-emerald-700/60 ml-1">
+                                        ({formData.commission_terms_version})
+                                      </span>
+                                    </span>
+                                  </div>
+                                )}
+                              </div>
+                              <Button
+                                type="button"
+                                variant={formData.commission_terms_accepted ? 'outline' : 'default'}
+                                size="sm"
+                                onClick={() => setShowCommissionModal(true)}
+                                className={formData.commission_terms_accepted ? '' : 'bg-[#F05D5E] hover:bg-[#F05D5E]/90 text-white'}
+                                data-testid="open-commission-breakdown-btn"
+                              >
+                                <FileText className="h-3.5 w-3.5 mr-1" />
+                                {formData.commission_terms_accepted
+                                  ? (language === 'es' ? 'Ver desglose' : 'View breakdown')
+                                  : (language === 'es' ? 'Ver desglose completo' : 'View full breakdown')}
+                              </Button>
+                            </div>
+
+                            <p className="text-[11px] text-muted-foreground/80 leading-snug">
                               {language === 'es'
-                                ? 'Podrás consultar todos los movimientos y anticipos recibidos en tu panel de estado de cuenta dentro de Bookvia.'
-                                : 'You can view all transactions and deposits received in your Bookvia account dashboard.'}
+                                ? 'Bookvia cobra un fee fijo al cliente y un costo de procesamiento Stripe estimado al negocio. Podrás consultar todos los movimientos y anticipos recibidos en tu panel de estado de cuenta dentro de Bookvia.'
+                                : 'Bookvia charges a fixed fee to the client and an estimated Stripe processing cost to the business. All movements and deposits received can be viewed in your Bookvia account dashboard.'}
                             </p>
                           </div>
                         </div>
@@ -1568,6 +1578,24 @@ export default function BusinessRegisterPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Commission breakdown modal — triggered from Step 4 "Sí pedir anticipo" */}
+      <CommissionBreakdownModal
+        open={showCommissionModal}
+        onOpenChange={setShowCommissionModal}
+        language={language}
+        initialAmount={Number(formData.deposit_amount) || 500}
+        onAccept={({ version }) => {
+          setFormData(prev => ({
+            ...prev,
+            commission_terms_accepted: true,
+            commission_terms_version: version,
+          }));
+          toast.success(language === 'es'
+            ? 'Términos de comisiones aceptados'
+            : 'Fee terms accepted');
+        }}
+      />
     </div>
   );
 }

@@ -21,7 +21,7 @@ import {
   User, Mail, Phone, Calendar, Heart, Shield, Camera, Edit2, Check, X,
   Clock, ChevronRight, Star, Search, MapPin, ArrowUpRight, Bookmark,
   CalendarDays, CreditCard, Bell, MessageSquare, Download, FileJson,
-  Pencil, Trash2, BellOff, AlertTriangle
+  Pencil, Trash2, BellOff, AlertTriangle, Copy
 } from 'lucide-react';
 
 export default function UserDashboardPage() {
@@ -201,7 +201,25 @@ export default function UserDashboardPage() {
           <div className="flex-1">
             <h1 className="text-2xl font-heading font-bold">{user?.full_name}</h1>
             <p className="text-sm text-muted-foreground">{user?.email}</p>
-            <div className="flex items-center gap-2 mt-1.5">
+            <div className="flex items-center flex-wrap gap-2 mt-1.5">
+              {user?.public_code && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(user.public_code);
+                    toast.success(language === 'es' ? 'Código copiado' : 'Code copied');
+                  }}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-gradient-to-r from-[#F05D5E]/10 to-amber-50 border border-[#F05D5E]/30 hover:border-[#F05D5E] transition-colors group"
+                  title={language === 'es' ? 'Click para copiar tu ID Bookvia' : 'Click to copy your Bookvia ID'}
+                  data-testid="user-public-code-badge"
+                >
+                  <span className="text-[10px] uppercase tracking-wider text-[#F05D5E]/70 font-semibold">
+                    {language === 'es' ? 'Tu ID' : 'Your ID'}
+                  </span>
+                  <span className="font-mono font-bold text-sm text-[#F05D5E]">{user.public_code}</span>
+                  <Copy className="h-3 w-3 text-[#F05D5E]/60 group-hover:text-[#F05D5E]" />
+                </button>
+              )}
               {user?.phone_verified ? (
                 <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 text-xs">
                   <Shield className="h-3 w-3 mr-1" />{language === 'es' ? 'Verificado' : 'Verified'}

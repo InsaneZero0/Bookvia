@@ -214,6 +214,7 @@ export const businessesAPI = {
   listMyClients: (params = {}) => api.get('/businesses/my/clients', { params }),
   updateClientNote: (clientKey, note) => api.put(`/businesses/my/clients/${encodeURIComponent(clientKey)}/note`, { note }),
   exportMyClients: () => api.post('/businesses/my/clients/export', null, { responseType: 'blob' }),
+  lookupClientByCode: (code) => api.get('/businesses/my/clients/lookup', { params: { code } }),
   getClientHistory: (userId) => api.get(`/businesses/my/client-history/${userId}`),
   getMyBusiness: () => api.get('/businesses/me'),
   updateBusiness: (data) => api.put('/businesses/me', data),
