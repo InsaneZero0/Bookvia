@@ -249,3 +249,30 @@ Activa la lista de espera: cuando Bookvia abra en una ciudad, admin puede mandar
 - **UI** (`/app/frontend/src/components/WaitlistBroadcastModal.jsx`): los badges de ciudad en el admin ahora son clickeables → abren modal con preview, asunto editable, textarea con char counter, picker de hasta 5 negocios (2-col grid), toggle only_unnotified, boton rojo "Enviar broadcast".
 - **Sanitization**: mensaje custom se escapa HTML y se parte por `\n\n` en parrafos seguros.
 - **Testing**: smoke test manual - preview retorna 3 destinatarios + 7 negocios, broadcast ejecuta audit log, 422 con subject < 5 chars, ciudad inexistente devuelve sent=0 sin error. Screenshots de modal confirmados.
+
+
+## Phase 17 (Feb 2026) - Review Moderation
+Sistema de reportes y moderacion de resenas para mantener la calidad publica del marketplace y cumplir con los principios anti-fraude:
+- **Endpoints nuevos** (`/app/backend/routers/reviews.py`):
+  * `POST /api/reviews/{review_id}/report` - cualquier usuario autenticado reporta una resena con `reason` (fake|offensive|off_topic|spam|other) + `detail` opcional. Dedup por (review_id, reporter_id) via `$setOnInsert`, incrementa `report_count` en la resena solo en la primera inserción.
+  * `GET /api/reviews/admin/reported?status_filter=pending|all|dismissed|removed&limit=50` - cola de moderacion admin con aggregation pipeline que agrupa por review_id, adjunta business_name + author_name + lista completa de reportes individuales.
+  * `POST /api/reviews/admin/{review_id}/resolve` (action=dismiss|remove) - dismiss mantiene la resena visible y marca reportes como dismissed; remove pone `hidden=true` en la resena y llama `_recompute_business_rating` para actualizar `rating` + `review_count` del negocio. Cada accion escribe audit log.
+- **Hardening** `GET /api/reviews/business/{id}` ahora tiene try/except por fila para que una resena legada malformada no tumbe todo el feed (solo loggea warning).
+- **Colecciones actualizadas**:
+  * `reviews` + campos `hidden`, `hidden_at`, `hidden_by_admin_id`, `hidden_reason`, `report_count`, `last_reported_at`, `dismissed_at`.
+  * Nueva `review_reports`: `{id, review_id, reporter_id, reporter_role, reason, detail, status(pending|dismissed|removed), created_at, resolved_at, resolved_by, resolution_note}`.
+- **UI publica** (`/app/frontend/src/components/ReviewReportButton.jsx`): boton inline "Reportar" en cada review card de BusinessProfilePage. Modal con 5 razones + textarea opcional 500 chars. Anon -> toast "Inicia sesion". Dedup backend se refleja como "Ya habias reportado" toast.
+- **UI admin** (Compliance tab en `/app/frontend/src/pages/AdminDashboardPage.jsx`): card `reported-reviews-card` con badge count; cada item muestra rating, texto, contexto de negocio y reportes (expandible), 2 botones: "Descartar" y "Ocultar resena" (confirm + prompt de nota interna).
+- **Testing**: iteration_94 - **12/12 pytest backend pass** (`/app/backend/tests/test_phase17_review_moderation.py`). Dedup + auth gating + dismiss-vs-remove + recompute + exclusion publica cubiertos. Publico ANON flow verificado via Playwright. Dos reviews legacy (rev_mod_test_001/002) que causaban 500 fueron purgados.
+
+## Pending User Actions (Pre-Launch)
+- [BLOCKED] **Resend DNS** - anadir registros DNS de `bookvia.app`/`bookvia.mx` en panel Resend. Codigo de emails esta correcto; solo falta que el usuario valide el dominio.
+- [BLOCKED] **Vercel merge** - Vercel Pro requiere PR manual; hacer merge manual en GitHub para que desplieguen los cambios.
+- [BLOCKED] **Consulta legal CONDUSEF (IFPE/FinTech)** - validacion legal antes del lanzamiento abierto.
+- [BACKLOG] Twilio A2P SMS - sigue en fallback log hasta que la plataforma este publicamente desplegada.
+
+## Roadmap Proximo
+- **P1** Boton "Reactivar clientes inactivos" en Mini-CRM del negocio - manda email/SMS a clientes con >90 dias sin visitar con link de oferta/recordatorio (convierte el CRM pasivo en activo).
+- **P2** PWA (manifest.json, service worker, install prompt, offline-friendly cache basico).
+- **P3** App nativa iOS/Android via Capacitor.
+- **P3** Refactor de `bookings.py` (~2100 lineas) y `AdminDashboardPage.jsx` (~3300 lineas) en submodulos.

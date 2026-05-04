@@ -111,8 +111,15 @@ async def get_business_reviews(business_id: str, page: int = 1, limit: int = 20)
         {"business_id": business_id, "hidden": {"$ne": True}},
         {"_id": 0}
     ).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
-    
-    return [ReviewResponse(**r) for r in reviews]
+
+    out = []
+    for r in reviews:
+        try:
+            out.append(ReviewResponse(**r))
+        except Exception as e:
+            # Skip legacy/malformed rows instead of crashing the whole feed
+            logger.warning(f"Skipping malformed review {r.get('id')}: {e}")
+    return out
 
 
 # ========================== PHASE 17: REVIEW REPORTING ==========================
