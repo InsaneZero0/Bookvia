@@ -220,6 +220,9 @@ export const businessesAPI = {
   updateTaxRegime: (taxRegime, certificateUrl) => api.put('/businesses/me/tax-regime', { tax_regime: taxRegime, tax_regime_certificate_url: certificateUrl || null }),
   downloadLegalFile: () => api.get('/businesses/me/legal-file.pdf', { responseType: 'blob' }),
   verifyLegalFile: (fileId) => api.get(`/businesses/verificar-expediente/${fileId}`),
+  listMySettlements: (limit = 24) => api.get('/businesses/me/settlements', { params: { limit } }),
+  downloadSettlementStatement: (settlementId) =>
+    api.get(`/businesses/me/settlements/${settlementId}/statement.pdf`, { responseType: 'blob' }),
   getClientHistory: (userId) => api.get(`/businesses/my/client-history/${userId}`),
   getMyBusiness: () => api.get('/businesses/me'),
   updateBusiness: (data) => api.put('/businesses/me', data),

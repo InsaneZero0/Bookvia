@@ -561,6 +561,7 @@ async def send_settlement_notification(
     subject = f"Liquidacion Bookvia lista: ${amount_mxn:,.2f} MXN - {period_key}"
 
     dashboard_url = "https://bookvia.vercel.app/business/finance"
+    statement_url = f"https://bookvia.vercel.app/business/finance?statement={settlement_id}"
 
     content = f"""<p style="color:#334155;font-size:15px;line-height:1.6;">Hola <strong>{business_name}</strong>,</p>
 <p style="color:#334155;font-size:15px;line-height:1.6;">Tu liquidacion mensual de Bookvia ya esta preparada. Aqui estan los detalles:</p>
@@ -576,10 +577,17 @@ async def send_settlement_notification(
 El monto incluye el total que tus clientes pagaron como anticipo, menos el 8.5% (procesamiento Stripe estimado) y sin la cuota fija de Bookvia (la pagaron los clientes). Solo se liquido el dinero que paso el periodo de gracia de 24h sin disputas.
 </p>
 </div>
-<p style="color:#334155;font-size:14px;">La transferencia SPEI llegara a la CLABE que tienes registrada en Bookvia en un plazo de <strong>1 a 3 dias habiles</strong> despues del dia 20.</p>
-<table cellpadding="0" cellspacing="0" style="margin:24px 0;"><tr><td style="background:#F05D5E;border-radius:8px;padding:12px 28px;">
-<a href="{dashboard_url}" style="color:#ffffff;text-decoration:none;font-weight:bold;font-size:15px;">Ver mi panel de finanzas</a>
-</td></tr></table>
+<p style="color:#334155;font-size:14px;">La transferencia SPEI llegara a la CLABE que tienes registrada en Bookvia en un plazo de <strong>1 a 3 dias habiles</strong> despues del dia 1° del mes siguiente.</p>
+<p style="color:#334155;font-size:14px;">Puedes descargar el <strong>estado de cuenta detallado en PDF</strong> (con el desglose de cada transaccion, fees y hash de verificacion) desde tu panel. Util para tu contabilidad o para conciliar con tu contador.</p>
+<table cellpadding="0" cellspacing="0" style="margin:24px 0;"><tr>
+<td style="background:#F05D5E;border-radius:8px;padding:12px 28px;">
+<a href="{statement_url}" style="color:#ffffff;text-decoration:none;font-weight:bold;font-size:15px;">Descargar estado de cuenta</a>
+</td>
+<td style="width:12px;"></td>
+<td style="background:#ffffff;border:1px solid #cbd5e1;border-radius:8px;padding:12px 24px;">
+<a href="{dashboard_url}" style="color:#0f172a;text-decoration:none;font-weight:600;font-size:14px;">Ver panel</a>
+</td>
+</tr></table>
 <p style="color:#94a3b8;font-size:12px;margin-top:16px;">Si tienes alguna duda sobre la liquidacion, contactanos y menciona el folio {settlement_id}.</p>"""
 
     text_body = (

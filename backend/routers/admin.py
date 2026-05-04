@@ -785,6 +785,38 @@ async def get_all_users(
 
 
 
+@router.get("/settlements/{settlement_id}/statement.pdf")
+async def admin_download_settlement_statement(
+    settlement_id: str, request: Request, token_data: TokenData = Depends(require_admin),
+):
+    """Admin downloads the PDF statement for any business's settlement."""
+    from fastapi.responses import Response as _Response
+    from services.payout_statement import generate_payout_statement_pdf
+
+    result = await generate_payout_statement_pdf(settlement_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Estado de cuenta no encontrado")
+
+    await create_audit_log(
+        admin_id=token_data.user_id, admin_email=token_data.email,
+        action="payout_statement_download", target_type="settlement",
+        target_id=settlement_id,
+        details={"by": "admin", "period_key": result.get("period_key")},
+        request=request,
+    )
+
+    safe_rfc = (result.get("rfc") or "sin_rfc").replace("/", "_")[:20]
+    period = result.get("period_key") or "sinperiodo"
+    filename = f"estado_de_cuenta_bookvia_{safe_rfc}_{period}.pdf"
+    return _Response(
+        content=result["pdf_bytes"], media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "X-Statement-Hash": result["content_hash"],
+        },
+    )
+
+
 @router.get("/businesses/{business_id}/legal-file.pdf")
 async def admin_download_business_legal_file(
     business_id: str, request: Request, token_data: TokenData = Depends(require_admin),

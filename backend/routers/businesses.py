@@ -1609,6 +1609,85 @@ async def verify_legal_file(file_id: str):
     }
 
 
+@router.get("/me/settlements")
+async def list_my_settlements(
+    limit: int = 24,
+    token_data: TokenData = Depends(require_business),
+):
+    """Return the business's past day-20 settlements (most recent first)."""
+    user = await db.users.find_one({"id": token_data.user_id}, {"_id": 0, "business_id": 1})
+    if not user or not user.get("business_id"):
+        raise HTTPException(status_code=404, detail="Business not found")
+
+    rows = await db.settlements.find(
+        {"business_id": user["business_id"]},
+        {"_id": 0, "id": 1, "period_key": 1, "net_payout": 1, "payout_amount": 1,
+         "booking_count": 1, "status": 1, "created_at": 1, "paid_at": 1,
+         "transaction_ids": 1},
+    ).sort("created_at", -1).limit(max(1, min(limit, 100))).to_list(100)
+
+    # Slim the payload
+    items = []
+    for r in rows:
+        items.append({
+            "id": r.get("id"),
+            "period_key": r.get("period_key"),
+            "net_amount": float(r.get("net_payout") or r.get("payout_amount") or 0),
+            "booking_count": r.get("booking_count", 0),
+            "transaction_count": len(r.get("transaction_ids") or []),
+            "status": r.get("status") or "pending",
+            "created_at": r.get("created_at"),
+            "paid_at": r.get("paid_at"),
+        })
+    return {"items": items, "count": len(items)}
+
+
+@router.get("/me/settlements/{settlement_id}/statement.pdf")
+async def download_my_settlement_statement(
+    settlement_id: str,
+    request: Request,
+    token_data: TokenData = Depends(require_business),
+):
+    """Owner downloads the PDF statement for one of their own settlements."""
+    user = await db.users.find_one({"id": token_data.user_id}, {"_id": 0, "business_id": 1})
+    if not user or not user.get("business_id"):
+        raise HTTPException(status_code=404, detail="Business not found")
+
+    # Ownership check: settlement must belong to this business
+    settlement = await db.settlements.find_one(
+        {"id": settlement_id, "business_id": user["business_id"]},
+        {"_id": 0, "id": 1},
+    )
+    if not settlement:
+        raise HTTPException(status_code=404, detail="Estado de cuenta no encontrado")
+
+    from fastapi.responses import Response as _Response
+    from services.payout_statement import generate_payout_statement_pdf
+
+    result = await generate_payout_statement_pdf(settlement_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Estado de cuenta no encontrado")
+
+    await create_audit_log(
+        admin_id=token_data.user_id, admin_email=token_data.email,
+        action="payout_statement_download", target_type="settlement",
+        target_id=settlement_id,
+        details={"by": "owner", "period_key": result.get("period_key")},
+        request=request,
+    )
+
+    safe_rfc = (result.get("rfc") or "sin_rfc").replace("/", "_")[:20]
+    period = result.get("period_key") or "sinperiodo"
+    filename = f"estado_de_cuenta_bookvia_{safe_rfc}_{period}.pdf"
+    return _Response(
+        content=result["pdf_bytes"], media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "X-Statement-Hash": result["content_hash"],
+        },
+    )
+
+
 @router.put("/me/legal-docs")
 async def update_my_legal_docs(
     payload: BusinessLegalDocsUpdate,

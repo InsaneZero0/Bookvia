@@ -1,0 +1,44 @@
+{
+  "summary": "Phase 21 (payout-statement PDF) backend testing complete via pytest at /app/backend/tests/test_phase21_payout_statement.py — 12/13 passed. All endpoint flows green: GET /api/businesses/me/settlements returns {items, count} with id/period_key/net_amount/booking_count/transaction_count/status/created_at/paid_at and is auth-gated; cross-business owner request returns 404; bogus settlement id returns 404; unauthenticated 401/403; admin GET /api/admin/settlements/{id}/statement.pdf returns valid PDF (>30 KB, %PDF magic, X-Statement-Hash 64-hex SHA-256), business-owner blocked from admin route; X-Statement-Hash is deterministic across two consecutive owner downloads (same data → same hash); audit_logs entries persisted with action=payout_statement_download and details.by ∈ {owner, admin}; Phase 20 backward-compat (legal-file.pdf) still passes. The 1 failing test (TestPdfContent.test_pdf_has_period_label_and_deposit_date) reveals a CRITICAL business-logic bug in services/payout_statement.py — see RCA below. Frontend source review confirmed all wiring (download-statement-<id>, admin-download-statement-<id>, deep-link auto-download with history.replaceState, businessesAPI wrappers); end-to-end Playwright on /business/finance was blocked by the app's auth-context storage layout (token cannot be injected via plain localStorage; navigation to /business/finance redirects to /business/login). Same blocker family as Phase 20 iteration_97 — main agent can self-test in real browser.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "services/payout_statement.py (used by both /api/businesses/me/settlements/{id}/statement.pdf and /api/admin/settlements/{id}/statement.pdf)",
+        "issue": "_period_label_es() and _deposit_date_es() do NOT strip the 'MX-' country prefix. With production period_key='MX-2026-02', period_key.split('-')[:2] yields ['MX','2026'], so y='MX' and m='2026'. The PDF renders 'Estado de cuenta del periodo del 1 al 20 de 2026 de MX' (nonsense) and the entire deposit date line shows '—' (both in the green hero net-box subtitle 'Se programa para el —' AND in the page-1 subtitle 'Depósito programado el —'). This defeats the primary purpose of the document (telling the business when their money lands). Verified via pdfminer extraction of an actual PDF response. Fix: change parsing to take the LAST two dash-separated parts: parts = period_key.split('-'); y, m = parts[-2], parts[-1] (and validate int(m) is in 1..12 before MONTHS_ES lookup).",
+        "priority": "CRITICAL"
+      }
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase21_payout_statement.py",
+    "/app/test_reports/pytest/pytest_phase21_payout_statement.xml"
+  ],
+  "action_items": [
+    "FIX (CRITICAL): services/payout_statement.py — handle 'MX-' (or any country) prefix in period_key parsing. Suggested fix: parts = period_key.split('-'); y, m = parts[-2], parts[-1]; validate 1<=int(m)<=12 before MONTHS_ES lookup. Without this, the very first real day-1 cutoff PDFs that go out March 1, 2026 will show 'Depósito programado el —' instead of '1 de marzo de 2026' and a malformed period label — direct user-facing regression.",
+    "(Optional) Add a unit test alongside the service for _period_label_es/_deposit_date_es covering both 'MX-2026-02' and bare '2026-02' inputs to prevent regression.",
+    "Main agent should self-test the BusinessFinancePage download-statement-<id> button + ?statement=<id> deep-link in a real browser session — Playwright auth injection is blocked by the app's auth-context storage layout; backend behavior of the underlying endpoint is fully proven."
+  ],
+  "critical_code_review_comments": [
+    "RCA: services/payout_statement.py line ~74 (_period_label_es) and line ~86 (_deposit_date_es) use period_key.split('-')[:2] which breaks the documented production format 'MX-YYYY-MM'. The PDF still renders without exception (int('2026') is valid; MONTHS_ES.get(2026, m) just falls back to the raw '2026') so the hero box shows a confusing '—' for the deposit date, and the period label becomes 'del 1 al 20 de 2026 de MX'. This is fully reproducible against the real settlement e77e2cdc-… in the database (period_key='MX-2026-02', net=$92, status=paid).",
+    "Ownership check is correctly enforced via {'id': settlement_id, 'business_id': user['business_id']} compound find_one before the PDF render — non-owner requests never even hit the heavy WeasyPrint pipeline. Good.",
+    "X-Statement-Hash is computed deterministically: render with placeholder hash → SHA-256 over rendered HTML → re-render with the real hash inserted → write_pdf. Verified deterministic across two back-to-back downloads. Same proven pattern as Phase 20 legal-file-service.",
+    "Audit log persists by=owner / by=admin and target_type=settlement / target_id=settlement_id with period_key in details — good for downstream compliance queries.",
+    "list_my_settlements endpoint correctly slims the payload (no transaction_ids array leaked, no _id) and uses sort+limit. Note: there's no explicit is_manager block on the list endpoint, so a manager user CAN see the list — matches the request note 'Manager users can access (no explicit block in this endpoint)'."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase21_payout_statement.py (new — 13 tests, 12 passing)"
+  ],
+  "success_rate": {"backend": "92.3% (12/13 — the 1 failure is the legitimate period_key prefix bug)", "frontend": "Source review only — UI not exercised end-to-end via Playwright (auth-context storage injection blocked redirect to /business/login). Source confirms download-statement-<id> + admin-download-statement-<id> + deep-link auto-download + history.replaceState are correctly wired."},
+  "test_credentials": "testspa@test.com / Test123! (owner, has settlement e77e2cdc-…); testbiz_dashboard@test.com / TestBiz123! (other business, no settlements — used for cross-ownership 404); admin zamorachapa50@gmail.com + DB-stored TOTP (RainbowLol3133!).",
+  "seed_data_creation": "None. Each test download created an audit_logs entry as part of normal endpoint behavior — no schema changes.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "After main agent fixes the period_key prefix bug in services/payout_statement.py, re-run /app/backend/tests/test_phase21_payout_statement.py — the only failing test (TestPdfContent.test_pdf_has_period_label_and_deposit_date) asserts that 'marzo' (deposit month) and 'febrero' (period month) appear in the rendered PDF text via pdfminer.high_level.extract_text. It uses the real settlement id e77e2cdc-8358-47d8-93fc-c68acabe58a2 with period_key='MX-2026-02'. For UI testing on /business/finance, the app's AuthContext uses a non-trivial storage layout (plain localStorage.token does NOT keep you authed — page redirects to /business/login). Either: (a) seed accepted_terms_version on the test account and use the real form login flow, OR (b) inspect the AuthContext source to find the exact key/structure to inject, OR (c) test via real-browser session. The download flow itself is solid — backend pytest proves the endpoints, source review proves wiring.",
+  "rca of the issue": "BUG — services/payout_statement.py period_key prefix not stripped. period_key='MX-2026-02' .split('-')[:2] → ['MX','2026'] → y='MX', m='2026' → MONTHS_ES.get(int('2026'), m) → 2026 not in {1..12} → fallback returns raw '2026', period_label becomes 'del 1 al 20 de 2026 de MX', and _deposit_date_es returns '—' because int(m)+1 = 2027, also not in MONTHS_ES, so its except branch fires returning '—'. Reproduction: GET /api/businesses/me/settlements/e77e2cdc-8358-47d8-93fc-c68acabe58a2/statement.pdf with testspa@test.com token → extract text from PDF → contains 'del 1 al 20 de 2026 de MX' and 'Depósito programado el —' and 'Se programa para el —'. Mitigation: in both _period_label_es and _deposit_date_es, use parts = period_key.split('-'); take the LAST two parts (parts[-2], parts[-1]) and validate the month with try/except + 1<=int(m)<=12 guard."
+}

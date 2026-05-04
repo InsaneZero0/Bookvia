@@ -2982,11 +2982,40 @@ export default function AdminDashboardPage() {
                           </div>
                           {s.payout_reference && <p className="text-xs text-muted-foreground mt-1">Ref: {s.payout_reference}</p>}
                         </div>
+                        <div className="flex items-center gap-2 shrink-0">
                         {s.status !== 'paid' && (
                           <Button size="sm" className="btn-coral shrink-0" onClick={() => handleMarkPaid(s.id)}>
                             <CheckCircle2 className="h-4 w-4 mr-1" />{t('Marcar pagado', 'Mark paid')}
                           </Button>
                         )}
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="shrink-0"
+                          onClick={async () => {
+                            try {
+                              const { API_BASE } = await import('@/lib/api');
+                              const token = localStorage.getItem('bookvia-token');
+                              const res = await fetch(`${API_BASE}/admin/settlements/${s.id}/statement.pdf`,
+                                { headers: { Authorization: `Bearer ${token}` } });
+                              if (!res.ok) throw new Error('download_failed');
+                              const blob = await res.blob();
+                              const url = URL.createObjectURL(blob);
+                              const a = document.createElement('a');
+                              a.href = url;
+                              a.download = `estado_de_cuenta_${s.business_id}_${s.period_key}.pdf`;
+                              document.body.appendChild(a); a.click(); a.remove();
+                              URL.revokeObjectURL(url);
+                              toast.success(t('Estado de cuenta descargado', 'Statement downloaded'));
+                            } catch {
+                              toast.error(t('Error al descargar', 'Download error'));
+                            }
+                          }}
+                          data-testid={`admin-download-statement-${s.id}`}
+                        >
+                          <Download className="h-3.5 w-3.5 mr-1" />{t('PDF', 'PDF')}
+                        </Button>
+                        </div>
                       </div>
                     ))}
                   </div>

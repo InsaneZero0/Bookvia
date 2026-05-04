@@ -8,11 +8,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/lib/auth';
 import { useI18n } from '@/lib/i18n';
-import { financeAPI } from '@/lib/api';
+import { financeAPI, businessesAPI } from '@/lib/api';
 import { toast } from 'sonner';
 import {
   DollarSign, TrendingUp, TrendingDown, Wallet, Clock, CheckCircle2,
-  AlertTriangle, Calendar, ArrowRight, Receipt, CreditCard, Ban
+  AlertTriangle, Calendar, ArrowRight, Receipt, CreditCard, Ban,
+  FileDown, Loader2
 } from 'lucide-react';
 
 const STATUS_COLORS = {
@@ -73,6 +74,40 @@ export default function BusinessFinancePage() {
   }, [isAuthenticated, user, authLoading]);
 
   const [fundsState, setFundsState] = useState(null);
+  const [downloadingId, setDownloadingId] = useState(null);
+
+  const handleDownloadStatement = async (settlementId) => {
+    setDownloadingId(settlementId);
+    try {
+      const res = await businessesAPI.downloadSettlementStatement(settlementId);
+      const blob = new Blob([res.data], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `estado_de_cuenta_bookvia_${settlementId}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast.success(language === 'es' ? 'Estado de cuenta descargado' : 'Statement downloaded');
+    } catch (e) {
+      toast.error(e?.response?.data?.detail
+        || (language === 'es' ? 'Error al descargar' : 'Download error'));
+    }
+    setDownloadingId(null);
+  };
+
+  // Auto-download when the email link `?statement=<id>` is used
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const sid = params.get('statement');
+    if (sid && settlements.length && settlements.some(x => x.id === sid)) {
+      handleDownloadStatement(sid);
+      // Clean the query param so reload doesn't retrigger
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settlements]);
 
   const loadData = async () => {
     try {
@@ -506,6 +541,27 @@ export default function BusinessFinancePage() {
                           <p className="text-muted-foreground">{language === 'es' ? 'Penalidades' : 'Penalties'}</p>
                           <p className="font-medium text-red-600">-{formatCurrency(settlement.total_penalties)}</p>
                         </div>
+                      </div>
+
+                      {/* Download statement PDF */}
+                      <div className="mt-4 pt-3 border-t flex items-center justify-between gap-3">
+                        <p className="text-xs text-muted-foreground">
+                          {language === 'es'
+                            ? 'Descarga el estado de cuenta detallado con todas las transacciones, fees y hash de verificación.'
+                            : 'Download the detailed statement with all transactions, fees and verification hash.'}
+                        </p>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleDownloadStatement(settlement.id)}
+                          disabled={downloadingId === settlement.id}
+                          data-testid={`download-statement-${settlement.id}`}
+                        >
+                          {downloadingId === settlement.id
+                            ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                            : <FileDown className="h-3.5 w-3.5 mr-1.5" />}
+                          {language === 'es' ? 'Descargar PDF' : 'Download PDF'}
+                        </Button>
                       </div>
                     </CardContent>
                   </Card>
