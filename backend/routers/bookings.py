@@ -118,8 +118,6 @@ async def send_pending_reminders():
         logger.error(f"Error in send_pending_reminders: {e}")
 
 
-@router.get("/business/stats-detail")
-
 @router.get("/search-clients")
 async def search_clients(
     q: str = "",
@@ -200,6 +198,7 @@ async def search_clients(
     return results[:20]
 
 
+@router.get("/business/stats-detail")
 async def get_business_stats_detail(
     stat_type: str,
     date_from: Optional[str] = None,
@@ -1600,6 +1599,7 @@ async def cancel_booking_by_user(
         # do NOT issue a Stripe refund (saves the unrecoverable Stripe fee).
         # Instead, credit the wallet immediately with the refund amount.
         wallet_credited = False
+        stripe_refund_id = None
         if refund_to == "wallet" and refund_amount > 0:
             try:
                 from services.wallet import credit_wallet, CREDIT_CANCELLATION
@@ -1615,6 +1615,54 @@ async def cancel_booking_by_user(
                 logger.error(f"Wallet credit failed for booking {booking_id}: {e}")
                 # Fall back to card refund
                 refund_to = "card"
+
+        # If client chose card refund: emit a REAL Stripe.Refund.create.
+        # Any portion of the refund that exceeds what was actually charged
+        # on the card (because wallet was partially used) falls back to
+        # wallet automatically - Stripe cannot push money into a wallet.
+        if refund_to == "card" and refund_amount > 0:
+            try:
+                from services.stripe_refunds import issue_stripe_refund
+                res = await issue_stripe_refund(
+                    transaction=transaction,
+                    amount_mxn=refund_amount,
+                    reason="user_cancellation_gt_24h",
+                    metadata={"cancelled_by": "user"},
+                    actor="user_cancel",
+                )
+                stripe_refund_id = res.get("stripe_refund_id")
+                surplus = float(res.get("surplus_to_wallet") or 0)
+                if surplus > 0:
+                    # The card portion was smaller than the refund; credit
+                    # the remainder back to the wallet so the client is
+                    # made whole.
+                    from services.wallet import credit_wallet, CREDIT_CANCELLATION
+                    await credit_wallet(
+                        user_id=token_data.user_id,
+                        amount=surplus,
+                        tx_type=CREDIT_CANCELLATION,
+                        booking_id=booking_id,
+                        description="Cancelacion (excedente a saldo porque parte se pago con saldo)",
+                    )
+                    wallet_credited = True
+            except Exception as e:
+                logger.error(f"Stripe refund failed for booking {booking_id}: {e}")
+                # Degrade gracefully: credit the wallet so the client does
+                # not lose the money, and flag for admin intervention.
+                try:
+                    from services.wallet import credit_wallet, CREDIT_CANCELLATION
+                    await credit_wallet(
+                        user_id=token_data.user_id,
+                        amount=refund_amount,
+                        tx_type=CREDIT_CANCELLATION,
+                        booking_id=booking_id,
+                        description="Cancelacion (reembolso a tarjeta fallo - temporalmente a saldo)",
+                    )
+                    wallet_credited = True
+                    refund_to = "wallet_fallback"
+                except Exception as e2:
+                    logger.error(f"Fallback wallet credit also failed: {e2}")
+                    raise HTTPException(status_code=502, detail="No se pudo emitir el reembolso; contacta a soporte")
         
         # Update transaction
         await db.transactions.update_one(
@@ -1625,6 +1673,7 @@ async def cancel_booking_by_user(
                 "refund_reason": refund_reason,
                 "refund_to": refund_to,
                 "wallet_credited": wallet_credited,
+                "stripe_refund_id": stripe_refund_id,
                 "cancelled_by": "user",
                 "updated_at": now.isoformat()
             }}

@@ -127,11 +127,16 @@ async def stripe_webhook(request: Request):
             event = stripe_lib.Webhook.construct_event(body, signature, webhook_secret)
         else:
             event = stripe_lib.Event.construct_from(
-                stripe_lib.util.convert_to_stripe_object(
-                    __import__('json').loads(body)
-                ),
+                __import__('json').loads(body),
                 stripe_lib.api_key
             )
+
+        # Fase 11: strong idempotency across Stripe retries (up to 3 days).
+        from services.stripe_refunds import record_stripe_event
+        first_time = await record_stripe_event(event.id, event.type)
+        if not first_time:
+            logger.info(f"Stripe event {event.id} ({event.type}) already processed, skipping")
+            return {"status": "skipped", "event_id": event.id}
         
         if event.type == "checkout.session.completed":
             session = event.data.object
@@ -323,12 +328,165 @@ async def stripe_webhook(request: Request):
                 )
                 
                 logger.info(f"Payment confirmed for booking {transaction['booking_id']}")
-        
+
+        elif event.type == "charge.refunded":
+            # Fires when a refund is issued (from our code OR from Stripe Dashboard).
+            # We sync `refund_status` + move the ledger to REFUNDED so the
+            # business isn't paid for money the client is getting back.
+            charge = event.data.object
+            pi_id = getattr(charge, "payment_intent", None)
+            if pi_id:
+                tx = await db.transactions.find_one({"stripe_payment_intent_id": pi_id})
+                if tx:
+                    amount_refunded_mxn = round(float(getattr(charge, "amount_refunded", 0)) / 100.0, 2)
+                    fully_refunded = bool(getattr(charge, "refunded", False)) or amount_refunded_mxn >= float(tx.get("stripe_charge_amount") or 0)
+                    new_status = "refund_full" if fully_refunded else "refund_partial"
+                    await db.transactions.update_one(
+                        {"id": tx["id"]},
+                        {"$set": {
+                            "status": new_status,
+                            "refund_amount": amount_refunded_mxn,
+                            "updated_at": datetime.now(timezone.utc).isoformat(),
+                        }},
+                    )
+                    try:
+                        from services.funds_state import mark_refunded
+                        await mark_refunded(tx["id"], actor="stripe_webhook", reason="charge.refunded")
+                    except Exception as e:
+                        logger.warning(f"mark_refunded failed for tx {tx['id']}: {e}")
+                    logger.info(f"charge.refunded synced tx={tx['id']} amount=${amount_refunded_mxn}")
+
+        elif event.type in ("charge.dispute.created", "charge.dispute.funds_withdrawn"):
+            # Chargeback opened by the cardholder. Freeze the business's
+            # payout and flag the transaction so the ledger excludes it
+            # from the next settlement.
+            dispute = event.data.object
+            charge_id = getattr(dispute, "charge", None)
+            pi_id = getattr(dispute, "payment_intent", None)
+            tx = None
+            if pi_id:
+                tx = await db.transactions.find_one({"stripe_payment_intent_id": pi_id})
+            if not tx and charge_id:
+                tx = await db.transactions.find_one({"stripe_charge_id": charge_id})
+            if tx:
+                await db.transactions.update_one(
+                    {"id": tx["id"]},
+                    {"$set": {
+                        "funds_state": "disputed",
+                        "dispute_status": getattr(dispute, "status", "needs_response"),
+                        "dispute_id": getattr(dispute, "id", None),
+                        "dispute_amount_mxn": round(float(getattr(dispute, "amount", 0)) / 100.0, 2),
+                        "dispute_opened_at": datetime.now(timezone.utc).isoformat(),
+                    }},
+                )
+                # Freeze all business payouts until admin resolves
+                await db.businesses.update_one(
+                    {"id": tx["business_id"]},
+                    {"$set": {
+                        "payout_hold": True,
+                        "payout_hold_reason": f"Dispute {getattr(dispute, 'id', '')} opened",
+                    }},
+                )
+                # Notify admins
+                try:
+                    from core.helpers import create_notification
+                    admins = await db.users.find({"role": "admin"}, {"_id": 0, "id": 1}).to_list(20)
+                    for admin in admins:
+                        await create_notification(
+                            admin["id"],
+                            "Disputa (chargeback) recibida",
+                            f"Negocio {tx.get('business_id')} - monto ${getattr(dispute, 'amount', 0)/100:.2f} MXN. Payout suspendido.",
+                            "chargeback_opened",
+                            {"transaction_id": tx["id"], "dispute_id": getattr(dispute, "id", None)},
+                        )
+                except Exception as e:
+                    logger.warning(f"Could not notify admins on dispute: {e}")
+                logger.warning(f"DISPUTE opened for tx={tx['id']} biz={tx.get('business_id')}")
+
+        elif event.type == "charge.dispute.closed":
+            dispute = event.data.object
+            pi_id = getattr(dispute, "payment_intent", None)
+            charge_id = getattr(dispute, "charge", None)
+            tx = None
+            if pi_id:
+                tx = await db.transactions.find_one({"stripe_payment_intent_id": pi_id})
+            if not tx and charge_id:
+                tx = await db.transactions.find_one({"stripe_charge_id": charge_id})
+            if tx:
+                status = getattr(dispute, "status", "")
+                await db.transactions.update_one(
+                    {"id": tx["id"]},
+                    {"$set": {
+                        "dispute_status": status,
+                        "dispute_closed_at": datetime.now(timezone.utc).isoformat(),
+                        "funds_state": "refunded" if status == "lost" else "available",
+                    }},
+                )
+                # Admin must manually re-enable payouts after reviewing.
+                logger.info(f"Dispute closed tx={tx['id']} status={status}")
+
+        elif event.type == "payment_intent.payment_failed":
+            pi = event.data.object
+            tx = await db.transactions.find_one({"stripe_payment_intent_id": pi.id})
+            if tx:
+                await db.transactions.update_one(
+                    {"id": tx["id"]},
+                    {"$set": {
+                        "status": "failed",
+                        "failure_reason": (getattr(pi, "last_payment_error", None) or {}).get("message", "payment failed")
+                            if getattr(pi, "last_payment_error", None) else "payment failed",
+                        "updated_at": datetime.now(timezone.utc).isoformat(),
+                    }},
+                )
+                try:
+                    from core.helpers import create_notification
+                    await create_notification(
+                        tx["user_id"],
+                        "Pago rechazado",
+                        "Tu pago no pudo procesarse. Intenta otra tarjeta o contacta a tu banco.",
+                        "payment_failed",
+                        {"booking_id": tx.get("booking_id")},
+                    )
+                except Exception as e:
+                    logger.warning(f"Could not notify payment_failed: {e}")
+
+        elif event.type == "checkout.session.expired":
+            session = event.data.object
+            tx = await db.transactions.find_one({"stripe_session_id": session.id})
+            if tx and tx.get("status") == "created":
+                # Release the booking slot and mark tx as expired.
+                await db.transactions.update_one(
+                    {"id": tx["id"]},
+                    {"$set": {
+                        "status": "expired",
+                        "updated_at": datetime.now(timezone.utc).isoformat(),
+                    }},
+                )
+                if tx.get("booking_id"):
+                    await db.bookings.update_one(
+                        {"id": tx["booking_id"], "status": "hold"},
+                        {"$set": {"status": "expired"}},
+                    )
+                    # Refund wallet if it was applied to this checkout
+                    wallet_applied = float(tx.get("wallet_applied") or 0)
+                    if wallet_applied > 0:
+                        try:
+                            from services.wallet import credit_wallet, CREDIT_ADMIN_ADJUSTMENT
+                            await credit_wallet(
+                                user_id=tx["user_id"], amount=wallet_applied,
+                                tx_type=CREDIT_ADMIN_ADJUSTMENT, booking_id=tx.get("booking_id"),
+                                description="Reversa de saldo: sesion de pago expirada",
+                            )
+                        except Exception as e:
+                            logger.warning(f"Could not revert wallet on checkout.session.expired: {e}")
+
         return {"status": "success"}
         
     except Exception as e:
-        logger.error(f"Webhook error: {e}")
-        return {"status": "error", "message": str(e)}
+        logger.exception(f"Webhook error: {e}")
+        # Return 500 so Stripe retries the event. Duplicate retries are
+        # de-duplicated by the `stripe_events` collection (Fase 11).
+        raise HTTPException(status_code=500, detail="Webhook processing error")
 
 
 

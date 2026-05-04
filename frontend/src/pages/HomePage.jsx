@@ -6,6 +6,8 @@ import { Badge } from '@/components/ui/badge';
 import { BusinessCard } from '@/components/BusinessCard';
 import { HowItWorksModal } from '@/components/HowItWorksModal';
 import { JsonLd, organizationSchema, websiteSchema } from '@/components/JsonLd';
+import { PlatformStatsBar } from '@/components/PlatformStatsBar';
+import { Testimonials } from '@/components/Testimonials';
 import { useI18n } from '@/lib/i18n';
 import { useCountry } from '@/lib/countryContext';
 import { categoriesAPI, businessesAPI, utilityAPI } from '@/lib/api';
@@ -359,6 +361,9 @@ export default function HomePage() {
         </div>
       </section>
 
+      {/* ═══ Platform Stats Bar ══════════════════════ */}
+      <PlatformStatsBar stats={platformStats} />
+
       {/* ═══ How It Works ═════════════════════════════ */}
       <section className="section-padding bg-background" data-testid="how-it-works-section">
         <div className="container-app">
@@ -461,6 +466,9 @@ export default function HomePage() {
           </div>
         </section>
       )}
+
+      {/* ═══ Testimonials ═════════════════════════════ */}
+      <Testimonials />
 
       {/* ═══ Business CTA ═════════════════════════════ */}
       <section className="section-padding bg-[#fcf7ba] text-slate-900 relative overflow-hidden" data-testid="business-cta-section">

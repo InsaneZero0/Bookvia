@@ -103,13 +103,20 @@ class BusinessCreate(BaseModel):
     requires_deposit: bool = False
     deposit_amount: float = 100.0
     cancellation_days: int = 1
-    payout_schedule: Optional[str] = "monthly"
+    payout_schedule: Optional[str] = "monthly_cutoff_20"  # fixed cadence: corte día 20, depósito día 1° del mes siguiente
     min_time_between_appointments: int = 0
     service_radius_km: Optional[float] = None
     plan_type: str = "basic"
     logo_url: Optional[str] = None
     cover_photo: Optional[str] = None
     custom_category_description: Optional[str] = None
+    # Commission terms acceptance (Phase 18 + 19)
+    commission_terms_accepted: Optional[bool] = None
+    commission_terms_version: Optional[str] = None
+    commission_terms_hash: Optional[str] = None
+    commission_terms_snapshot: Optional[Dict[str, Any]] = None
+    # Tax regime (Phase 19) — used for future Fintech withholding calculations
+    tax_regime: Optional[str] = None
 
 class BusinessResponse(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -139,7 +146,7 @@ class BusinessResponse(BaseModel):
     requires_deposit: bool = False
     deposit_amount: float = 100.0
     cancellation_days: int = 1
-    payout_schedule: Optional[str] = "monthly"
+    payout_schedule: Optional[str] = "monthly_cutoff_20"
     min_time_between_appointments: int = 0
     photos: List[str] = []
     logo_url: Optional[str] = None

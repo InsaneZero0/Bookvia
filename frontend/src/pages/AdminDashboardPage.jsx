@@ -12,9 +12,10 @@ import {
 } from '@/components/ui/dialog';
 import { useAuth } from '@/lib/auth';
 import { useI18n } from '@/lib/i18n';
-import { adminAPI } from '@/lib/api';
+import { adminAPI, reviewsAPI } from '@/lib/api';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { toast } from 'sonner';
+import { WaitlistBroadcastModal } from '@/components/WaitlistBroadcastModal';
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
 } from 'recharts';
@@ -24,7 +25,7 @@ import {
   Eye, Star, Wallet, BarChart3, Loader2, MapPin, Phone, Mail, Globe,
   CreditCard, Briefcase, MessageSquare, Trash2, ExternalLink, TrendingUp,
   Tags, Settings, LifeBuoy, Plus, Pencil, Send, X, AlertCircle,
-  Trophy, Bell, Map, ToggleLeft, ToggleRight, FileBarChart, UserPlus, Key
+  Trophy, Bell, Map, ToggleLeft, ToggleRight, FileBarChart, UserPlus, Key, Flag
 } from 'lucide-react';
 
 const STATUS_COLORS = {
@@ -187,6 +188,39 @@ function BusinessDetailDialog({ businessId, open, onClose, onApprove, onReject, 
               <Badge className={STATUS_COLORS[biz.status] || 'bg-gray-100'}>{biz.status}</Badge>
               {biz.subscription_status && <Badge variant="outline">{biz.subscription_status}</Badge>}
               {biz.is_featured && <Badge className="bg-amber-100 text-amber-700"><Star className="h-3 w-3 mr-1" />Destacado</Badge>}
+            </div>
+
+            {/* Admin legal file download */}
+            <div className="mt-3">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={async () => {
+                  try {
+                    const { API_BASE } = await import('@/lib/api');
+                    const token = localStorage.getItem('bookvia-token');
+                    const res = await fetch(
+                      `${API_BASE}/admin/businesses/${biz.id}/legal-file.pdf`,
+                      { headers: { Authorization: `Bearer ${token}` } }
+                    );
+                    if (!res.ok) throw new Error('download_failed');
+                    const blob = await res.blob();
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `expediente_bookvia_${biz.rfc || biz.id}_${new Date().toISOString().slice(0,10).replace(/-/g,'')}.pdf`;
+                    document.body.appendChild(a); a.click(); a.remove();
+                    URL.revokeObjectURL(url);
+                    toast.success(t('Expediente descargado', 'Legal file downloaded'));
+                  } catch {
+                    toast.error(t('Error al descargar', 'Download error'));
+                  }
+                }}
+                data-testid="admin-download-legal-file-btn"
+              >
+                <FileText className="h-3.5 w-3.5 mr-1" />
+                {t('Descargar expediente legal (PDF)', 'Download legal file (PDF)')}
+              </Button>
             </div>
 
             {/* Stats row */}
@@ -472,6 +506,26 @@ export default function AdminDashboardPage() {
   const [exportYear, setExportYear] = useState(new Date().getFullYear());
   const [exportMonth, setExportMonth] = useState(new Date().getMonth() + 1);
 
+  // Platform P&L / Reconciliation / Refunds (Phase 12)
+  const [pnl, setPnl] = useState(null);
+  const [pnlDays, setPnlDays] = useState(30);
+  const [pnlLoading, setPnlLoading] = useState(false);
+  const [reconIssues, setReconIssues] = useState([]);
+  const [reconRunning, setReconRunning] = useState(false);
+  const [refundsAudit, setRefundsAudit] = useState(null);
+
+  // Compliance tab (security + T&C + ARCO + webhooks)
+  const [complianceLoading, setComplianceLoading] = useState(false);
+  const [lockedAccounts, setLockedAccounts] = useState([]);
+  const [termsStats, setTermsStats] = useState(null);
+  const [termsPending, setTermsPending] = useState([]);
+  const [arcoEvents, setArcoEvents] = useState(null);
+  const [webhookEvents, setWebhookEvents] = useState([]);
+  const [waitlistData, setWaitlistData] = useState(null);
+  const [broadcastCity, setBroadcastCity] = useState(null);
+  const [reportedReviews, setReportedReviews] = useState([]);
+  const [resolvingReviewId, setResolvingReviewId] = useState(null);
+
   // Reviews tab
   const [reviews, setReviews] = useState([]);
   const [reviewsTotal, setReviewsTotal] = useState(0);
@@ -614,11 +668,148 @@ export default function AdminDashboardPage() {
 
   const loadFinance = async () => {
     setFinanceLoading(true);
+    setPnlLoading(true);
     try {
-      const res = await adminAPI.getSettlements({ page: 1, limit: 50 });
-      setSettlements(res.data);
+      const [settlRes, pnlRes, issuesRes, refundsRes] = await Promise.all([
+        adminAPI.getSettlements({ page: 1, limit: 50 }),
+        adminAPI.getPlatformPnl(pnlDays),
+        adminAPI.getReconciliationIssues(50),
+        adminAPI.getRefundsAudit(50),
+      ]);
+      setSettlements(settlRes.data);
+      setPnl(pnlRes.data);
+      setReconIssues(issuesRes.data.items || []);
+      setRefundsAudit(refundsRes.data);
     } catch { /* silent */ }
     setFinanceLoading(false);
+    setPnlLoading(false);
+  };
+
+  const loadCompliance = async () => {
+    setComplianceLoading(true);
+    try {
+      const [locksRes, termsRes, pendingRes, arcoRes, hooksRes, wlRes, reportedRes] = await Promise.all([
+        adminAPI.getLockedAccounts(),
+        adminAPI.getTermsStats(),
+        adminAPI.getTermsPendingUsers(50),
+        adminAPI.getArcoEvents(50),
+        adminAPI.getStripeWebhookEvents(50),
+        adminAPI.getWaitlist({ limit: 50 }),
+        reviewsAPI.adminListReported('pending', 50),
+      ]);
+      setLockedAccounts(locksRes.data.items || []);
+      setTermsStats(termsRes.data);
+      setTermsPending(pendingRes.data.items || []);
+      setArcoEvents(arcoRes.data);
+      setWebhookEvents(hooksRes.data.items || []);
+      setWaitlistData(wlRes.data);
+      setReportedReviews(reportedRes.data.items || []);
+    } catch { /* silent */ }
+    setComplianceLoading(false);
+  };
+
+  const handleResolveReview = async (reviewId, action) => {
+    const confirmMsg = action === 'remove'
+      ? t('¿Ocultar esta reseña del público? Afecta la calificación del negocio.', 'Hide this review from the public? This updates the business rating.')
+      : t('¿Descartar los reportes y mantener la reseña visible?', 'Dismiss reports and keep the review visible?');
+    if (!window.confirm(confirmMsg)) return;
+    const note = window.prompt(t('Nota interna (opcional):', 'Internal note (optional):'), '') || '';
+    setResolvingReviewId(reviewId);
+    try {
+      await reviewsAPI.adminResolve(reviewId, action, note);
+      toast.success(action === 'remove'
+        ? t('Reseña ocultada', 'Review hidden')
+        : t('Reporte descartado', 'Report dismissed'));
+      setReportedReviews(prev => prev.filter(item => item.review.id !== reviewId));
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || t('Error', 'Error'));
+    }
+    setResolvingReviewId(null);
+  };
+
+  const handleRunReconciliation = async () => {
+    const date = window.prompt(t('Fecha a reconciliar (YYYY-MM-DD, vacío = ayer):', 'Date to reconcile (YYYY-MM-DD, empty = yesterday):'), '');
+    setReconRunning(true);
+    try {
+      const res = await adminAPI.runStripeReconciliation(date?.trim() || undefined);
+      const d = res.data;
+      if (d.ok === false) {
+        toast.error(d.error || t('Reconciliación fallida', 'Reconciliation failed'));
+      } else {
+        toast.success(t(
+          `Stripe=${d.stripe_transactions} | match=${d.matched} | faltan=${d.missing}`,
+          `Stripe=${d.stripe_transactions} | matched=${d.matched} | missing=${d.missing}`,
+        ));
+        loadFinance();
+      }
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || t('Error', 'Error'));
+    }
+    setReconRunning(false);
+  };
+
+  const handleUnlockAccount = async (key) => {
+    if (!window.confirm(t(`Desbloquear ${key}?`, `Unlock ${key}?`))) return;
+    try {
+      await adminAPI.unlockAccount(key);
+      toast.success(t('Cuenta desbloqueada', 'Account unlocked'));
+      loadCompliance();
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || t('Error', 'Error'));
+    }
+  };
+
+  const handleExportWaitlist = async () => {
+    try {
+      const res = await adminAPI.exportWaitlist();
+      const blob = new Blob([res.data], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `waitlist_${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error(t('Error al exportar', 'Export error'));
+    }
+  };
+
+  const [pnlReportSending, setPnlReportSending] = useState(false);
+  const handleSendPnlReport = async () => {
+    const customTo = window.prompt(
+      t('Destinatarios (emails separados por coma). Vacío = todos los admins:',
+        'Recipients (comma-separated emails). Empty = all admins:'),
+      '',
+    );
+    const list = (customTo || '').split(',').map(s => s.trim()).filter(Boolean);
+    if (!window.confirm(
+      list.length
+        ? t(`Enviar reporte P&L a ${list.length} destinatarios?`, `Send P&L report to ${list.length} recipients?`)
+        : t('Enviar reporte P&L del mes anterior a TODOS los admins?', 'Send last-month P&L report to ALL admins?'),
+    )) return;
+    setPnlReportSending(true);
+    try {
+      const res = await adminAPI.sendPnlReport(list.length ? list : null);
+      const { sent_to = [], failed = [], period } = res.data;
+      if (sent_to.length) {
+        toast.success(t(
+          `Reporte "${period}" enviado a ${sent_to.length} admin(s)`,
+          `Report "${period}" sent to ${sent_to.length} admin(s)`,
+        ));
+      }
+      if (failed.length) {
+        toast.error(t(
+          `${failed.length} fallaron: ${failed[0].error}`,
+          `${failed.length} failed: ${failed[0].error}`,
+        ), { duration: 8000 });
+      }
+      if (!sent_to.length && !failed.length) {
+        toast.info(t('No hay admins registrados para enviar', 'No admins registered to send to'));
+      }
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || t('Error al enviar reporte', 'Failed to send report'));
+    }
+    setPnlReportSending(false);
   };
 
   const loadReviews = useCallback(async (page = 1) => {
@@ -710,6 +901,7 @@ export default function AdminDashboardPage() {
     if (activeTab === 'businesses') loadBusinesses(1);
     if (activeTab === 'users') loadUsers(1);
     if (activeTab === 'finance') loadFinance();
+    if (activeTab === 'compliance') loadCompliance();
     if (activeTab === 'reviews') loadReviews(1);
     if (activeTab === 'subscriptions') loadSubscriptions();
     if (activeTab === 'categories') loadCategories();
@@ -1020,6 +1212,7 @@ export default function AdminDashboardPage() {
     { id: 'reports', label: t('Reportes', 'Reports'), icon: FileBarChart },
     { id: 'subscriptions', label: t('Suscripciones', 'Subscriptions'), icon: CreditCard },
     { id: 'finance', label: t('Finanzas', 'Finance'), icon: Wallet },
+    { id: 'compliance', label: t('Cumplimiento', 'Compliance'), icon: Shield },
     ...(isSuperAdmin ? [{ id: 'staff', label: t('Equipo', 'Team'), icon: UserPlus }] : []),
   ];
   const tabs = allTabs.filter(tab => hasTabPerm(tab.id));
@@ -2469,7 +2662,7 @@ export default function AdminDashboardPage() {
                   <div>
                     <label className="text-sm font-medium mb-2 block">{t('Permisos (tabs accesibles)', 'Permissions (accessible tabs)')}</label>
                     <div className="grid grid-cols-3 md:grid-cols-4 gap-2">
-                      {['overview','businesses','users','reviews','categories','rankings','cities','config','support','reports','subscriptions','finance'].map(perm => (
+                      {['overview','businesses','users','reviews','categories','rankings','cities','config','support','reports','subscriptions','finance','compliance'].map(perm => (
                         <label key={perm} className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer transition-colors text-sm ${
                           staffForm.permissions.includes(perm) ? 'bg-blue-50 border border-blue-200 text-blue-700' : 'bg-muted/50 border border-transparent'
                         }`}>
@@ -2491,7 +2684,7 @@ export default function AdminDashboardPage() {
                       ))}
                     </div>
                     <div className="flex gap-2 mt-2">
-                      <Button size="sm" variant="ghost" className="text-xs" onClick={() => setStaffForm(f => ({ ...f, permissions: ['overview','businesses','users','reviews','categories','rankings','cities','config','support','reports','subscriptions','finance'] }))}>
+                      <Button size="sm" variant="ghost" className="text-xs" onClick={() => setStaffForm(f => ({ ...f, permissions: ['overview','businesses','users','reviews','categories','rankings','cities','config','support','reports','subscriptions','finance','compliance'] }))}>
                         {t('Seleccionar todos', 'Select all')}
                       </Button>
                       <Button size="sm" variant="ghost" className="text-xs" onClick={() => setStaffForm(f => ({ ...f, permissions: [] }))}>
@@ -2572,11 +2765,162 @@ export default function AdminDashboardPage() {
         {/* ============ FINANCE TAB ============ */}
         {activeTab === 'finance' && (
           <div className="space-y-6">
+            {/* P&L Card */}
+            <Card data-testid="pnl-card">
+              <CardHeader className="flex flex-row items-center justify-between">
+                <CardTitle className="font-heading flex items-center gap-2">
+                  <TrendingUp className="h-5 w-5 text-emerald-500" />{t('P&L de la Plataforma', 'Platform P&L')}
+                </CardTitle>
+                <div className="flex items-center gap-2">
+                  <Select value={String(pnlDays)} onValueChange={(v) => setPnlDays(parseInt(v))}>
+                    <SelectTrigger className="w-28" data-testid="pnl-days-select"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {[7, 15, 30, 60, 90, 180, 365].map(d => (
+                        <SelectItem key={d} value={String(d)}>{d} {t('dias', 'days')}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button size="sm" variant="outline" onClick={loadFinance} data-testid="pnl-refresh-btn">
+                    {t('Actualizar', 'Refresh')}
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {pnlLoading ? (
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">{[1,2,3,4].map(i => <Skeleton key={i} className="h-20" />)}</div>
+                ) : pnl ? (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <div className="rounded-xl border p-4">
+                        <p className="text-xs text-muted-foreground">{t('Ingreso bruto Bookvia', 'Bookvia gross income')}</p>
+                        <p className="text-2xl font-heading font-bold text-emerald-600">{formatCurrency(pnl.gross_income_bookvia)}</p>
+                        <p className="text-[11px] text-muted-foreground mt-1">{t('fee fijo + margen Stripe', 'fixed fee + Stripe margin')}</p>
+                      </div>
+                      <div className="rounded-xl border p-4">
+                        <p className="text-xs text-muted-foreground">{t('Fee fijo $8.20', 'Fixed fee $8.20')}</p>
+                        <p className="text-2xl font-heading font-bold">{formatCurrency(pnl.bookvia_fee_income)}</p>
+                        <p className="text-[11px] text-muted-foreground mt-1">{pnl.transaction_count} {t('transacciones', 'transactions')}</p>
+                      </div>
+                      <div className="rounded-xl border p-4">
+                        <p className="text-xs text-muted-foreground">{t('Margen Stripe', 'Stripe margin')}</p>
+                        <p className={`text-2xl font-heading font-bold ${pnl.fee_margin < 0 ? 'text-red-600' : 'text-emerald-600'}`}>{formatCurrency(pnl.fee_margin)}</p>
+                        <p className="text-[11px] text-muted-foreground mt-1">{t('estimado vs real', 'estimated vs actual')}</p>
+                      </div>
+                      <div className="rounded-xl border p-4">
+                        <p className="text-xs text-muted-foreground">{t('Reembolsos', 'Refunds')}</p>
+                        <p className="text-2xl font-heading font-bold text-orange-500">{formatCurrency(pnl.refund_amount_total)}</p>
+                        <p className="text-[11px] text-muted-foreground mt-1">{t('del periodo', 'in period')}</p>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                      <div><span className="text-muted-foreground">{t('Cliente pago', 'Client paid')}:</span> <b>{formatCurrency(pnl.client_paid_total)}</b></div>
+                      <div><span className="text-muted-foreground">{t('Fee estimado Stripe', 'Stripe fee est.')}:</span> <b>{formatCurrency(pnl.stripe_fee_estimated_total)}</b></div>
+                      <div><span className="text-muted-foreground">{t('Fee real Stripe', 'Stripe fee actual')}:</span> <b>{formatCurrency(pnl.stripe_fee_actual_total)}</b></div>
+                      <div><span className="text-muted-foreground">{t('Cobertura fee real', 'Actual fee coverage')}:</span> <b>{pnl.coverage_pct}%</b></div>
+                    </div>
+                    {pnl.transactions_margin_negative > 0 && (
+                      <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700">
+                        <AlertCircle className="h-4 w-4 inline mr-1" />
+                        {pnl.transactions_margin_negative} {t('transacciones con margen negativo (Stripe cobro mas de lo estimado)', 'transactions with negative margin (Stripe charged more than estimated)')}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">{t('Sin datos', 'No data')}</p>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Reconciliation */}
+            <Card data-testid="reconciliation-card">
+              <CardHeader className="flex flex-row items-center justify-between">
+                <CardTitle className="font-heading flex items-center gap-2">
+                  <Shield className="h-5 w-5 text-indigo-500" />{t('Reconciliación Stripe', 'Stripe Reconciliation')}
+                </CardTitle>
+                <Button size="sm" onClick={handleRunReconciliation} disabled={reconRunning} data-testid="run-reconciliation-btn">
+                  {reconRunning ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
+                  {t('Correr ahora', 'Run now')}
+                </Button>
+              </CardHeader>
+              <CardContent>
+                {reconIssues.length === 0 ? (
+                  <div className="text-center py-8 text-sm text-muted-foreground">
+                    <CheckCircle2 className="h-10 w-10 text-green-500 mx-auto mb-2" />
+                    {t('No hay discrepancias pendientes. El ultimo cron nocturno encontro todo cuadrado.', 'No pending discrepancies. Last nightly cron matched everything.')}
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <p className="text-sm text-muted-foreground mb-2">{reconIssues.length} {t('discrepancias', 'discrepancies')}:</p>
+                    {reconIssues.slice(0, 20).map((r, i) => (
+                      <div key={i} className="text-xs rounded border border-orange-200 bg-orange-50 p-3 flex justify-between" data-testid={`recon-issue-${i}`}>
+                        <div>
+                          <div className="font-mono">{r.stripe_charge_id}</div>
+                          <div className="text-muted-foreground">{r.issue} · {formatDate(r.detected_at)}</div>
+                        </div>
+                        <div className="font-bold">{formatCurrency(r.amount)}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Refunds audit */}
+            <Card data-testid="refunds-audit-card">
+              <CardHeader>
+                <CardTitle className="font-heading flex items-center gap-2">
+                  <DollarSign className="h-5 w-5 text-orange-500" />{t('Auditoría de Reembolsos', 'Refunds Audit')}
+                  {refundsAudit && <Badge className="bg-orange-100 text-orange-700 ml-2">{formatCurrency(refundsAudit.total_refunded_mxn)}</Badge>}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {!refundsAudit || refundsAudit.items.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-6">{t('Sin reembolsos recientes.', 'No recent refunds.')}</p>
+                ) : (
+                  <div className="space-y-2">
+                    {refundsAudit.items.slice(0, 20).map((r, i) => (
+                      <div key={r.id || i} className="flex items-center justify-between p-3 rounded-lg bg-muted/40 text-sm" data-testid={`refund-row-${i}`}>
+                        <div className="min-w-0">
+                          <div className="font-mono text-xs text-muted-foreground truncate">{r.stripe_refund_id || '-'}</div>
+                          <div className="text-xs text-muted-foreground">{r.reason} · {t('por', 'by')} {r.actor} · {formatDate(r.created_at)}</div>
+                        </div>
+                        <div className="font-bold shrink-0">{formatCurrency(r.amount_mxn)}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Monthly P&L Email Report */}
+            <Card data-testid="pnl-report-card">
+              <CardHeader className="flex flex-row items-center justify-between">
+                <CardTitle className="font-heading flex items-center gap-2">
+                  <Mail className="h-5 w-5 text-blue-500" />{t('Reporte Ejecutivo Mensual', 'Monthly Executive Report')}
+                </CardTitle>
+                <Button size="sm" onClick={handleSendPnlReport} disabled={pnlReportSending} data-testid="send-pnl-report-btn">
+                  {pnlReportSending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Send className="h-4 w-4 mr-1" />}
+                  {t('Enviar ahora', 'Send now')}
+                </Button>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-muted-foreground mb-2">
+                  {t(
+                    'Cada día 1 a las 07:00 CDMX los admins reciben el P&L cerrado del mes anterior + discrepancias Stripe + top reembolsos + liquidaciones pendientes.',
+                    'On the 1st of every month at 07:00 CDMX all admins get the closed P&L of the previous month plus Stripe discrepancies, top refunds and pending settlements.',
+                  )}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {t('Usa', 'Use')} <b>{t('Enviar ahora', 'Send now')}</b> {t('para previsualizarlo o mandarlo a un correo de prueba.', 'to preview it or dispatch to a test email.')}
+                </p>
+              </CardContent>
+            </Card>
+
             <Card>
               <CardContent className="p-4">
                 <div className="flex flex-wrap items-end gap-4">
                   <div>
-                    <label className="text-sm font-medium mb-1 block">{t('Ano', 'Year')}</label>
+                    <label className="text-sm font-medium mb-1 block">{t('Año', 'Year')}</label>
                     <Input type="number" value={exportYear} onChange={e => setExportYear(parseInt(e.target.value))} className="w-24" />
                   </div>
                   <div>
@@ -2638,11 +2982,40 @@ export default function AdminDashboardPage() {
                           </div>
                           {s.payout_reference && <p className="text-xs text-muted-foreground mt-1">Ref: {s.payout_reference}</p>}
                         </div>
+                        <div className="flex items-center gap-2 shrink-0">
                         {s.status !== 'paid' && (
                           <Button size="sm" className="btn-coral shrink-0" onClick={() => handleMarkPaid(s.id)}>
                             <CheckCircle2 className="h-4 w-4 mr-1" />{t('Marcar pagado', 'Mark paid')}
                           </Button>
                         )}
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="shrink-0"
+                          onClick={async () => {
+                            try {
+                              const { API_BASE } = await import('@/lib/api');
+                              const token = localStorage.getItem('bookvia-token');
+                              const res = await fetch(`${API_BASE}/admin/settlements/${s.id}/statement.pdf`,
+                                { headers: { Authorization: `Bearer ${token}` } });
+                              if (!res.ok) throw new Error('download_failed');
+                              const blob = await res.blob();
+                              const url = URL.createObjectURL(blob);
+                              const a = document.createElement('a');
+                              a.href = url;
+                              a.download = `estado_de_cuenta_${s.business_id}_${s.period_key}.pdf`;
+                              document.body.appendChild(a); a.click(); a.remove();
+                              URL.revokeObjectURL(url);
+                              toast.success(t('Estado de cuenta descargado', 'Statement downloaded'));
+                            } catch {
+                              toast.error(t('Error al descargar', 'Download error'));
+                            }
+                          }}
+                          data-testid={`admin-download-statement-${s.id}`}
+                        >
+                          <Download className="h-3.5 w-3.5 mr-1" />{t('PDF', 'PDF')}
+                        </Button>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -2656,7 +3029,336 @@ export default function AdminDashboardPage() {
             </Card>
           </div>
         )}
+
+        {/* ============ COMPLIANCE TAB ============ */}
+        {activeTab === 'compliance' && (
+          <div className="space-y-6" data-testid="compliance-tab">
+            {/* Reported reviews moderation queue (Phase 17) */}
+            <Card data-testid="reported-reviews-card">
+              <CardHeader className="flex flex-row items-center justify-between">
+                <CardTitle className="font-heading flex items-center gap-2">
+                  <Flag className="h-5 w-5 text-red-500" />
+                  {t('Reseñas reportadas', 'Reported reviews')}
+                  <Badge className={reportedReviews.length > 0 ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-600'}>
+                    {reportedReviews.length}
+                  </Badge>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {reportedReviews.length === 0 ? (
+                  <div className="text-center py-6 text-sm text-muted-foreground">
+                    <CheckCircle2 className="h-10 w-10 text-green-500 mx-auto mb-2" />
+                    {t('No hay reseñas pendientes de moderar.', 'No reviews pending moderation.')}
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {reportedReviews.map(({ review, report_count, reports }) => (
+                      <div key={review.id} className="rounded-lg border border-red-200 bg-red-50/40 p-4" data-testid={`reported-review-${review.id}`}>
+                        <div className="flex items-start justify-between gap-3 mb-2">
+                          <div className="min-w-0 flex-1">
+                            <p className="font-medium text-sm">{review.author_name || '-'}{' '}
+                              <span className="text-muted-foreground font-normal">·</span>{' '}
+                              <span className="text-xs text-muted-foreground">{review.business_name}</span>
+                            </p>
+                            <div className="flex items-center gap-1 mt-0.5">
+                              {Array.from({ length: review.rating || 0 }).map((_, i) => (
+                                <Star key={i} className="h-3 w-3 fill-amber-400 text-amber-400" />
+                              ))}
+                              <span className="text-xs text-muted-foreground ml-2">{formatDate(review.created_at)}</span>
+                            </div>
+                          </div>
+                          <Badge className="bg-red-100 text-red-700 shrink-0">
+                            {report_count} {t('reporte(s)', 'report(s)')}
+                          </Badge>
+                        </div>
+
+                        {review.comment && (
+                          <blockquote className="text-sm text-slate-700 italic border-l-2 border-red-300 pl-3 my-2">
+                            "{review.comment}"
+                          </blockquote>
+                        )}
+
+                        <details className="text-xs text-muted-foreground mt-2">
+                          <summary className="cursor-pointer hover:text-foreground">
+                            {t('Ver razones del reporte', 'View report reasons')} ({reports.length})
+                          </summary>
+                          <ul className="mt-2 space-y-1 pl-3">
+                            {reports.map((r, i) => (
+                              <li key={i} className="border-l-2 border-slate-200 pl-2">
+                                <b>{r.reason}</b>
+                                {r.detail && <span> — {r.detail}</span>}
+                                <span className="text-[10px] text-muted-foreground ml-2">
+                                  {r.reporter_role} · {formatDate(r.created_at)}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        </details>
+
+                        <div className="flex gap-2 justify-end mt-3">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleResolveReview(review.id, 'dismiss')}
+                            disabled={resolvingReviewId === review.id}
+                            data-testid={`dismiss-review-${review.id}`}
+                          >
+                            {t('Descartar reporte', 'Dismiss')}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => handleResolveReview(review.id, 'remove')}
+                            disabled={resolvingReviewId === review.id}
+                            data-testid={`remove-review-${review.id}`}
+                          >
+                            <Trash2 className="h-3 w-3 mr-1" />
+                            {t('Ocultar reseña', 'Remove review')}
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Locked accounts */}
+            <Card data-testid="lockouts-card">
+              <CardHeader className="flex flex-row items-center justify-between">
+                <CardTitle className="font-heading flex items-center gap-2">
+                  <Ban className="h-5 w-5 text-red-500" />{t('Cuentas bloqueadas por fuerza bruta', 'Brute-force locked accounts')}
+                  <Badge variant="outline">{lockedAccounts.length}</Badge>
+                </CardTitle>
+                <Button size="sm" variant="outline" onClick={loadCompliance} data-testid="compliance-refresh-btn">
+                  {t('Actualizar', 'Refresh')}
+                </Button>
+              </CardHeader>
+              <CardContent>
+                {complianceLoading ? (
+                  <div className="space-y-2">{[1,2].map(i => <Skeleton key={i} className="h-14" />)}</div>
+                ) : lockedAccounts.length === 0 ? (
+                  <div className="text-center py-6 text-sm text-muted-foreground">
+                    <CheckCircle2 className="h-10 w-10 text-green-500 mx-auto mb-2" />
+                    {t('No hay cuentas bloqueadas ahora.', 'No accounts are locked right now.')}
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {lockedAccounts.map((a) => (
+                      <div key={a.key} className="flex items-center justify-between p-3 rounded-lg bg-red-50 border border-red-200 gap-3" data-testid={`locked-${a.email}`}>
+                        <div className="min-w-0">
+                          <p className="font-medium truncate">{a.email || t('(sin email)', '(no email)')}</p>
+                          <p className="text-xs text-muted-foreground">IP {a.ip} · {t('hasta', 'until')} {formatDate(a.locked_until)}</p>
+                        </div>
+                        <Button size="sm" variant="outline" onClick={() => handleUnlockAccount(a.key)} data-testid={`unlock-${a.email}`}>
+                          <Key className="h-4 w-4 mr-1" />{t('Desbloquear', 'Unlock')}
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* T&C stats */}
+            <Card data-testid="terms-stats-card">
+              <CardHeader>
+                <CardTitle className="font-heading flex items-center gap-2">
+                  <FileText className="h-5 w-5 text-indigo-500" />{t('Términos y Condiciones', 'Terms & Conditions')}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {!termsStats ? (
+                  <Skeleton className="h-20" />
+                ) : (
+                  <div className="space-y-4">
+                    <div className="flex flex-wrap gap-4 text-sm">
+                      <div>
+                        <span className="text-muted-foreground">{t('Versión actual', 'Current version')}:</span>{' '}
+                        <Badge className="bg-indigo-100 text-indigo-700">{termsStats.current_version}</Badge>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">{t('Publicada', 'Published')}:</span> <b>{formatDate(termsStats.published_at)}</b>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">{t('Fin de gracia', 'Grace ends')}:</span> <b>{formatDate(termsStats.grace_period_ends_at)}</b>
+                      </div>
+                      <div>
+                        {termsStats.is_hard_block_now ? (
+                          <Badge className="bg-red-100 text-red-700">{t('Bloqueo duro activo', 'Hard block active')}</Badge>
+                        ) : (
+                          <Badge className="bg-yellow-100 text-yellow-700">{t('En período de gracia', 'In grace period')}</Badge>
+                        )}
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="rounded-xl border p-4">
+                        <p className="text-xs text-muted-foreground">{t('Usuarios', 'Users')}</p>
+                        <p className="text-2xl font-heading font-bold">{termsStats.users.acceptance_pct}%</p>
+                        <p className="text-xs text-muted-foreground">
+                          {termsStats.users.accepted_current}/{termsStats.users.total} {t('aceptaron', 'accepted')} · {termsStats.users.pending} {t('pendientes', 'pending')}
+                        </p>
+                      </div>
+                      <div className="rounded-xl border p-4">
+                        <p className="text-xs text-muted-foreground">{t('Negocios', 'Businesses')}</p>
+                        <p className="text-2xl font-heading font-bold">{termsStats.businesses.acceptance_pct}%</p>
+                        <p className="text-xs text-muted-foreground">
+                          {termsStats.businesses.accepted_current}/{termsStats.businesses.total} {t('aceptaron', 'accepted')} · {termsStats.businesses.pending} {t('pendientes', 'pending')}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground">
+                      <p><b>{t('Cómo publicar una nueva versión:', 'How to publish a new version:')}</b></p>
+                      <p>1. {t('Sube la copia nueva a', 'Upload the new copy to')} <code>frontend/src/pages/TermsPage.jsx</code>.</p>
+                      <p>2. {t('Actualiza', 'Update')} <code>TERMS_VERSION</code> {t('y', 'and')} <code>TERMS_VERSION_PUBLISHED_AT</code> {t('en', 'in')} <code>backend/core/config.py</code>.</p>
+                      <p>3. {t('Agrega un bloque al CHANGELOG en', 'Add a block to the CHANGELOG in')} <code>backend/routers/terms.py</code>. {t('Se dispara el modal de re-aceptación automáticamente.', 'The re-acceptance modal triggers automatically.')}</p>
+                    </div>
+                    {termsPending.length > 0 && (
+                      <details className="text-sm">
+                        <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
+                          {t('Ver usuarios pendientes', 'View pending users')} ({termsPending.length})
+                        </summary>
+                        <div className="mt-2 max-h-64 overflow-y-auto space-y-1">
+                          {termsPending.map(u => (
+                            <div key={u.id} className="text-xs flex justify-between py-1 border-b" data-testid={`terms-pending-${u.email}`}>
+                              <span className="truncate">{u.full_name} · {u.email}</span>
+                              <span className="text-muted-foreground shrink-0 ml-2">{u.accepted_terms_version || t('nunca', 'never')}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </details>
+                    )}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* ARCO events */}
+            <Card data-testid="arco-card">
+              <CardHeader>
+                <CardTitle className="font-heading flex items-center gap-2">
+                  <Shield className="h-5 w-5 text-purple-500" />{t('Derechos ARCO (LFPDPPP)', 'ARCO Rights (LFPDPPP)')}
+                  {arcoEvents && <Badge variant="outline">{arcoEvents.count}</Badge>}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {!arcoEvents || arcoEvents.items.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-6">{t('Aun no hay eventos ARCO registrados.', 'No ARCO events recorded yet.')}</p>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="flex gap-3 text-sm">
+                      <Badge className="bg-blue-100 text-blue-700">{t('Exportes', 'Exports')}: {arcoEvents.summary.personal_data_export || 0}</Badge>
+                      <Badge className="bg-red-100 text-red-700">{t('Cancelaciones', 'Cancellations')}: {arcoEvents.summary.account_deleted_by_user || 0}</Badge>
+                    </div>
+                    <div className="max-h-96 overflow-y-auto space-y-2">
+                      {arcoEvents.items.map((ev, i) => (
+                        <div key={i} className="text-xs rounded border p-2 bg-muted/30" data-testid={`arco-event-${i}`}>
+                          <div className="flex justify-between">
+                            <span className="font-medium">
+                              {ev.action === 'personal_data_export' ? t('Export de datos', 'Data export') : t('Cancelación de cuenta', 'Account cancellation')}
+                            </span>
+                            <span className="text-muted-foreground">{formatDate(ev.created_at)}</span>
+                          </div>
+                          <div className="text-muted-foreground">{ev.actor_email || '-'} · IP {ev.ip || '-'}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Stripe webhook events */}
+            <Card data-testid="webhook-events-card">
+              <CardHeader>
+                <CardTitle className="font-heading flex items-center gap-2">
+                  <CreditCard className="h-5 w-5 text-fuchsia-500" />{t('Log de Webhooks Stripe', 'Stripe Webhooks Log')}
+                  <Badge variant="outline">{webhookEvents.length}</Badge>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {webhookEvents.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-6">{t('Sin eventos recientes.', 'No recent events.')}</p>
+                ) : (
+                  <div className="max-h-96 overflow-y-auto space-y-1">
+                    {webhookEvents.map((e, i) => (
+                      <div key={e.event_id || i} className="text-xs flex justify-between py-1.5 border-b font-mono" data-testid={`webhook-${i}`}>
+                        <span className="truncate">{e.event_type}</span>
+                        <span className="text-muted-foreground shrink-0 ml-2">{formatDate(e.received_at)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Waitlist (Fase 16 city lead capture) */}
+            <Card data-testid="waitlist-card">
+              <CardHeader className="flex flex-row items-center justify-between">
+                <CardTitle className="font-heading flex items-center gap-2">
+                  <MapPin className="h-5 w-5 text-[#F05D5E]" />
+                  {t('Lista de espera por ciudad', 'City waitlist')}
+                  <Badge variant="outline">{waitlistData?.total ?? 0}</Badge>
+                </CardTitle>
+                <Button size="sm" variant="outline" onClick={handleExportWaitlist} data-testid="export-waitlist-btn">
+                  <Download className="h-4 w-4 mr-1" />{t('Exportar CSV', 'Export CSV')}
+                </Button>
+              </CardHeader>
+              <CardContent>
+                {!waitlistData || waitlistData.total === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-6">
+                    {t('Aun nadie se ha suscrito. Cuando un usuario busque en una ciudad sin negocios podra dejar su correo.',
+                       'No signups yet. When a user searches an empty city, they can leave their email here.')}
+                  </p>
+                ) : (
+                  <div className="space-y-4">
+                    {/* Top cities - click to broadcast */}
+                    {waitlistData.stats?.top_cities?.length > 0 && (
+                      <div className="flex flex-wrap gap-2">
+                        {waitlistData.stats.top_cities.slice(0, 8).map(c => (
+                          <button
+                            key={c.city}
+                            type="button"
+                            onClick={() => setBroadcastCity({ city: c.city, country_code: 'MX' })}
+                            className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white hover:border-[#F05D5E] hover:bg-[#F05D5E]/5 px-3 py-1 text-xs transition-colors"
+                            data-testid={`waitlist-city-${c.city}`}
+                            title={t('Anunciar llegada a esta ciudad', 'Broadcast launch to this city')}
+                          >
+                            <MapPin className="h-3 w-3 text-[#F05D5E]" />
+                            <span>{c.city}</span>
+                            <Badge variant="secondary" className="ml-1 text-[10px] px-1.5 py-0">{c.count}</Badge>
+                            <Send className="h-3 w-3 text-muted-foreground" />
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {/* Latest 20 signups */}
+                    <div className="max-h-80 overflow-y-auto space-y-1">
+                      {waitlistData.items.slice(0, 20).map((s, i) => (
+                        <div key={s.id} className="text-xs flex items-center justify-between py-1.5 border-b gap-3" data-testid={`waitlist-row-${i}`}>
+                          <div className="min-w-0 flex-1">
+                            <p className="font-medium truncate">{s.email}</p>
+                            <p className="text-muted-foreground">{s.city} · {s.country_code} {s.category_name ? `· ${s.category_name}` : ''} {s.source ? `· ${s.source}` : ''}</p>
+                          </div>
+                          <span className="text-muted-foreground shrink-0">{formatDate(s.created_at)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        )}
       </div>
+
+      <WaitlistBroadcastModal
+        open={!!broadcastCity}
+        city={broadcastCity?.city}
+        country_code={broadcastCity?.country_code}
+        onClose={() => setBroadcastCity(null)}
+        onSent={() => loadCompliance()}
+      />
     </div>
   );
 }

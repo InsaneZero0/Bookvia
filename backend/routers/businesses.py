@@ -84,6 +84,7 @@ async def get_dashboard_summary(token_data: TokenData = Depends(require_business
     week_start = (now - timedelta(days=now.weekday())).strftime("%Y-%m-%d")
     prev_week_start = (now - timedelta(days=now.weekday() + 7)).strftime("%Y-%m-%d")
     month_start = now.replace(day=1).strftime("%Y-%m-%d")
+    thirty_days_ago = (now - timedelta(days=30)).strftime("%Y-%m-%d")
 
     # Today
     today_bookings = await db.bookings.count_documents({"business_id": bid, "date": today})
@@ -133,11 +134,133 @@ async def get_dashboard_summary(token_data: TokenData = Depends(require_business
 
     week_change = round(((week_bookings - prev_week_bookings) / max(prev_week_bookings, 1)) * 100) if prev_week_bookings else 0
 
+    # Phase 14: Profile views + conversion + top services (last 30d)
+    views_30d = await db.profile_views.count_documents({
+        "business_id": bid, "date": {"$gte": thirty_days_ago}
+    })
+    bookings_30d = await db.bookings.count_documents({
+        "business_id": bid, "date": {"$gte": thirty_days_ago}
+    })
+    conversion_pct = round((bookings_30d / views_30d) * 100, 1) if views_30d > 0 else 0.0
+
+    top_services_pipe = [
+        {"$match": {"business_id": bid, "date": {"$gte": thirty_days_ago},
+                    "service_id": {"$ne": None}}},
+        {"$group": {"_id": "$service_id", "count": {"$sum": 1},
+                    "revenue": {"$sum": {"$ifNull": ["$deposit_amount", 0]}}}},
+        {"$sort": {"count": -1}},
+        {"$limit": 3},
+    ]
+    top_rows = await db.bookings.aggregate(top_services_pipe).to_list(3)
+    top_services = []
+    for r in top_rows:
+        svc = await db.services.find_one({"id": r["_id"]}, {"_id": 0, "name": 1}) or {}
+        top_services.append({
+            "service_id": r["_id"],
+            "name": svc.get("name", "-"),
+            "bookings": r["count"],
+            "revenue": round(r.get("revenue", 0), 2),
+        })
+
     return {
         "today": {"bookings": today_bookings, "completed": today_completed, "revenue": round(today_revenue, 2)},
         "week": {"bookings": week_bookings, "revenue": round(week_revenue, 2), "change_pct": week_change},
         "month": {"bookings": month_bookings, "revenue": round(month_revenue, 2), "unique_clients": this_month_clients},
         "new_reviews": new_reviews,
+        "profile_views_30d": views_30d,
+        "bookings_30d": bookings_30d,
+        "conversion_pct": conversion_pct,
+        "top_services": top_services,
+    }
+
+
+# ========================== PHASE 14: PROFILE VIEW TRACKING ==========================
+
+
+async def _track_profile_view(
+    business_id: str,
+    request: Request,
+    current_user: Optional[TokenData],
+    owner_user_id: Optional[str],
+) -> None:
+    """Fire-and-forget best-effort tracker.
+
+    Deduped per (business, viewer, day) using an idempotent upsert. Owners
+    visiting their own profile do not count. Catches all errors so a
+    tracking failure never breaks the public read endpoint.
+    """
+    try:
+        if current_user and current_user.user_id == owner_user_id:
+            return
+        if current_user:
+            viewer_key = current_user.user_id
+        else:
+            # Behind k8s ingress `request.client.host` rotates across upstream
+            # hops; use the first X-Forwarded-For entry when present so anon
+            # dedup is stable per calendar day.
+            xff = (request.headers.get("x-forwarded-for", "") if request else "").split(",")
+            viewer_key = (xff[0].strip() if xff and xff[0].strip() else None) or (
+                request.client.host if request and request.client else "anonymous"
+            )
+        day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        await db.profile_views.update_one(
+            {"business_id": business_id, "viewer_key": viewer_key, "date": day},
+            {"$setOnInsert": {
+                "business_id": business_id,
+                "viewer_key": viewer_key,
+                "date": day,
+                "first_seen_at": datetime.now(timezone.utc).isoformat(),
+            }},
+            upsert=True,
+        )
+    except Exception:
+        logger.debug("profile-view tracker failed", exc_info=True)
+
+
+@router.get("/my/profile-completion")
+async def get_profile_completion(token_data: TokenData = Depends(require_business)):
+    """Checklist + percentage for the Business Dashboard progress banner.
+
+    Each item has `done: bool`, `label`, `action_path` so the frontend can
+    wire contextual CTAs straight to the right tab.
+    """
+    business = await db.businesses.find_one({"user_id": token_data.user_id}, {"_id": 0})
+    if not business:
+        raise HTTPException(status_code=404, detail="Business not found")
+    bid = business["id"]
+
+    has_cover = bool(business.get("cover_image_url")) or bool(business.get("logo_url"))
+    photos_count = await db.business_photos.count_documents({"business_id": bid})
+    services_priced = await db.services.count_documents({
+        "business_id": bid, "active": {"$ne": False},
+        "$or": [{"price": {"$gt": 0}}, {"price_from": {"$gt": 0}}],
+    })
+    workers_count = await db.workers.count_documents({"business_id": bid, "active": True})
+    hours_set = bool(business.get("business_hours")) and any(
+        (v or {}).get("open") and (v or {}).get("close")
+        for v in (business.get("business_hours") or {}).values() if isinstance(v, dict)
+    )
+    docs_verified = bool(business.get("documents_verified", False))
+    description_set = bool((business.get("description") or "").strip())
+
+    items = [
+        {"key": "cover",       "done": has_cover,               "label_es": "Foto de portada o logo",             "label_en": "Cover photo or logo",        "action_path": "photos"},
+        {"key": "photos",      "done": photos_count >= 3,       "label_es": "Al menos 3 fotos del lugar",         "label_en": "At least 3 gallery photos",  "action_path": "photos"},
+        {"key": "services",    "done": services_priced >= 1,    "label_es": "Servicios con precio",               "label_en": "Services with price",        "action_path": "services"},
+        {"key": "description", "done": description_set,         "label_es": "Descripcion del negocio",            "label_en": "Business description",       "action_path": "overview"},
+        {"key": "hours",       "done": hours_set,               "label_es": "Horarios de atencion",               "label_en": "Operating hours",            "action_path": "overview"},
+        {"key": "team",        "done": workers_count >= 1,      "label_es": "Al menos 1 miembro del equipo",      "label_en": "At least 1 team member",     "action_path": "team"},
+        {"key": "kyc",         "done": docs_verified,           "label_es": "Documentos KYC verificados",         "label_en": "KYC documents verified",     "action_path": "subscription"},
+    ]
+    done_count = sum(1 for i in items if i["done"])
+    pct = round((done_count / len(items)) * 100)
+
+    return {
+        "percentage": pct,
+        "done_count": done_count,
+        "total_count": len(items),
+        "items": items,
+        "is_complete": pct == 100,
     }
 
 
@@ -358,6 +481,290 @@ async def get_client_history(user_id: str, token_data: TokenData = Depends(requi
         "first_visit": bookings[-1]["date"] if bookings else None,
         "last_visit": bookings[0]["date"] if bookings else None,
         "history": history,
+    }
+
+
+# ========================== PHASE 15: MINI-CRM (MY CLIENTS) ==========================
+
+
+@router.get("/my/clients")
+async def list_my_clients(
+    q: str = "",
+    tag: Optional[str] = None,  # "vip" | "new" | "noshow" | "inactive"
+    sort: str = "recent",       # "recent" | "visits" | "spent" | "name"
+    page: int = 1,
+    limit: int = 50,
+    token_data: TokenData = Depends(require_business),
+):
+    """Mini-CRM: aggregated client list with last visit, total visits,
+    total spent, no-show count and a private note. Powers the new
+    "Mis Clientes" tab on the Business Dashboard.
+
+    Rules:
+      * only clients who have at least one booking with THIS business
+      * clients without user_id (walk-ins booked by recepcion) are still
+        surfaced using their stored name/phone/email
+      * `tag=vip` means 5+ completed visits, `tag=new` means 1 visit only,
+        `tag=noshow` means >=2 no-shows, `tag=inactive` >= 90d since last
+    """
+    business = await db.businesses.find_one({"user_id": token_data.user_id}, {"_id": 0, "id": 1})
+    if not business:
+        raise HTTPException(status_code=404, detail="Business not found")
+    bid = business["id"]
+
+    pipeline = [
+        {"$match": {"business_id": bid}},
+        {"$addFields": {
+            "_client_key": {
+                "$ifNull": [
+                    "$user_id",
+                    {"$concat": [
+                        {"$ifNull": ["$client_phone", ""]},
+                        "|",
+                        {"$toLower": {"$ifNull": ["$client_name", ""]}},
+                    ]},
+                ]
+            },
+            "_is_completed": {"$in": ["$status", ["completed", "confirmed"]]},
+            "_is_noshow": {"$eq": ["$status", "no_show"]},
+            "_paid_amount": {
+                "$cond": [
+                    {"$in": ["$status", ["completed", "confirmed"]]},
+                    {"$ifNull": ["$total_amount", {"$ifNull": ["$deposit_amount", 0]}]},
+                    0,
+                ]
+            },
+        }},
+        {"$group": {
+            "_id": "$_client_key",
+            "user_id": {"$first": "$user_id"},
+            "fallback_name": {"$first": "$client_name"},
+            "fallback_phone": {"$first": "$client_phone"},
+            "fallback_email": {"$first": "$client_email"},
+            "total_bookings": {"$sum": 1},
+            "total_visits": {"$sum": {"$cond": ["$_is_completed", 1, 0]}},
+            "noshow_count": {"$sum": {"$cond": ["$_is_noshow", 1, 0]}},
+            "total_spent": {"$sum": "$_paid_amount"},
+            "first_visit": {"$min": "$date"},
+            "last_visit": {"$max": "$date"},
+        }},
+        {"$match": {"_id": {"$ne": None}}},
+    ]
+    rows = await db.bookings.aggregate(pipeline).to_list(5000)
+
+    # Resolve user profile data and attach private note
+    user_ids = [r["user_id"] for r in rows if r.get("user_id")]
+    users_map = {}
+    if user_ids:
+        async for u in db.users.find(
+            {"id": {"$in": user_ids}},
+            {"_id": 0, "id": 1, "full_name": 1, "email": 1, "phone": 1, "profile_image_url": 1, "public_code": 1},
+        ):
+            users_map[u["id"]] = u
+
+    notes_map = {}
+    async for n in db.business_client_notes.find({"business_id": bid}, {"_id": 0}):
+        notes_map[n.get("client_key")] = n
+
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    ninety_ago = (datetime.now(timezone.utc) - timedelta(days=90)).strftime("%Y-%m-%d")
+
+    clients = []
+    for r in rows:
+        uid = r.get("user_id")
+        profile = users_map.get(uid) or {}
+        name = profile.get("full_name") or r.get("fallback_name") or "-"
+        email = profile.get("email") or r.get("fallback_email") or ""
+        phone = profile.get("phone") or r.get("fallback_phone") or ""
+        note = notes_map.get(r["_id"], {})
+        tags = []
+        if r["total_visits"] >= 5:
+            tags.append("vip")
+        if r["total_visits"] == 1 and r["noshow_count"] == 0:
+            tags.append("new")
+        if r["noshow_count"] >= 2:
+            tags.append("noshow")
+        if r.get("last_visit") and r["last_visit"] < ninety_ago:
+            tags.append("inactive")
+
+        clients.append({
+            "client_key": r["_id"],
+            "user_id": uid,
+            "name": name,
+            "email": email,
+            "phone": phone,
+            "public_code": profile.get("public_code") or None,
+            "avatar_url": profile.get("profile_image_url"),
+            "is_registered": bool(uid),
+            "total_bookings": r["total_bookings"],
+            "total_visits": r["total_visits"],
+            "noshow_count": r["noshow_count"],
+            "total_spent": round(float(r.get("total_spent") or 0), 2),
+            "first_visit": r.get("first_visit"),
+            "last_visit": r.get("last_visit"),
+            "days_since_last": None if not r.get("last_visit") else (
+                (datetime.strptime(today, "%Y-%m-%d") - datetime.strptime(r["last_visit"], "%Y-%m-%d")).days
+            ),
+            "private_note": note.get("note", ""),
+            "note_updated_at": note.get("updated_at"),
+            "tags": tags,
+        })
+
+    # Search filter (name / phone / email / public_code contains q)
+    if q:
+        ql = q.lower().strip()
+        clients = [c for c in clients if
+                   ql in (c["name"] or "").lower()
+                   or ql in (c["phone"] or "").lower()
+                   or ql in (c["email"] or "").lower()
+                   or ql in (c.get("public_code") or "").lower()]
+
+    # Tag filter
+    if tag:
+        clients = [c for c in clients if tag in c["tags"]]
+
+    # Sorting
+    if sort == "recent":
+        clients.sort(key=lambda c: c["last_visit"] or "", reverse=True)
+    elif sort == "visits":
+        clients.sort(key=lambda c: c["total_visits"], reverse=True)
+    elif sort == "spent":
+        clients.sort(key=lambda c: c["total_spent"], reverse=True)
+    elif sort == "name":
+        clients.sort(key=lambda c: (c["name"] or "").lower())
+
+    total = len(clients)
+    page = max(1, page)
+    limit = max(1, min(limit, 200))
+    start = (page - 1) * limit
+    page_rows = clients[start:start + limit]
+
+    # Aggregate KPIs for the header
+    vip_count = sum(1 for c in clients if "vip" in c["tags"])
+    new_count = sum(1 for c in clients if "new" in c["tags"])
+    inactive_count = sum(1 for c in clients if "inactive" in c["tags"])
+
+    return {
+        "total": total,
+        "page": page,
+        "limit": limit,
+        "kpis": {
+            "total_clients": total,
+            "vip": vip_count,
+            "new": new_count,
+            "inactive": inactive_count,
+        },
+        "items": page_rows,
+    }
+
+
+class ClientNoteUpdate(BaseModel):
+    note: str
+
+
+@router.put("/my/clients/{client_key:path}/note")
+async def update_client_note(
+    client_key: str,
+    payload: ClientNoteUpdate,
+    token_data: TokenData = Depends(require_business),
+):
+    """Upsert a private note for a specific client (max 500 chars)."""
+    business = await db.businesses.find_one({"user_id": token_data.user_id}, {"_id": 0, "id": 1})
+    if not business:
+        raise HTTPException(status_code=404, detail="Business not found")
+
+    note = (payload.note or "").strip()[:500]
+    now_iso = datetime.now(timezone.utc).isoformat()
+    await db.business_client_notes.update_one(
+        {"business_id": business["id"], "client_key": client_key},
+        {"$set": {"note": note, "updated_at": now_iso},
+         "$setOnInsert": {"created_at": now_iso}},
+        upsert=True,
+    )
+    return {"ok": True, "note": note, "updated_at": now_iso}
+
+
+@router.post("/my/clients/export")
+async def export_my_clients(token_data: TokenData = Depends(require_business)):
+    """Return plain CSV of the entire client list for the business (data
+    portability — Fase LFPDPPP). The frontend downloads the file."""
+    from fastapi.responses import Response as _Response
+    import csv as _csv
+    import io as _io
+
+    result = await list_my_clients(token_data=token_data, limit=1000)
+    buf = _io.StringIO()
+    w = _csv.writer(buf)
+    w.writerow(["bookvia_code", "name", "email", "phone", "total_visits", "total_spent",
+                "last_visit", "noshow_count", "tags", "private_note"])
+    for c in result["items"]:
+        w.writerow([
+            c.get("public_code") or "",
+            c["name"], c["email"], c["phone"], c["total_visits"],
+            c["total_spent"], c["last_visit"] or "",
+            c["noshow_count"], ",".join(c["tags"]), c["private_note"],
+        ])
+    return _Response(
+        content=buf.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=clientes.csv"},
+    )
+
+
+@router.get("/my/clients/lookup")
+async def lookup_client_by_code(
+    code: str,
+    token_data: TokenData = Depends(require_business),
+):
+    """Lookup a single client by their public Bookvia code (CL-XXXXX).
+    Returns aggregated stats scoped to THIS business only — walk-in /
+    unregistered clients are excluded (no user_id means no code)."""
+    from services.public_code import normalize_public_code, is_valid_public_code
+
+    normalized = normalize_public_code(code)
+    if not is_valid_public_code(normalized) or not normalized.startswith("CL-"):
+        raise HTTPException(status_code=400, detail="Código inválido. Formato esperado: CL-XXXXX")
+
+    business = await db.businesses.find_one({"user_id": token_data.user_id}, {"_id": 0, "id": 1})
+    if not business:
+        raise HTTPException(status_code=404, detail="Business not found")
+
+    user = await db.users.find_one(
+        {"public_code": normalized},
+        {"_id": 0, "id": 1, "full_name": 1, "email": 1, "phone": 1,
+         "profile_image_url": 1, "public_code": 1},
+    )
+    if not user:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado")
+
+    # Aggregate this business's history with the client
+    bookings = await db.bookings.find(
+        {"business_id": business["id"], "user_id": user["id"]},
+        {"_id": 0, "id": 1, "date": 1, "status": 1, "total_amount": 1, "deposit_amount": 1},
+    ).sort("date", -1).to_list(500)
+
+    total_visits = sum(1 for b in bookings if b.get("status") in ("completed", "confirmed"))
+    noshow_count = sum(1 for b in bookings if b.get("status") == "no_show")
+    total_spent = sum(
+        float(b.get("total_amount") or b.get("deposit_amount") or 0)
+        for b in bookings if b.get("status") in ("completed", "confirmed")
+    )
+    last_visit = bookings[0]["date"] if bookings else None
+    has_history = len(bookings) > 0
+
+    return {
+        "found": True,
+        "has_history_with_you": has_history,
+        "public_code": user["public_code"],
+        "name": user.get("full_name") or "-",
+        "email": user.get("email"),
+        "phone": user.get("phone"),
+        "avatar_url": user.get("profile_image_url"),
+        "total_bookings": len(bookings),
+        "total_visits": total_visits,
+        "noshow_count": noshow_count,
+        "total_spent": round(total_spent, 2),
+        "last_visit": last_visit,
     }
 
 
@@ -844,7 +1251,11 @@ async def get_featured_businesses(limit: int = 8, country_code: Optional[str] = 
 
 
 @router.get("/slug/{slug}", response_model=BusinessResponse)
-async def get_business_by_slug(slug: str, current_user: Optional[TokenData] = Depends(get_current_user)):
+async def get_business_by_slug(
+    slug: str,
+    request: Request,
+    current_user: Optional[TokenData] = Depends(get_current_user),
+):
     """Get business by slug or ID (fallback)."""
     business = await db.businesses.find_one(
         {"slug": slug},
@@ -868,12 +1279,17 @@ async def get_business_by_slug(slug: str, current_user: Optional[TokenData] = De
         if cat:
             business["category_name"] = cat.get("name_es", "")
     
+    await _track_profile_view(business["id"], request, current_user, business.get("user_id"))
     return BusinessResponse(**business)
 
 
 
 @router.get("/{business_id}", response_model=BusinessResponse)
-async def get_business(business_id: str, current_user: Optional[TokenData] = Depends(get_current_user)):
+async def get_business(
+    business_id: str,
+    request: Request,
+    current_user: Optional[TokenData] = Depends(get_current_user),
+):
     business = await db.businesses.find_one(
         {"id": business_id},
         {"_id": 0, "password_hash": 0, "clabe": 0, "rfc": 0, "ine_url": 0, "proof_of_address_url": 0}
@@ -883,6 +1299,7 @@ async def get_business(business_id: str, current_user: Optional[TokenData] = Dep
     # Check blacklist
     if current_user and await is_user_blacklisted(business["id"], user_id=current_user.user_id):
         raise HTTPException(status_code=404, detail="Business not found")
+    await _track_profile_view(business["id"], request, current_user, business.get("user_id"))
     return BusinessResponse(**business)
 
 
@@ -914,7 +1331,13 @@ async def update_my_business(update: BusinessUpdate, token_data: TokenData = Dep
             update_data["deposit_amount"] = 0.0
         else:
             update_data["deposit_amount"] = max(update_data["deposit_amount"], MIN_DEPOSIT_AMOUNT)
-    
+
+    # Enforce unified payout cadence whenever requires_deposit is being turned ON
+    if update_data.get("requires_deposit") is True:
+        update_data["payout_schedule"] = "monthly_cutoff_20"
+    elif update_data.get("requires_deposit") is False:
+        update_data["payout_schedule"] = None
+
     await db.businesses.update_one({"id": user["business_id"]}, {"$set": update_data})
     business = await db.businesses.find_one({"id": user["business_id"]}, {"_id": 0, "password_hash": 0})
     # Apply defaults for legacy documents that may be missing required fields
@@ -947,7 +1370,12 @@ async def get_my_private_info(token_data: TokenData = Depends(require_business))
          "stripe_customer_id": 1, "subscription_status": 1,
          "stripe_subscription_id": 1, "subscription_started_at": 1,
          "name": 1, "email": 1, "phone": 1, "description": 1,
-         "notify_email": 1, "notify_sms": 1, "public_code": 1}
+         "notify_email": 1, "notify_sms": 1, "public_code": 1,
+         "tax_regime": 1, "tax_regime_certificate_url": 1,
+         "commission_terms_accepted_at": 1, "commission_terms_version": 1,
+         "commission_terms_hash": 1, "commission_terms_snapshot": 1,
+         "requires_deposit": 1, "deposit_amount": 1,
+         "cancellation_days": 1, "payout_schedule": 1}
     )
     if not business:
         raise HTTPException(status_code=404, detail="Business not found")
@@ -1006,7 +1434,258 @@ async def get_my_private_info(token_data: TokenData = Depends(require_business))
         "notify_email": business.get("notify_email", True),
         "notify_sms": business.get("notify_sms", True),
         "public_code": business.get("public_code"),
+        "tax_regime": business.get("tax_regime"),
+        "tax_regime_certificate_url": business.get("tax_regime_certificate_url"),
+        "commission_terms": {
+            "accepted_at": business.get("commission_terms_accepted_at"),
+            "version": business.get("commission_terms_version"),
+            "hash": business.get("commission_terms_hash"),
+            "snapshot": business.get("commission_terms_snapshot"),
+        } if business.get("commission_terms_accepted_at") else None,
+        "requires_deposit": business.get("requires_deposit", False),
+        "deposit_amount": business.get("deposit_amount", 0.0),
+        "cancellation_days": business.get("cancellation_days", 1),
+        "payout_schedule": business.get("payout_schedule"),
     }
+
+
+@router.post("/me/commission-terms/accept")
+async def accept_commission_terms(
+    payload: Dict[str, Any],
+    request: Request,
+    token_data: TokenData = Depends(require_business),
+):
+    """Business owner accepts (or re-accepts) the commission terms.
+    Persists version + hash + snapshot + acceptance timestamp + IP.
+
+    Body: {version: str, hash: str, snapshot: dict}
+    """
+    if token_data.is_manager:
+        raise HTTPException(status_code=403, detail="Solo el dueno puede aceptar términos de comisiones")
+
+    if not isinstance(payload, dict) or "snapshot" not in payload:
+        raise HTTPException(status_code=400, detail="snapshot es obligatorio")
+    version = (payload.get("version") or "").strip()
+    hash_str = (payload.get("hash") or "").strip().lower()
+    snapshot = payload.get("snapshot")
+    if not version or not hash_str or not isinstance(snapshot, dict):
+        raise HTTPException(status_code=400, detail="version, hash y snapshot son obligatorios")
+    if len(hash_str) != 64 or not all(c in "0123456789abcdef" for c in hash_str):
+        raise HTTPException(status_code=400, detail="hash debe ser SHA-256 hex (64 chars)")
+
+    user = await db.users.find_one({"id": token_data.user_id}, {"_id": 0, "business_id": 1})
+    if not user or not user.get("business_id"):
+        raise HTTPException(status_code=404, detail="Business not found")
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    ip = request.headers.get("x-forwarded-for", "").split(",")[0].strip() or (request.client.host if request.client else "")
+    ua = request.headers.get("user-agent", "")[:500]
+
+    history_entry = {
+        "version": version, "hash": hash_str, "snapshot": snapshot,
+        "accepted_at": now_iso, "ip": ip, "user_agent": ua,
+    }
+
+    await db.businesses.update_one(
+        {"id": user["business_id"]},
+        {
+            "$set": {
+                "commission_terms_version": version,
+                "commission_terms_hash": hash_str,
+                "commission_terms_snapshot": snapshot,
+                "commission_terms_accepted_at": now_iso,
+            },
+            "$push": {"commission_terms_history": history_entry},
+        },
+    )
+
+    await create_audit_log(
+        admin_id=token_data.user_id, admin_email=token_data.email,
+        action="commission_terms_accept", target_type="business",
+        target_id=user["business_id"],
+        details={"version": version, "hash": hash_str},
+        request=request,
+    )
+    return {"ok": True, "version": version, "hash": hash_str, "accepted_at": now_iso}
+
+
+class TaxRegimeUpdate(BaseModel):
+    tax_regime: str
+    tax_regime_certificate_url: Optional[str] = None
+
+
+@router.put("/me/tax-regime")
+async def update_my_tax_regime(
+    payload: TaxRegimeUpdate,
+    token_data: TokenData = Depends(require_business),
+):
+    """Business owner updates its tax regime + (optional) certificate URL.
+    Used for future Fintech withholding calculations (LISR 113-A)."""
+    if token_data.is_manager:
+        raise HTTPException(status_code=403, detail="Solo el dueno puede actualizar régimen fiscal")
+
+    valid = {"PF_RESICO", "PF_ACT_EMPRESARIAL", "PF_HONORARIOS",
+             "PF_PLATAFORMAS", "PM_GENERAL", "PM_NO_LUCRATIVA",
+             "RIF", "OTRO"}
+    if payload.tax_regime not in valid:
+        raise HTTPException(status_code=400, detail="Régimen fiscal no válido")
+
+    user = await db.users.find_one({"id": token_data.user_id}, {"_id": 0, "business_id": 1})
+    if not user or not user.get("business_id"):
+        raise HTTPException(status_code=404, detail="Business not found")
+
+    await db.businesses.update_one(
+        {"id": user["business_id"]},
+        {"$set": {
+            "tax_regime": payload.tax_regime,
+            "tax_regime_certificate_url": payload.tax_regime_certificate_url,
+            "tax_regime_updated_at": datetime.now(timezone.utc).isoformat(),
+        }},
+    )
+    return {"ok": True, "tax_regime": payload.tax_regime}
+
+
+@router.get("/me/legal-file.pdf")
+async def download_my_legal_file(
+    request: Request,
+    token_data: TokenData = Depends(require_business),
+):
+    """Download the business owner's legal file (expediente) as a PDF.
+    Only the owner (not managers) can download. Audit-logged."""
+    if token_data.is_manager:
+        raise HTTPException(status_code=403, detail="Solo el dueno puede descargar el expediente")
+
+    user = await db.users.find_one({"id": token_data.user_id}, {"_id": 0, "business_id": 1})
+    if not user or not user.get("business_id"):
+        raise HTTPException(status_code=404, detail="Business not found")
+
+    from fastapi.responses import Response as _Response
+    from services.legal_file_service import generate_business_legal_file
+
+    origin = request.headers.get("origin") or str(request.base_url).rstrip("/")
+    result = await generate_business_legal_file(user["business_id"], origin)
+    if not result:
+        raise HTTPException(status_code=404, detail="Business not found")
+
+    await create_audit_log(
+        admin_id=token_data.user_id, admin_email=token_data.email,
+        action="legal_file_download", target_type="business",
+        target_id=user["business_id"],
+        details={"file_id": result["file_id"], "by": "owner"},
+        request=request,
+    )
+
+    safe_rfc = (result.get("rfc") or "sin_rfc").replace("/", "_")[:20]
+    filename = f"expediente_bookvia_{safe_rfc}_{datetime.now(timezone.utc).strftime('%Y%m%d')}.pdf"
+    return _Response(
+        content=result["pdf_bytes"],
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "X-Legal-File-Id": result["file_id"],
+            "X-Legal-File-Hash": result["content_hash"],
+        },
+    )
+
+
+@router.get("/verificar-expediente/{file_id}")
+async def verify_legal_file(file_id: str):
+    """Public endpoint — anyone can verify that Bookvia issued a given
+    expediente. Returns minimal, non-sensitive data for transparency."""
+    record = await db.business_legal_files.find_one(
+        {"id": file_id.strip().upper()}, {"_id": 0}
+    )
+    if not record:
+        return {"ok": False, "error": "Expediente no encontrado. Verifica el folio."}
+    return {
+        "ok": True,
+        "file_id": record["id"],
+        "issued_at": record.get("issued_at"),
+        "legal_name": record.get("legal_name"),
+        "rfc_masked": (record.get("rfc") or "")[:4] + "••••" + (record.get("rfc") or "")[-3:],
+        "public_code": record.get("public_code"),
+        "content_hash": record.get("content_hash"),
+        "file_version": record.get("file_version"),
+    }
+
+
+@router.get("/me/settlements")
+async def list_my_settlements(
+    limit: int = 24,
+    token_data: TokenData = Depends(require_business),
+):
+    """Return the business's past day-20 settlements (most recent first)."""
+    user = await db.users.find_one({"id": token_data.user_id}, {"_id": 0, "business_id": 1})
+    if not user or not user.get("business_id"):
+        raise HTTPException(status_code=404, detail="Business not found")
+
+    rows = await db.settlements.find(
+        {"business_id": user["business_id"]},
+        {"_id": 0, "id": 1, "period_key": 1, "net_payout": 1, "payout_amount": 1,
+         "booking_count": 1, "status": 1, "created_at": 1, "paid_at": 1,
+         "transaction_ids": 1},
+    ).sort("created_at", -1).limit(max(1, min(limit, 100))).to_list(100)
+
+    # Slim the payload
+    items = []
+    for r in rows:
+        items.append({
+            "id": r.get("id"),
+            "period_key": r.get("period_key"),
+            "net_amount": float(r.get("net_payout") or r.get("payout_amount") or 0),
+            "booking_count": r.get("booking_count", 0),
+            "transaction_count": len(r.get("transaction_ids") or []),
+            "status": r.get("status") or "pending",
+            "created_at": r.get("created_at"),
+            "paid_at": r.get("paid_at"),
+        })
+    return {"items": items, "count": len(items)}
+
+
+@router.get("/me/settlements/{settlement_id}/statement.pdf")
+async def download_my_settlement_statement(
+    settlement_id: str,
+    request: Request,
+    token_data: TokenData = Depends(require_business),
+):
+    """Owner downloads the PDF statement for one of their own settlements."""
+    user = await db.users.find_one({"id": token_data.user_id}, {"_id": 0, "business_id": 1})
+    if not user or not user.get("business_id"):
+        raise HTTPException(status_code=404, detail="Business not found")
+
+    # Ownership check: settlement must belong to this business
+    settlement = await db.settlements.find_one(
+        {"id": settlement_id, "business_id": user["business_id"]},
+        {"_id": 0, "id": 1},
+    )
+    if not settlement:
+        raise HTTPException(status_code=404, detail="Estado de cuenta no encontrado")
+
+    from fastapi.responses import Response as _Response
+    from services.payout_statement import generate_payout_statement_pdf
+
+    result = await generate_payout_statement_pdf(settlement_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Estado de cuenta no encontrado")
+
+    await create_audit_log(
+        admin_id=token_data.user_id, admin_email=token_data.email,
+        action="payout_statement_download", target_type="settlement",
+        target_id=settlement_id,
+        details={"by": "owner", "period_key": result.get("period_key")},
+        request=request,
+    )
+
+    safe_rfc = (result.get("rfc") or "sin_rfc").replace("/", "_")[:20]
+    period = result.get("period_key") or "sinperiodo"
+    filename = f"estado_de_cuenta_bookvia_{safe_rfc}_{period}.pdf"
+    return _Response(
+        content=result["pdf_bytes"], media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "X-Statement-Hash": result["content_hash"],
+        },
+    )
 
 
 @router.put("/me/legal-docs")

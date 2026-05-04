@@ -1,0 +1,44 @@
+{
+  "summary": "Phase 18 backend tested via pytest (payout_schedule unification + commission_terms persistence + CL-XXXXX lookup + Mini-CRM public_code integration). 12 tests passed / 2 skipped (user-login for cross-role 403 probe). Frontend verified via deep code review: CommissionBreakdownModal + BusinessRegisterPage step 4 + UserDashboardPage badge + BusinessClientsTab chip + api.js wrapper all match spec. Legacy payout-triday/biweekly/monthly testids confirmed removed.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/auth/login (test user)", "issue": "Could not login user test@example.com with common passwords (Test123!/TestPass123!/Password123!/password). Two tests (test_users_me_exposes_public_code, test_lookup_403_non_business) were SKIPPED as a result. The endpoint itself is fine — credential in problem statement may be stale. Seed user or expose password in /app/memory/test_credentials.md so cross-role auth can be proven."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "code_review_findings": [
+      "CommissionBreakdownModal.jsx: COMMISSION_TERMS_VERSION='v1-2026-02', BOOKVIA_FEE_MXN=8.20, stripeFee=deposit*0.085, clientPays=deposit+bookviaFee, businessReceives=deposit-stripeFee — matches spec exactly.",
+      "BusinessRegisterPage.jsx line 346: blocks nextStep when requires_deposit && !commission_terms_accepted with toast 'Debes leer y aceptar el desglose de comisiones para continuar' — correct.",
+      "No occurrences of payout-triday / payout-biweekly / payout-monthly anywhere in /app/frontend/src (grep confirmed) — legacy selector fully removed.",
+      "UserDashboardPage.jsx: user-public-code-badge present with label 'Tu ID' + clipboard copy + 'Código copiado' toast.",
+      "BusinessClientsTab.jsx: clients-search-input placeholder includes 'código CL-XXXXX' (line 113) and client-code-<public_code> chip on each ClientRow (line 242).",
+      "api.js line 217: lookupClientByCode wrapper hits /businesses/my/clients/lookup."
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase18_payout_and_code.py",
+    "/app/test_reports/pytest/pytest_phase18_payout_and_code.xml"
+  ],
+  "action_items": [
+    "(Optional) Provide a working password for test@example.com (or create a dedicated TEST_user_no_history@bookvia.com) so the 403-on-user-token path can be asserted automatically.",
+    "No functional bugs — Phase 18 backend + frontend code look production-ready for the pre-launch."
+  ],
+  "critical_code_review_comments": [
+    "routers/businesses.py::lookup_client_by_code correctly rejects BV- prefix, short codes, and invalid-alphabet chars via normalize_public_code + prefix guard — verified by tests.",
+    "routers/auth.py lines 535-537 force payout_schedule='monthly_cutoff_20' ONLY when requires_deposit=True — for non-deposit businesses it saves None. Migration covered existing docs per problem statement. This asymmetry is fine but worth noting: a business that later flips requires_deposit from false→true via /me PUT will have payout_schedule stay None unless the caller sends it (BusinessUpdate supports it). Consider backfilling payout_schedule='monthly_cutoff_20' server-side whenever requires_deposit is set to True.",
+    "routers/businesses.py::list_my_clients includes public_code only when the underlying user has one; walk-in clients return None — matches spec."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase18_payout_and_code.py (new)"
+  ],
+  "success_rate": {"backend": "100% (12/12 executed; 2 skipped due to missing user creds)", "frontend": "100% code review — no live UI automation run for step 4 because the 5-step registration requires uploads; all testids and logic verified in source"},
+  "test_credentials": "testspa@test.com / Test123! worked for business flows. Could NOT login test@example.com with listed passwords.",
+  "seed_data_creation": "none",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Phase 18 green. Backend lookup endpoint validated for 200/400 (BV- prefix, short, bad alphabet)/404/401 paths. Mini-CRM list + search by CL code validated. If next iteration adds more fields (e.g., commission_terms_accepted_at exposed on /businesses/me/private-info) extend the pytest file. For step-4 UI live automation, you'll need to either fake file uploads or add a dev-only query param that skips to step 4."
+}

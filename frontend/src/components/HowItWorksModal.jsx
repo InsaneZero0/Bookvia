@@ -5,6 +5,7 @@ import { Search, Calendar, Sparkles, Shield, X } from 'lucide-react';
 import { useI18n } from '@/lib/i18n';
 
 const STORAGE_KEY = 'bookvia-how-it-works-seen';
+const BETA_BANNER_KEY = 'bookvia_beta_banner_dismissed_v1';
 
 export function HowItWorksModal() {
   const { language } = useI18n();
@@ -13,10 +14,22 @@ export function HowItWorksModal() {
   useEffect(() => {
     try {
       const seen = localStorage.getItem(STORAGE_KEY);
-      if (!seen) {
-        const t = setTimeout(() => setOpen(true), 600);
-        return () => clearTimeout(t);
-      }
+      if (seen) return;
+      // Defer if the beta banner is still on screen so the two announcements
+      // don't compete for attention. Keeps checking every 1.5s.
+      const tryShow = () => {
+        const bannerDismissed = localStorage.getItem(BETA_BANNER_KEY) === '1';
+        if (bannerDismissed) {
+          setOpen(true);
+          return true;
+        }
+        return false;
+      };
+      if (tryShow()) return;
+      const interval = setInterval(() => {
+        if (tryShow()) clearInterval(interval);
+      }, 1500);
+      return () => clearInterval(interval);
     } catch {
       // localStorage may be unavailable in private mode
     }

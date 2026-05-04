@@ -17,6 +17,7 @@ const getBackendUrl = () => {
 
 const BACKEND_URL = getBackendUrl();
 const API_BASE = `${BACKEND_URL}/api`;
+export { API_BASE };
 
 // Create axios instance
 const api = axios.create({
@@ -119,6 +120,8 @@ export const usersAPI = {
     responseType: 'text',
     transformResponse: [(data) => data],
   }),
+  setMarketingOptOut: (optOut) => api.post('/users/me/marketing-consent', { opt_out: optOut }),
+  deleteAccount: (password, confirmation) => api.delete('/users/me/account', { data: { password, confirmation } }),
 };
 
 // Categories API
@@ -208,6 +211,18 @@ export const businessesAPI = {
   getReports: (period = 'month') => api.get('/businesses/my/reports', { params: { period } }),
   exportReports: (period = 'month') => api.get('/businesses/my/reports/export', { params: { period }, responseType: 'blob' }),
   getDashboardSummary: () => api.get('/businesses/my/dashboard-summary'),
+  getProfileCompletion: () => api.get('/businesses/my/profile-completion'),
+  listMyClients: (params = {}) => api.get('/businesses/my/clients', { params }),
+  updateClientNote: (clientKey, note) => api.put(`/businesses/my/clients/${encodeURIComponent(clientKey)}/note`, { note }),
+  exportMyClients: () => api.post('/businesses/my/clients/export', null, { responseType: 'blob' }),
+  lookupClientByCode: (code) => api.get('/businesses/my/clients/lookup', { params: { code } }),
+  acceptCommissionTerms: (data) => api.post('/businesses/me/commission-terms/accept', data),
+  updateTaxRegime: (taxRegime, certificateUrl) => api.put('/businesses/me/tax-regime', { tax_regime: taxRegime, tax_regime_certificate_url: certificateUrl || null }),
+  downloadLegalFile: () => api.get('/businesses/me/legal-file.pdf', { responseType: 'blob' }),
+  verifyLegalFile: (fileId) => api.get(`/businesses/verificar-expediente/${fileId}`),
+  listMySettlements: (limit = 24) => api.get('/businesses/me/settlements', { params: { limit } }),
+  downloadSettlementStatement: (settlementId) =>
+    api.get(`/businesses/me/settlements/${settlementId}/statement.pdf`, { responseType: 'blob' }),
   getClientHistory: (userId) => api.get(`/businesses/my/client-history/${userId}`),
   getMyBusiness: () => api.get('/businesses/me'),
   updateBusiness: (data) => api.put('/businesses/me', data),
@@ -265,6 +280,9 @@ export const bookingsAPI = {
 export const reviewsAPI = {
   create: (data) => api.post('/reviews/', data),
   getByBusiness: (businessId, params) => api.get(`/reviews/business/${businessId}`, { params }),
+  report: (reviewId, reason, detail) => api.post(`/reviews/${reviewId}/report`, { reason, detail: detail || null }),
+  adminListReported: (status_filter = 'pending', limit = 50) => api.get('/reviews/admin/reported', { params: { status_filter, limit } }),
+  adminResolve: (reviewId, action, note) => api.post(`/reviews/admin/${reviewId}/resolve`, { action, note: note || null }),
 };
 
 // Payments API
@@ -371,6 +389,25 @@ export const adminAPI = {
   resetStaffPassword: (id) => api.put(`/admin/staff/${id}/reset-password`),
   getMyPermissions: () => api.get('/admin/my-permissions'),
   reassignCategory: (bizId, categoryId) => api.put(`/admin/businesses/${bizId}/reassign-category`, null, { params: { category_id: categoryId } }),
+  // Phase 12: P&L, reconciliation, security, compliance, refunds, webhook events
+  getPlatformPnl: (days = 30) => api.get('/admin/platform/pnl', { params: { days } }),
+  runStripeReconciliation: (date) => api.post('/admin/platform/reconcile-stripe', null, { params: date ? { date } : {} }),
+  getReconciliationIssues: (limit = 50) => api.get('/admin/platform/reconciliation-issues', { params: { limit } }),
+  getLockedAccounts: () => api.get('/admin/security/locked-accounts'),
+  unlockAccount: (key) => api.post('/admin/security/unlock', { key }),
+  getTermsStats: () => api.get('/admin/terms/stats'),
+  getTermsPendingUsers: (limit = 50) => api.get('/admin/terms/pending-users', { params: { limit } }),
+  getArcoEvents: (limit = 50) => api.get('/admin/compliance/arco-events', { params: { limit } }),
+  getRefundsAudit: (limit = 50) => api.get('/admin/finance/refunds', { params: { limit } }),
+  getStripeWebhookEvents: (limit = 50) => api.get('/admin/stripe/webhook-events', { params: { limit } }),
+  previewPnlReport: () => api.get('/admin/platform/pnl-report/preview'),
+  sendPnlReport: (recipients) => api.post('/admin/platform/pnl-report/send', { recipients: recipients || null }),
+  getWaitlist: (params = {}) => api.get('/admin/waitlist', { params }),
+  exportWaitlist: (params = {}) => api.get('/admin/waitlist/export', { params, responseType: 'blob' }),
+  deleteWaitlistEntry: (id) => api.delete(`/admin/waitlist/${id}`),
+  previewWaitlistBroadcast: (city, country_code = 'MX', only_unnotified = true) =>
+    api.get(`/admin/waitlist/cities/${encodeURIComponent(city)}/preview`, { params: { country_code, only_unnotified } }),
+  sendWaitlistBroadcast: (body) => api.post('/admin/waitlist/broadcast', body),
 };
 
 // Utility API

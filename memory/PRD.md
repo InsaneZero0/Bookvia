@@ -75,6 +75,8 @@ Auth Social: Emergent-managed Google Auth (solo clientes)
 - [x] **FASE 10 T&C versionados (Mayo 2026)**: Alcance user-choice: SIN propinas (cliente-negocio), SIN facturacion (cliente-negocio, Bookvia solo factura sus cuotas). TERMS_VERSION='2026-05-01' en core/config.py. Router /api/terms/* con: GET /version (publico), GET /me (auth, up_to_date), POST /accept (409 si version!=vigente, mirror al doc del business si es owner no-manager). Register cliente y register negocio ahora estampan accepted_terms_version + accepted_terms_at en user/business. TermsPage.jsx reforzada con secciones nuevas: 7.1 Propinas (Bookvia NO intermedia), 7.2 Facturacion CFDI (se pide al negocio), 9.1 Privacidad LFPDPPP + ARCO, 9.2 Ley aplicable + jurisdiccion CDMX. Declaracion mayoria de edad explicita en seccion 7. RegisterPage.jsx y BusinessRegisterPage.jsx: checkbox obligatorio 'Acepto T&C + Aviso de Privacidad; entiendo que propinas y facturas son con el negocio' con links abrir /terms y /privacy en nueva pestana. Tests 10/10 (iteration_83.json).
 - [x] **FASE 10b T&C historial + grace + gate (Mayo 2026)**: Registro acumulativo de aceptaciones con IP, user_agent, source en el array terms_acceptance_history (user y business). Constante TERMS_VERSION_PUBLISHED_AT y TERMS_GRACE_DAYS=7. GET /api/terms/version agrega published_at, grace_period_ends_at, is_hard_block_now, changelog (es/en). GET /api/terms/me retorna is_hard_block y grace_period_ends_at. POST /api/terms/accept $push al historial con (version, accepted_at, ip, user_agent, source=re_accept|booking_checkout|register|business_register|migration). Register y business-register ahora reciben request=Request y siembran el primer entry del historial. Helper require_terms_up_to_date(user_id) aplicado a POST /bookings y PUT /businesses/me/legal-docs: durante grace NO dispara, tras grace retorna 409 {code:'terms_outdated'}. Endpoint admin GET /api/admin/users/{user_id}/terms-history. Startup migration idempotente que rellena historial para cuentas con accepted_terms_version pero sin array. Frontend: TermsReAcceptModal (soft durante grace, hard tras grace, logout option) montado en App.js; axios interceptor dispara evento 'bookvia:terms_outdated' en 409 con detail.code; localStorage DISMISS_KEY para no molestar mas de 12h en soft mode. TermsPage.jsx nueva seccion 12 Historial de versiones. Tests 17/17 (iteration_84.json).
 - [x] **FASE 10c Exportacion de datos personales LFPDPPP (Mayo 2026)**: GET /api/users/me/export-data auth, retorna JSON attachment (bookvia-mis-datos-<id>-<date>.json) con perfil, bookings, wallet, payments, notifications, favorites, terms_acceptance_history. Sanitiza password_hash, email_verification_token, reset_password_token, totp_secret, _id y stripe_secret. Para owner de negocio (role=BUSINESS, is_manager=False, business_id): incluye tambien business_profile, settlements, transactions, strikes. Managers NO reciben esos campos (son datos del owner). meta.truncated=true si algun seccion llega al cap de 500 rows. Audit log action=personal_data_export con IP X-Forwarded-For. Frontend: Card 'Privacidad y mis datos' en UserDashboardPage con boton 'Descargar mis datos (JSON)'. Tests 7/7 (iteration_85.json).
+- [x] **FASE 10d ARCO Rectificacion-Cancelacion-Oposicion LFPDPPP (Mayo 2026)**: POST /api/users/me/marketing-consent (opt_out bool) registra oposicion a marketing con timestamp. DELETE /api/users/me/account con body {password, confirmation='ELIMINAR'} hace soft-delete con redaccion completa: email->deleted_<id>@bookvia.deleted, full_name='[Cuenta eliminada]', phone/photo/birth_date/gender/city/country/favorites/saved_cards/stripe_customer_id wiped, password_hash aleatorio, active=False, account_deleted=True con timestamp e IP. Bloqueos: role=BUSINESS owner (delegado a admin, chequeado antes del password), bookings activas (confirmed/pending) y wallet.balance_mxn>0. Purga user_favorites+notifications. Anonimiza PII en bookings (client_name/email/phone) para que negocios no sigan viendo datos del usuario eliminado. Audit log action=account_deleted_by_user + IP. Email best-effort de confirmacion. Frontend: Card 'Privacidad y mis datos (ARCO)' en UserDashboardPage con 4 secciones (A: download, R: boton editar perfil, O: switch marketing, C: boton eliminar + dialog con password + typed ELIMINAR). Tests 12/12 (iteration_86.json).
+- [x] **FASE 11 Hardening del sistema de pagos (Mayo 2026)**: (1) services/stripe_refunds.py con issue_stripe_refund() que emite Stripe.Refund.create real con idempotency_key=refund-{tx_id}-{amount_cents}; solo refundea hasta stripe_charge_amount (excedente va a wallet). Guarda stripe_refunds[] en transaction + audit en refund_events. (2) Webhook /api/stripe/webhook ampliado con idempotencia fuerte (stripe_events collection con _id=event.id) y 5 nuevos eventos: charge.refunded (sincroniza refund_partial/full + mark_refunded), charge.dispute.created/funds_withdrawn (funds_state=disputed + business.payout_hold=true + notif admins), charge.dispute.closed (lost=refunded, won=available), payment_intent.payment_failed (tx.status=failed + notif user), checkout.session.expired (tx.status=expired + booking.expired + reversa de wallet_applied). (3) bookings.py cancel_booking_by_user: al elegir refund_to='card' invoca issue_stripe_refund real; fallback automatico a wallet si Stripe falla ('wallet_fallback'); excedente card-vs-wallet credita wallet. (4) Cron expire_holds_scheduler cada 5 min extiende expire_holds_task para tambien limpiar transactions status=created con held_until<now y reversar wallet_applied. (5) Admin POST /api/admin/bookings/{id}/refund-manual (amount, reason>=5, destination=card|wallet) + audit MANUAL_REFUND. POST /api/admin/businesses/{id}/payout-hold?hold=true|false para toggle + audit PAYOUT_HOLD_TOGGLE. (6) Webhook ahora devuelve 500 en errores para que Stripe reintente (idempotencia lo protege). Tests 24/24 (iteration_87.json).
 
 ### Frontend
 - [x] Busqueda "Cerca de ti" con OpenStreetMap, horarios apertura, badge Abierto/Cerrado
@@ -137,12 +139,12 @@ Auth Social: Emergent-managed Google Auth (solo clientes)
 - [x] Cloudflare delante del dominio (DDoS, WAF, oculta IP Railway) - COMPLETADO Feb 2026
 - [x] Cloudflare Access configurado (solo emails autorizados - beta privada) - COMPLETADO Feb 2026
 - [x] Dominio bookvia.app conectado a Vercel via Cloudflare - COMPLETADO Feb 2026
-- [ ] Rate limiting backend con slowapi (2-3h dev)
-- [ ] Proteccion fuerza bruta login (bloqueo tras 5 intentos + CAPTCHA) (3-4h dev)
+- [x] Rate limiting backend con slowapi - COMPLETADO May 2026
+- [x] Proteccion fuerza bruta login (lockout 30min tras 10 intentos) - COMPLETADO May 2026
 - [ ] reCAPTCHA v3 en formularios criticos (registro, login, contacto) (2-3h dev)
-- [ ] Headers HSTS + security headers (15min dev)
+- [x] Headers HSTS + security headers - COMPLETADO May 2026
 - [ ] Sentry integration para monitoreo errores (1h dev)
-- [ ] Logs de auditoria de acciones admin (4-6h dev)
+- [x] Logs de auditoria de acciones admin - COMPLETADO Abril 2026
 - [ ] Backups automaticos MongoDB Atlas verificados
 
 ### P0 - Decisiones pendientes usuario
@@ -175,3 +177,223 @@ Auth Social: Emergent-managed Google Auth (solo clientes)
 - Recordatorios citas: Scheduler cada 30 min, timezone Mexico.
 - TIMEZONE PARSING: Siempre usar new Date(dateString + 'T12:00:00') en frontend.
 - Admin TOTP: usar script /app/scripts/get_admin_totp.py para generar codigos.
+
+## Phase 12 (May 2026) - Admin Panel Coverage
+Panel admin ampliado para cubrir las fases 7-11 de backend:
+- **Finanzas extendida**: P&L de plataforma (fee fijo + margen Stripe, cobertura), Reconciliacion Stripe on-demand, Auditoria de reembolsos (stripe_refund_id, fees reales), liquidaciones dia 20 con CSV SPEI por banco.
+- **Cumplimiento (nuevo tab)**: Cuentas bloqueadas por fuerza bruta con boton desbloquear, estadisticas T&C (aceptacion por version, usuarios pendientes), Derechos ARCO (audit trail LFPDPPP), log de webhooks Stripe (idempotencia).
+- **Endpoints nuevos admin**: `/admin/platform/pnl`, `/admin/platform/reconcile-stripe`, `/admin/platform/reconciliation-issues`, `/admin/security/locked-accounts`, `/admin/security/unlock`, `/admin/terms/stats`, `/admin/terms/pending-users`, `/admin/compliance/arco-events`, `/admin/finance/refunds`, `/admin/stripe/webhook-events`.
+- **Testing**: 26/26 pytest cases pass (iteration_89), test file `/app/backend/tests/test_fase12_admin_panel.py`.
+- **Enum nuevo**: `AuditAction.SECURITY_UNLOCK = "security_unlock"`.
+
+## Phase 12d (May 2026) - Reporte Ejecutivo Mensual
+- **Servicio**: `/app/backend/services/monthly_pnl_report.py` (`build_monthly_report` + `send_monthly_report`) genera HTML ejecutivo con P&L cerrado del mes anterior, discrepancias Stripe, top-5 reembolsos y liquidaciones pendientes.
+- **Scheduler**: `monthly_pnl_report_scheduler` en `server.py` corre cada 30 min, se activa dia-1 de cada mes >= 13:00 UTC (07:00 CDMX), idempotente por `period_key`.
+- **Endpoints admin**: `GET /admin/platform/pnl-report/preview` (vista previa JSON), `POST /admin/platform/pnl-report/send` (envio manual, acepta `recipients` custom para test).
+- **UI**: Nuevo card "Reporte Ejecutivo Mensual" en tab Finanzas con boton "Enviar ahora" que pregunta destinatarios y muestra sent_to/failed con razon de fallo (util para detectar Resend domain no verificado).
+- **Testing**: 4/4 pytest pass en `/app/backend/tests/test_fase12d_pnl_report.py`.
+- **Nota produccion**: Requiere verificar dominio en Resend (tarea P2 pendiente). Mientras tanto el servicio reporta correctamente el error "domain not verified" al admin.
+
+## Phase 13 (May 2026) - Public Acquisition UX
+Preparacion del sitio para lanzamiento abierto al publico:
+- **BetaBanner** (`/app/frontend/src/components/BetaBanner.jsx`): banner fixed top dismissible anunciando "Bookvia esta en beta en CDMX". Coordina con Navbar via CSS var `--beta-banner-h` para apilarse sin overlap. Persiste dismissal en localStorage.
+- **PlatformStatsBar** (`/app/frontend/src/components/PlatformStatsBar.jsx`): 4 KPIs abajo del hero en homepage. Modo dual: cuando `bookings >= 50` o `reviews >= 10` muestra metricas reales con sufijo k/+; sino modo "early days" con "Reembolso garantizado Si / $50 MXN compensacion / CDMX beta" para no lucir vacio.
+- **Testimonials** (`/app/frontend/src/components/Testimonials.jsx`): 3 cards con estrellas, quote, avatar, nombre, rol/ciudad y disclaimer. Placeholders realistas en MX espanol listos para reemplazar con reales tras obtener autorizacion de usuarios beta.
+- **HowItWorksModal ajustado**: ahora espera a que se cierre el BetaBanner antes de auto-abrirse en primera visita, evitando competencia por atencion.
+- **Testing**: iteration_90 - 100% passing en frontend, sin regresiones en /help, /beneficios, /dashboard.
+
+## Phase 14 (May 2026) - Business Activation + Metrics
+Dashboard del negocio orientado a activacion y retencion:
+- **ProfileCompletionBanner** (`/app/frontend/src/components/ProfileCompletionBanner.jsx`): checklist de 7 items con radial progress %, gradient segun completitud (rojo/amber/verde), CTA contextual al primer pendiente. Auto-hide al 100%.
+- **Endpoint nuevo**: `GET /businesses/my/profile-completion` retorna `{percentage, done_count, items:[{key,done,label_es,label_en,action_path}]}`. Items: cover, photos>=3, services_with_price, description, hours, team>=1, kyc.
+- **Metricas de adquisicion**: `/businesses/my/dashboard-summary` extendido con `profile_views_30d`, `bookings_30d`, `conversion_pct`, `top_services[3]`. Nuevo row de 3 cards en tab Overview.
+- **Profile view tracking**: nueva coleccion `profile_views` con dedup idempotente por `(business_id, viewer_key, date)`. viewer_key = user_id si autenticado, X-Forwarded-For (para estabilidad tras k8s ingress) sino. Owners no incrementan sus propias vistas.
+- **Bug fix** `routers/bookings.py`: decorador `@router.get("/business/stats-detail")` estaba huerfano; `get_business_stats_detail` no estaba registrado como ruta. Corregido.
+- **Testing**: iteration_91 - 10/10 backend pass, frontend pass. Dedup verificado (5 curls anon = 1 row).
+
+## Phase 15 (May 2026) - Map + Mini-CRM
+Dos features P1 pensados para hacer crecer el marketplace sin depender de servicios pagados:
+- **Leaflet Map** (`/app/frontend/src/components/SearchLeafletMap.jsx`): reemplazo 100% de Google Maps por Leaflet + OpenStreetMap tiles (gratuito, sin API key). Pins con popup (nombre, rating, distance_km, CTA ver perfil), pin azul para ubicacion del usuario, auto-fit bounds, tile attribution de OSM.
+- **Mini-CRM del negocio** (`/app/frontend/src/components/BusinessClientsTab.jsx`): nueva pestana "Clientes" en Business Dashboard con:
+  * Tabla agregada desde `bookings` + `users` con total visitas, gasto, ultima cita, dias sin venir, tags automaticos (VIP 5+ visitas, Nuevo, No-show, Inactivo 90d+)
+  * Filtros: busqueda texto + filtro tag + 4 ordenamientos (recent/visits/spent/name)
+  * Notas privadas por cliente (max 500 chars, editables inline via modal) en coleccion `business_client_notes`
+  * Export CSV con derechos de portabilidad de datos
+- **Endpoints nuevos**:
+  * `GET /businesses/my/clients?q=&tag=&sort=&page=&limit=`
+  * `PUT /businesses/my/clients/{client_key}/note`
+  * `POST /businesses/my/clients/export` (CSV)
+- **Nueva coleccion**: `business_client_notes` con `(business_id, client_key, note, updated_at)`
+- **Testing**: iteration_92 - 12/12 backend pass, Clientes tab UI verificada con todos los data-testids (search, tag filter, sort, export, empty state), sin regresiones.
+
+## Phase 16 (May 2026) - City Waitlist
+Captura de demanda para ciudades sin negocios, critico para lanzamiento nacional con masa critica concentrada en CDMX:
+- **Router nuevo** (`/app/backend/routers/waitlist.py`): 5 endpoints publicos/admin:
+  * `POST /api/waitlist` (dedup por email+city+country, envia email best-effort)
+  * `GET /api/waitlist/stats` (top ciudades para social proof)
+  * `GET /api/admin/waitlist` (lista paginada)
+  * `GET /api/admin/waitlist/export` (CSV)
+  * `DELETE /api/admin/waitlist/{id}`
+- **CityWaitlistCard** (`/app/frontend/src/components/CityWaitlistCard.jsx`): card de captura con estado loading/success/ya-registrado, contador social "X personas esperando en Monterrey", mounted en SearchPage empty state cuando hay ciudad seleccionada.
+- **Admin UI**: nuevo card "Lista de espera por ciudad" en tab Cumplimiento con badges top-cities, ultimos 20 signups, export CSV.
+- **Nueva coleccion**: `waitlist_signups` con `(email, city, country_code, category_id?, source, ip_address, user_agent, created_at, notified_at?)`.
+- **Testing**: iteration_93 - 14/14 backend pass, flow publico end-to-end via Playwright verificado. Fallas de Resend (domain not verified) no rompen el signup.
+
+## Phase 16b (May 2026) - Waitlist Broadcast
+Activa la lista de espera: cuando Bookvia abra en una ciudad, admin puede mandar un "launch email" masivo en 2 clicks desde el panel:
+- **Endpoints nuevos**:
+  * `GET /api/admin/waitlist/cities/{city}/preview` - cuenta destinatarios + trae hasta 20 negocios activos en esa ciudad
+  * `POST /api/admin/waitlist/broadcast` - envia email personalizado con subject, mensaje custom (max 2000 chars, sanitizado contra XSS) y hasta 5 negocios destacados embebidos
+- **Idempotencia**: marca `notified_at` y `last_broadcast_subject` en cada signup enviado exitosamente; flag `only_unnotified` (default true) evita duplicados.
+- **Auditoria**: cada broadcast crea audit log con `action=waitlist_broadcast`, sent_count, failed_count, businesses_included.
+- **UI** (`/app/frontend/src/components/WaitlistBroadcastModal.jsx`): los badges de ciudad en el admin ahora son clickeables → abren modal con preview, asunto editable, textarea con char counter, picker de hasta 5 negocios (2-col grid), toggle only_unnotified, boton rojo "Enviar broadcast".
+- **Sanitization**: mensaje custom se escapa HTML y se parte por `\n\n` en parrafos seguros.
+- **Testing**: smoke test manual - preview retorna 3 destinatarios + 7 negocios, broadcast ejecuta audit log, 422 con subject < 5 chars, ciudad inexistente devuelve sent=0 sin error. Screenshots de modal confirmados.
+
+
+## Phase 17 (Feb 2026) - Review Moderation
+Sistema de reportes y moderacion de resenas para mantener la calidad publica del marketplace y cumplir con los principios anti-fraude:
+- **Endpoints nuevos** (`/app/backend/routers/reviews.py`):
+  * `POST /api/reviews/{review_id}/report` - cualquier usuario autenticado reporta una resena con `reason` (fake|offensive|off_topic|spam|other) + `detail` opcional. Dedup por (review_id, reporter_id) via `$setOnInsert`, incrementa `report_count` en la resena solo en la primera inserción.
+  * `GET /api/reviews/admin/reported?status_filter=pending|all|dismissed|removed&limit=50` - cola de moderacion admin con aggregation pipeline que agrupa por review_id, adjunta business_name + author_name + lista completa de reportes individuales.
+  * `POST /api/reviews/admin/{review_id}/resolve` (action=dismiss|remove) - dismiss mantiene la resena visible y marca reportes como dismissed; remove pone `hidden=true` en la resena y llama `_recompute_business_rating` para actualizar `rating` + `review_count` del negocio. Cada accion escribe audit log.
+- **Hardening** `GET /api/reviews/business/{id}` ahora tiene try/except por fila para que una resena legada malformada no tumbe todo el feed (solo loggea warning).
+- **Colecciones actualizadas**:
+  * `reviews` + campos `hidden`, `hidden_at`, `hidden_by_admin_id`, `hidden_reason`, `report_count`, `last_reported_at`, `dismissed_at`.
+  * Nueva `review_reports`: `{id, review_id, reporter_id, reporter_role, reason, detail, status(pending|dismissed|removed), created_at, resolved_at, resolved_by, resolution_note}`.
+- **UI publica** (`/app/frontend/src/components/ReviewReportButton.jsx`): boton inline "Reportar" en cada review card de BusinessProfilePage. Modal con 5 razones + textarea opcional 500 chars. Anon -> toast "Inicia sesion". Dedup backend se refleja como "Ya habias reportado" toast.
+- **UI admin** (Compliance tab en `/app/frontend/src/pages/AdminDashboardPage.jsx`): card `reported-reviews-card` con badge count; cada item muestra rating, texto, contexto de negocio y reportes (expandible), 2 botones: "Descartar" y "Ocultar resena" (confirm + prompt de nota interna).
+- **Testing**: iteration_94 - **12/12 pytest backend pass** (`/app/backend/tests/test_phase17_review_moderation.py`). Dedup + auth gating + dismiss-vs-remove + recompute + exclusion publica cubiertos. Publico ANON flow verificado via Playwright. Dos reviews legacy (rev_mod_test_001/002) que causaban 500 fueron purgados.
+
+## Pending User Actions (Pre-Launch)
+- [BLOCKED] **Resend DNS** - anadir registros DNS de `bookvia.app`/`bookvia.mx` en panel Resend. Codigo de emails esta correcto; solo falta que el usuario valide el dominio.
+- [BLOCKED] **Vercel merge** - Vercel Pro requiere PR manual; hacer merge manual en GitHub para que desplieguen los cambios.
+- [BLOCKED] **Consulta legal CONDUSEF (IFPE/FinTech)** - validacion legal antes del lanzamiento abierto.
+- [BACKLOG] Twilio A2P SMS - sigue en fallback log hasta que la plataforma este publicamente desplegada.
+
+## Roadmap Proximo
+- **P1** Boton "Reactivar clientes inactivos" en Mini-CRM del negocio - manda email/SMS a clientes con >90 dias sin visitar con link de oferta/recordatorio (convierte el CRM pasivo en activo).
+- **P2** PWA (manifest.json, service worker, install prompt, offline-friendly cache basico).
+- **P3** App nativa iOS/Android via Capacitor.
+- **P3** Refactor de `bookings.py` (~2100 lineas) y `AdminDashboardPage.jsx` (~3300 lineas) en submodulos.
+
+## Phase 18 (Feb 2026) - Unified Payout + Client Codes + Commission Transparency
+Antes del lanzamiento abierto se unificó el esquema de pagos y se dio transparencia completa al negocio para prevenir quejas y cumplir con PROFECO / CONDUSEF:
+
+### A. Payout schedule unificado
+- Se eliminó el selector triday/biweekly/monthly (y sus fees 10%/8%/4% inconsistentes con el backend). El backend SIEMPRE cobró 8.5% fijo → la UI ahora coincide con la realidad.
+- Calendario único: `payout_schedule='monthly_cutoff_20'` → corte día 20 de cada mes, depósito el día 1° del mes siguiente. Los cobros del 21 al fin de mes ruedan al siguiente ciclo.
+- Migración ejecutada: `db.businesses.updateMany({}, {$set: {payout_schedule: "monthly_cutoff_20"}})` (54 businesses).
+- `POST /api/auth/business-register` y `PUT /api/businesses/me` ahora fuerzan `monthly_cutoff_20` cuando `requires_deposit=true` (asimetría corregida).
+
+### B. CommissionBreakdownModal (transparencia de comisiones)
+- Nuevo componente `/app/frontend/src/components/CommissionBreakdownModal.jsx` con:
+  * Simulador en vivo (input de anticipo → calcula al vuelo cliente-paga / stripe-retiene / tú-recibes).
+  * Tabla desglosada: fee fijo Bookvia $8.20 MXN (IVA incluido, cliente), procesamiento Stripe 8.5% (negocio), política de reembolsos, suscripción mensual $49.99.
+  * Banner informativo Ley Fintech/SAT (LISR art. 113-A) con aviso de 30 días.
+  * Sección no-shows y chargebacks.
+  * Checkbox obligatorio de aceptación con versión `v1-2026-02` → bloquea "Continuar".
+- `BusinessCreate` ahora acepta `commission_terms_accepted` + `commission_terms_version`; persiste `commission_terms_accepted_at` (auditable CONDUSEF).
+- Validación en `BusinessRegisterPage`: imposible avanzar al paso 5 con `requires_deposit=true` sin aceptar el desglose.
+
+### C. Código único del cliente (CL-XXXXX)
+- El sistema ya generaba `CL-XXXXX` para cada usuario en registro (`services/public_code.py`) pero estaba oculto. Ahora:
+  * Visible en `UserDashboardPage` como badge copy-to-clipboard en el header del perfil.
+  * Visible en Mini-CRM (`BusinessClientsTab`) como chip clickeable al lado del nombre.
+  * Buscador del Mini-CRM acepta `CL-XXXXX` además de nombre/email/teléfono.
+  * Nuevo endpoint `GET /api/businesses/my/clients/lookup?code=CL-XXXXX` → devuelve stats del cliente scopeadas al negocio (total_bookings, total_visits, total_spent, noshow_count, last_visit, has_history_with_you). 400 en formato inválido, 404 si no existe.
+- Admin backfilled con su propio `CL-XXXXX`.
+- CSV export ahora incluye columna `bookvia_code` como primera columna.
+
+### Testing
+- iteration_95: **12/12 pytest pass** (`/app/backend/tests/test_phase18_payout_and_code.py`). Frontend code-review 100% verde (simulador matemáticamente correcto, validación de gate, testids legacy removidos, chips públicos presentes).
+
+
+## Phase 19 (Feb 2026) - Legal Hardening: Hash + Snapshot + Tax Regime
+Tres puntos críticos antes del lanzamiento abierto para blindar la transparencia y cumplimiento (CONDUSEF/PROFECO/SAT) — el cuarto punto crítico (CFDI 4.0) queda parqueado para post-lanzamiento.
+
+### A. Hash + snapshot legal de los términos aceptados
+- Nuevo `/app/frontend/src/lib/commissionTerms.js` como **fuente única de verdad** (versión, fees, payout cadence, reglas).
+- `CommissionBreakdownModal` ahora calcula `SHA-256` del JSON canónico del snapshot al aceptar y emite `{version, hash, snapshot}`.
+- Persistencia en `db.businesses`: `commission_terms_hash`, `commission_terms_snapshot`, `commission_terms_accepted_at`, `commission_terms_history` (array con todas las aceptaciones + IP + user_agent).
+- Nuevo endpoint `POST /api/businesses/me/commission-terms/accept` (auditable vía `audit_logs.action=commission_terms_accept`). Valida formato hex 64 chars, snapshot obligatorio, gate de manager.
+
+### B. Captura del régimen fiscal en registro
+- Nuevo Select obligatorio en paso 3 (Documents) de `BusinessRegisterPage` para negocios MX con 8 opciones: `PF_RESICO`, `PF_ACT_EMPRESARIAL`, `PF_HONORARIOS`, `PF_PLATAFORMAS`, `PM_GENERAL`, `PM_NO_LUCRATIVA`, `RIF`, `OTRO`.
+- Determina retenciones futuras cuando entren las disposiciones Ley Fintech / LISR 113-A.
+- Nuevo endpoint `PUT /api/businesses/me/tax-regime` con whitelist de regímenes válidos.
+- Campo opcional `tax_regime_certificate_url` (Constancia de Situación Fiscal) para subir cuando entre Fintech.
+
+### C. Vista read-only "Cobros" en BusinessSettingsPage
+- Nuevo componente `/app/frontend/src/components/CommissionTermsCard.jsx`.
+- Nueva pestaña `tab-commission` en BusinessSettingsPage (oculta para managers y para negocios sin anticipo).
+- Muestra: versión aceptada, fecha/hora con timezone MX, hash legal copiable, snapshot de fees vigentes, simulador (vía `view-commission-terms-btn`).
+- Cuando `CURRENT_VERSION` no coincide con `commission_terms.version` guardada → renderiza botón ámbar `reaccept-commission-terms-btn` que abre el modal y dispara la aceptación nueva. Sirve como gating cuando suba la versión por cambios regulatorios.
+- `/businesses/me/private-info` ahora expone el objeto `commission_terms` + `tax_regime` + `requires_deposit/deposit_amount/cancellation_days/payout_schedule`.
+
+### Testing
+- iteration_96: **22/22 pytest backend pass** (`/app/backend/tests/test_phase19_commission_terms_audit.py`). Frontend Playwright 100% verificado: tab Cobros, hash visible y copiable, modal abre con valores correctos, flow de re-aceptación al manipular versión legacy en DB.
+
+## Pending P0/P1 (legal/operativo) — POST lanzamiento
+- **CFDI 4.0 por el fee Bookvia** (parqueado a petición del usuario): integración con PAC (FacturAPI/Sw Sapien) para emitir factura del fee fijo $8.20 al negocio, prerequisito para CFDI de retenciones cuando entre Fintech.
+- **Tarifario público en landing** (`/tarifas` o `/beneficios`) con calculadora idéntica para que prospectos vean fees ANTES de registrarse (PROFECO).
+- **Estado de cuenta del corte día 1°** por negocio (PDF + email automático).
+- **Email confirmación con PDF** al aceptar términos de comisiones (audit trail vía Resend).
+
+
+## Phase 20 (Feb 2026) - Expediente legal del negocio (PDF + QR verificación)
+Generador de expediente legal autoservicio para los negocios + acceso admin para CONDUSEF/soporte.
+
+### Componentes
+- **Backend** `/app/backend/services/legal_file_service.py` con WeasyPrint 68.1 — aggregates identidad fiscal, representante legal, documentos KYC, T&C aceptados (+history), términos de comisiones (+history con todos los hashes), estado operativo, resumen financiero.
+- **PDF de 3 páginas** con branding Bookvia: header con logo rojo + línea separadora, 7 secciones numeradas, hash SHA-256 del documento visible al pie + QR code de verificación.
+- **3 endpoints nuevos**:
+  * `GET /api/businesses/me/legal-file.pdf` (owner only, 403 managers, audit log action=legal_file_download by=owner)
+  * `GET /api/admin/businesses/{id}/legal-file.pdf` (admin, audit log by=admin)
+  * `GET /api/businesses/verificar-expediente/{file_id}` (**público, sin auth**) devuelve minima info con RFC enmascarado + hash para verificación
+- **Persistencia**: cada descarga inserta en `db.business_legal_files {id, business_id, content_hash, issued_at, pdf_size_bytes, file_version}`.
+- **Frontend**:
+  * `CommissionTermsCard` ahora renderiza un `legal-file-download-card` con botón `download-legal-file-btn` que dispara la descarga (blob) y se muestra incluso para negocios sin anticipo.
+  * Admin: en `BusinessDetailModal` nuevo botón `admin-download-legal-file-btn`.
+  * Nueva ruta pública `/verificar-expediente/:fileId` → `LegalFileVerifyPage.jsx` con states ok/error, RFC enmascarado, hash copiable, chip de versión.
+
+### Testing
+- **iteration_97: 9/9 pytest pass** + frontend público 100% validado (`verify-file-id`, `verify-legal-name`, `verify-hash` todos verificados en contexto incognito). Botón de descarga en `/business/settings` bloqueado por modal de T&C v2026-05-01 (issue ortogonal — no-blocker).
+- PDF visualmente verificado con `analyze_file_tool`: profesional, sin cortes, branding consistente.
+
+### Artefactos de arquitectura añadidos
+- `weasyprint==68.1`, `qrcode==8.2`, `pdf2image` (dev) agregados a `requirements.txt`.
+- `poppler-utils` instalado en el sistema (apt) para utilidades de PDF.
+- Nueva colección MongoDB `business_legal_files`.
+
+
+## Phase 21 (Feb 2026) - Estado de cuenta del corte día 1° (PDF por negocio)
+Prerrequisito operacional para el primer corte real del 1° de marzo 2026 — cada negocio puede descargar un PDF con el detalle completo de cada liquidación día-20 para conciliar con su contador.
+
+### Componentes
+- **Servicio** `/app/backend/services/payout_statement.py` con WeasyPrint. PDF de 2 páginas con:
+  * Header Bookvia + folio
+  * Hero box verde con **"Neto a depositar"** + fecha de depósito programada
+  * 5 secciones: datos del beneficiario, resumen financiero, tabla de transacciones (fecha/cita/cliente/cobrado/stripe/neto), info adicional, política + footer con hash SHA-256 del documento
+  * Subtítulo tipo "Estado de cuenta del periodo del 1 al 20 de febrero de 2026 · Depósito programado el 1 de marzo de 2026"
+- **3 endpoints nuevos**:
+  * `GET /api/businesses/me/settlements` (lista de cortes del negocio)
+  * `GET /api/businesses/me/settlements/{id}/statement.pdf` (owner, ownership check con 404 cross-business)
+  * `GET /api/admin/settlements/{id}/statement.pdf` (admin, cualquier negocio)
+  * Audit log `action=payout_statement_download` con `by` ∈ {owner, admin}
+- **Email mejorado**: `send_settlement_notification` ahora envía 2 CTAs — "Descargar estado de cuenta" (deep-link `/business/finance?statement=<id>` con auto-download) + "Ver panel".
+- **Frontend**:
+  * `BusinessFinancePage`: botón `download-statement-<id>` con `FileDown` en cada row + auto-download cuando la URL tiene `?statement=<id>` (limpia el param con `history.replaceState`).
+  * `AdminDashboardPage`: botón `admin-download-statement-<id>` en cada row de la lista de liquidaciones.
+
+### Bugs encontrados y resueltos
+- **CRITICAL (fix aplicado)**: `_period_label_es` y `_deposit_date_es` no manejaban el prefijo `MX-` del `period_key` real en producción (`MX-2026-02`). Generaba texto sin sentido "del 1 al 20 de 2026 de MX" y fecha de depósito "—". Reemplazado por `_parse_period_key` que toma `parts[-2:]` y valida `1 <= month <= 12`. Verificado con PDF renderizado: "del 1 al 20 de febrero de 2026" + "1 de marzo de 2026" ✅.
+
+### Testing
+- **iteration_98: 13/13 pytest pass** (tras fix del period_key). Backend 100%.
+- Frontend source review verde (Playwright bloqueado por auth-context storage — mismo patrón que fases 20 y 97).
+- PDF verificado visualmente por `analyze_file_tool` con las 3 aserciones clave de fecha pasando.
+
+### Reutilización Fase 20
+- ~70% del boilerplate de template/branding/hash reutilizado del legal_file_service. Mantuvimos separación de servicios para testeabilidad y claridad.
+

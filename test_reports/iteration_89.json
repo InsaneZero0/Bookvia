@@ -1,0 +1,59 @@
+{
+  "summary": "Phase 12 admin panel coverage testing (8 ops gaps). Backend: 26/26 pytest cases passed for the new admin endpoints (P&L, reconciliation trigger + issues, locked accounts, unlock with audit log + 404, terms stats, terms pending users, ARCO events, refunds audit, stripe webhook events) plus auth-gate (10 endpoints reject without token) and regression on existing admin endpoints (stats, businesses/all, settlements). Frontend: admin login (TOTP), T&C grace-period modal dismissed via 'Mas tarde', new Cumplimiento tab and extended Finanzas tab both render correctly in Spanish with live data (Reconciliation found 2 real Stripe discrepancies, T&C version 2026-05-01 with 0/110 users + 0/54 businesses on current version, ARCO log empty, no console errors).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "GET /api/admin/security/locked-accounts",
+        "issue": "locked_until is stored/compared as ISO string. Works for the current writer (security_hardening also writes ISO strings) but it is fragile: any other future writer using a native datetime (BSON) would silently miss the {locked_until: {$gt: now_iso}} filter. Consider standardising to BSON datetimes or adding a runtime assertion."
+      },
+      {
+        "endpoint": "POST /api/admin/security/unlock",
+        "issue": "Audit log target_id is the raw lockout key 'ip|email'. The email portion is PII. Acceptable for audit purposes, just flagging for ARCO/data-retention review."
+      },
+      {
+        "endpoint": "GET /api/admin/terms/stats",
+        "issue": "Counts ALL businesses regardless of soft-delete or active status (no filter parallel to users). If/when business soft-delete lands, denominator will inflate. Mirror the {active!=False, account_deleted!=True} filter used for users."
+      },
+      {
+        "endpoint": "GET /api/admin/finance/refunds",
+        "issue": "Sum uses 'amount_mxn' but no schema reference is enforced (refund_events docs come from the webhook handler). If webhook ever stores cents under a different key the total silently becomes 0. Add a Pydantic model or unit test on the writer side."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "AdminDashboard / Cumplimiento", "issues": ["Spanish text uses 'Cumplimiento' (correct) but headings use 'Terminos' / 'Aceptacion' / 'Version' without accents. Bookvia is Spanish-first, recommend restoring accents (Términos, Aceptación, Versión, Año, Días, Día) to match brand voice and accessibility (screen readers)."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_fase12_admin_panel.py",
+    "/app/test_reports/pytest/fase12_admin_panel.xml"
+  ],
+  "action_items": [
+    "(Optional) Filter businesses count in /admin/terms/stats by active/non-deleted once that flag exists.",
+    "(Optional) Restore Spanish accents on Cumplimiento tab strings (Términos, Aceptación, Versión, Año, Días).",
+    "(Optional) Standardise locked_until to BSON datetime everywhere or add a writer-side test."
+  ],
+  "critical_code_review_comments": [
+    "admin.py 2518-2740: every new endpoint correctly gates on require_admin and excludes Mongo _id from output (admin_list_locked_accounts uses {attempts: 0} projection but doesn't strip _id; instead it manually projects to a dict with key/ip/email/last_attempt_at/locked_until — safe).",
+    "admin.py admin_unlock_account: idempotency-good (404 if delete_count==0), audit log written with SECURITY_UNLOCK + request context. Verified via DB read in test_unlock_removes_entry_and_audits.",
+    "admin.py admin_terms_stats: division-by-zero guarded by _pct(n,d). Returns is_hard_block_now flag to support UI gating after grace_period.",
+    "admin.py admin_arco_events: $in on action correctly groups Access (personal_data_export) and Cancellation (account_deleted_by_user); summary dict pre-initialised so missing actions still appear with 0.",
+    "admin.py admin_stripe_webhook_events: stripe_events uses event.id as _id; endpoint correctly maps _id -> event_id in payload (no ObjectId leak).",
+    "admin.py admin_reconciliation_issues / admin_list_refunds: both use {_id:0} projection — clean.",
+    "AdminDashboardPage.jsx: loadFinance/loadCompliance correctly grouped via Promise.all and gated by activeTab; has loading states (financeLoading/complianceLoading) and a Refresh button on Compliance — meets error-state guideline."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_fase12_admin_panel.py (new - 26 pytest cases)"
+  ],
+  "success_rate": {"backend": "100% (26/26)", "frontend": "100% (login + T&C dismiss + both tabs render with live data)"},
+  "test_credentials": "Super Admin zamorachapa50@gmail.com / RainbowLol3133! + TOTP via /app/scripts/get_admin_totp.py. No new test users created.",
+  "seed_data_creation": "TestSecurityLockouts seeds one TEST_F12B_-prefixed brute_force_attempts doc with 30-min lockout, then verifies it appears in /admin/security/locked-accounts and is removed by /admin/security/unlock (also asserts the audit_log row). Seed + audit row are deleted in fixture teardown.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "test_fase12_admin_panel.py covers the 10 Phase-12 admin endpoints + 3 regression endpoints in ~4s once admin login isn't rate-limited. Login fixture re-uses the pyotp-from-DB pattern. Frontend test logged in via /bv-ctrl/login, dismissed T&C modal via [data-testid='terms-reaccept-later'], and validated both [data-testid='admin-tab-finance'] and [data-testid='admin-tab-compliance'] panels render real data (P&L cards, reconciliation issue list with 2 real Stripe entries, terms stats card, ARCO/refunds/webhook logs). No regressions in /admin/stats, /admin/businesses/all, /admin/settlements.",
+  "rca of the issue": "N/A — no failing functionality. Issues listed under backend.minor and frontend.design are non-blocking polish items."
+}

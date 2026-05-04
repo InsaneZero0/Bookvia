@@ -13,6 +13,7 @@ import { useAuth } from '@/lib/auth';
 import { useI18n } from '@/lib/i18n';
 import { businessesAPI } from '@/lib/api';
 import GoogleMapDraggable from '@/components/GoogleMapComponents';
+import CommissionTermsCard from '@/components/CommissionTermsCard';
 import { toast } from 'sonner';
 import {
   ArrowLeft, Mail, Phone, User, ShieldX, MapPin, Search, Loader2,
@@ -263,6 +264,7 @@ export default function BusinessSettingsPage() {
     { id: 'hours', label: t('Horarios', 'Hours'), icon: Clock },
     { id: 'notifications', label: t('Notificaciones', 'Notifications'), icon: Bell },
     { id: 'documents', label: t('Documentos', 'Documents'), icon: FileText },
+    { id: 'commission', label: t('Cobros', 'Payments'), icon: CreditCard },
     { id: 'subscription', label: t('Suscripcion', 'Subscription'), icon: CreditCard },
     { id: 'location', label: t('Ubicacion', 'Location'), icon: MapPin },
     { id: 'blacklist', label: t('Vetos', 'Bans'), icon: ShieldX },
@@ -296,7 +298,7 @@ export default function BusinessSettingsPage() {
 
         {/* Tabs */}
         <div className="flex gap-1 mb-6 overflow-x-auto pb-1" data-testid="settings-tabs">
-          {tabs.filter(tab => !(isManager && (tab.id === 'documents' || tab.id === 'subscription'))).map(tab => (
+          {tabs.filter(tab => !(isManager && (tab.id === 'documents' || tab.id === 'subscription' || tab.id === 'commission'))).map(tab => (
             <Button
               key={tab.id}
               variant={activeTab === tab.id ? 'default' : 'ghost'}
@@ -714,6 +716,15 @@ export default function BusinessSettingsPage() {
               )}
             </CardContent>
           </Card>
+        )}
+
+        {/* ===================== COMMISSION TERMS TAB (Phase 19) ===================== */}
+        {activeTab === 'commission' && privateInfo && !isManager && (
+          <CommissionTermsCard
+            privateInfo={privateInfo}
+            language={language}
+            onRefresh={loadData}
+          />
         )}
 
         {/* ===================== SUBSCRIPTION TAB ===================== */}

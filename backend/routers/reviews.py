@@ -108,11 +108,224 @@ async def create_review(review: ReviewCreate, token_data: TokenData = Depends(re
 async def get_business_reviews(business_id: str, page: int = 1, limit: int = 20):
     skip = (page - 1) * limit
     reviews = await db.reviews.find(
-        {"business_id": business_id},
+        {"business_id": business_id, "hidden": {"$ne": True}},
         {"_id": 0}
     ).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
-    
-    return [ReviewResponse(**r) for r in reviews]
+
+    out = []
+    for r in reviews:
+        try:
+            out.append(ReviewResponse(**r))
+        except Exception as e:
+            # Skip legacy/malformed rows instead of crashing the whole feed
+            logger.warning(f"Skipping malformed review {r.get('id')}: {e}")
+    return out
+
+
+# ========================== PHASE 17: REVIEW REPORTING ==========================
+
+
+class ReportReviewRequest(BaseModel):
+    reason: str  # "fake" | "offensive" | "off_topic" | "spam" | "other"
+    detail: Optional[str] = None
+
+
+@router.post("/{review_id}/report")
+async def report_review(
+    review_id: str,
+    payload: ReportReviewRequest,
+    request: Request,
+    token_data: TokenData = Depends(require_auth),
+):
+    """Flag a review for admin moderation. Anyone authenticated can
+    report; each reviewer can only report a review once (no-op on retry).
+    The review itself is NOT hidden automatically — moderation is manual.
+    """
+    review = await db.reviews.find_one({"id": review_id}, {"_id": 0, "id": 1})
+    if not review:
+        raise HTTPException(status_code=404, detail="Review not found")
+
+    valid_reasons = {"fake", "offensive", "off_topic", "spam", "other"}
+    reason = payload.reason.strip().lower()
+    if reason not in valid_reasons:
+        raise HTTPException(status_code=400, detail="Invalid reason")
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    res = await db.review_reports.update_one(
+        {"review_id": review_id, "reporter_id": token_data.user_id},
+        {"$setOnInsert": {
+            "id": generate_id(),
+            "review_id": review_id,
+            "reporter_id": token_data.user_id,
+            "reporter_role": getattr(token_data, "role", "user"),
+            "reason": reason,
+            "detail": (payload.detail or "")[:500],
+            "status": "pending",  # pending | dismissed | removed
+            "created_at": now_iso,
+        }},
+        upsert=True,
+    )
+    created = bool(res.upserted_id)
+
+    # Bump counters on the review itself so public queries can show them
+    if created:
+        await db.reviews.update_one(
+            {"id": review_id},
+            {"$inc": {"report_count": 1}, "$set": {"last_reported_at": now_iso}},
+        )
+    return {"ok": True, "already_reported": not created}
+
+
+# ========================== ADMIN: MODERATION QUEUE ==========================
+
+
+@router.get("/admin/reported")
+async def admin_list_reported_reviews(
+    status_filter: str = "pending",  # pending | all | dismissed | removed
+    limit: int = 50,
+    token_data: TokenData = Depends(require_admin),
+):
+    """List reviews that have at least one unresolved report, newest
+    report first. Each item embeds the full review text, business name,
+    author name and the list of individual reports for context."""
+    match = {}
+    if status_filter == "pending":
+        match["status"] = "pending"
+    elif status_filter in ("dismissed", "removed"):
+        match["status"] = status_filter
+
+    # Group reports by review_id to collapse duplicates
+    pipeline = [
+        {"$match": match} if match else {"$match": {}},
+        {"$sort": {"created_at": -1}},
+        {"$group": {
+            "_id": "$review_id",
+            "report_count": {"$sum": 1},
+            "reports": {"$push": {
+                "id": "$id", "reason": "$reason", "detail": "$detail",
+                "reporter_id": "$reporter_id", "reporter_role": "$reporter_role",
+                "status": "$status", "created_at": "$created_at",
+            }},
+            "last_reported_at": {"$max": "$created_at"},
+            "has_pending": {"$max": {"$cond": [{"$eq": ["$status", "pending"]}, 1, 0]}},
+        }},
+        {"$sort": {"last_reported_at": -1}},
+        {"$limit": max(1, min(limit, 200))},
+    ]
+    if status_filter == "pending":
+        # Keep only rows where at least one report is still pending
+        pipeline.append({"$match": {"has_pending": 1}})
+
+    groups = await db.review_reports.aggregate(pipeline).to_list(limit)
+
+    out = []
+    for g in groups:
+        review = await db.reviews.find_one({"id": g["_id"]}, {"_id": 0})
+        if not review:
+            continue
+        business = await db.businesses.find_one(
+            {"id": review.get("business_id")}, {"_id": 0, "name": 1, "slug": 1, "id": 1}
+        ) or {}
+        user = await db.users.find_one(
+            {"id": review.get("user_id")}, {"_id": 0, "full_name": 1, "email": 1}
+        ) or {}
+        out.append({
+            "review": {
+                **review,
+                "business_name": business.get("name"),
+                "business_slug": business.get("slug"),
+                "business_id": review.get("business_id"),
+                "author_name": user.get("full_name"),
+                "author_email": user.get("email"),
+            },
+            "report_count": g["report_count"],
+            "last_reported_at": g["last_reported_at"],
+            "reports": g["reports"],
+        })
+    return {"count": len(out), "items": out}
+
+
+class ResolveReportRequest(BaseModel):
+    action: str  # "dismiss" | "remove"
+    note: Optional[str] = None
+
+
+@router.post("/admin/{review_id}/resolve")
+async def admin_resolve_review(
+    review_id: str,
+    payload: ResolveReportRequest,
+    request: Request,
+    token_data: TokenData = Depends(require_admin),
+):
+    """Resolve all pending reports on a review.
+
+      * `dismiss` → reports closed as unfounded; review stays public
+      * `remove`  → review is hidden from public queries; reports marked removed
+    """
+    if payload.action not in ("dismiss", "remove"):
+        raise HTTPException(status_code=400, detail="Invalid action")
+
+    review = await db.reviews.find_one({"id": review_id}, {"_id": 0})
+    if not review:
+        raise HTTPException(status_code=404, detail="Review not found")
+
+    new_status = "dismissed" if payload.action == "dismiss" else "removed"
+    now_iso = datetime.now(timezone.utc).isoformat()
+    await db.review_reports.update_many(
+        {"review_id": review_id, "status": "pending"},
+        {"$set": {
+            "status": new_status, "resolved_at": now_iso,
+            "resolved_by": token_data.user_id,
+            "resolution_note": (payload.note or "")[:500],
+        }},
+    )
+
+    # Hide or re-expose the review itself
+    if payload.action == "remove":
+        await db.reviews.update_one(
+            {"id": review_id},
+            {"$set": {"hidden": True, "hidden_at": now_iso,
+                      "hidden_by_admin_id": token_data.user_id,
+                      "hidden_reason": (payload.note or "")[:200]}},
+        )
+        # Recompute business rating (excluding hidden reviews)
+        await _recompute_business_rating(review["business_id"])
+    else:
+        # Dismiss: ensure review is visible (in case it was hidden by a prior action)
+        await db.reviews.update_one(
+            {"id": review_id},
+            {"$set": {"hidden": False, "dismissed_at": now_iso}},
+        )
+        await _recompute_business_rating(review["business_id"])
+
+    await create_audit_log(
+        admin_id=token_data.user_id, admin_email=token_data.email,
+        action="review_moderation", target_type="review", target_id=review_id,
+        details={"action": payload.action, "business_id": review.get("business_id"),
+                 "note": payload.note or ""},
+        request=request,
+    )
+
+    return {"ok": True, "action": payload.action, "new_status": new_status}
+
+
+async def _recompute_business_rating(business_id: str) -> None:
+    """Refresh `rating` and `review_count` on a business after a
+    moderation change so public search / profile pages stay accurate."""
+    pipe = [
+        {"$match": {"business_id": business_id, "hidden": {"$ne": True}}},
+        {"$group": {"_id": None, "avg": {"$avg": "$rating"}, "n": {"$sum": 1}}},
+    ]
+    res = await db.reviews.aggregate(pipe).to_list(1)
+    if res:
+        avg = round(float(res[0].get("avg") or 0), 2)
+        n = int(res[0].get("n") or 0)
+    else:
+        avg, n = 0.0, 0
+    await db.businesses.update_one(
+        {"id": business_id},
+        {"$set": {"rating": avg, "review_count": n}},
+    )
 
 
 

@@ -1,0 +1,36 @@
+{
+  "summary": "Phase 14 Business Dashboard activation + metrics tested end-to-end. All 4 backend endpoints work correctly (profile-completion, dashboard-summary new fields, profile-view tracker, fixed bookings/business/stats-detail). Frontend dashboard renders banner (14%, 1/7) + 3 acquisition metric cards. 10/10 backend tests pass (1 skipped due to user creds).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/businesses/{id}", "issue": "Profile-view dedup uses request.client.host as viewer_key for anonymous users. Behind k8s ingress, 3 sequential anonymous curls from same external IP produced 2 view rows instead of 1 (ingress rotates upstream client_host across requests). Owner exclusion works correctly (owner hits do NOT increment). Consider using X-Forwarded-For first IP or a hashed (UA+IP) tuple to stabilize anon dedup."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "BusinessDashboardPage overview tab", "issues": ["i18n inconsistency: ProfileCompletionBanner uses English labels ('Complete your profile to get more bookings', '1 of 7 steps done', 'Cover photo or logo', 'At least 3 gallery photos', 'Business description', 'Operating hours', 'At least 1 team member', 'KYC documents verified') while the rest of the dashboard (metric cards, tabs, headers) is in Spanish ('Vistas a tu perfil', 'Conversion a reserva', 'Top servicios (30d)', 'Sin datos aun', 'Hoy', 'Esta semana', 'Resenas nuevas'). Banner appears to render label_en instead of label_es. Likely cause: ProfileCompletionBanner.jsx is hard-coded to English copy or i18n key resolution falls through to English. PRD says Spanish UI throughout."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_phase14_dashboard.py", "/app/test_reports/pytest/pytest_phase14_dashboard.xml"],
+  "action_items": [
+    "Switch ProfileCompletionBanner.jsx labels to Spanish (use item.label_es field returned by API instead of label_en, and translate the static strings 'Complete your profile to get more bookings' / 'X of Y steps done. 100% profiles get up to 3x more bookings.' / CTA text).",
+    "(Minor) Improve anon viewer_key dedup in _track_profile_view to use request.headers.get('x-forwarded-for', '').split(',')[0].strip() before falling back to request.client.host so 3 hits from same browser produce a single dedup row behind k8s ingress."
+  ],
+  "critical_code_review_comments": [
+    "_track_profile_view in routers/businesses.py uses datetime.now() twice in the upsert (line 198 for 'day' and inside $setOnInsert for first_seen_at) which is fine but creates two clock reads — acceptable.",
+    "get_profile_completion treats workers_count via {active: True} but services_priced uses {active: {$ne: False}} (legacy services with no 'active' field count). Inconsistent boolean treatment between collections — consider unifying.",
+    "dashboard-summary: top_services pipeline includes ALL bookings (HOLD/cancelled/completed) in the count because there is no status filter. If business wants 'top by completed revenue' the count may overstate by including HOLD bookings. Consider {status: {$in: ['completed','confirmed']}} match in pipeline.",
+    "Phase 14 profile_views collection has no TTL or unique compound index documented; over time table will grow without bound. Recommend creating compound index {business_id:1, viewer_key:1, date:1} unique + a TTL on first_seen_at to auto-purge >90d for GDPR.",
+    "ProfileCompletionBanner labels are not internationalized — should use the label_es / label_en fields returned by the API (already provided) keyed off the user/i18n locale."
+  ],
+  "updated_files": ["/app/backend/tests/test_phase14_dashboard.py"],
+  "success_rate": {"backend": "100% (10/10 tests, 1 skipped on user-token fixture)", "frontend": "100% (banner + 3 metric cards render with correct percentage and testids)"},
+  "test_credentials": "Used testbiz_dashboard@test.com / TestBiz123! per memory file. Regular user creds test@test.com / test123 returned non-200 on /api/auth/login (skip).",
+  "seed_data_creation": "None. Used existing testbiz_dashboard business which has only KYC verified (1/7 = 14%).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Iteration 91 covered Phase 14: profile-completion endpoint (7-item checklist, 14% for testbiz_dashboard), dashboard-summary new fields (profile_views_30d, bookings_30d, conversion_pct, top_services), profile-view tracker (owner skipped correctly; anon dedup partial behind ingress), and re-registered /api/bookings/business/stats-detail (today/pending/revenue/total all return 200 with bookings/count/total_revenue). Frontend banner data-testid=profile-completion-banner and biz-acquisition-metrics with top-services-card render correctly; main visual issue is English labels in banner versus Spanish elsewhere. Pytest results at /app/test_reports/pytest/pytest_phase14_dashboard.xml.",
+  "rca of the issue": "i18n drift: ProfileCompletionBanner.jsx renders English copy directly. The API helpfully returns both label_es and label_en in items[], but the component appears to read label_en (or hard-code English). Fix: change items[].label_en references to items[].label_es (or use existing i18n hook with locale) and translate banner header/footer/CTA strings to Spanish."
+}

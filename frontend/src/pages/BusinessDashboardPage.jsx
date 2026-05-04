@@ -23,6 +23,8 @@ import { es, enUS } from 'date-fns/locale';
 import { toast } from 'sonner';
 import ReportsTab from '@/components/ReportsTab';
 import AgendaTimeline from '@/components/AgendaTimeline';
+import { ProfileCompletionBanner } from '@/components/ProfileCompletionBanner';
+import BusinessClientsTab from '@/components/BusinessClientsTab';
 import {
   Calendar as CalendarIcon, DollarSign, Star, Users, Clock, CheckCircle2,
   XCircle, AlertTriangle, TrendingUp, Settings, UserCog, Image, Upload,
@@ -77,6 +79,7 @@ export default function BusinessDashboardPage() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [notifOpen, setNotifOpen] = useState(false);
   const [dashSummary, setDashSummary] = useState(null);
+  const [profileCompletion, setProfileCompletion] = useState(null);
   useEffect(() => {
     if (authLoading) return;
     if (!isAuthenticated || !isBusiness) {
@@ -186,6 +189,11 @@ export default function BusinessDashboardPage() {
         const sumRes = await businessesAPI.getDashboardSummary();
         setDashSummary(sumRes.data);
       } catch { setDashSummary(null); }
+      // Phase 14: profile completion checklist
+      try {
+        const compRes = await businessesAPI.getProfileCompletion();
+        setProfileCompletion(compRes.data);
+      } catch { setProfileCompletion(null); }
     } catch (error) {
       console.error('Error loading dashboard:', error);
       const detail = error?.response?.data?.detail || error?.message || 'Error desconocido';
@@ -725,6 +733,7 @@ export default function BusinessDashboardPage() {
           const visibleTabs = [
             { value: 'overview', show: hasPermission('view_agenda'), icon: BarChart3, label: language === 'es' ? 'Agenda' : 'Schedule' },
             { value: 'reports', show: hasPermission('view_reports'), icon: TrendingUp, label: language === 'es' ? 'Reportes' : 'Reports' },
+            { value: 'clients', show: hasPermission('view_reports') || !isManager, icon: ClipboardList, label: language === 'es' ? 'Clientes' : 'Clients' },
             { value: 'services', show: hasPermission('edit_services'), icon: Briefcase, label: language === 'es' ? 'Servicios' : 'Services' },
             { value: 'team', show: hasPermission('view_team'), icon: Users, label: language === 'es' ? 'Equipo' : 'Team' },
             { value: 'closures', show: !isManager, icon: CalendarOff, label: language === 'es' ? 'Cierres' : 'Closures' },
@@ -746,6 +755,10 @@ export default function BusinessDashboardPage() {
 
           {/* ── Overview/Schedule Tab ────────────────── */}
           <TabsContent value="overview" className="mt-6">
+            <ProfileCompletionBanner
+              data={profileCompletion}
+              onGoToTab={(tab) => setActiveTab(tab)}
+            />
             {/* Dashboard Summary Cards */}
             {dashSummary && (
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6" data-testid="biz-dashboard-summary">
@@ -798,6 +811,64 @@ export default function BusinessDashboardPage() {
                 </Card>
               </div>
             )}
+
+            {/* Phase 14: Acquisition metrics (views → conversion → top services) */}
+            {dashSummary && (
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-6" data-testid="biz-acquisition-metrics">
+                <Card>
+                  <CardContent className="p-4">
+                    <div className="flex items-center gap-2 mb-1">
+                      <div className="p-1.5 rounded-lg bg-sky-50"><Eye className="h-4 w-4 text-sky-600" /></div>
+                      <span className="text-xs text-muted-foreground">{t('Vistas a tu perfil', 'Profile views')}</span>
+                    </div>
+                    <p className="text-2xl font-heading font-bold">{dashSummary.profile_views_30d || 0}</p>
+                    <p className="text-xs text-muted-foreground">{t('ultimos 30 dias', 'last 30 days')}</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-4">
+                    <div className="flex items-center gap-2 mb-1">
+                      <div className="p-1.5 rounded-lg bg-emerald-50"><TrendingUp className="h-4 w-4 text-emerald-600" /></div>
+                      <span className="text-xs text-muted-foreground">{t('Conversion a reserva', 'View-to-booking')}</span>
+                    </div>
+                    <p className="text-2xl font-heading font-bold">
+                      {dashSummary.profile_views_30d > 0 ? `${dashSummary.conversion_pct}%` : '—'}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {dashSummary.bookings_30d || 0} / {dashSummary.profile_views_30d || 0} {t('vistas', 'views')}
+                    </p>
+                  </CardContent>
+                </Card>
+                <Card data-testid="top-services-card">
+                  <CardContent className="p-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="p-1.5 rounded-lg bg-rose-50"><BarChart3 className="h-4 w-4 text-rose-600" /></div>
+                      <span className="text-xs text-muted-foreground">{t('Top servicios (30d)', 'Top services (30d)')}</span>
+                    </div>
+                    {dashSummary.top_services && dashSummary.top_services.length > 0 ? (
+                      <ol className="space-y-1.5">
+                        {dashSummary.top_services.map((s, i) => (
+                          <li key={s.service_id} className="flex items-center justify-between text-xs gap-2" data-testid={`top-service-${i}`}>
+                            <span className="min-w-0 flex items-center gap-2">
+                              <span className="font-bold text-slate-500">{i + 1}.</span>
+                              <span className="truncate font-medium">{s.name}</span>
+                            </span>
+                            <span className="text-muted-foreground shrink-0 tabular-nums">
+                              {s.bookings} {t('res.', 'bk.')}
+                            </span>
+                          </li>
+                        ))}
+                      </ol>
+                    ) : (
+                      <p className="text-xs text-muted-foreground italic py-2">
+                        {t('Sin datos aun. Las reservas aparecen aqui cuando tengas actividad.', 'No data yet. Bookings show up here once you have activity.')}
+                      </p>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+
             <div className="grid lg:grid-cols-3 gap-6">
               <Card className="lg:col-span-1">
                 <CardHeader className="pb-2">
@@ -860,6 +931,11 @@ export default function BusinessDashboardPage() {
           {/* ── Reports Tab ─────────────────────────── */}
           <TabsContent value="reports" className="mt-6">
             <ReportsTab language={language} />
+          </TabsContent>
+
+          {/* ── Clients (mini CRM) Tab ──────────────── */}
+          <TabsContent value="clients" className="mt-6">
+            <BusinessClientsTab />
           </TabsContent>
 
           {/* ── Services Tab ─────────────────────────── */}

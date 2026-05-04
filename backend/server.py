@@ -42,6 +42,7 @@ from routers.finance import router as finance_router
 from routers.system import router as system_router
 from routers.seo import seo_router
 from routers.terms import router as terms_router  # Fase 10
+from routers.waitlist import router as waitlist_router, admin_router as waitlist_admin_router  # Fase 16
 
 api_router.include_router(auth_router)
 api_router.include_router(users_router)
@@ -56,6 +57,8 @@ api_router.include_router(notifications_router)
 api_router.include_router(finance_router)
 api_router.include_router(system_router)
 api_router.include_router(terms_router)
+api_router.include_router(waitlist_router)
+api_router.include_router(waitlist_admin_router)
 
 # SEO routes at root level (no /api prefix for sitemap/robots)
 app.include_router(seo_router)
@@ -82,6 +85,15 @@ class HTTPSRedirectMiddleware(BaseHTTPMiddleware):
 
 
 app.add_middleware(HTTPSRedirectMiddleware)
+
+# Fase 12a: security headers (HSTS, X-Content-Type-Options, etc.)
+from core.security_hardening import limiter, security_headers_middleware  # noqa: E402
+from slowapi.errors import RateLimitExceeded  # noqa: E402
+from slowapi import _rate_limit_exceeded_handler  # noqa: E402
+
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.middleware("http")(security_headers_middleware)
 
 app.add_middleware(
     CORSMiddleware,
@@ -221,6 +233,9 @@ async def startup_event():
     asyncio.create_task(wallet_expiration_scheduler())
     asyncio.create_task(funds_state_scheduler())
     asyncio.create_task(settlement_day20_scheduler())
+    asyncio.create_task(expire_holds_scheduler())
+    asyncio.create_task(stripe_reconciliation_scheduler())
+    asyncio.create_task(monthly_pnl_report_scheduler())
 
 
 # ========================== BACKGROUND SCHEDULERS ==========================
@@ -484,3 +499,70 @@ async def settlement_day20_scheduler():
             logger.error(f"Settlement day-20 scheduler error: {e}")
         # Check every hour
         await asyncio.sleep(3600)
+
+
+
+async def expire_holds_scheduler():
+    """Fase 11: runs `expire_holds_task` every 5 min to release stale
+    transactions that never made it to PAID (client abandoned Stripe).
+    """
+    logger.info("Expire-holds scheduler started")
+    await asyncio.sleep(60)
+    while True:
+        try:
+            from routers.payments import expire_holds_task
+            count = await expire_holds_task()
+            if count:
+                logger.info(f"[expire_holds] released {count} stale transactions")
+        except Exception as e:
+            logger.error(f"expire_holds scheduler error: {e}")
+        await asyncio.sleep(300)
+
+
+async def stripe_reconciliation_scheduler():
+    """Fase 12c: runs daily at ~04:00 UTC (22:00 CDMX, low traffic) a
+    reconciliation against stripe.BalanceTransaction.list for the
+    previous UTC day.
+    """
+    logger.info("Stripe reconciliation scheduler started")
+    last_run_date = None
+    await asyncio.sleep(60)
+    while True:
+        try:
+            now = datetime.now(timezone.utc)
+            today_key = now.strftime("%Y-%m-%d")
+            if now.hour >= 4 and last_run_date != today_key:
+                from services.reconciliation import reconcile_with_stripe
+                res = await reconcile_with_stripe()
+                logger.info(f"[stripe_reconcile] {res}")
+                last_run_date = today_key
+        except Exception as e:
+            logger.error(f"Stripe reconciliation scheduler error: {e}")
+        await asyncio.sleep(1800)  # every 30 min check if it's time to run
+
+
+async def monthly_pnl_report_scheduler():
+    """Fase 12d: emails the executive P&L digest to every admin on day-1
+    of each month around 13:00 UTC (07:00 CDMX). Idempotent: stores the
+    last successfully processed period in memory so hot-reloads don't
+    double-send inside the same run hour window.
+    """
+    logger.info("Monthly P&L report scheduler started")
+    last_period = None
+    await asyncio.sleep(180)
+    while True:
+        try:
+            now = datetime.now(timezone.utc)
+            # Period key is the previous month being reported on.
+            prev_year = now.year if now.month > 1 else now.year - 1
+            prev_month = now.month - 1 if now.month > 1 else 12
+            period_key = f"{prev_year}-{str(prev_month).zfill(2)}"
+            if now.day == 1 and now.hour >= 13 and last_period != period_key:
+                from services.monthly_pnl_report import send_monthly_report
+                res = await send_monthly_report(now=now)
+                logger.info(f"[monthly_pnl_report] sent to {len(res.get('sent_to', []))} admins for {period_key}")
+                last_period = period_key
+        except Exception as e:
+            logger.error(f"Monthly P&L report scheduler error: {e}")
+        await asyncio.sleep(1800)  # every 30 min check if it's time to run
+

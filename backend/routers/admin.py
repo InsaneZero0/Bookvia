@@ -785,6 +785,72 @@ async def get_all_users(
 
 
 
+@router.get("/settlements/{settlement_id}/statement.pdf")
+async def admin_download_settlement_statement(
+    settlement_id: str, request: Request, token_data: TokenData = Depends(require_admin),
+):
+    """Admin downloads the PDF statement for any business's settlement."""
+    from fastapi.responses import Response as _Response
+    from services.payout_statement import generate_payout_statement_pdf
+
+    result = await generate_payout_statement_pdf(settlement_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Estado de cuenta no encontrado")
+
+    await create_audit_log(
+        admin_id=token_data.user_id, admin_email=token_data.email,
+        action="payout_statement_download", target_type="settlement",
+        target_id=settlement_id,
+        details={"by": "admin", "period_key": result.get("period_key")},
+        request=request,
+    )
+
+    safe_rfc = (result.get("rfc") or "sin_rfc").replace("/", "_")[:20]
+    period = result.get("period_key") or "sinperiodo"
+    filename = f"estado_de_cuenta_bookvia_{safe_rfc}_{period}.pdf"
+    return _Response(
+        content=result["pdf_bytes"], media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "X-Statement-Hash": result["content_hash"],
+        },
+    )
+
+
+@router.get("/businesses/{business_id}/legal-file.pdf")
+async def admin_download_business_legal_file(
+    business_id: str, request: Request, token_data: TokenData = Depends(require_admin),
+):
+    """Admin downloads any business's legal expediente PDF (for CONDUSEF
+    queries, support tickets, audit trails). Audit-logged."""
+    from fastapi.responses import Response as _Response
+    from services.legal_file_service import generate_business_legal_file
+
+    origin = request.headers.get("origin") or str(request.base_url).rstrip("/")
+    result = await generate_business_legal_file(business_id, origin)
+    if not result:
+        raise HTTPException(status_code=404, detail="Business not found")
+
+    await create_audit_log(
+        admin_id=token_data.user_id, admin_email=token_data.email,
+        action="legal_file_download", target_type="business",
+        target_id=business_id,
+        details={"file_id": result["file_id"], "by": "admin"},
+        request=request,
+    )
+
+    safe_rfc = (result.get("rfc") or "sin_rfc").replace("/", "_")[:20]
+    filename = f"expediente_bookvia_{safe_rfc}_{datetime.now(timezone.utc).strftime('%Y%m%d')}.pdf"
+    return _Response(
+        content=result["pdf_bytes"], media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "X-Legal-File-Id": result["file_id"],
+            "X-Legal-File-Hash": result["content_hash"],
+        },
+    )
+
+
 @router.get("/businesses/{business_id}/detail")
 async def get_business_detail(business_id: str, token_data: TokenData = Depends(require_admin)):
     """Get complete business detail for admin review including legal documents."""
@@ -2398,3 +2464,385 @@ async def admin_export_spei_csv(
             "Cache-Control": "no-store",
         },
     )
+
+
+
+# ========================== FASE 11: MANUAL REFUND ==========================
+
+
+class ManualRefundRequest(BaseModel):
+    amount: float
+    reason: str
+    destination: str = "card"  # card | wallet
+
+
+@router.post("/bookings/{booking_id}/refund-manual")
+async def admin_manual_refund(
+    booking_id: str,
+    payload: ManualRefundRequest,
+    request: Request,
+    token_data: TokenData = Depends(require_admin),
+):
+    """Admin-initiated refund - e.g. to settle a dispute won by the client
+    or correct a pricing bug. Emits a real Stripe refund if destination is
+    'card' and writes a matching wallet credit if 'wallet'.
+    """
+    if payload.amount <= 0:
+        raise HTTPException(status_code=400, detail="Amount must be positive")
+    if len(payload.reason.strip()) < 5:
+        raise HTTPException(status_code=400, detail="Reason too short (min 5 chars)")
+    if payload.destination not in ("card", "wallet"):
+        raise HTTPException(status_code=400, detail="destination must be 'card' or 'wallet'")
+
+    booking = await db.bookings.find_one({"id": booking_id}, {"_id": 0})
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+
+    transaction = await db.transactions.find_one(
+        {"booking_id": booking_id, "status": {"$in": ["paid", "refund_partial"]}},
+        {"_id": 0},
+    )
+    if not transaction:
+        raise HTTPException(status_code=404, detail="No paid transaction found for this booking")
+
+    result = {"destination": payload.destination, "amount": payload.amount}
+    if payload.destination == "card":
+        try:
+            from services.stripe_refunds import issue_stripe_refund
+            res = await issue_stripe_refund(
+                transaction=transaction,
+                amount_mxn=payload.amount,
+                reason=f"admin:{payload.reason[:100]}",
+                metadata={"admin_email": token_data.email},
+                actor=f"admin:{token_data.user_id}",
+            )
+            result.update(res)
+            await db.transactions.update_one(
+                {"id": transaction["id"]},
+                {"$inc": {"refund_amount": float(res["amount_refunded_on_card"])},
+                 "$set": {"status": "refund_partial"}},
+            )
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"Stripe refund failed: {e}")
+    else:
+        from services.wallet import credit_wallet, CREDIT_ADMIN_ADJUSTMENT
+        tx = await credit_wallet(
+            user_id=transaction["user_id"], amount=payload.amount,
+            tx_type=CREDIT_ADMIN_ADJUSTMENT, booking_id=booking_id,
+            description=f"Reembolso manual admin: {payload.reason[:120]}",
+        )
+        result["wallet_tx_id"] = tx["id"]
+        await db.transactions.update_one(
+            {"id": transaction["id"]},
+            {"$inc": {"refund_amount": float(payload.amount)},
+             "$set": {"status": "refund_partial"}},
+        )
+
+    await create_audit_log(
+        admin_id=token_data.user_id, admin_email=token_data.email,
+        action=AuditAction.MANUAL_REFUND, target_type="booking",
+        target_id=booking_id,
+        details={
+            "amount": payload.amount, "destination": payload.destination,
+            "reason": payload.reason, "transaction_id": transaction["id"],
+            "stripe_refund_id": result.get("stripe_refund_id"),
+        },
+        request=request,
+    )
+    return {"ok": True, **result}
+
+
+@router.post("/businesses/{business_id}/payout-hold")
+async def admin_set_payout_hold(
+    business_id: str,
+    request: Request,
+    hold: bool = True,
+    reason: Optional[str] = None,
+    token_data: TokenData = Depends(require_admin),
+):
+    """Toggle payout_hold for a business (used to release it after a
+    dispute has been resolved in the business's favor)."""
+    biz = await db.businesses.find_one({"id": business_id}, {"_id": 0, "id": 1})
+    if not biz:
+        raise HTTPException(status_code=404, detail="Business not found")
+    set_fields = {"payout_hold": bool(hold)}
+    if hold:
+        set_fields["payout_hold_reason"] = reason or "admin"
+    else:
+        set_fields["payout_hold_reason"] = None
+    await db.businesses.update_one({"id": business_id}, {"$set": set_fields})
+    await create_audit_log(
+        admin_id=token_data.user_id, admin_email=token_data.email,
+        action=AuditAction.PAYOUT_HOLD_TOGGLE, target_type="business",
+        target_id=business_id, details={"hold": hold, "reason": reason},
+        request=request,
+    )
+    return {"ok": True, "payout_hold": bool(hold)}
+
+
+
+# ========================== FASE 12b/c: P&L + STRIPE RECONCILIATION ==========================
+
+
+@router.get("/platform/pnl")
+async def admin_platform_pnl(
+    days: int = 30,
+    token_data: TokenData = Depends(require_admin),
+):
+    """P&L de Bookvia: ingreso fee fijo + margen sobre fees Stripe."""
+    from services.reconciliation import compute_platform_pnl
+    end = datetime.now(timezone.utc)
+    start = end - timedelta(days=max(1, min(days, 365)))
+    return await compute_platform_pnl(start=start, end=end)
+
+
+@router.post("/platform/reconcile-stripe")
+async def admin_reconcile_stripe(
+    date: Optional[str] = None,
+    token_data: TokenData = Depends(require_admin),
+):
+    """Reconciliacion manual contra stripe.BalanceTransaction.list para
+    una fecha (formato YYYY-MM-DD, default: ayer)."""
+    target = None
+    if date:
+        try:
+            target = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="date format must be YYYY-MM-DD")
+    from services.reconciliation import reconcile_with_stripe
+    return await reconcile_with_stripe(target_date=target)
+
+
+@router.get("/platform/reconciliation-issues")
+async def admin_reconciliation_issues(
+    limit: int = 50,
+    token_data: TokenData = Depends(require_admin),
+):
+    """Lista de discrepancias entre Stripe y nuestra DB detectadas por el
+    cron nocturno - para que el admin pueda investigar una por una."""
+    rows = await db.reconciliation_issues.find({}, {"_id": 0}).sort("detected_at", -1).limit(limit).to_list(limit)
+    return {"count": len(rows), "items": rows}
+
+
+# ========================== FASE 12d: SECURITY (BRUTE-FORCE LOCKOUTS) ==========================
+
+
+@router.get("/security/locked-accounts")
+async def admin_list_locked_accounts(token_data: TokenData = Depends(require_admin)):
+    """Accounts currently locked out by the brute-force guard.
+
+    Returns every `brute_force_attempts` doc whose `locked_until` is in
+    the future so the admin can unlock legitimate users that got caught
+    (e.g., shared NAT / office IP)."""
+    now_iso = datetime.now(timezone.utc).isoformat()
+    cursor = db.brute_force_attempts.find(
+        {"locked_until": {"$gt": now_iso}},
+        {"attempts": 0},  # trim the potentially-large list
+    ).sort("last_at", -1).limit(200)
+    rows = []
+    async for d in cursor:
+        rows.append({
+            "key": d.get("_id"),
+            "ip": d.get("ip"),
+            "email": d.get("email"),
+            "last_attempt_at": d.get("last_at"),
+            "locked_until": d.get("locked_until"),
+        })
+    return {"count": len(rows), "items": rows}
+
+
+class UnlockAccountRequest(BaseModel):
+    key: str
+
+
+@router.post("/security/unlock")
+async def admin_unlock_account(
+    payload: UnlockAccountRequest,
+    request: Request,
+    token_data: TokenData = Depends(require_admin),
+):
+    """Admin-unlock a brute-force-locked account (key = `ip|email`)."""
+    res = await db.brute_force_attempts.delete_one({"_id": payload.key})
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Lockout entry not found")
+    await create_audit_log(
+        admin_id=token_data.user_id, admin_email=token_data.email,
+        action=AuditAction.SECURITY_UNLOCK, target_type="brute_force_lockout",
+        target_id=payload.key, details={"unlocked": True}, request=request,
+    )
+    return {"ok": True, "key": payload.key}
+
+
+# ========================== FASE 10e: T&C ACCEPTANCE STATS ==========================
+
+
+@router.get("/terms/stats")
+async def admin_terms_stats(token_data: TokenData = Depends(require_admin)):
+    """Acceptance rate for the current TERMS_VERSION.
+
+    Returns totals for users (active only) and businesses, plus the
+    published version metadata so the panel can show "published on X,
+    grace ends on Y"."""
+    from core.config import TERMS_VERSION, TERMS_VERSION_PUBLISHED_AT, TERMS_GRACE_DAYS
+
+    total_users = await db.users.count_documents({"active": {"$ne": False}, "account_deleted": {"$ne": True}})
+    users_current = await db.users.count_documents({
+        "active": {"$ne": False},
+        "account_deleted": {"$ne": True},
+        "accepted_terms_version": TERMS_VERSION,
+    })
+    biz_filter = {"status": {"$nin": ["suspended", "deleted"]}}
+    total_businesses = await db.businesses.count_documents(biz_filter)
+    businesses_current = await db.businesses.count_documents({**biz_filter, "accepted_terms_version": TERMS_VERSION})
+
+    try:
+        published = datetime.fromisoformat(TERMS_VERSION_PUBLISHED_AT)
+        grace_ends = (published + timedelta(days=TERMS_GRACE_DAYS)).isoformat()
+        hard_block = datetime.now(timezone.utc) >= published + timedelta(days=TERMS_GRACE_DAYS)
+    except ValueError:
+        grace_ends = TERMS_VERSION_PUBLISHED_AT
+        hard_block = False
+
+    def _pct(n, d):
+        return round(100 * n / d, 1) if d else 0.0
+
+    return {
+        "current_version": TERMS_VERSION,
+        "published_at": TERMS_VERSION_PUBLISHED_AT,
+        "grace_period_days": TERMS_GRACE_DAYS,
+        "grace_period_ends_at": grace_ends,
+        "is_hard_block_now": hard_block,
+        "users": {
+            "total": total_users,
+            "accepted_current": users_current,
+            "pending": max(0, total_users - users_current),
+            "acceptance_pct": _pct(users_current, total_users),
+        },
+        "businesses": {
+            "total": total_businesses,
+            "accepted_current": businesses_current,
+            "pending": max(0, total_businesses - businesses_current),
+            "acceptance_pct": _pct(businesses_current, total_businesses),
+        },
+    }
+
+
+@router.get("/terms/pending-users")
+async def admin_terms_pending_users(
+    limit: int = 50,
+    token_data: TokenData = Depends(require_admin),
+):
+    """Users that have NOT accepted the current TERMS_VERSION (for
+    support outreach). Excludes deleted/inactive accounts."""
+    from core.config import TERMS_VERSION
+    cursor = db.users.find(
+        {
+            "active": {"$ne": False},
+            "account_deleted": {"$ne": True},
+            "accepted_terms_version": {"$ne": TERMS_VERSION},
+        },
+        {"_id": 0, "id": 1, "email": 1, "full_name": 1, "role": 1,
+         "accepted_terms_version": 1, "accepted_terms_at": 1, "created_at": 1},
+    ).sort("created_at", -1).limit(max(1, min(limit, 500)))
+    return {"items": await cursor.to_list(limit)}
+
+
+# ========================== FASE 10f: ARCO EVENTS (COMPLIANCE AUDIT) ==========================
+
+
+@router.get("/compliance/arco-events")
+async def admin_arco_events(
+    limit: int = 50,
+    token_data: TokenData = Depends(require_admin),
+):
+    """Audit trail of ARCO rights exercised by users.
+
+    Combines personal_data_export (Access) and account_deleted_by_user
+    (Cancellation) audit rows so the admin can report compliance."""
+    actions = ["personal_data_export", "account_deleted_by_user"]
+    cursor = db.audit_logs.find(
+        {"action": {"$in": actions}},
+        {"_id": 0},
+    ).sort("created_at", -1).limit(max(1, min(limit, 500)))
+    rows = await cursor.to_list(limit)
+    summary = {a: 0 for a in actions}
+    for r in rows:
+        summary[r.get("action", "")] = summary.get(r.get("action", ""), 0) + 1
+    return {"count": len(rows), "summary": summary, "items": rows}
+
+
+# ========================== FASE 11b: REFUND AUDIT ==========================
+
+
+@router.get("/finance/refunds")
+async def admin_list_refunds(
+    limit: int = 50,
+    token_data: TokenData = Depends(require_admin),
+):
+    """Recent Stripe refunds issued by Bookvia (from `refund_events`)."""
+    cursor = db.refund_events.find({}, {"_id": 0}).sort("created_at", -1).limit(max(1, min(limit, 500)))
+    rows = await cursor.to_list(limit)
+    total = sum(float(r.get("amount_mxn") or 0) for r in rows)
+    return {"count": len(rows), "total_refunded_mxn": round(total, 2), "items": rows}
+
+
+# ========================== FASE 11c: STRIPE WEBHOOK EVENTS LOG ==========================
+
+
+@router.get("/stripe/webhook-events")
+async def admin_stripe_webhook_events(
+    limit: int = 50,
+    token_data: TokenData = Depends(require_admin),
+):
+    """Last N Stripe webhook events received (for idempotency audit)."""
+    # stripe_events uses event.id as _id; we must include it for display.
+    cursor = db.stripe_events.find({}).sort("received_at", -1).limit(max(1, min(limit, 200)))
+    rows = []
+    async for d in cursor:
+        rows.append({
+            "event_id": d.get("_id"),
+            "event_type": d.get("event_type"),
+            "received_at": d.get("received_at"),
+        })
+    return {"count": len(rows), "items": rows}
+
+
+# ========================== FASE 12d: MONTHLY P&L EMAIL REPORT ==========================
+
+
+@router.get("/platform/pnl-report/preview")
+async def admin_pnl_report_preview(token_data: TokenData = Depends(require_admin)):
+    """Return the full payload of the monthly report for the previous
+    calendar month (same data that would be emailed). For admins to
+    preview before triggering the send."""
+    from services.monthly_pnl_report import build_monthly_report
+    return await build_monthly_report()
+
+
+class SendPnlReportRequest(BaseModel):
+    recipients: Optional[List[str]] = None  # if empty -> all admin emails
+
+
+@router.post("/platform/pnl-report/send")
+async def admin_pnl_report_send(
+    payload: SendPnlReportRequest,
+    request: Request,
+    token_data: TokenData = Depends(require_admin),
+):
+    """Manually trigger the monthly P&L email (previous calendar month)
+    to every admin, or to a custom recipients list for testing."""
+    from services.monthly_pnl_report import send_monthly_report
+    result = await send_monthly_report(recipients=payload.recipients or None)
+    await create_audit_log(
+        admin_id=token_data.user_id, admin_email=token_data.email,
+        action="pnl_report_send", target_type="monthly_pnl",
+        target_id=result["report"]["period_label"],
+        details={"sent_to_count": len(result["sent_to"])},
+        request=request,
+    )
+    return {
+        "ok": True,
+        "period": result["report"]["period_label"],
+        "sent_to": result["sent_to"],
+        "failed": result.get("failed", []),
+    }
