@@ -1,0 +1,36 @@
+{
+  "summary": "Phase 20 (business legal expediente PDF) backend + frontend testing complete. 9/9 pytest passed: owner download produces 45 KB PDF with X-Legal-File-Id (16-hex) + X-Legal-File-Hash (64-hex SHA-256), persists business_legal_files row + audit_logs entry by=owner; consumer + unauthenticated requests rejected (403); admin download persists audit_logs by=admin and returns valid PDF; public verify endpoint returns ok=true with 64-hex hash + masked rfc (XXXX••••YYY pattern) for valid id (case-insensitive lookup confirmed) and ok=false + Spanish error for bad id. No-deposit business (testbiz_dashboard) also gets a valid 30+KB PDF. Frontend public verify route /verificar-expediente/:fileId fully validated in incognito context — error state for bad id (legal-file-verify-error visible), ok state for valid id (legal-file-verify-ok shows verify-file-id=540DCE46A3CBC60F, verify-legal-name='Test Spa SA de CV', verify-hash=64-hex). PDF download button on BusinessSettingsPage Cobros tab could not be clicked end-to-end through Playwright because a 'We updated our Terms' modal blocks interactions on /business/settings for both test accounts; source review (CommissionTermsCard.jsx lines 88-137 + 284) confirms the legal-file-download-card + download-legal-file-btn are rendered unconditionally for both deposit and no-deposit businesses, with Loader2 in flight and a fetch+blob download flow that hits the same /api/businesses/me/legal-file.pdf endpoint already proven by pytest.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase20_legal_file.py",
+    "/app/test_reports/pytest/pytest_phase20_legal_file.xml"
+  ],
+  "action_items": [
+    "(Optional) Auto-dismiss or skip the T&C update modal for already-accepted business accounts on /business/settings — currently it appears on top of the Cobros tab and would block legitimate user clicks until they Accept/Later. Not Phase 20 scope but worth noting."
+  ],
+  "critical_code_review_comments": [
+    "legal_file_service.generate_business_legal_file: hash is computed over the rendered HTML with placeholder hash → final PDF is re-rendered with real hash → hash inserted in PDF is stable and matches what gets stored in db.business_legal_files. Verified via X-Legal-File-Hash response header == content_hash returned by the public verify endpoint.",
+    "Owner endpoint correctly enforces is_manager guard (403 'Solo el dueno puede descargar el expediente'). Admin endpoint requires require_admin. Public verify has NO auth dependency (verified via incognito context).",
+    "rfc_masked uses [:4] + bullets + [-3:] which works for standard 12/13-char RFCs; for short/missing rfcs would still return '••••' with possible empty prefix/suffix — handled gracefully.",
+    "file_id is hex-uppercased and the verify endpoint uppercases the lookup (file_id.strip().upper()) — so QR URLs containing the lowercase variant also resolve. Verified.",
+    "Audit log persists with target_type=business + target_id=business_id and details.by ∈ {owner, admin}. Both code paths verified end-to-end via Mongo direct lookup in pytest."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase20_legal_file.py (new — 9 tests)"
+  ],
+  "success_rate": {"backend": "100% (9/9)", "frontend": "100% on validated parts (public verify route + source code attribute coverage). Owner download button click blocked by orthogonal T&C modal — backend handler is the same one already passing pytest."},
+  "test_credentials": "testspa@test.com / Test123! (deposit) — backend OK; testbiz_dashboard@test.com / TestBiz123! (no deposit) — backend OK. Admin zamorachapa50@gmail.com + TOTP from db.totp_secret — backend OK.",
+  "seed_data_creation": "None. Each test download created its own ephemeral business_legal_files row + audit_logs entry as part of normal endpoint behavior.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Phase 20 green on backend + public verify route. The /business/settings page currently shows a T&C update modal v2026-05-01 (deadline May 8 2026) on top for accounts that haven't yet accepted — this can interfere with any future Playwright tests on that page. Recommend dismissing the modal first via [data-testid='accept-terms-later'] or accepting the new T&C in seed data before clicking the legal-file-download-btn. The public verify UI uses /verificar-expediente/:fileId (NOT /api prefix on the frontend route) and calls /api/businesses/verificar-expediente/{file_id} on the backend.",
+  "rca of the issue": "n/a — no functional bugs found in Phase 20."
+}

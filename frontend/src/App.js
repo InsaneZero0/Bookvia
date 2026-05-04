@@ -15,6 +15,7 @@ import SearchPage from '@/pages/SearchPage';
 import LoginPage from '@/pages/LoginPage';
 import RegisterPage from '@/pages/RegisterPage';
 import BusinessRegisterPage from '@/pages/BusinessRegisterPage';
+import LegalFileVerifyPage from '@/pages/LegalFileVerifyPage';
 import SubscriptionSuccessPage from '@/pages/SubscriptionSuccessPage';
 import BusinessProfilePage from '@/pages/BusinessProfilePage';
 import UserDashboardPage from '@/pages/UserDashboardPage';
@@ -101,6 +102,7 @@ function App() {
               <Route path="/business/settings" element={<Layout showFooter={false}><BusinessSettingsPage /></Layout>} />
               <Route path="/business/login" element={<LoginPage />} />
               <Route path="/business/register" element={<BusinessRegisterPage />} />
+              <Route path="/verificar-expediente/:fileId" element={<LegalFileVerifyPage />} />
               <Route path="/business/subscription/success" element={<Layout showFooter={false}><SubscriptionSuccessPage /></Layout>} />
               <Route path="/for-business" element={<Layout><ForBusinessPage /></Layout>} />
               {/* Business Profile Page - dynamic slug MUST be last */}

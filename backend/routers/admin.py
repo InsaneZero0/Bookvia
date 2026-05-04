@@ -785,6 +785,40 @@ async def get_all_users(
 
 
 
+@router.get("/businesses/{business_id}/legal-file.pdf")
+async def admin_download_business_legal_file(
+    business_id: str, request: Request, token_data: TokenData = Depends(require_admin),
+):
+    """Admin downloads any business's legal expediente PDF (for CONDUSEF
+    queries, support tickets, audit trails). Audit-logged."""
+    from fastapi.responses import Response as _Response
+    from services.legal_file_service import generate_business_legal_file
+
+    origin = request.headers.get("origin") or str(request.base_url).rstrip("/")
+    result = await generate_business_legal_file(business_id, origin)
+    if not result:
+        raise HTTPException(status_code=404, detail="Business not found")
+
+    await create_audit_log(
+        admin_id=token_data.user_id, admin_email=token_data.email,
+        action="legal_file_download", target_type="business",
+        target_id=business_id,
+        details={"file_id": result["file_id"], "by": "admin"},
+        request=request,
+    )
+
+    safe_rfc = (result.get("rfc") or "sin_rfc").replace("/", "_")[:20]
+    filename = f"expediente_bookvia_{safe_rfc}_{datetime.now(timezone.utc).strftime('%Y%m%d')}.pdf"
+    return _Response(
+        content=result["pdf_bytes"], media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "X-Legal-File-Id": result["file_id"],
+            "X-Legal-File-Hash": result["content_hash"],
+        },
+    )
+
+
 @router.get("/businesses/{business_id}/detail")
 async def get_business_detail(business_id: str, token_data: TokenData = Depends(require_admin)):
     """Get complete business detail for admin review including legal documents."""

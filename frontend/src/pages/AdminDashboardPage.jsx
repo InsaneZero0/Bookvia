@@ -190,6 +190,39 @@ function BusinessDetailDialog({ businessId, open, onClose, onApprove, onReject, 
               {biz.is_featured && <Badge className="bg-amber-100 text-amber-700"><Star className="h-3 w-3 mr-1" />Destacado</Badge>}
             </div>
 
+            {/* Admin legal file download */}
+            <div className="mt-3">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={async () => {
+                  try {
+                    const { API_BASE } = await import('@/lib/api');
+                    const token = localStorage.getItem('bookvia-token');
+                    const res = await fetch(
+                      `${API_BASE}/admin/businesses/${biz.id}/legal-file.pdf`,
+                      { headers: { Authorization: `Bearer ${token}` } }
+                    );
+                    if (!res.ok) throw new Error('download_failed');
+                    const blob = await res.blob();
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `expediente_bookvia_${biz.rfc || biz.id}_${new Date().toISOString().slice(0,10).replace(/-/g,'')}.pdf`;
+                    document.body.appendChild(a); a.click(); a.remove();
+                    URL.revokeObjectURL(url);
+                    toast.success(t('Expediente descargado', 'Legal file downloaded'));
+                  } catch {
+                    toast.error(t('Error al descargar', 'Download error'));
+                  }
+                }}
+                data-testid="admin-download-legal-file-btn"
+              >
+                <FileText className="h-3.5 w-3.5 mr-1" />
+                {t('Descargar expediente legal (PDF)', 'Download legal file (PDF)')}
+              </Button>
+            </div>
+
             {/* Stats row */}
             <div className="grid grid-cols-3 gap-3 mt-3">
               {[

@@ -1545,6 +1545,70 @@ async def update_my_tax_regime(
     return {"ok": True, "tax_regime": payload.tax_regime}
 
 
+@router.get("/me/legal-file.pdf")
+async def download_my_legal_file(
+    request: Request,
+    token_data: TokenData = Depends(require_business),
+):
+    """Download the business owner's legal file (expediente) as a PDF.
+    Only the owner (not managers) can download. Audit-logged."""
+    if token_data.is_manager:
+        raise HTTPException(status_code=403, detail="Solo el dueno puede descargar el expediente")
+
+    user = await db.users.find_one({"id": token_data.user_id}, {"_id": 0, "business_id": 1})
+    if not user or not user.get("business_id"):
+        raise HTTPException(status_code=404, detail="Business not found")
+
+    from fastapi.responses import Response as _Response
+    from services.legal_file_service import generate_business_legal_file
+
+    origin = request.headers.get("origin") or str(request.base_url).rstrip("/")
+    result = await generate_business_legal_file(user["business_id"], origin)
+    if not result:
+        raise HTTPException(status_code=404, detail="Business not found")
+
+    await create_audit_log(
+        admin_id=token_data.user_id, admin_email=token_data.email,
+        action="legal_file_download", target_type="business",
+        target_id=user["business_id"],
+        details={"file_id": result["file_id"], "by": "owner"},
+        request=request,
+    )
+
+    safe_rfc = (result.get("rfc") or "sin_rfc").replace("/", "_")[:20]
+    filename = f"expediente_bookvia_{safe_rfc}_{datetime.now(timezone.utc).strftime('%Y%m%d')}.pdf"
+    return _Response(
+        content=result["pdf_bytes"],
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "X-Legal-File-Id": result["file_id"],
+            "X-Legal-File-Hash": result["content_hash"],
+        },
+    )
+
+
+@router.get("/verificar-expediente/{file_id}")
+async def verify_legal_file(file_id: str):
+    """Public endpoint — anyone can verify that Bookvia issued a given
+    expediente. Returns minimal, non-sensitive data for transparency."""
+    record = await db.business_legal_files.find_one(
+        {"id": file_id.strip().upper()}, {"_id": 0}
+    )
+    if not record:
+        return {"ok": False, "error": "Expediente no encontrado. Verifica el folio."}
+    return {
+        "ok": True,
+        "file_id": record["id"],
+        "issued_at": record.get("issued_at"),
+        "legal_name": record.get("legal_name"),
+        "rfc_masked": (record.get("rfc") or "")[:4] + "••••" + (record.get("rfc") or "")[-3:],
+        "public_code": record.get("public_code"),
+        "content_hash": record.get("content_hash"),
+        "file_version": record.get("file_version"),
+    }
+
+
 @router.put("/me/legal-docs")
 async def update_my_legal_docs(
     payload: BusinessLegalDocsUpdate,

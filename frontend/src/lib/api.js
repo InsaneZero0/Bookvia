@@ -17,6 +17,7 @@ const getBackendUrl = () => {
 
 const BACKEND_URL = getBackendUrl();
 const API_BASE = `${BACKEND_URL}/api`;
+export { API_BASE };
 
 // Create axios instance
 const api = axios.create({
@@ -217,6 +218,8 @@ export const businessesAPI = {
   lookupClientByCode: (code) => api.get('/businesses/my/clients/lookup', { params: { code } }),
   acceptCommissionTerms: (data) => api.post('/businesses/me/commission-terms/accept', data),
   updateTaxRegime: (taxRegime, certificateUrl) => api.put('/businesses/me/tax-regime', { tax_regime: taxRegime, tax_regime_certificate_url: certificateUrl || null }),
+  downloadLegalFile: () => api.get('/businesses/me/legal-file.pdf', { responseType: 'blob' }),
+  verifyLegalFile: (fileId) => api.get(`/businesses/verificar-expediente/${fileId}`),
   getClientHistory: (userId) => api.get(`/businesses/my/client-history/${userId}`),
   getMyBusiness: () => api.get('/businesses/me'),
   updateBusiness: (data) => api.put('/businesses/me', data),

@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import {
   CreditCard, Calendar, ShieldCheck, FileText, AlertTriangle,
-  Copy, RefreshCw, Eye,
+  Copy, RefreshCw, Eye, Download, Loader2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -61,22 +61,86 @@ export default function CommissionTermsCard({ privateInfo, onRefresh, language =
     setSubmitting(false);
   };
 
+  const [downloadingLegal, setDownloadingLegal] = useState(false);
+  const handleDownloadLegalFile = async () => {
+    setDownloadingLegal(true);
+    try {
+      const res = await businessesAPI.downloadLegalFile();
+      const blob = new Blob([res.data], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const rfc = privateInfo?.rfc || 'negocio';
+      const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+      a.download = `expediente_bookvia_${rfc}_${today}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast.success(t('Expediente descargado', 'Legal file downloaded'));
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || t('Error al descargar', 'Download error'));
+    }
+    setDownloadingLegal(false);
+  };
+
+  // Legal file download card — available regardless of deposit config
+  const legalFileCard = (
+    <Card className="mt-4" data-testid="legal-file-download-card">
+      <CardHeader>
+        <CardTitle className="text-base font-heading flex items-center gap-2">
+          <FileText className="h-4 w-4 text-[#F05D5E]" />
+          {t('Expediente legal del negocio', 'Business legal file')}
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <p className="text-sm text-muted-foreground leading-relaxed">
+          {t(
+            'Descarga un PDF con todos tus datos fiscales, documentos KYC, T&C aceptados, términos de comisiones con hashes y QR de verificación pública. Útil para entregar a tu contador o en caso de auditorías CONDUSEF/SAT.',
+            'Download a PDF with your tax data, KYC documents, accepted T&C, commission terms with hashes and public-verification QR. Useful for your accountant or CONDUSEF/SAT audits.',
+          )}
+        </p>
+        <Button
+          className="mt-3 bg-slate-900 hover:bg-slate-800 text-white"
+          onClick={handleDownloadLegalFile}
+          disabled={downloadingLegal || submitting}
+          data-testid="download-legal-file-btn"
+        >
+          {downloadingLegal
+            ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+            : <Download className="h-4 w-4 mr-1.5" />}
+          {t('Descargar expediente en PDF', 'Download legal file PDF')}
+        </Button>
+        <p className="text-[11px] text-muted-foreground mt-2">
+          {t(
+            '* Cada descarga queda registrada en tu bitácora de auditoría.',
+            '* Each download is recorded in your audit log.',
+          )}
+        </p>
+      </CardContent>
+    </Card>
+  );
+
   // Negocios sin anticipo no necesitan ver este bloque
   if (!requiresDeposit) {
     return (
-      <Card data-testid="commission-terms-not-applicable">
-        <CardContent className="py-10 text-center text-sm text-muted-foreground">
-          <CreditCard className="h-10 w-10 mx-auto mb-2 text-muted-foreground/40" />
-          {t(
-            'Tu negocio no cobra anticipos, así que no aplica el esquema de comisiones de Bookvia. Si quieres activarlo, edita tu información en Ajustes → Cobros.',
-            'Your business does not collect deposits, so the Bookvia fee schedule does not apply. To activate it, edit your settings.',
-          )}
-        </CardContent>
-      </Card>
+      <>
+        <Card data-testid="commission-terms-not-applicable">
+          <CardContent className="py-10 text-center text-sm text-muted-foreground">
+            <CreditCard className="h-10 w-10 mx-auto mb-2 text-muted-foreground/40" />
+            {t(
+              'Tu negocio no cobra anticipos, así que no aplica el esquema de comisiones de Bookvia. Si quieres activarlo, edita tu información en Ajustes → Cobros.',
+              'Your business does not collect deposits, so the Bookvia fee schedule does not apply. To activate it, edit your settings.',
+            )}
+          </CardContent>
+        </Card>
+        {legalFileCard}
+      </>
     );
   }
 
   return (
+    <>
     <Card data-testid="commission-terms-card">
       <CardHeader>
         <CardTitle className="text-base font-heading flex items-center gap-2">
@@ -216,6 +280,9 @@ export default function CommissionTermsCard({ privateInfo, onRefresh, language =
         onAccept={handleAccept}
       />
     </Card>
+
+    {legalFileCard}
+    </>
   );
 }
 
