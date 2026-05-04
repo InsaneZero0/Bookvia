@@ -1370,7 +1370,12 @@ async def get_my_private_info(token_data: TokenData = Depends(require_business))
          "stripe_customer_id": 1, "subscription_status": 1,
          "stripe_subscription_id": 1, "subscription_started_at": 1,
          "name": 1, "email": 1, "phone": 1, "description": 1,
-         "notify_email": 1, "notify_sms": 1, "public_code": 1}
+         "notify_email": 1, "notify_sms": 1, "public_code": 1,
+         "tax_regime": 1, "tax_regime_certificate_url": 1,
+         "commission_terms_accepted_at": 1, "commission_terms_version": 1,
+         "commission_terms_hash": 1, "commission_terms_snapshot": 1,
+         "requires_deposit": 1, "deposit_amount": 1,
+         "cancellation_days": 1, "payout_schedule": 1}
     )
     if not business:
         raise HTTPException(status_code=404, detail="Business not found")
@@ -1429,7 +1434,113 @@ async def get_my_private_info(token_data: TokenData = Depends(require_business))
         "notify_email": business.get("notify_email", True),
         "notify_sms": business.get("notify_sms", True),
         "public_code": business.get("public_code"),
+        "tax_regime": business.get("tax_regime"),
+        "tax_regime_certificate_url": business.get("tax_regime_certificate_url"),
+        "commission_terms": {
+            "accepted_at": business.get("commission_terms_accepted_at"),
+            "version": business.get("commission_terms_version"),
+            "hash": business.get("commission_terms_hash"),
+            "snapshot": business.get("commission_terms_snapshot"),
+        } if business.get("commission_terms_accepted_at") else None,
+        "requires_deposit": business.get("requires_deposit", False),
+        "deposit_amount": business.get("deposit_amount", 0.0),
+        "cancellation_days": business.get("cancellation_days", 1),
+        "payout_schedule": business.get("payout_schedule"),
     }
+
+
+@router.post("/me/commission-terms/accept")
+async def accept_commission_terms(
+    payload: Dict[str, Any],
+    request: Request,
+    token_data: TokenData = Depends(require_business),
+):
+    """Business owner accepts (or re-accepts) the commission terms.
+    Persists version + hash + snapshot + acceptance timestamp + IP.
+
+    Body: {version: str, hash: str, snapshot: dict}
+    """
+    if token_data.is_manager:
+        raise HTTPException(status_code=403, detail="Solo el dueno puede aceptar términos de comisiones")
+
+    version = (payload.get("version") or "").strip()
+    hash_str = (payload.get("hash") or "").strip().lower()
+    snapshot = payload.get("snapshot") or {}
+    if not version or not hash_str or not isinstance(snapshot, dict):
+        raise HTTPException(status_code=400, detail="version, hash y snapshot son obligatorios")
+    if len(hash_str) != 64 or not all(c in "0123456789abcdef" for c in hash_str):
+        raise HTTPException(status_code=400, detail="hash debe ser SHA-256 hex (64 chars)")
+
+    user = await db.users.find_one({"id": token_data.user_id}, {"_id": 0, "business_id": 1})
+    if not user or not user.get("business_id"):
+        raise HTTPException(status_code=404, detail="Business not found")
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    ip = request.headers.get("x-forwarded-for", "").split(",")[0].strip() or (request.client.host if request.client else "")
+    ua = request.headers.get("user-agent", "")[:500]
+
+    history_entry = {
+        "version": version, "hash": hash_str, "snapshot": snapshot,
+        "accepted_at": now_iso, "ip": ip, "user_agent": ua,
+    }
+
+    await db.businesses.update_one(
+        {"id": user["business_id"]},
+        {
+            "$set": {
+                "commission_terms_version": version,
+                "commission_terms_hash": hash_str,
+                "commission_terms_snapshot": snapshot,
+                "commission_terms_accepted_at": now_iso,
+            },
+            "$push": {"commission_terms_history": history_entry},
+        },
+    )
+
+    await create_audit_log(
+        admin_id=token_data.user_id, admin_email=token_data.email,
+        action="commission_terms_accept", target_type="business",
+        target_id=user["business_id"],
+        details={"version": version, "hash": hash_str},
+        request=request,
+    )
+    return {"ok": True, "version": version, "hash": hash_str, "accepted_at": now_iso}
+
+
+class TaxRegimeUpdate(BaseModel):
+    tax_regime: str
+    tax_regime_certificate_url: Optional[str] = None
+
+
+@router.put("/me/tax-regime")
+async def update_my_tax_regime(
+    payload: TaxRegimeUpdate,
+    token_data: TokenData = Depends(require_business),
+):
+    """Business owner updates its tax regime + (optional) certificate URL.
+    Used for future Fintech withholding calculations (LISR 113-A)."""
+    if token_data.is_manager:
+        raise HTTPException(status_code=403, detail="Solo el dueno puede actualizar régimen fiscal")
+
+    valid = {"PF_RESICO", "PF_ACT_EMPRESARIAL", "PF_HONORARIOS",
+             "PF_PLATAFORMAS", "PM_GENERAL", "PM_NO_LUCRATIVA",
+             "RIF", "OTRO"}
+    if payload.tax_regime not in valid:
+        raise HTTPException(status_code=400, detail="Régimen fiscal no válido")
+
+    user = await db.users.find_one({"id": token_data.user_id}, {"_id": 0, "business_id": 1})
+    if not user or not user.get("business_id"):
+        raise HTTPException(status_code=404, detail="Business not found")
+
+    await db.businesses.update_one(
+        {"id": user["business_id"]},
+        {"$set": {
+            "tax_regime": payload.tax_regime,
+            "tax_regime_certificate_url": payload.tax_regime_certificate_url,
+            "tax_regime_updated_at": datetime.now(timezone.utc).isoformat(),
+        }},
+    )
+    return {"ok": True, "tax_regime": payload.tax_regime}
 
 
 @router.put("/me/legal-docs")

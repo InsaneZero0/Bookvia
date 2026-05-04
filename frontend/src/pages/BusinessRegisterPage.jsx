@@ -95,6 +95,7 @@ export default function BusinessRegisterPage() {
     // Documents
     rfc: '',
     legal_name: '',
+    tax_regime: '',
     ine_url: '',
     proof_of_address_url: '',
     // Account
@@ -107,6 +108,8 @@ export default function BusinessRegisterPage() {
     payout_schedule: 'monthly_cutoff_20',
     commission_terms_accepted: false,
     commission_terms_version: null,
+    commission_terms_hash: null,
+    commission_terms_snapshot: null,
     // Settings
     accepts_terms: false,
   });
@@ -307,6 +310,13 @@ export default function BusinessRegisterPage() {
             : 'RFC format is invalid');
           return false;
         }
+        // Tax regime mandatory for MX (used for future Fintech withholding calc)
+        if (formData.country !== 'US' && !formData.tax_regime) {
+          toast.error(language === 'es' 
+            ? 'Selecciona tu régimen fiscal'
+            : 'Select your tax regime');
+          return false;
+        }
         return true;
         
       case 3: // Account
@@ -410,6 +420,9 @@ export default function BusinessRegisterPage() {
         payout_schedule: formData.requires_deposit ? 'monthly_cutoff_20' : null,
         commission_terms_accepted: formData.requires_deposit ? !!formData.commission_terms_accepted : false,
         commission_terms_version: formData.requires_deposit && formData.commission_terms_accepted ? formData.commission_terms_version : null,
+        commission_terms_hash: formData.requires_deposit && formData.commission_terms_accepted ? formData.commission_terms_hash : null,
+        commission_terms_snapshot: formData.requires_deposit && formData.commission_terms_accepted ? formData.commission_terms_snapshot : null,
+        tax_regime: formData.country !== 'US' ? formData.tax_regime || null : null,
         owner_birth_date: ownerBirthDate,
         logo_url: logoUrl,
         cover_photo: coverUrl,
@@ -974,6 +987,54 @@ export default function BusinessRegisterPage() {
                           : '12 characters for companies, 13 for individuals')}
                     </p>
                   </div>
+
+                  {/* Tax regime (only for MX — used for future Fintech withholding calculations) */}
+                  {formData.country !== 'US' && (
+                    <div className="space-y-2">
+                      <Label htmlFor="tax_regime">
+                        {language === 'es' ? 'Régimen fiscal *' : 'Tax regime *'}
+                      </Label>
+                      <Select
+                        value={formData.tax_regime}
+                        onValueChange={(v) => setFormData(prev => ({ ...prev, tax_regime: v }))}
+                      >
+                        <SelectTrigger id="tax_regime" className="h-12" data-testid="tax-regime-select">
+                          <SelectValue placeholder={language === 'es' ? 'Selecciona tu régimen fiscal' : 'Select your tax regime'} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="PF_RESICO">
+                            {language === 'es' ? 'Persona Física — RESICO (Régimen Simplificado de Confianza)' : 'Individual — RESICO'}
+                          </SelectItem>
+                          <SelectItem value="PF_ACT_EMPRESARIAL">
+                            {language === 'es' ? 'Persona Física — Actividad Empresarial y Profesional' : 'Individual — Business activity'}
+                          </SelectItem>
+                          <SelectItem value="PF_HONORARIOS">
+                            {language === 'es' ? 'Persona Física — Honorarios / Servicios Profesionales' : 'Individual — Professional services'}
+                          </SelectItem>
+                          <SelectItem value="PF_PLATAFORMAS">
+                            {language === 'es' ? 'Persona Física — Plataformas Digitales (LISR 113-A)' : 'Individual — Digital Platforms (LISR 113-A)'}
+                          </SelectItem>
+                          <SelectItem value="PM_GENERAL">
+                            {language === 'es' ? 'Persona Moral — Régimen General' : 'Company — General regime'}
+                          </SelectItem>
+                          <SelectItem value="PM_NO_LUCRATIVA">
+                            {language === 'es' ? 'Persona Moral — No Lucrativa' : 'Company — Non-profit'}
+                          </SelectItem>
+                          <SelectItem value="RIF">
+                            {language === 'es' ? 'RIF (transitorio)' : 'RIF (transitional)'}
+                          </SelectItem>
+                          <SelectItem value="OTRO">
+                            {language === 'es' ? 'Otro / Aún no defino' : 'Other / Not sure yet'}
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground leading-relaxed">
+                        {language === 'es'
+                          ? 'Tu régimen determina las retenciones fiscales que aplicarán cuando entren las disposiciones de la Ley Fintech. Podrás actualizarlo después con tu Constancia de Situación Fiscal.'
+                          : 'Your regime determines the tax withholdings that will apply once the Fintech Law provisions kick in. You can update it later with your tax status certificate.'}
+                      </p>
+                    </div>
+                  )}
 
                   {/* ID Upload: INE for MX, Driver's License/ID for US */}
                   <div className="space-y-2">
@@ -1585,11 +1646,13 @@ export default function BusinessRegisterPage() {
         onOpenChange={setShowCommissionModal}
         language={language}
         initialAmount={Number(formData.deposit_amount) || 500}
-        onAccept={({ version }) => {
+        onAccept={({ version, hash, snapshot }) => {
           setFormData(prev => ({
             ...prev,
             commission_terms_accepted: true,
             commission_terms_version: version,
+            commission_terms_hash: hash,
+            commission_terms_snapshot: snapshot,
           }));
           toast.success(language === 'es'
             ? 'Términos de comisiones aceptados'

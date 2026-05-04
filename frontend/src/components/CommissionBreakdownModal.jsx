@@ -11,11 +11,13 @@ import {
   CreditCard, Info, Calendar, ShieldCheck, AlertTriangle,
   TrendingUp, FileText, Scale,
 } from 'lucide-react';
+import {
+  COMMISSION_TERMS_VERSION as TERMS_VERSION,
+  BOOKVIA_FEE_MXN, STRIPE_FEE_PCT,
+  buildCommissionTermsSnapshot, hashCommissionTermsSnapshot,
+} from '@/lib/commissionTerms';
 
-export const COMMISSION_TERMS_VERSION = 'v1-2026-02';
-
-const BOOKVIA_FEE_MXN = 8.20;
-const STRIPE_FEE_PCT = 0.085;
+export const COMMISSION_TERMS_VERSION = TERMS_VERSION;
 
 /**
  * Modal de transparencia de comisiones que el negocio debe leer y aceptar
@@ -46,9 +48,15 @@ export default function CommissionBreakdownModal({
   const fmt = (n) =>
     '$' + Number(n).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-  const handleConfirm = () => {
+  const handleConfirm = async () => {
     if (!accepted) return;
-    onAccept?.({ version: COMMISSION_TERMS_VERSION });
+    const snapshot = buildCommissionTermsSnapshot();
+    const hash = await hashCommissionTermsSnapshot(snapshot);
+    onAccept?.({
+      version: COMMISSION_TERMS_VERSION,
+      hash,
+      snapshot,
+    });
     onOpenChange?.(false);
   };
 

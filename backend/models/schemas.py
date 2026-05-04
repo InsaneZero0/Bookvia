@@ -110,9 +110,13 @@ class BusinessCreate(BaseModel):
     logo_url: Optional[str] = None
     cover_photo: Optional[str] = None
     custom_category_description: Optional[str] = None
-    # Commission terms acceptance (Phase 18)
+    # Commission terms acceptance (Phase 18 + 19)
     commission_terms_accepted: Optional[bool] = None
     commission_terms_version: Optional[str] = None
+    commission_terms_hash: Optional[str] = None
+    commission_terms_snapshot: Optional[Dict[str, Any]] = None
+    # Tax regime (Phase 19) — used for future Fintech withholding calculations
+    tax_regime: Optional[str] = None
 
 class BusinessResponse(BaseModel):
     model_config = ConfigDict(extra="ignore")
