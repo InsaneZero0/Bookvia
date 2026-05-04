@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/dialog';
 import { useAuth } from '@/lib/auth';
 import { useI18n } from '@/lib/i18n';
-import { adminAPI } from '@/lib/api';
+import { adminAPI, reviewsAPI } from '@/lib/api';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { toast } from 'sonner';
 import { WaitlistBroadcastModal } from '@/components/WaitlistBroadcastModal';
@@ -25,7 +25,7 @@ import {
   Eye, Star, Wallet, BarChart3, Loader2, MapPin, Phone, Mail, Globe,
   CreditCard, Briefcase, MessageSquare, Trash2, ExternalLink, TrendingUp,
   Tags, Settings, LifeBuoy, Plus, Pencil, Send, X, AlertCircle,
-  Trophy, Bell, Map, ToggleLeft, ToggleRight, FileBarChart, UserPlus, Key
+  Trophy, Bell, Map, ToggleLeft, ToggleRight, FileBarChart, UserPlus, Key, Flag
 } from 'lucide-react';
 
 const STATUS_COLORS = {
@@ -490,6 +490,8 @@ export default function AdminDashboardPage() {
   const [webhookEvents, setWebhookEvents] = useState([]);
   const [waitlistData, setWaitlistData] = useState(null);
   const [broadcastCity, setBroadcastCity] = useState(null);
+  const [reportedReviews, setReportedReviews] = useState([]);
+  const [resolvingReviewId, setResolvingReviewId] = useState(null);
 
   // Reviews tab
   const [reviews, setReviews] = useState([]);
@@ -2948,6 +2950,96 @@ export default function AdminDashboardPage() {
         {/* ============ COMPLIANCE TAB ============ */}
         {activeTab === 'compliance' && (
           <div className="space-y-6" data-testid="compliance-tab">
+            {/* Reported reviews moderation queue (Phase 17) */}
+            <Card data-testid="reported-reviews-card">
+              <CardHeader className="flex flex-row items-center justify-between">
+                <CardTitle className="font-heading flex items-center gap-2">
+                  <Flag className="h-5 w-5 text-red-500" />
+                  {t('Reseñas reportadas', 'Reported reviews')}
+                  <Badge className={reportedReviews.length > 0 ? 'bg-red-100 text-red-700' : 'bg-slate-100 text-slate-600'}>
+                    {reportedReviews.length}
+                  </Badge>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {reportedReviews.length === 0 ? (
+                  <div className="text-center py-6 text-sm text-muted-foreground">
+                    <CheckCircle2 className="h-10 w-10 text-green-500 mx-auto mb-2" />
+                    {t('No hay reseñas pendientes de moderar.', 'No reviews pending moderation.')}
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {reportedReviews.map(({ review, report_count, reports }) => (
+                      <div key={review.id} className="rounded-lg border border-red-200 bg-red-50/40 p-4" data-testid={`reported-review-${review.id}`}>
+                        <div className="flex items-start justify-between gap-3 mb-2">
+                          <div className="min-w-0 flex-1">
+                            <p className="font-medium text-sm">{review.author_name || '-'}{' '}
+                              <span className="text-muted-foreground font-normal">·</span>{' '}
+                              <span className="text-xs text-muted-foreground">{review.business_name}</span>
+                            </p>
+                            <div className="flex items-center gap-1 mt-0.5">
+                              {Array.from({ length: review.rating || 0 }).map((_, i) => (
+                                <Star key={i} className="h-3 w-3 fill-amber-400 text-amber-400" />
+                              ))}
+                              <span className="text-xs text-muted-foreground ml-2">{formatDate(review.created_at)}</span>
+                            </div>
+                          </div>
+                          <Badge className="bg-red-100 text-red-700 shrink-0">
+                            {report_count} {t('reporte(s)', 'report(s)')}
+                          </Badge>
+                        </div>
+
+                        {review.comment && (
+                          <blockquote className="text-sm text-slate-700 italic border-l-2 border-red-300 pl-3 my-2">
+                            "{review.comment}"
+                          </blockquote>
+                        )}
+
+                        <details className="text-xs text-muted-foreground mt-2">
+                          <summary className="cursor-pointer hover:text-foreground">
+                            {t('Ver razones del reporte', 'View report reasons')} ({reports.length})
+                          </summary>
+                          <ul className="mt-2 space-y-1 pl-3">
+                            {reports.map((r, i) => (
+                              <li key={i} className="border-l-2 border-slate-200 pl-2">
+                                <b>{r.reason}</b>
+                                {r.detail && <span> — {r.detail}</span>}
+                                <span className="text-[10px] text-muted-foreground ml-2">
+                                  {r.reporter_role} · {formatDate(r.created_at)}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        </details>
+
+                        <div className="flex gap-2 justify-end mt-3">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleResolveReview(review.id, 'dismiss')}
+                            disabled={resolvingReviewId === review.id}
+                            data-testid={`dismiss-review-${review.id}`}
+                          >
+                            {t('Descartar reporte', 'Dismiss')}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="destructive"
+                            onClick={() => handleResolveReview(review.id, 'remove')}
+                            disabled={resolvingReviewId === review.id}
+                            data-testid={`remove-review-${review.id}`}
+                          >
+                            <Trash2 className="h-3 w-3 mr-1" />
+                            {t('Ocultar reseña', 'Remove review')}
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
             {/* Locked accounts */}
             <Card data-testid="lockouts-card">
               <CardHeader className="flex flex-row items-center justify-between">

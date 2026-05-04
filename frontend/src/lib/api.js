@@ -271,6 +271,9 @@ export const bookingsAPI = {
 export const reviewsAPI = {
   create: (data) => api.post('/reviews/', data),
   getByBusiness: (businessId, params) => api.get(`/reviews/business/${businessId}`, { params }),
+  report: (reviewId, reason, detail) => api.post(`/reviews/${reviewId}/report`, { reason, detail: detail || null }),
+  adminListReported: (status_filter = 'pending', limit = 50) => api.get('/reviews/admin/reported', { params: { status_filter, limit } }),
+  adminResolve: (reviewId, action, note) => api.post(`/reviews/admin/${reviewId}/resolve`, { action, note: note || null }),
 };
 
 // Payments API

@@ -17,6 +17,7 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import { Carousel, CarouselContent, CarouselItem, CarouselPrevious, CarouselNext } from '@/components/ui/carousel';
 import { StarRating } from '@/components/StarRating';
+import { ReviewReportButton } from '@/components/ReviewReportButton';
 import { BusinessCard } from '@/components/BusinessCard';
 import { useI18n } from '@/lib/i18n';
 import { useAuth } from '@/lib/auth';
@@ -982,6 +983,9 @@ export default function BusinessProfilePage() {
                             {review.comment && (
                               <p className="text-sm text-muted-foreground mt-2 leading-relaxed">{review.comment}</p>
                             )}
+                            <div className="mt-2 flex justify-end">
+                              <ReviewReportButton reviewId={review.id} compact />
+                            </div>
                           </div>
                         </div>
                       </div>
