@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -71,12 +71,12 @@ export default function CommissionBreakdownModal({
             <CreditCard className="h-5 w-5 text-[#F05D5E]" />
             {t('Desglose completo de comisiones', 'Full fee breakdown')}
           </DialogTitle>
-          <p className="text-sm text-muted-foreground pt-1">
+          <DialogDescription className="text-sm text-muted-foreground pt-1">
             {t(
               'Antes de continuar, revisa con detalle qué se le cobra al cliente, qué se te descuenta a ti y cómo recibes tu dinero.',
               'Before continuing, review in detail what the client pays, what is deducted from you and how you receive your money.',
             )}
-          </p>
+          </DialogDescription>
         </DialogHeader>
 
         {/* ─────── Calendario de liquidación ─────── */}

@@ -1463,9 +1463,11 @@ async def accept_commission_terms(
     if token_data.is_manager:
         raise HTTPException(status_code=403, detail="Solo el dueno puede aceptar términos de comisiones")
 
+    if not isinstance(payload, dict) or "snapshot" not in payload:
+        raise HTTPException(status_code=400, detail="snapshot es obligatorio")
     version = (payload.get("version") or "").strip()
     hash_str = (payload.get("hash") or "").strip().lower()
-    snapshot = payload.get("snapshot") or {}
+    snapshot = payload.get("snapshot")
     if not version or not hash_str or not isinstance(snapshot, dict):
         raise HTTPException(status_code=400, detail="version, hash y snapshot son obligatorios")
     if len(hash_str) != 64 or not all(c in "0123456789abcdef" for c in hash_str):

@@ -308,3 +308,35 @@ Antes del lanzamiento abierto se unificó el esquema de pagos y se dio transpare
 ### Testing
 - iteration_95: **12/12 pytest pass** (`/app/backend/tests/test_phase18_payout_and_code.py`). Frontend code-review 100% verde (simulador matemáticamente correcto, validación de gate, testids legacy removidos, chips públicos presentes).
 
+
+## Phase 19 (Feb 2026) - Legal Hardening: Hash + Snapshot + Tax Regime
+Tres puntos críticos antes del lanzamiento abierto para blindar la transparencia y cumplimiento (CONDUSEF/PROFECO/SAT) — el cuarto punto crítico (CFDI 4.0) queda parqueado para post-lanzamiento.
+
+### A. Hash + snapshot legal de los términos aceptados
+- Nuevo `/app/frontend/src/lib/commissionTerms.js` como **fuente única de verdad** (versión, fees, payout cadence, reglas).
+- `CommissionBreakdownModal` ahora calcula `SHA-256` del JSON canónico del snapshot al aceptar y emite `{version, hash, snapshot}`.
+- Persistencia en `db.businesses`: `commission_terms_hash`, `commission_terms_snapshot`, `commission_terms_accepted_at`, `commission_terms_history` (array con todas las aceptaciones + IP + user_agent).
+- Nuevo endpoint `POST /api/businesses/me/commission-terms/accept` (auditable vía `audit_logs.action=commission_terms_accept`). Valida formato hex 64 chars, snapshot obligatorio, gate de manager.
+
+### B. Captura del régimen fiscal en registro
+- Nuevo Select obligatorio en paso 3 (Documents) de `BusinessRegisterPage` para negocios MX con 8 opciones: `PF_RESICO`, `PF_ACT_EMPRESARIAL`, `PF_HONORARIOS`, `PF_PLATAFORMAS`, `PM_GENERAL`, `PM_NO_LUCRATIVA`, `RIF`, `OTRO`.
+- Determina retenciones futuras cuando entren las disposiciones Ley Fintech / LISR 113-A.
+- Nuevo endpoint `PUT /api/businesses/me/tax-regime` con whitelist de regímenes válidos.
+- Campo opcional `tax_regime_certificate_url` (Constancia de Situación Fiscal) para subir cuando entre Fintech.
+
+### C. Vista read-only "Cobros" en BusinessSettingsPage
+- Nuevo componente `/app/frontend/src/components/CommissionTermsCard.jsx`.
+- Nueva pestaña `tab-commission` en BusinessSettingsPage (oculta para managers y para negocios sin anticipo).
+- Muestra: versión aceptada, fecha/hora con timezone MX, hash legal copiable, snapshot de fees vigentes, simulador (vía `view-commission-terms-btn`).
+- Cuando `CURRENT_VERSION` no coincide con `commission_terms.version` guardada → renderiza botón ámbar `reaccept-commission-terms-btn` que abre el modal y dispara la aceptación nueva. Sirve como gating cuando suba la versión por cambios regulatorios.
+- `/businesses/me/private-info` ahora expone el objeto `commission_terms` + `tax_regime` + `requires_deposit/deposit_amount/cancellation_days/payout_schedule`.
+
+### Testing
+- iteration_96: **22/22 pytest backend pass** (`/app/backend/tests/test_phase19_commission_terms_audit.py`). Frontend Playwright 100% verificado: tab Cobros, hash visible y copiable, modal abre con valores correctos, flow de re-aceptación al manipular versión legacy en DB.
+
+## Pending P0/P1 (legal/operativo) — POST lanzamiento
+- **CFDI 4.0 por el fee Bookvia** (parqueado a petición del usuario): integración con PAC (FacturAPI/Sw Sapien) para emitir factura del fee fijo $8.20 al negocio, prerequisito para CFDI de retenciones cuando entre Fintech.
+- **Tarifario público en landing** (`/tarifas` o `/beneficios`) con calculadora idéntica para que prospectos vean fees ANTES de registrarse (PROFECO).
+- **Estado de cuenta del corte día 1°** por negocio (PDF + email automático).
+- **Email confirmación con PDF** al aceptar términos de comisiones (audit trail vía Resend).
+
