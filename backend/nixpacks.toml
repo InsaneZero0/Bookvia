@@ -1,0 +1,26 @@
+# Nixpacks build configuration for Railway.
+#
+# Bookvia backend depends on WeasyPrint (Phase 20+ legal-file and payout-
+# statement PDFs). WeasyPrint is a Python wheel but at runtime it dlopens
+# Pango / Cairo / HarfBuzz / FontConfig from the system. Railway's default
+# Python image does NOT include these, so the deploy was failing.
+#
+# We extend the default Nix packages (the '...' literal preserves whatever
+# nixpacks auto-detected for Python) and append the native libs WeasyPrint
+# loads via libffi.
+
+[phases.setup]
+nixPkgs = [
+  "...",
+  "pango",
+  "cairo",
+  "harfbuzz",
+  "fontconfig",
+  "gdk-pixbuf",
+  "glib",
+  "freetype",
+  "libffi",
+]
+
+[start]
+cmd = "uvicorn server:app --host 0.0.0.0 --port ${PORT:-8001}"
