@@ -225,3 +225,16 @@ Dos features P1 pensados para hacer crecer el marketplace sin depender de servic
   * `POST /businesses/my/clients/export` (CSV)
 - **Nueva coleccion**: `business_client_notes` con `(business_id, client_key, note, updated_at)`
 - **Testing**: iteration_92 - 12/12 backend pass, Clientes tab UI verificada con todos los data-testids (search, tag filter, sort, export, empty state), sin regresiones.
+
+## Phase 16 (May 2026) - City Waitlist
+Captura de demanda para ciudades sin negocios, critico para lanzamiento nacional con masa critica concentrada en CDMX:
+- **Router nuevo** (`/app/backend/routers/waitlist.py`): 5 endpoints publicos/admin:
+  * `POST /api/waitlist` (dedup por email+city+country, envia email best-effort)
+  * `GET /api/waitlist/stats` (top ciudades para social proof)
+  * `GET /api/admin/waitlist` (lista paginada)
+  * `GET /api/admin/waitlist/export` (CSV)
+  * `DELETE /api/admin/waitlist/{id}`
+- **CityWaitlistCard** (`/app/frontend/src/components/CityWaitlistCard.jsx`): card de captura con estado loading/success/ya-registrado, contador social "X personas esperando en Monterrey", mounted en SearchPage empty state cuando hay ciudad seleccionada.
+- **Admin UI**: nuevo card "Lista de espera por ciudad" en tab Cumplimiento con badges top-cities, ultimos 20 signups, export CSV.
+- **Nueva coleccion**: `waitlist_signups` con `(email, city, country_code, category_id?, source, ip_address, user_agent, created_at, notified_at?)`.
+- **Testing**: iteration_93 - 14/14 backend pass, flow publico end-to-end via Playwright verificado. Fallas de Resend (domain not verified) no rompen el signup.
