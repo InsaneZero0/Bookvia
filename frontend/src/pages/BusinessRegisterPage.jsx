@@ -55,6 +55,7 @@ export default function BusinessRegisterPage() {
   const [ineFile, setIneFile] = useState(null);
   const [proofFile, setProofFile] = useState(null);
   const [showCommissionModal, setShowCommissionModal] = useState(false);
+  const [continueAfterAccept, setContinueAfterAccept] = useState(false);
   const [inePreview, setInePreview] = useState(null);
   const [proofPreview, setProofPreview] = useState(null);
   const [logoFile, setLogoFile] = useState(null);
@@ -352,13 +353,8 @@ export default function BusinessRegisterPage() {
             : 'Deposit amount must be at least $100 MXN');
           return false;
         }
-        // Commission terms: if requires_deposit, must accept the breakdown
-        if (formData.requires_deposit && !formData.commission_terms_accepted) {
-          toast.error(language === 'es'
-            ? 'Debes leer y aceptar el desglose de comisiones para continuar'
-            : 'You must read and accept the fee breakdown to continue');
-          return false;
-        }
+        // NOTE: Commission terms acceptance gate is enforced INSIDE handleNext
+        // (force-opens the modal instead of just toasting), so it is NOT validated here.
         return true;
         
       default:
@@ -370,6 +366,18 @@ export default function BusinessRegisterPage() {
     if (!validateStep()) return;
     
     if (currentStep === 3) {
+      // Force-acceptance gate: if business chose anticipo but did NOT click
+      // "Ver desglose completo", open the modal automatically. The modal's
+      // onAccept callback will retry handleNext once accepted, completing
+      // registration in a single flow.
+      if (formData.requires_deposit && !formData.commission_terms_accepted) {
+        toast.info(language === 'es'
+          ? 'Antes de registrar, lee y acepta el desglose de comisiones.'
+          : 'Before registering, please read and accept the fee breakdown.');
+        setContinueAfterAccept(true);
+        setShowCommissionModal(true);
+        return;
+      }
       // Step 4 (Account) → register the business, then go to Step 5
       handleRegister();
     } else if (currentStep < STEPS.length - 1) {
@@ -382,7 +390,7 @@ export default function BusinessRegisterPage() {
     setCurrentStep(prev => Math.max(prev - 1, 0));
   };
 
-  const handleRegister = async () => {
+  const handleRegister = async (overrides = {}) => {
     if (!formData.accepts_terms) {
       toast.error(language === 'es'
         ? 'Debes aceptar los Terminos y el Aviso de Privacidad para continuar'
@@ -406,6 +414,13 @@ export default function BusinessRegisterPage() {
         ? `${formData.address} ${formData.address_number}` 
         : formData.address;
 
+      // Merge any inline overrides (e.g. commission terms just-accepted in the
+      // forced-modal flow whose state may not have flushed yet)
+      const effectiveTermsAccepted = overrides.commission_terms_accepted ?? formData.commission_terms_accepted;
+      const effectiveTermsVersion = overrides.commission_terms_version ?? formData.commission_terms_version;
+      const effectiveTermsHash = overrides.commission_terms_hash ?? formData.commission_terms_hash;
+      const effectiveTermsSnapshot = overrides.commission_terms_snapshot ?? formData.commission_terms_snapshot;
+
       const registerData = {
         name: formData.name, email: formData.email, password: formData.password,
         phone: formData.phone, description: formData.description,
@@ -418,10 +433,10 @@ export default function BusinessRegisterPage() {
         deposit_amount: formData.requires_deposit ? Number(formData.deposit_amount) : 100,
         cancellation_days: Number(formData.cancellation_days) || 1,
         payout_schedule: formData.requires_deposit ? 'monthly_cutoff_20' : null,
-        commission_terms_accepted: formData.requires_deposit ? !!formData.commission_terms_accepted : false,
-        commission_terms_version: formData.requires_deposit && formData.commission_terms_accepted ? formData.commission_terms_version : null,
-        commission_terms_hash: formData.requires_deposit && formData.commission_terms_accepted ? formData.commission_terms_hash : null,
-        commission_terms_snapshot: formData.requires_deposit && formData.commission_terms_accepted ? formData.commission_terms_snapshot : null,
+        commission_terms_accepted: formData.requires_deposit ? !!effectiveTermsAccepted : false,
+        commission_terms_version: formData.requires_deposit && effectiveTermsAccepted ? effectiveTermsVersion : null,
+        commission_terms_hash: formData.requires_deposit && effectiveTermsAccepted ? effectiveTermsHash : null,
+        commission_terms_snapshot: formData.requires_deposit && effectiveTermsAccepted ? effectiveTermsSnapshot : null,
         tax_regime: formData.country !== 'US' ? formData.tax_regime || null : null,
         owner_birth_date: ownerBirthDate,
         logo_url: logoUrl,
@@ -1643,7 +1658,10 @@ export default function BusinessRegisterPage() {
       {/* Commission breakdown modal — triggered from Step 4 "Sí pedir anticipo" */}
       <CommissionBreakdownModal
         open={showCommissionModal}
-        onOpenChange={setShowCommissionModal}
+        onOpenChange={(v) => {
+          setShowCommissionModal(v);
+          if (!v) setContinueAfterAccept(false);  // user closed without accepting
+        }}
         language={language}
         initialAmount={Number(formData.deposit_amount) || 500}
         onAccept={({ version, hash, snapshot }) => {
@@ -1657,6 +1675,18 @@ export default function BusinessRegisterPage() {
           toast.success(language === 'es'
             ? 'Términos de comisiones aceptados'
             : 'Fee terms accepted');
+          // If the modal was opened from the "Registrar negocio" gate,
+          // automatically resume registration after acceptance — single flow.
+          if (continueAfterAccept) {
+            setContinueAfterAccept(false);
+            // Pass the just-accepted terms inline to bypass any state-flush race
+            handleRegister({
+              commission_terms_accepted: true,
+              commission_terms_version: version,
+              commission_terms_hash: hash,
+              commission_terms_snapshot: snapshot,
+            });
+          }
         }}
       />
     </div>

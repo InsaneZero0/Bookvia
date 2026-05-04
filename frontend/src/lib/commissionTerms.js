@@ -7,8 +7,12 @@
  * re-accept and the audit trail stays clean.
  */
 
-export const COMMISSION_TERMS_VERSION = 'v1-2026-02';
+export const COMMISSION_TERMS_VERSION = 'v2-2026-02';
 
+// BOOKVIA_FEE_MXN is the platform fee charged TO THE CLIENT at checkout —
+// it is NOT a cost to the business, so it is intentionally NOT shown in
+// the breakdown the business sees nor included in the legal snapshot.
+// Kept here for backend reference / checkout pricing.
 export const BOOKVIA_FEE_MXN = 8.20;
 export const STRIPE_FEE_PCT = 0.085;
 export const SUBSCRIPTION_PRICE_MXN = 49.99;
@@ -20,14 +24,17 @@ export const PAYOUT_CADENCE_LABEL_EN = 'Cutoff day 20 · Payout on the 1st of th
  * Returns the deterministic terms snapshot that gets hashed and persisted
  * when the business accepts. Two businesses accepting the same version
  * produce the same hash; any field change → different hash → audit catches it.
+ *
+ * Note: the snapshot only contains fees that AFFECT THE BUSINESS. The
+ * Bookvia client fee is intentionally excluded because it is charged
+ * separately to the end client and does not affect the business's net.
  */
 export function buildCommissionTermsSnapshot() {
   return {
     version: COMMISSION_TERMS_VERSION,
     fees: {
-      bookvia_fee_mxn: BOOKVIA_FEE_MXN,
-      bookvia_fee_iva_included: true,
-      stripe_fee_pct: STRIPE_FEE_PCT,
+      commission_pct: STRIPE_FEE_PCT,
+      commission_iva_included: true,
       subscription_monthly_mxn: SUBSCRIPTION_PRICE_MXN,
     },
     payout: {
@@ -37,7 +44,6 @@ export function buildCommissionTermsSnapshot() {
       currency: 'MXN',
     },
     rules: [
-      'fee_bookvia_no_refundable_on_client_cancel',
       'noshow_releases_deposit_after_24h_to_business',
       'chargeback_holds_funds_10_30d',
       'fintech_withholding_isr_4pct_iva_8pct_with_30d_notice',

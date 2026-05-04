@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import {
   COMMISSION_TERMS_VERSION as TERMS_VERSION,
-  BOOKVIA_FEE_MXN, STRIPE_FEE_PCT,
+  STRIPE_FEE_PCT,
   buildCommissionTermsSnapshot, hashCommissionTermsSnapshot,
 } from '@/lib/commissionTerms';
 
@@ -37,12 +37,9 @@ export default function CommissionBreakdownModal({
 
   const calc = useMemo(() => {
     const deposit = Math.max(0, Number(amount) || 0);
-    const stripeFee = +(deposit * STRIPE_FEE_PCT).toFixed(2);
-    const bookviaFee = BOOKVIA_FEE_MXN;
-    const clientPays = +(deposit + bookviaFee).toFixed(2);
-    const businessReceives = +(deposit - stripeFee).toFixed(2);
-    const bookviaKeeps = bookviaFee;
-    return { deposit, stripeFee, bookviaFee, clientPays, businessReceives, bookviaKeeps };
+    const commission = +(deposit * STRIPE_FEE_PCT).toFixed(2);
+    const businessReceives = +(deposit - commission).toFixed(2);
+    return { deposit, commission, businessReceives };
   }, [amount]);
 
   const fmt = (n) =>
@@ -130,24 +127,24 @@ export default function CommissionBreakdownModal({
           <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
             <div className="rounded-md bg-emerald-50 border border-emerald-200 p-3">
               <p className="text-[11px] uppercase tracking-wider text-emerald-700 font-semibold">
-                {t('Cliente paga', 'Client pays')}
+                {t('Anticipo del cliente', 'Client deposit')}
               </p>
               <p className="text-2xl font-heading font-bold text-emerald-700 tabular-nums mt-0.5">
-                {fmt(calc.clientPays)}
+                {fmt(calc.deposit)}
               </p>
               <p className="text-[11px] text-emerald-800/70 mt-1">
-                {fmt(calc.deposit)} + {fmt(calc.bookviaFee)} {t('fee Bookvia', 'Bookvia fee')}
+                {t('Lo que cobras por adelantado', 'What you charge upfront')}
               </p>
             </div>
             <div className="rounded-md bg-slate-100 border border-slate-200 p-3">
               <p className="text-[11px] uppercase tracking-wider text-slate-700 font-semibold">
-                {t('Stripe retiene', 'Stripe keeps')}
+                {t('Impuestos por transacción', 'Transaction taxes')}
               </p>
               <p className="text-2xl font-heading font-bold text-slate-700 tabular-nums mt-0.5">
-                -{fmt(calc.stripeFee)}
+                -{fmt(calc.commission)}
               </p>
               <p className="text-[11px] text-slate-600 mt-1">
-                {t('8.5% del anticipo', '8.5% of deposit')}
+                {t('8.5% del anticipo · IVA incluido', '8.5% of deposit · VAT included')}
               </p>
             </div>
             <div className="rounded-md bg-[#F05D5E]/10 border-2 border-[#F05D5E] p-3">
@@ -175,25 +172,17 @@ export default function CommissionBreakdownModal({
 
           <div className="divide-y divide-slate-200">
             <FeeRow
-              concept={t('Fee fijo Bookvia', 'Bookvia fixed fee')}
-              sub={t('IVA incluido · cubre plataforma, soporte, anti-fraude',
-                'VAT included · covers platform, support, anti-fraud')}
-              amount={fmt(BOOKVIA_FEE_MXN)}
-              who="client"
-              whoLabel={t('Cliente', 'Client')}
-            />
-            <FeeRow
-              concept={t('Procesamiento Stripe', 'Stripe processing')}
-              sub={t('~8.5% aprox. (varía según tarjeta)',
-                '~8.5% approx. (varies by card)')}
+              concept={t('Impuestos por transacción', 'Transaction taxes')}
+              sub={t('8.5% del anticipo · IVA incluido · descontados automáticamente del depósito',
+                '8.5% of deposit · VAT included · automatically deducted from the payout')}
               amount="8.5%"
               who="business"
               whoLabel={t('Negocio', 'Business')}
             />
             <FeeRow
               concept={t('Reembolso al cliente', 'Client refund')}
-              sub={t('Si el cliente cancela en tiempo, el fee fijo Bookvia NO se reembolsa al cliente (lo asume el negocio si decides reembolso completo).',
-                'If the client cancels on time, the Bookvia fixed fee is NOT refunded to the client (covered by the business if you offer full refund).')}
+              sub={t('Si el cliente cancela dentro del margen que tú configures, el anticipo se le devuelve completo.',
+                'If the client cancels within your configured window, the full deposit is returned.')}
               amount={t('Caso por caso', 'Case-by-case')}
               who="business"
               whoLabel={t('Negocio', 'Business')}
@@ -247,8 +236,8 @@ export default function CommissionBreakdownModal({
               <ul className="text-slate-700/90 text-xs mt-1.5 leading-relaxed list-disc pl-4 space-y-1">
                 <li>
                   {t(
-                    'Cancelación del cliente dentro del margen que tú configures: anticipo reembolsable; el fee Bookvia ($8.20) queda con la plataforma.',
-                    'Client cancellation within your configured window: deposit refundable; the Bookvia fee ($8.20) remains with the platform.',
+                    'Cancelación del cliente dentro del margen que tú configures: el anticipo se reembolsa al cliente completo.',
+                    'Client cancellation within your configured window: deposit is fully refunded to the client.',
                   )}
                 </li>
                 <li>
@@ -259,8 +248,8 @@ export default function CommissionBreakdownModal({
                 </li>
                 <li>
                   {t(
-                    'Disputa/chargeback del tarjetahabiente: Stripe puede retener el monto disputado hasta resolver (10–30 días). Bookvia te acompaña con evidencia.',
-                    'Cardholder dispute/chargeback: Stripe may hold the disputed amount until resolution (10–30 days). Bookvia helps you with evidence.',
+                    'Disputa/chargeback del tarjetahabiente: el monto disputado puede retenerse hasta resolver (10–30 días). Bookvia te acompaña con evidencia.',
+                    'Cardholder dispute/chargeback: the disputed amount may be held until resolution (10–30 days). Bookvia helps you with evidence.',
                   )}
                 </li>
               </ul>

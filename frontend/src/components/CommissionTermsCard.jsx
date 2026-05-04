@@ -9,7 +9,7 @@ import {
 import { toast } from 'sonner';
 import {
   COMMISSION_TERMS_VERSION as CURRENT_VERSION,
-  BOOKVIA_FEE_MXN, STRIPE_FEE_PCT,
+  STRIPE_FEE_PCT,
 } from '@/lib/commissionTerms';
 import CommissionBreakdownModal from './CommissionBreakdownModal';
 import { businessesAPI } from '@/lib/api';
@@ -211,11 +211,8 @@ export default function CommissionTermsCard({ privateInfo, onRefresh, language =
                 {t('Fees vigentes en tu acuerdo', 'Fees you agreed to')}
               </p>
               <div className="text-sm space-y-1.5">
-                <Row label={t('Fee fijo Bookvia (cobrado al cliente)', 'Bookvia fixed fee (charged to client)')}>
-                  ${(terms.snapshot?.fees?.bookvia_fee_mxn ?? BOOKVIA_FEE_MXN).toFixed(2)} MXN
-                </Row>
-                <Row label={t('Procesamiento Stripe (cobrado al negocio)', 'Stripe processing (charged to business)')}>
-                  {((terms.snapshot?.fees?.stripe_fee_pct ?? STRIPE_FEE_PCT) * 100).toFixed(1)}%
+                <Row label={t('Impuestos por transacción (IVA incluido)', 'Transaction taxes (VAT included)')}>
+                  {((terms.snapshot?.fees?.commission_pct ?? STRIPE_FEE_PCT) * 100).toFixed(1)}%
                 </Row>
                 <Row label={t('Suscripción mensual', 'Monthly subscription')}>
                   ${(terms.snapshot?.fees?.subscription_monthly_mxn ?? 49.99).toFixed(2)} MXN
