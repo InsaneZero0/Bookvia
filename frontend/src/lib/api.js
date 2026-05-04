@@ -390,6 +390,9 @@ export const adminAPI = {
   getStripeWebhookEvents: (limit = 50) => api.get('/admin/stripe/webhook-events', { params: { limit } }),
   previewPnlReport: () => api.get('/admin/platform/pnl-report/preview'),
   sendPnlReport: (recipients) => api.post('/admin/platform/pnl-report/send', { recipients: recipients || null }),
+  getWaitlist: (params = {}) => api.get('/admin/waitlist', { params }),
+  exportWaitlist: (params = {}) => api.get('/admin/waitlist/export', { params, responseType: 'blob' }),
+  deleteWaitlistEntry: (id) => api.delete(`/admin/waitlist/${id}`),
 };
 
 // Utility API

@@ -16,6 +16,7 @@ import { useCountry } from '@/lib/countryContext';
 import { businessesAPI, categoriesAPI, usersAPI } from '@/lib/api';
 import { Search, SlidersHorizontal, MapPin, X, Filter, List, Map as MapIcon, Star, ArrowRight, ChevronRight } from 'lucide-react';
 import { SearchLeafletMap } from '@/components/SearchLeafletMap';
+import { CityWaitlistCard } from '@/components/CityWaitlistCard';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { toast } from 'sonner';
 
@@ -741,6 +742,18 @@ export default function SearchPage() {
                           </Button>
                         </div>
                       </div>
+
+                      {/* Fase 16: waitlist capture when city context is known */}
+                      {city && (
+                        <div className="mt-6">
+                          <CityWaitlistCard
+                            city={city}
+                            country_code={countryCode}
+                            categoryId={categoryId && categoryId !== 'all' ? categoryId : null}
+                            source="search_empty"
+                          />
+                        </div>
+                      )}
                     </Card>
                   </div>
                 )}

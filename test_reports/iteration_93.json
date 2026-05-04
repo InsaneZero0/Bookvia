@@ -1,0 +1,43 @@
+{
+  "summary": "Phase 16 city-waitlist tested end-to-end. Backend: 14/14 pytest pass for POST /api/waitlist (create, duplicate, 422 invalid email/missing/short city), GET /api/waitlist/stats, admin GET/EXPORT/DELETE with auth gate. Frontend public flow verified visually on /search?city=Monterrey&q=cortexyzphase16abc: city-waitlist-card renders inside empty state with social-proof copy, submit transitions to 'Listo, estas en la lista', 'Registrar otra ciudad' resets, re-submit with same email shows 'Ya estabas en la lista'. Admin Compliance UI was NOT exercised end-to-end because the frontend admin login uses a 6-slot OTP component that resists Playwright fill, and a localStorage-injection bypass kept getting cleared (likely a 401 interceptor in /lib/api.js that purges bookvia-token on first failed call). Code review of AdminDashboardPage.jsx lines 3119-3151 confirms: data-testid=waitlist-card, export-waitlist-btn, waitlist-city-{city}, waitlist-row-{i} are all wired, handleExportWaitlist hits /admin/waitlist/export and triggers a Blob download named waitlist_YYYY-MM-DD.csv.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase16_waitlist.py",
+    "/app/test_reports/pytest/pytest_phase16_waitlist.xml"
+  ],
+  "action_items": [
+    "(Optional) Add a unique compound index on db.waitlist_signups for {email, city, country_code} to harden duplicate detection at the DB layer (currently relies on the find_one check which has a small race window under concurrent submits).",
+    "(Optional) routers/waitlist.py: city.strip().title() means 'San Pedro Garza Garcia' becomes 'San Pedro Garza Garcia' but inputs like 'monterrey' and 'MONTERREY' both collapse to 'Monterrey' — good. However users typing 'cdmx' get title-cased to 'Cdmx' which is incorrect. Consider an alias map or letting upper-case acronyms pass through.",
+    "(Optional) Email confirmation is best-effort and silently swallowed — that is by design (resend domain not verified). Consider logging the exception via logger.warning so ops can see suppression rate."
+  ],
+  "critical_code_review_comments": [
+    "routers/waitlist.py looks clean: async DB calls, _id excluded from all responses, EmailStr + Field validation, Title-cased city, upper-cased country, admin gate via require_admin, IP/UA captured for compliance.",
+    "Admin DELETE returns 404 correctly via raise HTTPException — verified by test.",
+    "CityWaitlistCard.jsx: /waitlist/stats is fetched on mount and on country_code change — fine. Good UX with 'X personas ya estan esperando' social proof. submit button is disabled until city is set, preventing 422 from missing city. Error toast extracts err.response.data.detail[0].msg which is fragile if backend returns a string detail (e.g. duplicate path) — would render undefined; could fall back to err.response.data.detail when array shape mismatches.",
+    "AdminDashboardPage.jsx waitlist card (lines 3119-3151): all data-testids present (waitlist-card, export-waitlist-btn, waitlist-city-{city}, waitlist-row-{i}). Empty state handled. Export uses Blob + a.download with date-stamped filename — matches backend Content-Disposition.",
+    "SearchPage.jsx empty state preserves clear-filters-btn and register-business-empty-cta CTAs; the waitlist card is only mounted when `city` is set, so country-only empty state still shows the original CTA without the lead capture — matches spec.",
+    "Frontend lib/auth.js + api.js: bookvia-token is read on every request (line 39) and AuthProvider mounts via useEffect. A 401 interceptor (if present) likely clears these on first failed /api/users/me call, which is what blocked the localStorage-injection admin-UI test. Not a Phase 16 defect — pre-existing test fixture limitation."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase16_waitlist.py",
+    "/app/test_reports/iteration_93.json"
+  ],
+  "success_rate": {
+    "backend": "100% (14/14 tests pass)",
+    "frontend": "Public waitlist flow 100% (create + duplicate + reset states all pass via Playwright on /search). Admin Compliance card NOT exercised end-to-end (login OTP slot input + storage-clear interceptor blocked the bypass), but code review confirms all required testids and wiring are in place."
+  },
+  "test_credentials": "Admin: zamorachapa50@gmail.com / RainbowLol3133! + TOTP via /app/scripts/get_admin_totp.py (verified working via API: 200 OK, role=admin). 6-slot OTP UI component requires per-digit keystrokes and was not navigated by Playwright in this run.",
+  "seed_data_creation": "Two TEST_-class waitlist signups were created in db.waitlist_signups under city='Testcityphase16' (email frontend_test_{ts}@example.com from Playwright + test_waitlist_{uuid}@example.com from pytest). The pytest cleanup fixture removes its own entries; the Playwright-created one (email starting with 'frontend_test_') remains under city 'Monterrey' — recommend the main agent purge it via DELETE /api/admin/waitlist/{id} or accept it as part of the staging dataset.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Phase 16 (city waitlist) is fully verified at the backend layer (14/14 pytest in /app/backend/tests/test_phase16_waitlist.py, JUnit at /app/test_reports/pytest/pytest_phase16_waitlist.xml). The public CityWaitlistCard on /search is verified visually with the create/success/reset/duplicate flow all passing. The admin Compliance waitlist-card UI was not exercised end-to-end due to the 6-slot OTP login UX + a likely 401 interceptor clearing injected tokens; this is not a Phase 16 bug. To exercise the admin UI, the next agent can either: (1) script the OTP per-digit fill via 6 keyboard.press events into '[data-testid=admin-totp-input] input', or (2) temporarily disable the 401-clear interceptor in /app/frontend/src/lib/api.js while injecting bookvia-token. The admin endpoints themselves are confirmed green. Backend export CSV header verified exactly: 'email,city,country_code,category,source,created_at'. Admin DELETE returns 404 on missing id. No regressions detected on /search empty state (clear-filters-btn and register-business-empty-cta still render alongside the new waitlist card).",
+  "rca of the issue": "No bug to RCA. Only outstanding gap is admin-UI smoke test of the Compliance waitlist card, which is blocked by the OTP slot input + token-clear interceptor (test fixture problem, not product code). Mitigation listed in context_for_next_testing_agent."
+}

@@ -487,6 +487,7 @@ export default function AdminDashboardPage() {
   const [termsPending, setTermsPending] = useState([]);
   const [arcoEvents, setArcoEvents] = useState(null);
   const [webhookEvents, setWebhookEvents] = useState([]);
+  const [waitlistData, setWaitlistData] = useState(null);
 
   // Reviews tab
   const [reviews, setReviews] = useState([]);
@@ -650,18 +651,20 @@ export default function AdminDashboardPage() {
   const loadCompliance = async () => {
     setComplianceLoading(true);
     try {
-      const [locksRes, termsRes, pendingRes, arcoRes, hooksRes] = await Promise.all([
+      const [locksRes, termsRes, pendingRes, arcoRes, hooksRes, wlRes] = await Promise.all([
         adminAPI.getLockedAccounts(),
         adminAPI.getTermsStats(),
         adminAPI.getTermsPendingUsers(50),
         adminAPI.getArcoEvents(50),
         adminAPI.getStripeWebhookEvents(50),
+        adminAPI.getWaitlist({ limit: 50 }),
       ]);
       setLockedAccounts(locksRes.data.items || []);
       setTermsStats(termsRes.data);
       setTermsPending(pendingRes.data.items || []);
       setArcoEvents(arcoRes.data);
       setWebhookEvents(hooksRes.data.items || []);
+      setWaitlistData(wlRes.data);
     } catch { /* silent */ }
     setComplianceLoading(false);
   };
@@ -695,6 +698,21 @@ export default function AdminDashboardPage() {
       loadCompliance();
     } catch (e) {
       toast.error(e?.response?.data?.detail || t('Error', 'Error'));
+    }
+  };
+
+  const handleExportWaitlist = async () => {
+    try {
+      const res = await adminAPI.exportWaitlist();
+      const blob = new Blob([res.data], { type: 'text/csv;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `waitlist_${new Date().toISOString().slice(0, 10)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error(t('Error al exportar', 'Export error'));
     }
   };
 
@@ -3092,6 +3110,53 @@ export default function AdminDashboardPage() {
                         <span className="text-muted-foreground shrink-0 ml-2">{formatDate(e.received_at)}</span>
                       </div>
                     ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Waitlist (Fase 16 city lead capture) */}
+            <Card data-testid="waitlist-card">
+              <CardHeader className="flex flex-row items-center justify-between">
+                <CardTitle className="font-heading flex items-center gap-2">
+                  <MapPin className="h-5 w-5 text-[#F05D5E]" />
+                  {t('Lista de espera por ciudad', 'City waitlist')}
+                  <Badge variant="outline">{waitlistData?.total ?? 0}</Badge>
+                </CardTitle>
+                <Button size="sm" variant="outline" onClick={handleExportWaitlist} data-testid="export-waitlist-btn">
+                  <Download className="h-4 w-4 mr-1" />{t('Exportar CSV', 'Export CSV')}
+                </Button>
+              </CardHeader>
+              <CardContent>
+                {!waitlistData || waitlistData.total === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-6">
+                    {t('Aun nadie se ha suscrito. Cuando un usuario busque en una ciudad sin negocios podra dejar su correo.',
+                       'No signups yet. When a user searches an empty city, they can leave their email here.')}
+                  </p>
+                ) : (
+                  <div className="space-y-4">
+                    {/* Top cities */}
+                    {waitlistData.stats?.top_cities?.length > 0 && (
+                      <div className="flex flex-wrap gap-2">
+                        {waitlistData.stats.top_cities.slice(0, 6).map(c => (
+                          <Badge key={c.city} variant="secondary" className="text-xs" data-testid={`waitlist-city-${c.city}`}>
+                            {c.city}: <b className="ml-1">{c.count}</b>
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
+                    {/* Latest 20 signups */}
+                    <div className="max-h-80 overflow-y-auto space-y-1">
+                      {waitlistData.items.slice(0, 20).map((s, i) => (
+                        <div key={s.id} className="text-xs flex items-center justify-between py-1.5 border-b gap-3" data-testid={`waitlist-row-${i}`}>
+                          <div className="min-w-0 flex-1">
+                            <p className="font-medium truncate">{s.email}</p>
+                            <p className="text-muted-foreground">{s.city} · {s.country_code} {s.category_name ? `· ${s.category_name}` : ''} {s.source ? `· ${s.source}` : ''}</p>
+                          </div>
+                          <span className="text-muted-foreground shrink-0">{formatDate(s.created_at)}</span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
               </CardContent>
