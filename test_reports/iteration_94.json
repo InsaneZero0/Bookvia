@@ -1,0 +1,47 @@
+{
+  "summary": "Phase 17 review moderation tested. Backend: 12/12 pytest passed (auth gating, valid/invalid reasons, 404 missing review, dedup, admin queue groups, dismiss keeps visible, remove hides + recomputes business rating, public endpoint excludes hidden). Frontend public report flow partially verified: ReviewReportButton renders on BusinessProfilePage (2 buttons found via data-testid=report-review-*); anonymous click correctly shows 'Inicia sesion para reportar' toast and does NOT open the modal. Authenticated submit could not be exercised because the test user testuser_stats@test.com has an outstanding TermsReAcceptModal that intercepts pointer events on the page (z-9999 backdrop). Admin Compliance UI was NOT exercised end-to-end (same 6-slot OTP login fixture limitation as iteration 93); however, code review of AdminDashboardPage.jsx confirms reportedReviews state, loadCompliance() now includes reviewsAPI.adminListReported, handleResolveReview wires window.confirm + window.prompt + reviewsAPI.adminResolve, and renders reported-reviews-card / reported-review-{id} / dismiss-review-{id} / remove-review-{id} testids correctly.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "GET /api/reviews/business/{business_id}", "issue": "Returns 500 if any review document is missing required ReviewResponse fields (e.g. booking_id). Found two such legacy docs (rev_mod_test_001, rev_mod_test_002) from prior curl-based seeding on business 5ecc65fc-3a57-4476-94ca-c2e2c026a9d0 — every public read of that business now crashes with pydantic ValidationError. Should switch to ReviewResponse(**{...}) with safe defaults or wrap per-row try/except so one malformed row doesn't break the whole list.", "priority": "HIGH"}
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Authenticated public review report (ReviewReportButton submit)", "issue": "Could not click report button as testuser_stats@test.com because TermsReAcceptModal (z-9999) intercepts pointer events. Not a Phase 17 defect — pre-existing T&C re-acceptance gate. Recommend test fixture either (a) accept terms first via POST /api/terms/accept, or (b) use a fresh user that already accepted current version.", "affected_selectors": ["[data-testid=report-review-*]", "[data-testid=terms-reaccept-modal]"]}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase17_review_moderation.py",
+    "/app/test_reports/pytest/pytest_phase17_review_moderation.xml"
+  ],
+  "action_items": [
+    "HIGH: Harden GET /api/reviews/business/{id} against malformed legacy review rows (missing booking_id triggers a 500 that takes down the whole review section). Either patch the bad rev_mod_test_001/002 docs, or make ReviewResponse fields optional / wrap the list comprehension in a try/except per row.",
+    "Cleanup the two legacy curl-seeded reviews: db.reviews.deleteMany({id: {$in: ['rev_mod_test_001','rev_mod_test_002']}}) and the matching db.review_reports rows.",
+    "(Optional) Add a global TermsReAcceptModal bypass for headless test users, or pre-accept terms in a setup fixture so future Playwright runs aren't blocked from logged-in interactions on /business/* pages."
+  ],
+  "critical_code_review_comments": [
+    "routers/reviews.py Phase 17 endpoints look clean: report endpoint dedups via $setOnInsert + upsert, $inc only when truly inserted (line 161-168) — correct; admin queue uses aggregation pipeline with $group/$sort/$limit and excludes _id; resolve audit-logs every action.",
+    "_recompute_business_rating uses simple avg, while create_review uses calculate_bayesian_rating — moderation will diverge from the formula used at creation time. Consider using calculate_bayesian_rating(sum, count) here too, and persist rating_sum so create_review's incremental update remains consistent after a remove.",
+    "AdminDashboardPage.jsx handleResolveReview locally filters reportedReviews on success (line 690) — good. After 'remove' it does NOT re-fetch business rating, but Compliance tab does not display rating, so OK for now.",
+    "ReviewReportButton.jsx: uses local 'done' state to disable the button after success. State does not persist across page reloads — if the user reloads, they could open the modal again, but the backend dedup will simply return already_reported=true with a soft toast. Acceptable.",
+    "BusinessProfilePage public endpoint crash (see HIGH issue above): defensive coding around pydantic response_model is missing — one bad row blocks the entire feed."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase17_review_moderation.py",
+    "/app/test_reports/pytest/pytest_phase17_review_moderation.xml",
+    "/app/test_reports/iteration_94.json"
+  ],
+  "success_rate": {
+    "backend": "100% (12/12 pytest pass)",
+    "frontend": "Public ANON flow 100% (Inicia sesion toast verified, modal correctly suppressed). Public AUTH submit flow not exercised (TermsReAcceptModal blocked Playwright). Admin Compliance UI not exercised (OTP fixture limitation, code-review-only verification)."
+  },
+  "test_credentials": "Admin: zamorachapa50@gmail.com / RainbowLol3133! + TOTP via /app/scripts/get_admin_totp.py (works for backend pytest). User: testuser_stats@test.com / TestPass123! (login OK, but blocked by T&C re-acceptance modal in UI).",
+  "seed_data_creation": "Pytest fixture creates a fresh test_phase17_biz_<rand> business + a single review per session and tears them down on completion. No leftover Phase 17 test data in the DB after the suite finishes. The two pre-existing rev_mod_test_001 and rev_mod_test_002 rows (seeded by main agent's earlier curl calls) remain and are causing the public-feed 500 noted above.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Phase 17 backend is 100% green via pytest at /app/backend/tests/test_phase17_review_moderation.py (JUnit /app/test_reports/pytest/pytest_phase17_review_moderation.xml). The fixture self-isolates by creating its own business + review and cleaning up. To exercise the authenticated public REPORT submit in Playwright: first call POST /api/terms/me to fetch current required version, then POST /api/terms/accept with that version using the user's bearer token BEFORE navigating to /business/<slug>. Otherwise the TermsReAcceptModal will intercept all clicks on the page. To exercise the admin Compliance card UI, the same OTP-slot mitigation from iteration 93 applies (per-digit keyboard.press into [data-testid=admin-totp-input]). The HIGH backend bug to fix first: GET /api/reviews/business/{id} crashes when the collection has any review missing booking_id (two legacy rev_mod_test_001/002 rows trigger this).",
+  "rca of the issue": "GET /api/reviews/business/{business_id} crash RCA: the endpoint returns [ReviewResponse(**r) for r in reviews] (routers/reviews.py:115). ReviewResponse declares booking_id: str (required). Two legacy rows seeded via direct DB writes during Phase 17 development (rev_mod_test_001 and rev_mod_test_002 on business 5ecc65fc-3a57-4476-94ca-c2e2c026a9d0) have no booking_id field, so pydantic raises ValidationError -> FastAPI 500 -> the public reviews feed for that business is permanently broken until the data is fixed or the validator is loosened. Reproduction: GET https://<host>/api/reviews/business/5ecc65fc-3a57-4476-94ca-c2e2c026a9d0 -> 500. Mitigation A: db.reviews.deleteMany({id:{$in:['rev_mod_test_001','rev_mod_test_002']}}). Mitigation B: change ReviewResponse.booking_id to Optional[str] = None, or wrap the list comprehension in try/except per row and log+skip the bad ones."
+}

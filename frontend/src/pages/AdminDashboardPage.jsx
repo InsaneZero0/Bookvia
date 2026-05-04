@@ -655,13 +655,14 @@ export default function AdminDashboardPage() {
   const loadCompliance = async () => {
     setComplianceLoading(true);
     try {
-      const [locksRes, termsRes, pendingRes, arcoRes, hooksRes, wlRes] = await Promise.all([
+      const [locksRes, termsRes, pendingRes, arcoRes, hooksRes, wlRes, reportedRes] = await Promise.all([
         adminAPI.getLockedAccounts(),
         adminAPI.getTermsStats(),
         adminAPI.getTermsPendingUsers(50),
         adminAPI.getArcoEvents(50),
         adminAPI.getStripeWebhookEvents(50),
         adminAPI.getWaitlist({ limit: 50 }),
+        reviewsAPI.adminListReported('pending', 50),
       ]);
       setLockedAccounts(locksRes.data.items || []);
       setTermsStats(termsRes.data);
@@ -669,8 +670,28 @@ export default function AdminDashboardPage() {
       setArcoEvents(arcoRes.data);
       setWebhookEvents(hooksRes.data.items || []);
       setWaitlistData(wlRes.data);
+      setReportedReviews(reportedRes.data.items || []);
     } catch { /* silent */ }
     setComplianceLoading(false);
+  };
+
+  const handleResolveReview = async (reviewId, action) => {
+    const confirmMsg = action === 'remove'
+      ? t('¿Ocultar esta reseña del público? Afecta la calificación del negocio.', 'Hide this review from the public? This updates the business rating.')
+      : t('¿Descartar los reportes y mantener la reseña visible?', 'Dismiss reports and keep the review visible?');
+    if (!window.confirm(confirmMsg)) return;
+    const note = window.prompt(t('Nota interna (opcional):', 'Internal note (optional):'), '') || '';
+    setResolvingReviewId(reviewId);
+    try {
+      await reviewsAPI.adminResolve(reviewId, action, note);
+      toast.success(action === 'remove'
+        ? t('Reseña ocultada', 'Review hidden')
+        : t('Reporte descartado', 'Report dismissed'));
+      setReportedReviews(prev => prev.filter(item => item.review.id !== reviewId));
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || t('Error', 'Error'));
+    }
+    setResolvingReviewId(null);
   };
 
   const handleRunReconciliation = async () => {
