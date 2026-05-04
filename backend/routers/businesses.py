@@ -1331,7 +1331,13 @@ async def update_my_business(update: BusinessUpdate, token_data: TokenData = Dep
             update_data["deposit_amount"] = 0.0
         else:
             update_data["deposit_amount"] = max(update_data["deposit_amount"], MIN_DEPOSIT_AMOUNT)
-    
+
+    # Enforce unified payout cadence whenever requires_deposit is being turned ON
+    if update_data.get("requires_deposit") is True:
+        update_data["payout_schedule"] = "monthly_cutoff_20"
+    elif update_data.get("requires_deposit") is False:
+        update_data["payout_schedule"] = None
+
     await db.businesses.update_one({"id": user["business_id"]}, {"$set": update_data})
     business = await db.businesses.find_one({"id": user["business_id"]}, {"_id": 0, "password_hash": 0})
     # Apply defaults for legacy documents that may be missing required fields

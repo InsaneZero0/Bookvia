@@ -276,3 +276,35 @@ Sistema de reportes y moderacion de resenas para mantener la calidad publica del
 - **P2** PWA (manifest.json, service worker, install prompt, offline-friendly cache basico).
 - **P3** App nativa iOS/Android via Capacitor.
 - **P3** Refactor de `bookings.py` (~2100 lineas) y `AdminDashboardPage.jsx` (~3300 lineas) en submodulos.
+
+## Phase 18 (Feb 2026) - Unified Payout + Client Codes + Commission Transparency
+Antes del lanzamiento abierto se unificó el esquema de pagos y se dio transparencia completa al negocio para prevenir quejas y cumplir con PROFECO / CONDUSEF:
+
+### A. Payout schedule unificado
+- Se eliminó el selector triday/biweekly/monthly (y sus fees 10%/8%/4% inconsistentes con el backend). El backend SIEMPRE cobró 8.5% fijo → la UI ahora coincide con la realidad.
+- Calendario único: `payout_schedule='monthly_cutoff_20'` → corte día 20 de cada mes, depósito el día 1° del mes siguiente. Los cobros del 21 al fin de mes ruedan al siguiente ciclo.
+- Migración ejecutada: `db.businesses.updateMany({}, {$set: {payout_schedule: "monthly_cutoff_20"}})` (54 businesses).
+- `POST /api/auth/business-register` y `PUT /api/businesses/me` ahora fuerzan `monthly_cutoff_20` cuando `requires_deposit=true` (asimetría corregida).
+
+### B. CommissionBreakdownModal (transparencia de comisiones)
+- Nuevo componente `/app/frontend/src/components/CommissionBreakdownModal.jsx` con:
+  * Simulador en vivo (input de anticipo → calcula al vuelo cliente-paga / stripe-retiene / tú-recibes).
+  * Tabla desglosada: fee fijo Bookvia $8.20 MXN (IVA incluido, cliente), procesamiento Stripe 8.5% (negocio), política de reembolsos, suscripción mensual $49.99.
+  * Banner informativo Ley Fintech/SAT (LISR art. 113-A) con aviso de 30 días.
+  * Sección no-shows y chargebacks.
+  * Checkbox obligatorio de aceptación con versión `v1-2026-02` → bloquea "Continuar".
+- `BusinessCreate` ahora acepta `commission_terms_accepted` + `commission_terms_version`; persiste `commission_terms_accepted_at` (auditable CONDUSEF).
+- Validación en `BusinessRegisterPage`: imposible avanzar al paso 5 con `requires_deposit=true` sin aceptar el desglose.
+
+### C. Código único del cliente (CL-XXXXX)
+- El sistema ya generaba `CL-XXXXX` para cada usuario en registro (`services/public_code.py`) pero estaba oculto. Ahora:
+  * Visible en `UserDashboardPage` como badge copy-to-clipboard en el header del perfil.
+  * Visible en Mini-CRM (`BusinessClientsTab`) como chip clickeable al lado del nombre.
+  * Buscador del Mini-CRM acepta `CL-XXXXX` además de nombre/email/teléfono.
+  * Nuevo endpoint `GET /api/businesses/my/clients/lookup?code=CL-XXXXX` → devuelve stats del cliente scopeadas al negocio (total_bookings, total_visits, total_spent, noshow_count, last_visit, has_history_with_you). 400 en formato inválido, 404 si no existe.
+- Admin backfilled con su propio `CL-XXXXX`.
+- CSV export ahora incluye columna `bookvia_code` como primera columna.
+
+### Testing
+- iteration_95: **12/12 pytest pass** (`/app/backend/tests/test_phase18_payout_and_code.py`). Frontend code-review 100% verde (simulador matemáticamente correcto, validación de gate, testids legacy removidos, chips públicos presentes).
+
