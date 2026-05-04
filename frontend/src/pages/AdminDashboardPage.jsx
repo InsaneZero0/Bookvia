@@ -15,6 +15,7 @@ import { useI18n } from '@/lib/i18n';
 import { adminAPI } from '@/lib/api';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { toast } from 'sonner';
+import { WaitlistBroadcastModal } from '@/components/WaitlistBroadcastModal';
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
 } from 'recharts';
@@ -488,6 +489,7 @@ export default function AdminDashboardPage() {
   const [arcoEvents, setArcoEvents] = useState(null);
   const [webhookEvents, setWebhookEvents] = useState([]);
   const [waitlistData, setWaitlistData] = useState(null);
+  const [broadcastCity, setBroadcastCity] = useState(null);
 
   // Reviews tab
   const [reviews, setReviews] = useState([]);
@@ -3135,13 +3137,23 @@ export default function AdminDashboardPage() {
                   </p>
                 ) : (
                   <div className="space-y-4">
-                    {/* Top cities */}
+                    {/* Top cities - click to broadcast */}
                     {waitlistData.stats?.top_cities?.length > 0 && (
                       <div className="flex flex-wrap gap-2">
-                        {waitlistData.stats.top_cities.slice(0, 6).map(c => (
-                          <Badge key={c.city} variant="secondary" className="text-xs" data-testid={`waitlist-city-${c.city}`}>
-                            {c.city}: <b className="ml-1">{c.count}</b>
-                          </Badge>
+                        {waitlistData.stats.top_cities.slice(0, 8).map(c => (
+                          <button
+                            key={c.city}
+                            type="button"
+                            onClick={() => setBroadcastCity({ city: c.city, country_code: 'MX' })}
+                            className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white hover:border-[#F05D5E] hover:bg-[#F05D5E]/5 px-3 py-1 text-xs transition-colors"
+                            data-testid={`waitlist-city-${c.city}`}
+                            title={t('Anunciar llegada a esta ciudad', 'Broadcast launch to this city')}
+                          >
+                            <MapPin className="h-3 w-3 text-[#F05D5E]" />
+                            <span>{c.city}</span>
+                            <Badge variant="secondary" className="ml-1 text-[10px] px-1.5 py-0">{c.count}</Badge>
+                            <Send className="h-3 w-3 text-muted-foreground" />
+                          </button>
                         ))}
                       </div>
                     )}
@@ -3164,6 +3176,14 @@ export default function AdminDashboardPage() {
           </div>
         )}
       </div>
+
+      <WaitlistBroadcastModal
+        open={!!broadcastCity}
+        city={broadcastCity?.city}
+        country_code={broadcastCity?.country_code}
+        onClose={() => setBroadcastCity(null)}
+        onSent={() => loadCompliance()}
+      />
     </div>
   );
 }

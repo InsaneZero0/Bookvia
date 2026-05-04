@@ -238,3 +238,14 @@ Captura de demanda para ciudades sin negocios, critico para lanzamiento nacional
 - **Admin UI**: nuevo card "Lista de espera por ciudad" en tab Cumplimiento con badges top-cities, ultimos 20 signups, export CSV.
 - **Nueva coleccion**: `waitlist_signups` con `(email, city, country_code, category_id?, source, ip_address, user_agent, created_at, notified_at?)`.
 - **Testing**: iteration_93 - 14/14 backend pass, flow publico end-to-end via Playwright verificado. Fallas de Resend (domain not verified) no rompen el signup.
+
+## Phase 16b (May 2026) - Waitlist Broadcast
+Activa la lista de espera: cuando Bookvia abra en una ciudad, admin puede mandar un "launch email" masivo en 2 clicks desde el panel:
+- **Endpoints nuevos**:
+  * `GET /api/admin/waitlist/cities/{city}/preview` - cuenta destinatarios + trae hasta 20 negocios activos en esa ciudad
+  * `POST /api/admin/waitlist/broadcast` - envia email personalizado con subject, mensaje custom (max 2000 chars, sanitizado contra XSS) y hasta 5 negocios destacados embebidos
+- **Idempotencia**: marca `notified_at` y `last_broadcast_subject` en cada signup enviado exitosamente; flag `only_unnotified` (default true) evita duplicados.
+- **Auditoria**: cada broadcast crea audit log con `action=waitlist_broadcast`, sent_count, failed_count, businesses_included.
+- **UI** (`/app/frontend/src/components/WaitlistBroadcastModal.jsx`): los badges de ciudad en el admin ahora son clickeables → abren modal con preview, asunto editable, textarea con char counter, picker de hasta 5 negocios (2-col grid), toggle only_unnotified, boton rojo "Enviar broadcast".
+- **Sanitization**: mensaje custom se escapa HTML y se parte por `\n\n` en parrafos seguros.
+- **Testing**: smoke test manual - preview retorna 3 destinatarios + 7 negocios, broadcast ejecuta audit log, 422 con subject < 5 chars, ciudad inexistente devuelve sent=0 sin error. Screenshots de modal confirmados.

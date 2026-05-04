@@ -393,6 +393,9 @@ export const adminAPI = {
   getWaitlist: (params = {}) => api.get('/admin/waitlist', { params }),
   exportWaitlist: (params = {}) => api.get('/admin/waitlist/export', { params, responseType: 'blob' }),
   deleteWaitlistEntry: (id) => api.delete(`/admin/waitlist/${id}`),
+  previewWaitlistBroadcast: (city, country_code = 'MX', only_unnotified = true) =>
+    api.get(`/admin/waitlist/cities/${encodeURIComponent(city)}/preview`, { params: { country_code, only_unnotified } }),
+  sendWaitlistBroadcast: (body) => api.post('/admin/waitlist/broadcast', body),
 };
 
 // Utility API
