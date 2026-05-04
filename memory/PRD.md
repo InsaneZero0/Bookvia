@@ -340,3 +340,29 @@ Tres puntos críticos antes del lanzamiento abierto para blindar la transparenci
 - **Estado de cuenta del corte día 1°** por negocio (PDF + email automático).
 - **Email confirmación con PDF** al aceptar términos de comisiones (audit trail vía Resend).
 
+
+## Phase 20 (Feb 2026) - Expediente legal del negocio (PDF + QR verificación)
+Generador de expediente legal autoservicio para los negocios + acceso admin para CONDUSEF/soporte.
+
+### Componentes
+- **Backend** `/app/backend/services/legal_file_service.py` con WeasyPrint 68.1 — aggregates identidad fiscal, representante legal, documentos KYC, T&C aceptados (+history), términos de comisiones (+history con todos los hashes), estado operativo, resumen financiero.
+- **PDF de 3 páginas** con branding Bookvia: header con logo rojo + línea separadora, 7 secciones numeradas, hash SHA-256 del documento visible al pie + QR code de verificación.
+- **3 endpoints nuevos**:
+  * `GET /api/businesses/me/legal-file.pdf` (owner only, 403 managers, audit log action=legal_file_download by=owner)
+  * `GET /api/admin/businesses/{id}/legal-file.pdf` (admin, audit log by=admin)
+  * `GET /api/businesses/verificar-expediente/{file_id}` (**público, sin auth**) devuelve minima info con RFC enmascarado + hash para verificación
+- **Persistencia**: cada descarga inserta en `db.business_legal_files {id, business_id, content_hash, issued_at, pdf_size_bytes, file_version}`.
+- **Frontend**:
+  * `CommissionTermsCard` ahora renderiza un `legal-file-download-card` con botón `download-legal-file-btn` que dispara la descarga (blob) y se muestra incluso para negocios sin anticipo.
+  * Admin: en `BusinessDetailModal` nuevo botón `admin-download-legal-file-btn`.
+  * Nueva ruta pública `/verificar-expediente/:fileId` → `LegalFileVerifyPage.jsx` con states ok/error, RFC enmascarado, hash copiable, chip de versión.
+
+### Testing
+- **iteration_97: 9/9 pytest pass** + frontend público 100% validado (`verify-file-id`, `verify-legal-name`, `verify-hash` todos verificados en contexto incognito). Botón de descarga en `/business/settings` bloqueado por modal de T&C v2026-05-01 (issue ortogonal — no-blocker).
+- PDF visualmente verificado con `analyze_file_tool`: profesional, sin cortes, branding consistente.
+
+### Artefactos de arquitectura añadidos
+- `weasyprint==68.1`, `qrcode==8.2`, `pdf2image` (dev) agregados a `requirements.txt`.
+- `poppler-utils` instalado en el sistema (apt) para utilidades de PDF.
+- Nueva colección MongoDB `business_legal_files`.
+
