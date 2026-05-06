@@ -8,7 +8,7 @@ import { BookviaLogo } from '@/components/BookviaLogo';
 import { useI18n } from '@/lib/i18n';
 import { authAPI } from '@/lib/api';
 import { toast } from 'sonner';
-import { Lock, CheckCircle2, Eye, EyeOff, Loader2 } from 'lucide-react';
+import { Lock, CheckCircle2, Eye, EyeOff, Loader2, ArrowLeft } from 'lucide-react';
 
 export default function ResetPasswordPage() {
   const { language } = useI18n();
@@ -64,6 +64,15 @@ export default function ResetPasswordPage() {
   return (
     <div className="min-h-screen flex items-center justify-center px-4 py-20 bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800" data-testid="reset-password-page">
       <div className="w-full max-w-md">
+        <button
+          type="button"
+          onClick={() => navigate('/')}
+          className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-[#F05D5E] transition-colors mb-3 group"
+          data-testid="reset-back-home-btn"
+        >
+          <ArrowLeft className="h-4 w-4 transition-transform group-hover:-translate-x-0.5" />
+          {language === 'es' ? 'Volver al inicio' : 'Back to home'}
+        </button>
         <Card className="border-0 shadow-xl">
           <CardHeader className="text-center pb-2">
             <Link to="/" className="inline-block mb-4">
