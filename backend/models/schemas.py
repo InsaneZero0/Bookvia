@@ -170,6 +170,11 @@ class BusinessResponse(BaseModel):
     top_services: List[Dict[str, Any]] = []
     min_price: Optional[float] = None
     public_code: Optional[str] = None
+    # Stripe Connect Express (Phase A)
+    stripe_connect_account_id: Optional[str] = None
+    stripe_connect_charges_enabled: bool = False
+    stripe_connect_payouts_enabled: bool = False
+    stripe_connect_details_submitted: bool = False
 
 class BusinessUpdate(BaseModel):
     name: Optional[str] = None

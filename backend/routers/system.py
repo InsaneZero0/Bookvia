@@ -480,6 +480,35 @@ async def stripe_webhook(request: Request):
                         except Exception as e:
                             logger.warning(f"Could not revert wallet on checkout.session.expired: {e}")
 
+        elif event.type == "account.updated":
+            # Stripe Connect Express: sync account capabilities to DB
+            acct = event.data.object
+            account_id = acct.id if hasattr(acct, "id") else acct.get("id")
+            if account_id:
+                biz = await db.businesses.find_one({"stripe_connect_account_id": account_id})
+                if biz:
+                    charges_enabled = bool(getattr(acct, "charges_enabled", False) if hasattr(acct, "charges_enabled") else acct.get("charges_enabled", False))
+                    payouts_enabled = bool(getattr(acct, "payouts_enabled", False) if hasattr(acct, "payouts_enabled") else acct.get("payouts_enabled", False))
+                    details_submitted = bool(getattr(acct, "details_submitted", False) if hasattr(acct, "details_submitted") else acct.get("details_submitted", False))
+                    requirements = getattr(acct, "requirements", None) if hasattr(acct, "requirements") else acct.get("requirements")
+                    currently_due = []
+                    disabled_reason = None
+                    if requirements:
+                        currently_due = list((getattr(requirements, "currently_due", None) if hasattr(requirements, "currently_due") else requirements.get("currently_due")) or [])
+                        disabled_reason = getattr(requirements, "disabled_reason", None) if hasattr(requirements, "disabled_reason") else requirements.get("disabled_reason")
+                    update_doc = {
+                        "stripe_connect_charges_enabled": charges_enabled,
+                        "stripe_connect_payouts_enabled": payouts_enabled,
+                        "stripe_connect_details_submitted": details_submitted,
+                        "stripe_connect_disabled_reason": disabled_reason,
+                        "stripe_connect_requirements_due": currently_due,
+                        "stripe_connect_synced_at": datetime.now(timezone.utc).isoformat(),
+                    }
+                    if details_submitted and charges_enabled and payouts_enabled and not biz.get("stripe_connect_onboarded_at"):
+                        update_doc["stripe_connect_onboarded_at"] = datetime.now(timezone.utc).isoformat()
+                    await db.businesses.update_one({"id": biz["id"]}, {"$set": update_doc})
+                    logger.info(f"account.updated synced biz={biz['id']} acct={account_id} charges={charges_enabled} payouts={payouts_enabled}")
+
         return {"status": "success"}
         
     except Exception as e:

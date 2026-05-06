@@ -11,6 +11,7 @@ import { useI18n } from '@/lib/i18n';
 import { financeAPI, businessesAPI } from '@/lib/api';
 import { toast } from 'sonner';
 import { WhatsAppSupportButton } from '@/components/WhatsAppSupport';
+import StripeConnectCard from '@/components/StripeConnectCard';
 import {
   DollarSign, TrendingUp, TrendingDown, Wallet, Clock, CheckCircle2,
   AlertTriangle, Calendar, ArrowRight, Receipt, CreditCard, Ban,
@@ -382,6 +383,10 @@ export default function BusinessFinancePage() {
               </div>
             </CardContent>
           </Card>
+        </div>
+
+        <div className="mb-6">
+          <StripeConnectCard />
         </div>
 
         <Tabs defaultValue="transactions" className="w-full">
