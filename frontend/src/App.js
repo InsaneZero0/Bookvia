@@ -8,6 +8,7 @@ import { useCountry } from '@/lib/countryContext';
 import { Navbar } from '@/components/Navbar';
 import { Footer } from '@/components/Footer';
 import TermsReAcceptModal from '@/components/TermsReAcceptModal';
+import { WhatsAppFloatingButton } from '@/components/WhatsAppSupport';
 
 // Pages
 import HomePage from '@/pages/HomePage';
@@ -59,6 +60,7 @@ function Layout({ children, showFooter = true }) {
       <Navbar />
       <main className="flex-1">{children}</main>
       {showFooter && <Footer />}
+      <WhatsAppFloatingButton />
     </div>
   );
 }

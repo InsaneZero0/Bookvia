@@ -10,6 +10,7 @@ import { useAuth } from '@/lib/auth';
 import { useI18n } from '@/lib/i18n';
 import { financeAPI, businessesAPI } from '@/lib/api';
 import { toast } from 'sonner';
+import { WhatsAppSupportButton } from '@/components/WhatsAppSupport';
 import {
   DollarSign, TrendingUp, TrendingDown, Wallet, Clock, CheckCircle2,
   AlertTriangle, Calendar, ArrowRight, Receipt, CreditCard, Ban,
@@ -573,11 +574,17 @@ export default function BusinessFinancePage() {
                 <h3 className="font-heading font-bold text-xl mb-2">
                   {language === 'es' ? 'Sin liquidaciones' : 'No settlements'}
                 </h3>
-                <p className="text-muted-foreground">
+                <p className="text-muted-foreground mb-4">
                   {language === 'es' 
-                    ? 'Las liquidaciones se generan automáticamente cada mes'
-                    : 'Settlements are generated automatically every month'}
+                    ? 'Las liquidaciones se generan automáticamente cada mes (corte día 20 · depósito día 1°)'
+                    : 'Settlements are generated automatically every month (cutoff day 20 · payout day 1)'}
                 </p>
+                <WhatsAppSupportButton
+                  context={language === 'es' ? 'mis liquidaciones / corte mensual' : 'my settlements / monthly cutoff'}
+                  dataTestId="finance-empty-whatsapp-btn"
+                >
+                  {language === 'es' ? '¿Dudas con tu corte? Escríbenos' : 'Questions about your cutoff?'}
+                </WhatsAppSupportButton>
               </Card>
             )}
           </TabsContent>
