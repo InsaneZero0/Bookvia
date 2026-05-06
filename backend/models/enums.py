@@ -157,8 +157,9 @@ class AuditAction(str, Enum):
 PLATFORM_FEE_PERCENT = 0.08  # Legacy (unused in new model, keep for back-compat)
 HOLD_EXPIRATION_MINUTES = 30
 MIN_DEPOSIT_AMOUNT = 100.0  # Minimum deposit amount (MXN) per service
-BOOKVIA_FEE_MXN = 8.20  # Fixed fee charged to client per booking with deposit (IVA included)
-STRIPE_FEE_PERCENT_ESTIMATED = 0.085  # Estimated Stripe fee (8.5%) charged to business
+BOOKVIA_FEE_MXN = 8.00  # Fixed fee charged to client per booking with deposit (IVA included: subtotal $6.90 + IVA $1.10)
+STRIPE_FEE_PERCENT_ESTIMATED = 0.085  # Business commission 8.5% of deposit (labeled "Impuestos por transaccion")
+MIN_BUSINESS_COMMISSION_MXN = 8.50  # Minimum business commission floor (enforces 8.5% on anticipo >= $100)
 SUBSCRIPTION_PRICE_MXN = 49.99
 SUBSCRIPTION_PRICE_USD = 4.99
 SUBSCRIPTION_TRIAL_DAYS = 30

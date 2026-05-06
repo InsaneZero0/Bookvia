@@ -265,10 +265,10 @@ def _seed_paid_booking(user_id, biz_id, exp_id, worker_id, hours_from_now=48):
         "id": tx_id, "booking_id": bk_id, "user_id": user_id, "business_id": biz_id,
         "stripe_session_id": f"cs_test_{uuid.uuid4().hex[:6]}",
         "stripe_payment_intent_id": f"pi_test_{uuid.uuid4().hex[:6]}",
-        "amount_total": 100.0, "client_paid": 108.2, "bookvia_fee": 8.2,
+        "amount_total": 100.0, "client_paid": 108.0, "bookvia_fee": 8.0,
         "stripe_fee_estimated": 8.5, "stripe_fee_actual": 8.5,
         "business_amount": 91.5, "fee_amount": 8.5, "payout_amount": 91.5,
-        "wallet_applied": 0.0, "stripe_charge_amount": 108.2, "currency": "MXN",
+        "wallet_applied": 0.0, "stripe_charge_amount": 108.0, "currency": "MXN",
         "status": "paid", "paid_at": now_iso, "created_at": now_iso, "updated_at": now_iso,
     }
     _db.bookings.insert_one(booking_doc)
@@ -387,7 +387,7 @@ class TestDepositCheckoutWithWallet:
 
     def test_use_wallet_full_coverage_no_stripe(self, user_token, user_id, biz_context):
         from services.wallet import credit_wallet, CREDIT_ADMIN_ADJUSTMENT
-        # Need balance >= 158.20 (deposit 150 + bookvia fee 8.20)
+        # Need balance >= 158.00 (deposit 150 + bookvia fee 8.00)
         asyncio.get_event_loop().run_until_complete(
             credit_wallet(user_id, 200.0, CREDIT_ADMIN_ADJUSTMENT, description="seed full")
         )
@@ -399,7 +399,7 @@ class TestDepositCheckoutWithWallet:
         d = r.json()
         assert d.get("wallet_only") is True, f"Expected wallet_only=true, got {d}"
         assert d.get("transaction_id")
-        assert d.get("wallet_applied") == 158.2
+        assert d.get("wallet_applied") == 158.0
         assert d.get("stripe_charge_amount") == 0.0
         assert d.get("redirect_url")
         # Booking should be CONFIRMED, transaction PAID
@@ -408,19 +408,19 @@ class TestDepositCheckoutWithWallet:
         assert bdoc["deposit_paid"] is True
         tx = _db.transactions.find_one({"id": d["transaction_id"]})
         assert tx["status"] == "paid"
-        assert tx["wallet_applied"] == 158.2
-        # Wallet debited 158.2 (200 - 158.2 = 41.8)
+        assert tx["wallet_applied"] == 158.0
+        # Wallet debited 158.0 (200 - 158.0 = 42.0)
         w = _db.user_wallets.find_one({"user_id": user_id})
-        assert round(w["balance"], 2) == 41.8
+        assert round(w["balance"], 2) == 42.0
         wtx = _db.wallet_transactions.find_one({"user_id": user_id, "booking_id": bk, "type": "debit_booking"})
         assert wtx is not None
-        assert wtx["amount"] == 158.2
+        assert wtx["amount"] == 158.0
         _db.bookings.delete_one({"id": bk})
         _db.transactions.delete_one({"id": d["transaction_id"]})
 
     def test_use_wallet_partial_creates_stripe_for_remainder(self, user_token, user_id, biz_context):
         from services.wallet import credit_wallet, CREDIT_ADMIN_ADJUSTMENT
-        # client_paid=158.2, give wallet 50 -> remainder 108.2 to Stripe
+        # client_paid=158.0, give wallet 50 -> remainder 108.0 to Stripe
         asyncio.get_event_loop().run_until_complete(
             credit_wallet(user_id, 50.0, CREDIT_ADMIN_ADJUSTMENT, description="seed partial")
         )
@@ -436,7 +436,7 @@ class TestDepositCheckoutWithWallet:
         tx = _db.transactions.find_one({"booking_id": bk})
         assert tx is not None
         assert tx.get("wallet_applied") == 50.0
-        assert tx.get("stripe_charge_amount") == 108.2
+        assert tx.get("stripe_charge_amount") == 108.0
         # Wallet not yet debited at checkout step (per code, debit happens at webhook confirmation)
         # But verify wallet still has 50
         w = _db.user_wallets.find_one({"user_id": user_id})

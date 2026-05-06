@@ -360,15 +360,15 @@ class TestPlatformPnL:
         txs = [
             {"id": f"{TEST_PREFIX}pnl1_{uuid.uuid4().hex[:6]}", "status": "paid",
              "created_at": (now - timedelta(days=1)).isoformat(),
-             "bookvia_fee": 8.20, "stripe_fee_estimated": 20.0, "stripe_fee_actual": 19.5,
+             "bookvia_fee": 8.00, "stripe_fee_estimated": 20.0, "stripe_fee_actual": 19.5,
              "client_paid": 500.0, "refund_amount": 0.0},
             {"id": f"{TEST_PREFIX}pnl2_{uuid.uuid4().hex[:6]}", "status": "paid",
              "created_at": (now - timedelta(days=2)).isoformat(),
-             "bookvia_fee": 8.20, "stripe_fee_estimated": 15.0, "stripe_fee_actual": 16.0,  # negative margin
+             "bookvia_fee": 8.00, "stripe_fee_estimated": 15.0, "stripe_fee_actual": 16.0,  # negative margin
              "client_paid": 400.0, "refund_amount": 0.0},
             {"id": f"{TEST_PREFIX}pnl3_{uuid.uuid4().hex[:6]}", "status": "paid",
              "created_at": (now - timedelta(days=3)).isoformat(),
-             "bookvia_fee": 8.20, "stripe_fee_estimated": 10.0, "stripe_fee_actual": 9.0,
+             "bookvia_fee": 8.00, "stripe_fee_estimated": 10.0, "stripe_fee_actual": 9.0,
              "client_paid": 300.0, "refund_amount": 0.0},
         ]
         _db.transactions.insert_many(txs)
@@ -380,7 +380,7 @@ class TestPlatformPnL:
 
         # expected margin = (20+15+10) - (19.5+16+9) = 45 - 44.5 = 0.5
         expected_margin = round((20.0 + 15.0 + 10.0) - (19.5 + 16.0 + 9.0), 2)
-        expected_bookvia_income = 8.20 * 3   # only from our seeded, but real DB may have more
+        expected_bookvia_income = 8.00 * 3   # only from our seeded, but real DB may have more
         expected_gross_our_txs = expected_bookvia_income + expected_margin
 
         # The endpoint aggregates ALL paid txs in the window. Verify OUR

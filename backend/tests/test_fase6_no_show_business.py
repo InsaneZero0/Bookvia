@@ -146,7 +146,7 @@ def cleanup_module(db, event_loop, biz_id, user_id):
 
 # ----------------- Helpers -----------------
 def _make_booking_and_tx(db, event_loop, biz_id, user_id, *, minutes_ago=30,
-                        client_paid=108.20, status="confirmed", funds_state="pending_hold",
+                        client_paid=108.00, status="confirmed", funds_state="pending_hold",
                         with_transaction=True):
     """
     Insert a booking (in the past, default 30 min ago -> inside the 4h reporting window)
@@ -186,7 +186,7 @@ def _make_booking_and_tx(db, event_loop, biz_id, user_id, *, minutes_ago=30,
                 "business_id": biz_id,
                 "amount_total": client_paid,
                 "client_paid": client_paid,
-                "fee_amount": 8.20,
+                "fee_amount": 8.00,
                 "payout_amount": 100.0,
                 "currency": "mxn",
                 "status": "paid",
@@ -525,7 +525,7 @@ class TestAutoResolve:
         assert types == {"credit_business_no_show"}
         amounts = sorted([w["amount"] for w in wtxns])
         assert amounts[0] == 50.0  # compensation
-        assert amounts[1] == 108.20  # client_paid refund
+        assert amounts[1] == 108.00  # client_paid refund
 
     def test_skip_when_business_responded(self, db, event_loop, biz_id, user_id,
                                           user_token, business_token):

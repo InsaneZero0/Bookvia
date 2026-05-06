@@ -458,3 +458,49 @@ El usuario necesita activar Connect en su Dashboard Stripe (test mode): elegir "
 - Status sin cuenta: ✅ retorna `{connected: false, ...}` sin error.
 - Onboard con Connect no activado: ✅ retorna error legible "You can only create new accounts if you've signed up for Connect".
 - UI: ✅ card renderiza correctamente con estado "No conectado" y CTA "Conectar con Stripe".
+
+
+## Phase B (Feb 2026) — Modelo Financiero Definitivo
+**Goal:** Aplicar el modelo financiero definitivo validado con el usuario: comisión 8.5% con piso $8.50, cuota cliente $8.00 con IVA, factura CFDI on-demand. Previo a migración completa de Connect Express.
+
+### Cambios de constantes
+- `BOOKVIA_FEE_MXN`: `8.20` → **`8.00`** (IVA incluido: subtotal $6.90 + IVA $1.10)
+- Nueva constante `MIN_BUSINESS_COMMISSION_MXN = 8.50` — piso mínimo de comisión negocio
+- `MIN_DEPOSIT_AMOUNT` en `core/config.py`: `50.0` → **`100.0`** (alineado con enums.py)
+- `COMMISSION_RATE` en config.py: `0.08` → `0.085` (alineado con STRIPE_FEE_PERCENT_ESTIMATED)
+
+### Lógica actualizada
+- `calculate_fees()` ahora usa: `business_commission = max(deposit * 8.5%, $8.50)`
+- Para anticipo $100 → comisión $8.50 (floor = 8.5% exacto)
+- Para anticipos >$100 → 8.5% variable (escala con ticket)
+- Para anticipos <$100 (no deberían existir, pero defensivo) → floor $8.50 protege Bookvia
+
+### UI / Textos actualizados
+- `TermsPage.jsx`: versión T&C bump a `2026-05-02`. Textos actualizados:
+  * "cuota fija de $8.20" → "cuota fija $8.00 (IVA incluido: subt $6.90 + IVA $1.10)"
+  * Ejemplos de anticipo $100: cliente paga $108.00 (no $108.20), negocio recibe $91.50
+  * "factura exclusiva" → "factura CFDI bajo solicitud al contacto@bookvia.app"
+- `BusinessProfilePage.jsx`: modal de reserva muestra "$8.00 MXN" (no $8.20)
+- `UserBookingsPage.jsx`: mensajes de cancelación y no-show compensation actualizados
+- `AdminDashboardPage.jsx`: P&L report etiqueta "Fee fijo $8.00"
+- `commissionTerms.js` (frontend): versión bumped a `v3-2026-02`, constantes alineadas
+- `monthly_pnl_report.py` y `reconciliation.py`: docstrings y labels actualizados
+
+### Lo que deliberadamente NO cambia
+- Textos al **negocio** siguen sin mencionar los $8 del cliente (ya estaba así desde Fase 19).
+- La comisión al negocio sigue llamándose "Impuestos por transacción" en la UI del negocio (ya estaba desde Fase 19).
+- El cálculo de `business_amount` (lo que recibe el negocio) no cambia porque 8.5% era ya el valor.
+
+### Tests actualizados
+- `test_fase1_cobranza.py`: matemáticas del breakdown actualizadas ($108.00, $8.00, floor $8.50).
+- `test_fase2_wallet.py`: asserts sobre wallet/cancellation flows ajustados ($158.00, $42.00 saldo).
+- `test_fase12_security_pnl.py`: fixtures de bookvia_fee actualizados a $8.00.
+- `test_phase19_commission_terms_audit.py`: snapshot hash actualizado con `bookvia_fee_mxn=8.00`.
+- `test_fase6_no_show_business.py`: client_paid refund montos actualizados a $108.00.
+
+### Resultados
+- **69 de 71 tests pasan** en los módulos afectados. Los 2 fallos son **pre-existentes** no relacionados (wallet_fallback en card-refund + async event-loop issue en brute_force).
+- Breakdown API valida correctamente para anticipos $100/$500/$1000 con matemáticas exactas.
+
+### Facturación CFDI (agendada, no implementada aún)
+Usuario confirmó: recibo por defecto; factura CFDI on-demand vía `contacto@bookvia.app`. Implementación pendiente cuando el negocio comience a facturar (SAT + PAC integration, fuera del scope actual).

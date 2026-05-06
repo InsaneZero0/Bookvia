@@ -2797,7 +2797,7 @@ export default function AdminDashboardPage() {
                         <p className="text-[11px] text-muted-foreground mt-1">{t('fee fijo + margen Stripe', 'fixed fee + Stripe margin')}</p>
                       </div>
                       <div className="rounded-xl border p-4">
-                        <p className="text-xs text-muted-foreground">{t('Fee fijo $8.20', 'Fixed fee $8.20')}</p>
+                        <p className="text-xs text-muted-foreground">{t('Fee fijo $8.00', 'Fixed fee $8.00')}</p>
                         <p className="text-2xl font-heading font-bold">{formatCurrency(pnl.bookvia_fee_income)}</p>
                         <p className="text-[11px] text-muted-foreground mt-1">{pnl.transaction_count} {t('transacciones', 'transactions')}</p>
                       </div>

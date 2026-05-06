@@ -1374,14 +1374,14 @@ export default function BusinessProfilePage() {
                     <div className="flex justify-between text-xs text-muted-foreground">
                       <span className="flex items-center gap-1">
                         {language === 'es' ? 'Servicio Bookvia' : 'Bookvia service'}
-                        <span title={language === 'es' ? 'Cuota unica de $8.20 (IVA incluido) que incluye gestion de la reserva y recordatorios.' : 'One-time $8.20 fee (VAT incl.) covering booking management & reminders.'} className="text-muted-foreground/60 cursor-help">ⓘ</span>
+                        <span title={language === 'es' ? 'Cuota unica de $8.00 (IVA incluido) que incluye gestion de la reserva y recordatorios.' : 'One-time $8.00 fee (VAT incl.) covering booking management & reminders.'} className="text-muted-foreground/60 cursor-help">ⓘ</span>
                       </span>
-                      <span>$8.20 MXN</span>
+                      <span>$8.00 MXN</span>
                     </div>
                     <Separator />
                     <div className="flex justify-between text-sm font-semibold">
                       <span>{language === 'es' ? 'Total a pagar hoy' : 'Total to pay today'}</span>
-                      <span className="text-[#F05D5E]">{formatCurrency((business.deposit_amount || 0) + 8.20)}</span>
+                      <span className="text-[#F05D5E]">{formatCurrency((business.deposit_amount || 0) + 8.00)}</span>
                     </div>
                     <p className="text-[11px] text-muted-foreground leading-relaxed">
                       {language === 'es'

@@ -79,7 +79,7 @@ def biz_no_deposit_token(s):
 def _make_snapshot(version=VERSION):
     return {
         "version": version,
-        "bookvia_fee_mxn": 8.20,
+        "bookvia_fee_mxn": 8.00,
         "stripe_fee_pct": 0.085,
         "currency": "MXN",
         "generated_at": "2026-02-01T00:00:00Z",
@@ -113,7 +113,7 @@ class TestBusinessCreateSchemaPhase19:
         )
         assert m.commission_terms_hash == h
         assert isinstance(m.commission_terms_snapshot, dict)
-        assert m.commission_terms_snapshot["bookvia_fee_mxn"] == 8.20
+        assert m.commission_terms_snapshot["bookvia_fee_mxn"] == 8.00
         assert m.tax_regime == "PF_RESICO"
 
 
@@ -143,7 +143,7 @@ class TestAcceptCommissionTerms:
         assert ct["version"] == VERSION
         assert ct["hash"] == h
         assert isinstance(ct["snapshot"], dict)
-        assert ct["snapshot"]["bookvia_fee_mxn"] == 8.20
+        assert ct["snapshot"]["bookvia_fee_mxn"] == 8.00
         assert ct["accepted_at"]
 
     def test_history_array_appended(self, s, biz_headers):

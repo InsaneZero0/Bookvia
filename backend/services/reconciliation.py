@@ -27,13 +27,13 @@ async def compute_platform_pnl(
     """Bookvia profit & loss over a period.
 
     Income:
-      * `bookvia_fee` (fixed $8.20 per confirmed booking)
+      * `bookvia_fee` (fixed $8.00 per confirmed booking, IVA included)
       * `fee_margin` = sum(stripe_fee_estimated - stripe_fee_actual)
         when actual is known. Negative means Stripe charged more than we
         retained from the business (we lost margin on that tx).
 
     Outcome:
-      * `refunded_bookvia_fee`  – $8.20 we refunded on cancellations.
+      * `refunded_bookvia_fee`  – $8.00 we refunded on cancellations.
       * `stripe_net_loss`       – txs where real fee exceeded our estimate.
     """
     end = end or datetime.now(timezone.utc)

@@ -39,7 +39,7 @@ from models.enums import (
     TransactionStatus, LedgerDirection, LedgerAccount, LedgerEntryStatus,
     SettlementStatus, AuditAction,
     PLATFORM_FEE_PERCENT, HOLD_EXPIRATION_MINUTES, MIN_DEPOSIT_AMOUNT,
-    BOOKVIA_FEE_MXN, STRIPE_FEE_PERCENT_ESTIMATED,
+    BOOKVIA_FEE_MXN, STRIPE_FEE_PERCENT_ESTIMATED, MIN_BUSINESS_COMMISSION_MXN,
     SUBSCRIPTION_PRICE_MXN, SUBSCRIPTION_TRIAL_DAYS,
     VISIBLE_BUSINESS_FILTER, DEFAULT_MANAGER_PERMISSIONS
 )
@@ -63,28 +63,36 @@ def success_url_for_wallet(request, booking_id: str) -> str:
 def calculate_fees(deposit_amount: float) -> dict:
     """
     Calculate the payment breakdown for a booking with deposit.
-    
-    Model:
-      - client_paid       = deposit + Bookvia fixed fee ($8.20 MXN)
-      - bookvia_fee       = $8.20 MXN fixed (IVA included)
-      - stripe_fee_est    = 8.5% of deposit (charged to business, covers Stripe)
-      - business_amount   = deposit - stripe_fee_est (what business receives after payout)
-    
-    Returns dict with all amounts rounded to 2 decimals.
+
+    Model (Phase B - Feb 2026, Stripe Connect Express migration):
+      - client_paid       = deposit + Bookvia fixed fee ($8.00 MXN, IVA incl.)
+      - bookvia_fee       = $8.00 MXN fixed (subtotal $6.90 + IVA $1.10)
+      - business_commission = max(deposit * 8.5%, $8.50 MXN floor) — labeled
+                              to business as "Impuestos por transaccion"
+      - business_amount   = deposit - business_commission (what business receives)
+
+    Floor rationale: For deposit = $100 the 8.5% gives $8.50 (=floor). For
+    anticipos >= $100 the percentage kicks in. The floor protects Bookvia
+    from sub-$100 deposits (which should be blocked at creation anyway).
+
+    Returns dict with all amounts rounded to 2 decimals. Legacy keys
+    `fee_amount` / `payout_amount` and `stripe_fee_estimated` kept for
+    back-compat with existing callers (ledger, settlements, PDFs).
     """
     deposit_amount = round(float(deposit_amount or 0), 2)
     bookvia_fee = round(BOOKVIA_FEE_MXN, 2)
-    stripe_fee_est = round(deposit_amount * STRIPE_FEE_PERCENT_ESTIMATED, 2)
-    business_amount = round(deposit_amount - stripe_fee_est, 2)
+    # Business commission: 8.5% of deposit with $8.50 floor
+    business_commission = round(max(deposit_amount * STRIPE_FEE_PERCENT_ESTIMATED, MIN_BUSINESS_COMMISSION_MXN), 2) if deposit_amount > 0 else 0.0
+    business_amount = round(deposit_amount - business_commission, 2)
     client_paid = round(deposit_amount + bookvia_fee, 2)
     # Legacy keys kept for back-compat in callers (fee_amount / payout_amount)
     return {
         "deposit_amount": deposit_amount,
         "bookvia_fee": bookvia_fee,
-        "stripe_fee_estimated": stripe_fee_est,
+        "stripe_fee_estimated": business_commission,  # legacy name, now reflects business commission with floor
         "business_amount": business_amount,
         "client_paid": client_paid,
-        "fee_amount": stripe_fee_est,
+        "fee_amount": business_commission,
         "payout_amount": business_amount,
     }
 
@@ -217,7 +225,7 @@ async def create_deposit_checkout(
     
     deposit_amount = max(booking.get("deposit_amount", MIN_DEPOSIT_AMOUNT), MIN_DEPOSIT_AMOUNT)
     fees = calculate_fees(deposit_amount)
-    client_paid = fees["client_paid"]  # deposit + $8.20 Bookvia fee
+    client_paid = fees["client_paid"]  # deposit + $8.00 Bookvia fee (IVA incl.)
     
     # Optionally apply user wallet balance toward the total client_paid
     wallet_applied = 0.0
@@ -320,7 +328,7 @@ async def create_deposit_checkout(
         "stripe_payment_intent_id": None,
         "amount_total": deposit_amount,           # Deposit only (historical field)
         "client_paid": client_paid,                # What client actually paid to Stripe + wallet
-        "bookvia_fee": fees["bookvia_fee"],        # $8.20 Bookvia retains
+        "bookvia_fee": fees["bookvia_fee"],        # $8.00 Bookvia retains (subtotal $6.90 + IVA $1.10)
         "stripe_fee_estimated": fees["stripe_fee_estimated"],  # 8.5% estimated charged to business
         "stripe_fee_actual": None,                 # Populated by webhook from balance_transaction.fee
         "business_amount": fees["business_amount"],# What the business will eventually receive

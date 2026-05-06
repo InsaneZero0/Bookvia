@@ -7,14 +7,17 @@
  * re-accept and the audit trail stays clean.
  */
 
-export const COMMISSION_TERMS_VERSION = 'v2-2026-02';
+export const COMMISSION_TERMS_VERSION = 'v3-2026-02';
 
 // BOOKVIA_FEE_MXN is the platform fee charged TO THE CLIENT at checkout —
 // it is NOT a cost to the business, so it is intentionally NOT shown in
 // the breakdown the business sees nor included in the legal snapshot.
 // Kept here for backend reference / checkout pricing.
-export const BOOKVIA_FEE_MXN = 8.20;
+// NOTE: $8.00 with IVA included (subtotal $6.90 + IVA $1.10).
+export const BOOKVIA_FEE_MXN = 8.00;
 export const STRIPE_FEE_PCT = 0.085;
+export const MIN_BUSINESS_COMMISSION_MXN = 8.50; // floor: 8.5% on $100 anticipo
+export const MIN_DEPOSIT_AMOUNT = 100.00;
 export const SUBSCRIPTION_PRICE_MXN = 49.99;
 export const PAYOUT_CADENCE = 'monthly_cutoff_20';
 export const PAYOUT_CADENCE_LABEL_ES = 'Corte el día 20 · Depósito el día 1° del mes siguiente';

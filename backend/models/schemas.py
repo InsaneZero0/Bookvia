@@ -690,7 +690,7 @@ class PlatformConfigResponse(BaseModel):
     subscription_price_mxn: float = 49.99
     subscription_trial_days: int = 30
     min_deposit_amount: float = 100.0
-    bookvia_fee_mxn: float = 8.20
+    bookvia_fee_mxn: float = 8.00
     stripe_fee_percent_estimated: float = 0.085
     updated_at: Optional[str] = None
     updated_by: Optional[str] = None
