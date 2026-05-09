@@ -102,8 +102,8 @@ def is_stripe_live() -> bool:
 # =============================================================================
 # BUSINESS SETTINGS
 # =============================================================================
-MIN_DEPOSIT_AMOUNT = 50.0  # MXN
-COMMISSION_RATE = 0.08  # 8%
+MIN_DEPOSIT_AMOUNT = 100.0  # MXN
+COMMISSION_RATE = 0.085  # 8.5% — Phase B
 HOLD_EXPIRATION_MINUTES = 30
 SMS_CODE_EXPIRATION_MINUTES = 5
 SMS_MAX_ATTEMPTS_PER_HOUR = 3
@@ -113,16 +113,16 @@ SMS_MAX_ATTEMPTS_PER_HOUR = 3
 # Increment this string whenever the Terms page is updated so every account
 # is required to re-accept the new version.
 # =============================================================================
-TERMS_VERSION = "2026-05-01"
+TERMS_VERSION = "2026-05-02"
 # ISO date when the current TERMS_VERSION was published. The grace period for
 # re-acceptance counts from here.
-TERMS_VERSION_PUBLISHED_AT = "2026-05-01T00:00:00+00:00"
+TERMS_VERSION_PUBLISHED_AT = "2026-05-02T00:00:00+00:00"
 # Days during which the re-acceptance modal is dismissible after a T&C bump.
 # After this window, the modal becomes non-dismissible (hard block).
 TERMS_GRACE_DAYS = 7
 TERMS_SUMMARY = (
     "Plataforma intermediaria. Propinas y facturas son responsabilidad del negocio. "
-    "Anticipo minimo $100 MXN + cuota $8.20. Wallet expira 24 meses."
+    "Anticipo minimo $100 MXN + cuota cliente $8.00 (con IVA). Wallet expira 24 meses."
 )
 
 # =============================================================================

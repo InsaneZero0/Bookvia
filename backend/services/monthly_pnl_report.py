@@ -112,7 +112,7 @@ def _render_email_html(report: Dict[str, Any]) -> str:
     )
 
     breakdown_rows = [
-        ("Fee fijo $8.20 por reserva", _fmt_mxn(pnl["bookvia_fee_income"])),
+        ("Fee fijo $8.00 por reserva", _fmt_mxn(pnl["bookvia_fee_income"])),
         ("Margen fee Stripe (est. vs real)", _fmt_mxn(pnl["fee_margin"])),
         ("Cliente pagó (total)", _fmt_mxn(pnl["client_paid_total"])),
         ("Fee real Stripe", _fmt_mxn(pnl["stripe_fee_actual_total"])),

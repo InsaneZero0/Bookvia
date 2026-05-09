@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { useAuth } from '@/lib/auth';
 import { useI18n } from '@/lib/i18n';
 import { toast } from 'sonner';
-import { LogIn, Loader2, Mail, Lock, Eye, EyeOff } from 'lucide-react';
+import { LogIn, Loader2, Mail, Lock, Eye, EyeOff, ArrowLeft } from 'lucide-react';
 
 export default function LoginPage() {
   const { t, language } = useI18n();
@@ -83,6 +83,15 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 px-4 pt-20" data-testid="login-page">
       <div className="w-full max-w-md">
+        <button
+          type="button"
+          onClick={() => navigate('/')}
+          className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-[#F05D5E] transition-colors mb-3 group"
+          data-testid="login-back-home-btn"
+        >
+          <ArrowLeft className="h-4 w-4 transition-transform group-hover:-translate-x-0.5" />
+          {language === 'es' ? 'Volver al inicio' : 'Back to home'}
+        </button>
         <Card className="shadow-xl border-0">
           <CardHeader className="text-center pb-2">
             <CardTitle className="text-2xl font-heading font-bold">

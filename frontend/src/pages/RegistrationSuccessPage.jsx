@@ -1,16 +1,17 @@
 import { useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { BookviaLogo } from '@/components/BookviaLogo';
 import { useI18n } from '@/lib/i18n';
 import { authAPI } from '@/lib/api';
 import { toast } from 'sonner';
-import { Mail, CheckCircle2, RefreshCw } from 'lucide-react';
+import { Mail, RefreshCw, ArrowLeft } from 'lucide-react';
 
 export default function RegistrationSuccessPage() {
   const { language } = useI18n();
   const location = useLocation();
+  const navigate = useNavigate();
   const email = new URLSearchParams(location.search).get('email') || '';
   const [resending, setResending] = useState(false);
 
@@ -30,6 +31,15 @@ export default function RegistrationSuccessPage() {
   return (
     <div className="min-h-screen flex items-center justify-center px-4 py-20 bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800" data-testid="registration-success-page">
       <div className="w-full max-w-md">
+        <button
+          type="button"
+          onClick={() => navigate('/')}
+          className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-[#F05D5E] transition-colors mb-3 group"
+          data-testid="registration-back-home-btn"
+        >
+          <ArrowLeft className="h-4 w-4 transition-transform group-hover:-translate-x-0.5" />
+          {language === 'es' ? 'Volver al inicio' : 'Back to home'}
+        </button>
         <Card className="border-0 shadow-xl text-center">
           <CardHeader className="pb-2 pt-8">
             <Link to="/" className="inline-block mb-4">

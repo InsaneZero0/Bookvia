@@ -194,6 +194,10 @@ export const businessesAPI = {
   createSubscription: (originUrl) => api.post('/businesses/me/subscribe', { origin_url: originUrl }),
   getSubscriptionStatus: (sessionId) => api.get(`/businesses/me/subscription/status${sessionId ? `?session_id=${sessionId}` : ''}`),
   cancelSubscription: () => api.post('/businesses/me/subscription/cancel'),
+  // Stripe Connect Express (Phase A)
+  connectOnboard: () => api.post('/stripe-connect/onboard'),
+  connectStatus: () => api.get('/stripe-connect/status'),
+  connectDashboardLink: () => api.post('/stripe-connect/dashboard-link'),
   // Blacklist
   getBlacklist: () => api.get('/businesses/me/blacklist'),
   addToBlacklist: (data) => api.post('/businesses/me/blacklist', data),

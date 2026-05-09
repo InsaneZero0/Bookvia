@@ -397,3 +397,110 @@ Prerrequisito operacional para el primer corte real del 1° de marzo 2026 — ca
 ### Reutilización Fase 20
 - ~70% del boilerplate de template/branding/hash reutilizado del legal_file_service. Mantuvimos separación de servicios para testeabilidad y claridad.
 
+
+
+## Phase 22 (Feb 2026) — Stripe Connect Express (FASE A: Onboarding)
+**Goal:** Migrar del flujo actual (pagos a cuenta principal + SPEI manuales) a Stripe Connect Express, donde cada negocio tiene su propia cuenta Stripe, recibe pagos directos con `application_fee_amount`, y los payouts los dispara Bookvia con schedule manual.
+
+### Modelo financiero final validado
+Confirmado con el usuario tras 2 iteraciones del cuadro de costos/utilidad:
+- **Cliente deposita $108**: $100 anticipo del servicio + $8 cuota fija Bookvia (con IVA, subtotal $6.90 + IVA $1.10)
+- **Negocio paga 8.5% sobre anticipo ($100)** = $8.50 (subtotal $7.33 + IVA $1.17). Etiqueta "8.5%" es sobre $100 no sobre $108.
+- **Cuota mensual Bookvia a negocios**: $49 (subtotal $42.24 + IVA $6.76) — NOTA: el cuadro del usuario tiene error visual, IVA debe ser $6.76 no $7.84.
+- **Mínimo anticipo**: $100 MXN (validación pendiente en Fase B)
+- **Costos Stripe por reserva (régimen estable)**: 3.6% ($3.89) + fija $3 + 0.25% Connect ($0.27) + IVA acreditable = **$8.30 por reserva**
+- **Costo fijo mensual por negocio**: Connect Express $35 (con IVA $40.60) + 1 payout SPEI $12 (con IVA $13.92) = **$47 neto mensual**
+- **Utilidad neta real**:
+  * 1ª reserva del mes (cubre fijos): $3.76
+  * 2ª+ reservas: **$7.07 neto por reserva** (después IVA a Hacienda)
+  * Punto de equilibrio: 1 reserva/mes por negocio
+
+### Fase A (implementada Feb 2026)
+**Backend** (`/app/backend/routers/stripe_connect.py`):
+- `POST /api/stripe-connect/onboard` — Crea `stripe.Account(type="express", country="MX")` con capabilities `card_payments + transfers`, payout schedule `manual`, metadata `bookvia_business_id`. Genera `AccountLink` y retorna URL para redirigir al usuario a Stripe Express onboarding. Idempotente: reusa cuenta existente en llamadas subsecuentes.
+- `GET /api/stripe-connect/status` — Consulta Stripe en tiempo real (`stripe.Account.retrieve`) y sincroniza estado a MongoDB: `charges_enabled`, `payouts_enabled`, `details_submitted`, `requirements_due`, `disabled_reason`.
+- `POST /api/stripe-connect/dashboard-link` — `stripe.Account.create_login_link()` para que el negocio acceda a su dashboard Express (ver payouts, editar banco).
+
+**Webhook** (`/app/backend/routers/system.py`):
+- Nuevo handler `account.updated` — Sincroniza el estado del Connect account a MongoDB cada vez que Stripe notifica cambios (idempotente via `stripe_events` collection de Fase 11). Marca `stripe_connect_onboarded_at` cuando `details_submitted + charges_enabled + payouts_enabled` se cumplen por primera vez.
+
+**Schema** (`/app/backend/models/schemas.py`):
+- `BusinessResponse` extendido con 4 campos nuevos: `stripe_connect_account_id`, `stripe_connect_charges_enabled`, `stripe_connect_payouts_enabled`, `stripe_connect_details_submitted`.
+
+**Frontend**:
+- Nuevo componente `/app/frontend/src/components/StripeConnectCard.jsx` — Card con 3 estados: "No conectado" (CTA "Conectar con Stripe"), "Pendiente" (CTA "Terminar verificación" + lista de `requirements_due`), "Activo" (indicadores verdes + CTA "Abrir dashboard de Stripe"). Lee `?connect_return=1` y `?connect_refresh=1` de la URL para refrescar estado tras redirect de Stripe.
+- Integrado en `BusinessFinancePage.jsx` debajo de las cards de KPIs.
+- API añadidos a `businessesAPI`: `connectOnboard()`, `connectStatus()`, `connectDashboardLink()`.
+
+### Constraints del usuario respetadas en el código
+- Mínimo anticipo $100 → validación pendiente en Fase B
+- $8 al cliente **NO aparece en interfaces del negocio** (ya cumplido desde Fase 19)
+- Comisión negocio **8.5% sobre anticipo** (no sobre $108)
+- Cuota mensual **$49 obligatoria** (vía Stripe Subscription existente, endurecer en Fase D)
+- **1 payout mensual** por negocio (corte día 20, pago día 1)
+
+### Bloqueador externo conocido (user action required)
+El primer intento de `stripe.Account.create()` retorna:
+> "You can only create new accounts if you've signed up for Connect, which you can do at https://dashboard.stripe.com/connect."
+
+El usuario necesita activar Connect en su Dashboard Stripe (test mode): elegir "Platform/Marketplace", país México, business name Bookvia, payout schedule "Manual". Tras eso, el onboarding de negocios funcionará end-to-end.
+
+### Fases pendientes
+- **Fase B**: Validación $100 mínimo anticipo en frontend+backend; auditar que $8 cliente nunca aparezca en UIs de negocio.
+- **Fase C (crítica)**: Migrar `PaymentIntent` a `transfer_data[destination] + application_fee_amount` para pagos directos a cuenta Connect del negocio. Refunds con `reverse_transfer=True`. Coexistencia 30 días con flujo legacy.
+- **Fase D**: Hacer suscripción mensual $49 obligatoria; webhook `invoice.payment_failed` suspende negocio.
+- **Fase E**: Cron mensual dispara `Transfer.create()` día 1° usando schedule manual ya configurado.
+- **Fase F**: Email blast + grace period 30 días + bloqueo de reservas para negocios no conectados.
+
+### Testing Fase A
+- Endpoints OpenAPI: ✅ 3 nuevos rutas registradas.
+- Auth guard: ✅ 401 sin token.
+- Status sin cuenta: ✅ retorna `{connected: false, ...}` sin error.
+- Onboard con Connect no activado: ✅ retorna error legible "You can only create new accounts if you've signed up for Connect".
+- UI: ✅ card renderiza correctamente con estado "No conectado" y CTA "Conectar con Stripe".
+
+
+## Phase B (Feb 2026) — Modelo Financiero Definitivo
+**Goal:** Aplicar el modelo financiero definitivo validado con el usuario: comisión 8.5% con piso $8.50, cuota cliente $8.00 con IVA, factura CFDI on-demand. Previo a migración completa de Connect Express.
+
+### Cambios de constantes
+- `BOOKVIA_FEE_MXN`: `8.20` → **`8.00`** (IVA incluido: subtotal $6.90 + IVA $1.10)
+- Nueva constante `MIN_BUSINESS_COMMISSION_MXN = 8.50` — piso mínimo de comisión negocio
+- `MIN_DEPOSIT_AMOUNT` en `core/config.py`: `50.0` → **`100.0`** (alineado con enums.py)
+- `COMMISSION_RATE` en config.py: `0.08` → `0.085` (alineado con STRIPE_FEE_PERCENT_ESTIMATED)
+
+### Lógica actualizada
+- `calculate_fees()` ahora usa: `business_commission = max(deposit * 8.5%, $8.50)`
+- Para anticipo $100 → comisión $8.50 (floor = 8.5% exacto)
+- Para anticipos >$100 → 8.5% variable (escala con ticket)
+- Para anticipos <$100 (no deberían existir, pero defensivo) → floor $8.50 protege Bookvia
+
+### UI / Textos actualizados
+- `TermsPage.jsx`: versión T&C bump a `2026-05-02`. Textos actualizados:
+  * "cuota fija de $8.20" → "cuota fija $8.00 (IVA incluido: subt $6.90 + IVA $1.10)"
+  * Ejemplos de anticipo $100: cliente paga $108.00 (no $108.20), negocio recibe $91.50
+  * "factura exclusiva" → "factura CFDI bajo solicitud al contacto@bookvia.app"
+- `BusinessProfilePage.jsx`: modal de reserva muestra "$8.00 MXN" (no $8.20)
+- `UserBookingsPage.jsx`: mensajes de cancelación y no-show compensation actualizados
+- `AdminDashboardPage.jsx`: P&L report etiqueta "Fee fijo $8.00"
+- `commissionTerms.js` (frontend): versión bumped a `v3-2026-02`, constantes alineadas
+- `monthly_pnl_report.py` y `reconciliation.py`: docstrings y labels actualizados
+
+### Lo que deliberadamente NO cambia
+- Textos al **negocio** siguen sin mencionar los $8 del cliente (ya estaba así desde Fase 19).
+- La comisión al negocio sigue llamándose "Impuestos por transacción" en la UI del negocio (ya estaba desde Fase 19).
+- El cálculo de `business_amount` (lo que recibe el negocio) no cambia porque 8.5% era ya el valor.
+
+### Tests actualizados
+- `test_fase1_cobranza.py`: matemáticas del breakdown actualizadas ($108.00, $8.00, floor $8.50).
+- `test_fase2_wallet.py`: asserts sobre wallet/cancellation flows ajustados ($158.00, $42.00 saldo).
+- `test_fase12_security_pnl.py`: fixtures de bookvia_fee actualizados a $8.00.
+- `test_phase19_commission_terms_audit.py`: snapshot hash actualizado con `bookvia_fee_mxn=8.00`.
+- `test_fase6_no_show_business.py`: client_paid refund montos actualizados a $108.00.
+
+### Resultados
+- **69 de 71 tests pasan** en los módulos afectados. Los 2 fallos son **pre-existentes** no relacionados (wallet_fallback en card-refund + async event-loop issue en brute_force).
+- Breakdown API valida correctamente para anticipos $100/$500/$1000 con matemáticas exactas.
+
+### Facturación CFDI (agendada, no implementada aún)
+Usuario confirmó: recibo por defecto; factura CFDI on-demand vía `contacto@bookvia.app`. Implementación pendiente cuando el negocio comience a facturar (SAT + PAC integration, fuera del scope actual).

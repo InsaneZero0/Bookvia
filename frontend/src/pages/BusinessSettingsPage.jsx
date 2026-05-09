@@ -14,6 +14,7 @@ import { useI18n } from '@/lib/i18n';
 import { businessesAPI } from '@/lib/api';
 import GoogleMapDraggable from '@/components/GoogleMapComponents';
 import CommissionTermsCard from '@/components/CommissionTermsCard';
+import { WhatsAppSupportButton } from '@/components/WhatsAppSupport';
 import { toast } from 'sonner';
 import {
   ArrowLeft, Mail, Phone, User, ShieldX, MapPin, Search, Loader2,
@@ -316,6 +317,31 @@ export default function BusinessSettingsPage() {
         {/* ===================== INFO TAB ===================== */}
         {activeTab === 'info' && privateInfo && (
           <div className="space-y-4">
+            {/* Help / WhatsApp support card */}
+            <Card className="border-emerald-200 bg-gradient-to-br from-emerald-50 to-transparent" data-testid="settings-help-card">
+              <CardContent className="p-4 flex items-center justify-between gap-3 flex-wrap">
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold text-slate-900">
+                    {t('¿Necesitas ayuda?', 'Need help?')}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">
+                    {t(
+                      'Resolvemos tus dudas por WhatsApp en horario laboral (9:00–19:00 hrs CDMX, lun–vie).',
+                      'We answer your questions on WhatsApp during business hours (9:00–19:00 Mexico City time, Mon–Fri).',
+                    )}
+                  </p>
+                </div>
+                <WhatsAppSupportButton
+                  variant="default"
+                  size="default"
+                  businessName={privateInfo.name}
+                  publicCode={privateInfo.public_code}
+                  className="bg-[#25D366] hover:bg-[#22c55e] text-white border-0"
+                  dataTestId="settings-whatsapp-btn"
+                />
+              </CardContent>
+            </Card>
+
             {/* Public Code Card - prominent */}
             {privateInfo.public_code && (
               <Card className="border-[#F05D5E]/30 bg-gradient-to-br from-[#F05D5E]/5 to-transparent" data-testid="public-code-card">

@@ -146,7 +146,7 @@ export default function UserBookingsPage() {
     // If wallet has any balance, ask whether to use it
     let useWallet = false;
     if (walletBalance > 0) {
-      const totalNeeded = (Number(booking.deposit_amount) || 0) + 8.20;
+      const totalNeeded = (Number(booking.deposit_amount) || 0) + 8.00;
       const willCover = walletBalance >= totalNeeded;
       const msg = language === 'es'
         ? `Tienes $${walletBalance.toFixed(2)} MXN en tu saldo Bookvia.\n\n${willCover ? 'Tu saldo cubre el total ($' + totalNeeded.toFixed(2) + ' MXN). ¿Pagar con saldo?' : 'Tu saldo cubre $' + walletBalance.toFixed(2) + ' MXN, el resto ($' + (totalNeeded - walletBalance).toFixed(2) + ' MXN) se cobrara a tu tarjeta. ¿Aplicar saldo?'}`
@@ -763,8 +763,8 @@ export default function UserBookingsPage() {
                           </p>
                           <p className="text-xs mt-1">
                             {language === 'es' 
-                              ? `Estas cancelando con ${Math.round(hoursUntil)}h de anticipacion. Recibiras $${refundAmount.toFixed(2)} MXN (91.5% del anticipo). La cuota Bookvia ($8.20) no se reembolsa.`
-                              : `You are cancelling ${Math.round(hoursUntil)}h in advance. You will receive $${refundAmount.toFixed(2)} MXN (91.5% of deposit). Bookvia fee ($8.20) is non-refundable.`}
+                              ? `Estas cancelando con ${Math.round(hoursUntil)}h de anticipacion. Recibiras $${refundAmount.toFixed(2)} MXN (91.5% del anticipo). La cuota Bookvia ($8.00) no se reembolsa.`
+                              : `You are cancelling ${Math.round(hoursUntil)}h in advance. You will receive $${refundAmount.toFixed(2)} MXN (91.5% of deposit). Bookvia fee ($8.00) is non-refundable.`}
                           </p>
                         </div>
                         
@@ -853,7 +853,7 @@ export default function UserBookingsPage() {
               <ul className="list-disc pl-4 space-y-0.5">
                 <li>{language === 'es' ? 'Bookvia notifica al negocio inmediatamente.' : 'Bookvia notifies the business immediately.'}</li>
                 <li>{language === 'es' ? 'Si el negocio responde, Bookvia revisara ambas versiones.' : 'If the business responds, Bookvia will review both sides.'}</li>
-                <li>{language === 'es' ? 'Si NO responde en 24h: te reembolsamos automaticamente $108.20 + $50 de compensacion en tu saldo Bookvia.' : 'If they do NOT respond within 24h: we automatically refund $108.20 + $50 compensation to your Bookvia wallet.'}</li>
+                <li>{language === 'es' ? 'Si NO responde en 24h: te reembolsamos automaticamente $108.00 + $50 de compensacion en tu saldo Bookvia.' : 'If they do NOT respond within 24h: we automatically refund $108.00 + $50 compensation to your Bookvia wallet.'}</li>
               </ul>
             </div>
             <textarea

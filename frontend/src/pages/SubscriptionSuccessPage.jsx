@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { useI18n } from '@/lib/i18n';
 import { useCountry } from '@/lib/countryContext';
 import { businessesAPI, authAPI } from '@/lib/api';
-import { CheckCircle2, ArrowRight, Loader2, Mail, Shield } from 'lucide-react';
+import { CheckCircle2, ArrowRight, Loader2, Mail, Shield, Home } from 'lucide-react';
 
 export default function SubscriptionSuccessPage() {
   const { language } = useI18n();
@@ -148,6 +148,16 @@ export default function SubscriptionSuccessPage() {
               <ArrowRight className="ml-2 h-4 w-4" />
             </Button>
           )}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground hover:text-[#F05D5E]"
+            onClick={() => navigate('/')}
+            data-testid="subscription-back-home-btn"
+          >
+            <Home className="mr-1.5 h-3.5 w-3.5" />
+            {language === 'es' ? 'Volver al inicio' : 'Back to home'}
+          </Button>
         </CardContent>
       </Card>
     </div>

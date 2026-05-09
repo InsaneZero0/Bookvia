@@ -1,6 +1,6 @@
 """
 Tests for Fase 1 de nuevo modelo de cobranza en Mexico.
-- Bookvia fixed fee: $8.20 MXN (IVA incluido)
+- Bookvia fixed fee: $8.00 MXN (IVA incluido)
 - Stripe fee estimated: 8.5% on deposit
 - Min deposit: $100 MXN
 - POST /api/payments/deposit/checkout creates Stripe Checkout session with 2 line items
@@ -115,7 +115,7 @@ def biz_context(biz_token):
     _db.services.delete_many({"id": {"$in": [cheap_id, exp_id]}})
     _db.workers.delete_many({"id": worker_id})
     _db.bookings.delete_many({"business_id": biz_id, "notes": {"$regex": "^TEST_FASE1"}})
-    _db.transactions.delete_many({"business_id": biz_id, "user_id": {"$exists": True}, "currency": "MXN", "bookvia_fee": 8.2})
+    _db.transactions.delete_many({"business_id": biz_id, "user_id": {"$exists": True}, "currency": "MXN", "bookvia_fee": 8.0})
 
 
 # ============ Public breakdown endpoint tests ============
@@ -126,12 +126,12 @@ class TestFeesBreakdown:
         assert r.status_code == 200, r.text
         d = r.json()
         assert d["deposit_amount"] == 100.0
-        assert d["client_paid"] == 108.2
-        assert d["bookvia_fee"] == 8.2
+        assert d["client_paid"] == 108.0
+        assert d["bookvia_fee"] == 8.0
         assert d["stripe_fee_estimated"] == 8.5
         assert d["business_amount"] == 91.5
         assert d["min_deposit_amount"] == 100
-        assert d["bookvia_fee_mxn"] == 8.2
+        assert d["bookvia_fee_mxn"] == 8.0
         assert d["stripe_fee_percent_estimated"] == 0.085
 
     def test_breakdown_500(self):
@@ -139,8 +139,8 @@ class TestFeesBreakdown:
         assert r.status_code == 200, r.text
         d = r.json()
         assert d["deposit_amount"] == 500.0
-        assert d["client_paid"] == 508.2
-        assert d["bookvia_fee"] == 8.2
+        assert d["client_paid"] == 508.0
+        assert d["bookvia_fee"] == 8.0
         assert d["stripe_fee_estimated"] == 42.5
         assert d["business_amount"] == 457.5
 
@@ -156,10 +156,10 @@ class TestFeesBreakdown:
         assert d["min_deposit_amount"] == 100
 
     @pytest.mark.parametrize("dep,exp_client,exp_biz,exp_stripe", [
-        (100, 108.2, 91.5, 8.5),
-        (200, 208.2, 183.0, 17.0),
-        (500, 508.2, 457.5, 42.5),
-        (1000, 1008.2, 915.0, 85.0),
+        (100, 108.0, 91.5, 8.5),
+        (200, 208.0, 183.0, 17.0),
+        (500, 508.0, 457.5, 42.5),
+        (1000, 1008.0, 915.0, 85.0),
     ])
     def test_calculate_fees_math(self, dep, exp_client, exp_biz, exp_stripe):
         r = requests.get(f"{API}/payments/fees/breakdown", params={"deposit_amount": dep}, timeout=10)
@@ -168,7 +168,7 @@ class TestFeesBreakdown:
         assert d["client_paid"] == exp_client
         assert d["business_amount"] == exp_biz
         assert d["stripe_fee_estimated"] == exp_stripe
-        assert d["bookvia_fee"] == 8.2
+        assert d["bookvia_fee"] == 8.0
 
 
 # ============ Admin config ============
@@ -238,15 +238,15 @@ class TestDepositCheckout:
         assert "url" in d and d["url"].startswith("http"), "Stripe URL missing"
         assert "session_id" in d
         assert d.get("amount") == 150.0
-        assert d.get("client_paid") == 158.2
-        assert d.get("bookvia_fee") == 8.2
+        assert d.get("client_paid") == 158.0
+        assert d.get("bookvia_fee") == 8.0
         assert round(float(d.get("business_amount")), 2) == 137.25  # 150 - 12.75
 
         # Verify transaction doc has new fields
         tx = _db.transactions.find_one({"booking_id": booking_id}, {"_id": 0})
         assert tx is not None, "Transaction doc not created"
-        assert tx.get("client_paid") == 158.2
-        assert tx.get("bookvia_fee") == 8.2
+        assert tx.get("client_paid") == 158.0
+        assert tx.get("bookvia_fee") == 8.0
         assert round(float(tx.get("stripe_fee_estimated")), 2) == 12.75
         assert round(float(tx.get("business_amount")), 2) == 137.25
         assert tx.get("stripe_fee_actual") is None
