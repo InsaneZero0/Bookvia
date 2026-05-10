@@ -471,6 +471,16 @@ async def register_business(business: BusinessCreate, request: Request):
     existing = await db.businesses.find_one({"email": business.email})
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
+
+    # Phase H — validate subcategories
+    sub_ids = (business.subcategory_ids or [])[:3]  # cap at 3
+    if sub_ids:
+        valid_subs = await db.categories.count_documents({
+            "id": {"$in": sub_ids},
+            "parent_id": business.category_id,
+        })
+        if valid_subs != len(sub_ids):
+            raise HTTPException(status_code=400, detail="Una o mas subcategorias no pertenecen a la categoria seleccionada")
     
     # Also create user account for business owner
     user_id = generate_id()
@@ -508,6 +518,7 @@ async def register_business(business: BusinessCreate, request: Request):
         "phone_verified": False,
         "description": business.description,
         "category_id": business.category_id,
+        "subcategory_ids": sub_ids,
         "address": business.address,
         "city": business.city,
         "city_slug": city_slug,

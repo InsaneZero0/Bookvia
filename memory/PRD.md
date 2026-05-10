@@ -620,3 +620,49 @@ Eso indica que la activacion del Connect Setup wizard no esta 100% completa — 
 - ✅ Inactive users detecta 53 usuarios (segment=all, days=30) — excluye admin/business/banned/unsub/recently-contacted
 - ✅ Dry-run procesa 53 sin enviar (sent=53, failed=0, dry_run=true)
 - ✅ Tab "Reactivacion" visible en `/bv-ctrl` admin con KPI count: 53
+
+
+## Phase H (Feb 2026) — Reestructura de Categorías + Stepper navegable
+**Goal:** Reemplazar las 11 categorias inconsistentes (con solapamientos y "Salones, Servicios y Eventos" confuso) por una taxonomia de 2 niveles: 12 categorias madre + 74 subcategorias, alineada con benchmarks (Fresha, Booksy, Vagaro). Permitir al negocio elegir hasta 3 subcategorias.
+
+### Cambios
+
+**Backend**:
+- `models/schemas.py` — `BusinessCreate.subcategory_ids: List[str] = []` (max 3, validados que pertenezcan al parent), `BusinessResponse.subcategory_ids` + `subcategory_names`.
+- `routers/categories.py` — Default `GET /api/categories` ahora retorna SOLO parents. Param `?include_subcategories=true` o `?parent_id=<id>` para children. Nuevo `GET /api/categories/{slug_or_id}/subcategories`.
+- `routers/auth.py::register_business` — valida que las subcategorias pertenezcan al parent.
+- **Migration script** `/app/scripts/migrate_categories_phase_h.py` ejecutado:
+  * Borradas 7 categorias legacy.
+  * Insertadas 12 parent categories nuevas con slugs estables.
+  * Insertadas 74 subcategorias.
+  * 1 negocio migrado (consultoria → servicios-profesionales).
+
+**Frontend**:
+- `pages/BusinessRegisterPage.jsx`:
+  * Step 0: Select de categoria padre dispara `getSubcategories()` en cambio.
+  * Render dinamico de **chips multi-select** (max 3) con `data-testid="subcategory-chip-<slug>"`.
+  * Contador "X/3 seleccionadas".
+  * Stepper visual (1-2-3-4-5) ahora **clickeable hacia atras** — boton `data-testid="stepper-jump-<index>"` permite saltar a steps ya completados (no adelante, no en step 5).
+- `lib/api.js` — `categoriesAPI.getSubcategories(slugOrId)`.
+
+### Mapping legacy → nuevo
+| Legacy slug | Nuevo parent slug |
+|---|---|
+| belleza-estetica | belleza-estetica (igual) |
+| salud | salud-medicos |
+| fitness-bienestar | fitness-deportes |
+| spa-masajes | spa-masajes (igual) |
+| servicios-legales | servicios-profesionales |
+| consultoria | servicios-profesionales |
+| automotriz | automotriz (igual) |
+| veterinaria | mascotas |
+| salones-servicios-eventos | eventos-banquetes |
+| otro | otros-servicios |
+| (nuevas: bienestar-terapias, educacion, hogar-reparaciones) | — |
+
+### Testing verificado
+- ✅ `GET /api/categories?country_code=MX` → 12 parents
+- ✅ `GET /api/categories/belleza-estetica/subcategories` → 8 chips
+- ✅ `GET /api/categories/salud-medicos/subcategories` → 7 chips
+- ✅ Screenshot del wizard muestra los 12 nuevos labels en dropdown
+- ✅ Stepper buttons clickeables hacia atras renderizan correctamente

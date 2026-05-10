@@ -86,6 +86,7 @@ class BusinessCreate(BaseModel):
     phone: str
     description: str
     category_id: str
+    subcategory_ids: List[str] = []  # Phase H — up to 3 subcategory ids
     address: str
     city: str
     state: str
@@ -128,6 +129,8 @@ class BusinessResponse(BaseModel):
     description: str = ""
     category_id: str
     category_name: Optional[str] = None
+    subcategory_ids: List[str] = []
+    subcategory_names: List[str] = []
     address: str
     city: str
     city_slug: Optional[str] = None
