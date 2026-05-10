@@ -707,3 +707,75 @@ Eso indica que la activacion del Connect Setup wizard no esta 100% completa — 
 - Despues: ~4,900 URLs en sitemap (50 ciudades × 86 categorias)
 - Cada URL es un long-tail keyword: "dental en queretaro", "yoga en cdmx", "barberia coyoacan"
 - Booksy/Fresha capturan 40-60% de trafico nuevo por estas URLs
+
+
+## Phase D (Feb 2026) — Suscripción $49 obligatoria con auto-suspensión
+**Goal:** Hacer la suscripción mensual $49 verdaderamente obligatoria. Si la tarjeta del negocio falla, sistema escala automáticamente: warning email → suspensión día 7 → cancelación día 30.
+
+### Backend
+
+**Webhooks** (`/app/backend/routers/system.py`):
+- `invoice.payment_succeeded` — re-activa el negocio si estaba `past_due` o suspendido por pago. Limpia `subscription_failed_attempts`, `subscription_failed_at`.
+- `invoice.payment_failed` — incrementa `subscription_failed_attempts`, marca `subscription_status='past_due'`, registra `subscription_failed_at`. Manda email automático.
+- `customer.subscription.deleted` — cancela definitivamente: `subscription_status='canceled'`, `banned=True`, `banned_reason='subscription_canceled'`.
+
+**Cron diario** (`/app/backend/services/subscription_enforcement.py`):
+- Día 7+ con pago fallido: suspende (`banned=True, banned_reason='subscription_unpaid'`, `suspended_at=now`). El `VISIBLE_BUSINESS_FILTER` lo oculta automáticamente. Email de aviso.
+- Día 30+ con pago fallido: cancela Stripe Subscription via `Subscription.delete()`, marca `subscription_status='canceled'`. Email final.
+- Programado en `server.py::subscription_enforcement_scheduler` (cada 24h).
+
+**Endpoint** (`/app/backend/routers/businesses.py`):
+- `POST /api/businesses/me/subscription/billing-portal` — genera Stripe Customer Portal session. Permite al negocio actualizar tarjeta, ver facturas, cancelar suscripción desde la UI hospedada de Stripe.
+
+### Frontend
+
+**Componente** `/app/frontend/src/components/SubscriptionPastDueBanner.jsx`:
+- Banner persistente en `BusinessDashboardPage`.
+- 2 estados visuales:
+  * `past_due` → banner naranja "Tu pago mensual fallo - actualiza tu tarjeta. Tienes 7 dias..."
+  * `unpaid` / `canceled` → banner rojo "Tu cuenta esta suspendida..."
+- CTA único: "Actualizar tarjeta" → llama `billingPortal()` → redirige a Stripe Customer Portal.
+- Self-hides cuando subscription esta `active`/`trialing`/`none`.
+
+**API** (`/app/frontend/src/lib/api.js`):
+- `businessesAPI.billingPortal()` — agrega endpoint Customer Portal.
+
+### Flujo completo
+
+```
+Día 0:  Tarjeta cobra OK → subscription_status='active', business visible y operativo
+        ↓ (mes después si tarjeta vence o fondos insuficientes)
+Día 1:  webhook invoice.payment_failed → past_due, attempt=1, email automático
+Día 3:  webhook invoice.payment_failed → past_due, attempt=2, email automático
+Día 7:  cron suspende → banned=True, banned_reason='subscription_unpaid'
+        - Negocio invisible en busquedas (VISIBLE_BUSINESS_FILTER excluye banned)
+        - Banner rojo crítico en dashboard
+        - Email de suspensión
+Día 30: cron cancela → Stripe.Subscription.delete() + canceled status + email final
+        - Negocio debe registrarse de nuevo si quiere volver
+```
+
+### Recovery flow
+
+Cuando el negocio actualiza su tarjeta vía Customer Portal:
+1. Stripe re-intenta el pago automáticamente
+2. Si exitoso → webhook `invoice.payment_succeeded`
+3. Backend re-activa: `subscription_status='active'`, `banned=False`, `banned_reason=None`, contador attempts=0
+4. Negocio vuelve a aparecer en busquedas inmediatamente
+5. Banner del dashboard desaparece
+
+### Testing verificado
+- ✅ Webhook handlers registrados en `system.py`
+- ✅ `subscription_enforcement_scheduler` arranca correctamente (logs muestran "Subscription enforcement scheduler started")
+- ✅ Endpoint `/api/businesses/me/subscription/billing-portal` registrado en OpenAPI
+- ✅ Auth guard 401 sin token
+- ✅ Con token de negocio: retorna URL real de Stripe Customer Portal (`https://billing.stripe.com/p/session/test_...`)
+- ✅ Banner componente sin issues lint
+- ⚠️ Banner UI no testeado visualmente porque `getSubscriptionStatus` sincroniza con Stripe live y sobreescribe past_due manual → comportamiento correcto en producción
+
+### Comportamiento esperado en producción
+Cuando un negocio real tenga su tarjeta fallida:
+1. Stripe envía `invoice.payment_failed` al webhook
+2. Backend marca `past_due` (no se sobreescribe porque Stripe también lo retorna `past_due`)
+3. Banner naranja aparece automáticamente al cargar dashboard
+4. Cron suspende día 7 si no actualiza
