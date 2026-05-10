@@ -35,7 +35,7 @@ export default function AdminWinbackTab() {
   const [segment, setSegment] = useState('all');
   const [template, setTemplate] = useState('miss_you');
   const [days, setDays] = useState(30);
-  const [incentive, setIncentive] = useState(true);
+  const [incentive, setIncentive] = useState(false);
   const [dryRun, setDryRun] = useState(false);
   const [users, setUsers] = useState([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
@@ -165,7 +165,9 @@ export default function AdminWinbackTab() {
             </div>
             <div className="flex flex-col justify-end gap-2">
               <div className="flex items-center justify-between">
-                <Label htmlFor="incentive-switch" className="text-sm">Incluir $50 saldo Bookvia (vence 7 dias)</Label>
+                <Label htmlFor="incentive-switch" className="text-sm">
+                  Incluir $50 saldo Bookvia <span className="text-xs text-slate-400">(activar cuando tengas suscriptores)</span>
+                </Label>
                 <Switch id="incentive-switch" checked={incentive} onCheckedChange={setIncentive} />
               </div>
               <div className="flex items-center justify-between">

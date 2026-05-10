@@ -27,7 +27,7 @@ class WinbackCampaignRequest(BaseModel):
     segment: Literal["never_booked", "stale_user", "all"] = "all"
     template: Literal["miss_you", "first_booking", "new_businesses"] = "miss_you"
     days: int = 30
-    incentive: bool = True
+    incentive: bool = False
     dry_run: bool = False
 
 
