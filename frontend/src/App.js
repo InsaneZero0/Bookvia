@@ -41,6 +41,7 @@ import RegistrationSuccessPage from '@/pages/RegistrationSuccessPage';
 import VerifyEmailPage from '@/pages/VerifyEmailPage';
 import ForgotPasswordPage from '@/pages/ForgotPasswordPage';
 import ResetPasswordPage from '@/pages/ResetPasswordPage';
+import UnsubscribePage from '@/pages/UnsubscribePage';
 import FavoritesPage from '@/pages/FavoritesPage';
 import PaymentHistoryPage from '@/pages/PaymentHistoryPage';
 import GoogleAuthCallback from '@/pages/GoogleAuthCallback';
@@ -85,6 +86,7 @@ function App() {
               <Route path="/verify-email" element={<VerifyEmailPage />} />
               <Route path="/forgot-password" element={<ForgotPasswordPage />} />
               <Route path="/reset-password" element={<ResetPasswordPage />} />
+              <Route path="/unsubscribe" element={<UnsubscribePage />} />
               <Route path="/auth/google/callback" element={<GoogleAuthCallback />} />
               
               {/* User Pages */}

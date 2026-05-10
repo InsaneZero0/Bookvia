@@ -16,6 +16,7 @@ import { adminAPI, reviewsAPI } from '@/lib/api';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { toast } from 'sonner';
 import { WaitlistBroadcastModal } from '@/components/WaitlistBroadcastModal';
+import AdminWinbackTab from '@/components/AdminWinbackTab';
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
 } from 'recharts';
@@ -1213,6 +1214,7 @@ export default function AdminDashboardPage() {
     { id: 'subscriptions', label: t('Suscripciones', 'Subscriptions'), icon: CreditCard },
     { id: 'finance', label: t('Finanzas', 'Finance'), icon: Wallet },
     { id: 'compliance', label: t('Cumplimiento', 'Compliance'), icon: Shield },
+    { id: 'winback', label: t('Reactivacion', 'Winback'), icon: Mail },
     ...(isSuperAdmin ? [{ id: 'staff', label: t('Equipo', 'Team'), icon: UserPlus }] : []),
   ];
   const tabs = allTabs.filter(tab => hasTabPerm(tab.id));
@@ -3029,6 +3031,9 @@ export default function AdminDashboardPage() {
             </Card>
           </div>
         )}
+
+        {/* ============ WINBACK TAB (Phase G) ============ */}
+        {activeTab === 'winback' && <AdminWinbackTab />}
 
         {/* ============ COMPLIANCE TAB ============ */}
         {activeTab === 'compliance' && (

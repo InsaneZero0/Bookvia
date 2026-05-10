@@ -198,6 +198,14 @@ export const businessesAPI = {
   connectOnboard: () => api.post('/stripe-connect/onboard'),
   connectStatus: () => api.get('/stripe-connect/status'),
   connectDashboardLink: () => api.post('/stripe-connect/dashboard-link'),
+  // Phase G — Winback campaigns & privacy (LFPDPPP)
+  adminInactiveUsers: (params) => api.get('/admin/winback/inactive-users', { params }),
+  adminRunWinbackCampaign: (data) => api.post('/admin/winback/campaign', data),
+  adminWinbackHistory: () => api.get('/admin/winback/campaigns'),
+  unsubscribeInfo: (token) => api.get('/users/unsubscribe-info', { params: { token } }),
+  unsubscribe: (token) => api.post('/users/unsubscribe', { token }),
+  deleteMyAccount: () => api.post('/users/me/delete-account'),
+  deleteMyBusinessAccount: () => api.post('/users/me/business/delete-account'),
   // Blacklist
   getBlacklist: () => api.get('/businesses/me/blacklist'),
   addToBlacklist: (data) => api.post('/businesses/me/blacklist', data),

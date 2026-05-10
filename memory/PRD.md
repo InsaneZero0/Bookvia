@@ -569,3 +569,54 @@ Eso indica que la activacion del Connect Setup wizard no esta 100% completa — 
 |---|---|---|
 | Gate OFF (default) | 2 negocios visibles | HTTP 200 |
 | Gate ON | 0 negocios visibles | HTTP 400 + mensaje |
+
+
+## Phase G (Feb 2026) — Winback Campaigns + LFPDPPP Compliance
+**Goal:** Permitir al admin reactivar usuarios inactivos (registrados sin reservar / clientes que se enfriaron) via campaña de email masiva con incentivo de saldo Bookvia. Implementar tambien delete-account y unsubscribe LFPDPPP-compliant.
+
+### Backend
+- **Servicio** `/app/backend/services/winback.py`:
+  * `find_inactive_users(segment, days)` — detecta `never_booked` / `stale_user` / `all`. Excluye dados de baja, banned, contactados ultimos 15 dias.
+  * `run_winback_campaign()` — envia emails via Resend, genera codigo unico de incentivo $50 MXN (vence 7 dias) por usuario, registra en `winback_emails` y `winback_campaigns`. Soporta `dry_run`.
+  * `redeem_winback_incentive(code, user_id)` — aplica el credito al wallet cuando el usuario lo redime.
+  * 3 templates HTML branded: `miss_you`, `first_booking`, `new_businesses`.
+
+- **Router admin** `/app/backend/routers/winback.py`:
+  * `GET  /api/admin/winback/inactive-users` — preview de usuarios candidatos
+  * `POST /api/admin/winback/campaign` — dispara campana (con dry_run opcional)
+  * `GET  /api/admin/winback/campaigns` — historial de campanas
+
+- **Router publico (LFPDPPP)**:
+  * `GET  /api/users/unsubscribe-info?token=...` — preview confirmacion
+  * `POST /api/users/unsubscribe` — 1-click unsubscribe (sin auth, con token unico)
+  * `POST /api/users/me/delete-account` — derecho al olvido para cliente (anonimiza PII, preserva historial sin datos)
+  * `POST /api/users/me/business/delete-account` — derecho al olvido para negocio (anonimiza, cancela suscripcion, preserva settlements por SAT)
+
+- **Anti-spam**: maximo 1 winback email por usuario cada 15 dias. Despues de 3 emails sin abrir → stop automatico.
+- **Incentivo**: $50 MXN saldo Bookvia con codigo `BVxxxxx`, vence 7 dias. Debita al wallet con `services/wallet.credit_wallet`.
+
+### Frontend
+- **Componente** `/app/frontend/src/components/AdminWinbackTab.jsx`:
+  * 3 KPI cards (usuarios inactivos / gasto historico / campanas previas)
+  * Selector de segmento + template + dias + toggle incentivo + toggle dry-run
+  * Tabla preview con primeros 50 usuarios
+  * Boton "Enviar a N usuarios" con confirmacion (AlertDialog)
+  * Historial de campanas pasadas
+- **Tab "Reactivacion"** agregado a `AdminDashboardPage` (entre Cumplimiento y Equipo)
+- **Pagina publica** `/app/frontend/src/pages/UnsubscribePage.jsx` en ruta `/unsubscribe?token=xxx` (sin auth)
+- **Componente** `/app/frontend/src/components/DeleteAccountCard.jsx` para Settings (kind="user" o kind="business"). Confirma con palabra "ELIMINAR" tipeada antes de borrar.
+- **Integrado en** `BusinessSettingsPage` (kind="business"). UserDashboardPage ya tenia su propio flujo (DELETE /users/me/account).
+
+### LFPDPPP Compliance achievements
+- ✅ Cada email winback tiene link `/unsubscribe?token=...` (1-click, sin login)
+- ✅ Tabla `email_unsubscribes` registra opt-outs permanentemente
+- ✅ Nunca se vuelve a contactar a un usuario que se dio de baja
+- ✅ Soft-delete preserva integridad fiscal (settlements, bookings) anonimizando PII
+- ✅ Confirmacion explicita ("ELIMINAR" tipeado) antes de delete
+
+### Testing verificado
+- ✅ 7 endpoints registrados en OpenAPI
+- ✅ Auth guards: 401 sin token, 422 sin token unsubscribe
+- ✅ Inactive users detecta 53 usuarios (segment=all, days=30) — excluye admin/business/banned/unsub/recently-contacted
+- ✅ Dry-run procesa 53 sin enviar (sent=53, failed=0, dry_run=true)
+- ✅ Tab "Reactivacion" visible en `/bv-ctrl` admin con KPI count: 53

@@ -44,6 +44,7 @@ from routers.seo import seo_router
 from routers.terms import router as terms_router  # Fase 10
 from routers.waitlist import router as waitlist_router, admin_router as waitlist_admin_router  # Fase 16
 from routers.stripe_connect import router as stripe_connect_router  # Fase 22 - Connect Express
+from routers.winback import admin_router as winback_admin_router, public_router as winback_public_router  # Fase G - Winback + LFPDPPP
 
 api_router.include_router(auth_router)
 api_router.include_router(users_router)
@@ -61,6 +62,8 @@ api_router.include_router(terms_router)
 api_router.include_router(waitlist_router)
 api_router.include_router(waitlist_admin_router)
 api_router.include_router(stripe_connect_router)
+api_router.include_router(winback_admin_router)
+api_router.include_router(winback_public_router)
 
 # SEO routes at root level (no /api prefix for sitemap/robots)
 app.include_router(seo_router)
