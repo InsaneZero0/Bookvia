@@ -508,6 +508,14 @@ async def create_booking(booking: BookingCreate, token_data: TokenData = Depends
 
     if business.get("subscription_status") in ("canceled", "past_due", "unpaid"):
         raise HTTPException(status_code=400, detail="Business subscription is not active")
+
+    # Phase A.2 — block bookings for businesses without an active Stripe Connect account.
+    # Skip this check when the booking is created by the business itself (e.g. walk-in).
+    if token_data.role != UserRole.BUSINESS and not business.get("stripe_connect_charges_enabled"):
+        raise HTTPException(
+            status_code=400,
+            detail="Este negocio aun no ha completado su registro de pagos. Intenta mas tarde."
+        )
     
     # Check blacklist (skip for business users)
     if token_data.role != UserRole.BUSINESS and await is_user_blacklisted(booking.business_id, user_id=token_data.user_id):

@@ -504,3 +504,46 @@ El usuario necesita activar Connect en su Dashboard Stripe (test mode): elegir "
 
 ### Facturación CFDI (agendada, no implementada aún)
 Usuario confirmó: recibo por defecto; factura CFDI on-demand vía `contacto@bookvia.app`. Implementación pendiente cuando el negocio comience a facturar (SAT + PAC integration, fuera del scope actual).
+
+
+## Phase A.2 (Feb 2026) — Stripe Connect Bloqueante (Opcion A)
+**Goal:** Forzar a TODOS los negocios a conectar su cuenta Stripe Express ANTES de poder recibir reservas. Sin Stripe activo, el negocio queda invisible en busquedas y no acepta bookings.
+
+### Cambios
+
+**Backend** (`/app/backend/models/enums.py`):
+- `VISIBLE_BUSINESS_FILTER` ahora exige `stripe_connect_charges_enabled: True`
+- Aplica automaticamente a `/api/businesses/search` (publica) y a la card "Cuenta Stripe Connect"
+
+**Backend** (`/app/backend/routers/bookings.py`):
+- `create_booking()` rechaza con HTTP 400 si el negocio no tiene `stripe_connect_charges_enabled: True`
+- Mensaje de error: "Este negocio aun no ha completado su registro de pagos. Intenta mas tarde."
+- Excepcion: las reservas creadas POR el negocio (walk-ins) si pasan, para no romper su operacion interna.
+
+**Frontend** (`StripeConnectRequiredBanner.jsx` — nuevo):
+- Banner amarillo persistente en `BusinessDashboardPage` (encima de los stats).
+- Solo aparece si Stripe NO esta `charges_enabled + payouts_enabled + details_submitted`.
+- 2 estados visuales:
+  * "No conectado" → CTA "Conectar Stripe" (redirige a onboarding)
+  * "Pendiente" → CTA "Terminar" (resume onboarding) + lista de requirements_due
+- 100% silencioso una vez Stripe esta activo (no renderiza nada).
+
+**Frontend** (`SubscriptionSuccessPage.jsx`):
+- Despues de pagar suscripcion en flujo de registro, se muestra ahora un mensaje adicional: "Despues de iniciar sesion, te pediremos conectar tu cuenta bancaria con Stripe (gratis) para poder recibir pagos de tus clientes."
+
+### Testing
+- ✅ Search publica con `?limit=5` retorna 0 negocios (ningun negocio tiene Connect activo aun) — filtro funcionando.
+- ✅ Booking POST `/api/bookings/` con negocio sin Connect → 400 + mensaje correcto.
+- ✅ Banner se renderiza con `data-testid="stripe-connect-required-banner"` en `/business/dashboard`.
+- ✅ Banner desaparece cuando `charges_enabled + payouts_enabled + details_submitted`.
+
+### Bloqueador externo conocido (user action required)
+Para que el usuario pueda crear cuentas Connect, debe completar en su Dashboard Stripe:
+1. Activa tu cuenta (datos plataforma Bookvia)
+2. Verifica documento de identidad (INE/representante)
+3. Confirma datos finales
+
+Hasta entonces, el endpoint `/api/stripe-connect/onboard` devuelve:
+> "You can only create new accounts if you've signed up for Connect, which you can do at https://dashboard.stripe.com/connect"
+
+Eso indica que la activacion del Connect Setup wizard no esta 100% completa — los pasos opcionales del checklist son requisitos en realidad.

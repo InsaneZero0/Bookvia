@@ -169,6 +169,10 @@ VISIBLE_BUSINESS_FILTER = {
     "subscription_status": {"$in": ["active", "trialing"]},
     "banned": {"$ne": True},
     "documents_verified": True,
+    # Phase A.2 — must have a fully onboarded Stripe Connect Express account
+    # to be visible in search and accept new bookings. Set to True only when
+    # both `charges_enabled` and `payouts_enabled` are true (synced via webhook).
+    "stripe_connect_charges_enabled": True,
 }
 
 

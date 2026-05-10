@@ -24,6 +24,7 @@ import { toast } from 'sonner';
 import ReportsTab from '@/components/ReportsTab';
 import AgendaTimeline from '@/components/AgendaTimeline';
 import { ProfileCompletionBanner } from '@/components/ProfileCompletionBanner';
+import StripeConnectRequiredBanner from '@/components/StripeConnectRequiredBanner';
 import BusinessClientsTab from '@/components/BusinessClientsTab';
 import {
   Calendar as CalendarIcon, DollarSign, Star, Users, Clock, CheckCircle2,
@@ -727,6 +728,9 @@ export default function BusinessDashboardPage() {
 
         {/* Pending no-show reports requiring business response */}
         <NoShowAlertBanner bookings={dayBookings} onResolved={() => loadDayBookings()} />
+
+        {/* Stripe Connect required banner - hides itself once fully onboarded */}
+        <StripeConnectRequiredBanner />
 
         {/* ── Tabs ────────────────────────────────────── */}
         {(() => {
