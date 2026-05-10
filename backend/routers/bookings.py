@@ -511,7 +511,13 @@ async def create_booking(booking: BookingCreate, token_data: TokenData = Depends
 
     # Phase A.2 — block bookings for businesses without an active Stripe Connect account.
     # Skip this check when the booking is created by the business itself (e.g. walk-in).
-    if token_data.role != UserRole.BUSINESS and not business.get("stripe_connect_charges_enabled"):
+    # Controlled by ENFORCE_STRIPE_CONNECT_GATE env var (default OFF for testing).
+    from models.enums import _stripe_connect_gate_enabled
+    if (
+        _stripe_connect_gate_enabled()
+        and token_data.role != UserRole.BUSINESS
+        and not business.get("stripe_connect_charges_enabled")
+    ):
         raise HTTPException(
             status_code=400,
             detail="Este negocio aun no ha completado su registro de pagos. Intenta mas tarde."

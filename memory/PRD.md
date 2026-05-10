@@ -547,3 +547,25 @@ Hasta entonces, el endpoint `/api/stripe-connect/onboard` devuelve:
 > "You can only create new accounts if you've signed up for Connect, which you can do at https://dashboard.stripe.com/connect"
 
 Eso indica que la activacion del Connect Setup wizard no esta 100% completa — los pasos opcionales del checklist son requisitos en realidad.
+
+
+## Phase A.2.1 (Feb 2026) — Feature Flag para desbloquear pruebas
+**Goal:** El gate de Stripe Connect bloqueaba TODAS las pruebas (search vacio, bookings rechazados) porque ningun negocio tiene Connect activo aun. Lo convertimos en feature flag controlable.
+
+### Cambio
+- Nueva env var `ENFORCE_STRIPE_CONNECT_GATE` (default: `false`).
+- `visible_business_filter_now()` aplica `stripe_connect_charges_enabled: True` solo cuando flag = ON.
+- `create_booking()` valida Stripe Connect solo cuando flag = ON.
+- El **banner amarillo** en `BusinessDashboardPage` SIGUE apareciendo siempre (es solo recordatorio para que negocios conecten antes del lanzamiento).
+
+### Cuando activar el gate (ON)
+- Cuando Bookvia tenga la empresa registrada legalmente en Mexico (RFC, SAT, etc).
+- Cuando el dueno de Bookvia complete los 3 pasos de Stripe: "Activa tu cuenta", "Verifica documento", "Confirma datos finales".
+- Cuando ya hayas hecho email blast a negocios para que migren a Connect (Fase F).
+- Activar con: `ENFORCE_STRIPE_CONNECT_GATE=true` en Railway env vars.
+
+### Testing verificado
+| Estado | Search publica | Booking |
+|---|---|---|
+| Gate OFF (default) | 2 negocios visibles | HTTP 200 |
+| Gate ON | 0 negocios visibles | HTTP 400 + mensaje |
