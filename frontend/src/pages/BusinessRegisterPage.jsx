@@ -518,21 +518,32 @@ export default function BusinessRegisterPage() {
             {/* Progress indicator */}
             <div className="mb-8">
               <div className="flex justify-between mb-2">
-                {STEPS.map((step, index) => (
-                  <div 
-                    key={step.id}
-                    className={`flex flex-col items-center ${index <= currentStep ? 'text-[#F05D5E]' : 'text-muted-foreground'}`}
-                  >
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold
-                      ${index < currentStep ? 'bg-[#F05D5E] text-white' : 
-                        index === currentStep ? 'border-2 border-[#F05D5E] text-[#F05D5E]' : 
-                        'border-2 border-muted-foreground'}`}
+                {STEPS.map((step, index) => {
+                  const isPast = index < currentStep;
+                  const isActive = index === currentStep;
+                  // Allow jumping back to any past step (not forward) before final submit (step 4)
+                  const canJump = isPast && currentStep < 4;
+                  return (
+                    <button
+                      type="button"
+                      key={step.id}
+                      onClick={canJump ? () => setCurrentStep(index) : undefined}
+                      disabled={!canJump}
+                      title={canJump ? (language === 'es' ? `Volver a ${step.title[language]}` : `Back to ${step.title[language]}`) : undefined}
+                      data-testid={`stepper-jump-${index}`}
+                      className={`flex flex-col items-center ${isPast || isActive ? 'text-[#F05D5E]' : 'text-muted-foreground'} ${canJump ? 'cursor-pointer hover:opacity-80 transition-opacity' : 'cursor-default'}`}
                     >
-                      {index < currentStep ? <CheckCircle2 className="h-5 w-5" /> : index + 1}
-                    </div>
-                    <span className="text-xs mt-1 hidden sm:block">{step.title[language]}</span>
-                  </div>
-                ))}
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold
+                        ${isPast ? 'bg-[#F05D5E] text-white' :
+                          isActive ? 'border-2 border-[#F05D5E] text-[#F05D5E]' :
+                          'border-2 border-muted-foreground'}`}
+                      >
+                        {isPast ? <CheckCircle2 className="h-5 w-5" /> : index + 1}
+                      </div>
+                      <span className="text-xs mt-1 hidden sm:block">{step.title[language]}</span>
+                    </button>
+                  );
+                })}
               </div>
               <Progress value={progress} className="h-2" />
             </div>
