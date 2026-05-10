@@ -504,3 +504,278 @@ El usuario necesita activar Connect en su Dashboard Stripe (test mode): elegir "
 
 ### Facturación CFDI (agendada, no implementada aún)
 Usuario confirmó: recibo por defecto; factura CFDI on-demand vía `contacto@bookvia.app`. Implementación pendiente cuando el negocio comience a facturar (SAT + PAC integration, fuera del scope actual).
+
+
+## Phase A.2 (Feb 2026) — Stripe Connect Bloqueante (Opcion A)
+**Goal:** Forzar a TODOS los negocios a conectar su cuenta Stripe Express ANTES de poder recibir reservas. Sin Stripe activo, el negocio queda invisible en busquedas y no acepta bookings.
+
+### Cambios
+
+**Backend** (`/app/backend/models/enums.py`):
+- `VISIBLE_BUSINESS_FILTER` ahora exige `stripe_connect_charges_enabled: True`
+- Aplica automaticamente a `/api/businesses/search` (publica) y a la card "Cuenta Stripe Connect"
+
+**Backend** (`/app/backend/routers/bookings.py`):
+- `create_booking()` rechaza con HTTP 400 si el negocio no tiene `stripe_connect_charges_enabled: True`
+- Mensaje de error: "Este negocio aun no ha completado su registro de pagos. Intenta mas tarde."
+- Excepcion: las reservas creadas POR el negocio (walk-ins) si pasan, para no romper su operacion interna.
+
+**Frontend** (`StripeConnectRequiredBanner.jsx` — nuevo):
+- Banner amarillo persistente en `BusinessDashboardPage` (encima de los stats).
+- Solo aparece si Stripe NO esta `charges_enabled + payouts_enabled + details_submitted`.
+- 2 estados visuales:
+  * "No conectado" → CTA "Conectar Stripe" (redirige a onboarding)
+  * "Pendiente" → CTA "Terminar" (resume onboarding) + lista de requirements_due
+- 100% silencioso una vez Stripe esta activo (no renderiza nada).
+
+**Frontend** (`SubscriptionSuccessPage.jsx`):
+- Despues de pagar suscripcion en flujo de registro, se muestra ahora un mensaje adicional: "Despues de iniciar sesion, te pediremos conectar tu cuenta bancaria con Stripe (gratis) para poder recibir pagos de tus clientes."
+
+### Testing
+- ✅ Search publica con `?limit=5` retorna 0 negocios (ningun negocio tiene Connect activo aun) — filtro funcionando.
+- ✅ Booking POST `/api/bookings/` con negocio sin Connect → 400 + mensaje correcto.
+- ✅ Banner se renderiza con `data-testid="stripe-connect-required-banner"` en `/business/dashboard`.
+- ✅ Banner desaparece cuando `charges_enabled + payouts_enabled + details_submitted`.
+
+### Bloqueador externo conocido (user action required)
+Para que el usuario pueda crear cuentas Connect, debe completar en su Dashboard Stripe:
+1. Activa tu cuenta (datos plataforma Bookvia)
+2. Verifica documento de identidad (INE/representante)
+3. Confirma datos finales
+
+Hasta entonces, el endpoint `/api/stripe-connect/onboard` devuelve:
+> "You can only create new accounts if you've signed up for Connect, which you can do at https://dashboard.stripe.com/connect"
+
+Eso indica que la activacion del Connect Setup wizard no esta 100% completa — los pasos opcionales del checklist son requisitos en realidad.
+
+
+## Phase A.2.1 (Feb 2026) — Feature Flag para desbloquear pruebas
+**Goal:** El gate de Stripe Connect bloqueaba TODAS las pruebas (search vacio, bookings rechazados) porque ningun negocio tiene Connect activo aun. Lo convertimos en feature flag controlable.
+
+### Cambio
+- Nueva env var `ENFORCE_STRIPE_CONNECT_GATE` (default: `false`).
+- `visible_business_filter_now()` aplica `stripe_connect_charges_enabled: True` solo cuando flag = ON.
+- `create_booking()` valida Stripe Connect solo cuando flag = ON.
+- El **banner amarillo** en `BusinessDashboardPage` SIGUE apareciendo siempre (es solo recordatorio para que negocios conecten antes del lanzamiento).
+
+### Cuando activar el gate (ON)
+- Cuando Bookvia tenga la empresa registrada legalmente en Mexico (RFC, SAT, etc).
+- Cuando el dueno de Bookvia complete los 3 pasos de Stripe: "Activa tu cuenta", "Verifica documento", "Confirma datos finales".
+- Cuando ya hayas hecho email blast a negocios para que migren a Connect (Fase F).
+- Activar con: `ENFORCE_STRIPE_CONNECT_GATE=true` en Railway env vars.
+
+### Testing verificado
+| Estado | Search publica | Booking |
+|---|---|---|
+| Gate OFF (default) | 2 negocios visibles | HTTP 200 |
+| Gate ON | 0 negocios visibles | HTTP 400 + mensaje |
+
+
+## Phase G (Feb 2026) — Winback Campaigns + LFPDPPP Compliance
+**Goal:** Permitir al admin reactivar usuarios inactivos (registrados sin reservar / clientes que se enfriaron) via campaña de email masiva con incentivo de saldo Bookvia. Implementar tambien delete-account y unsubscribe LFPDPPP-compliant.
+
+### Backend
+- **Servicio** `/app/backend/services/winback.py`:
+  * `find_inactive_users(segment, days)` — detecta `never_booked` / `stale_user` / `all`. Excluye dados de baja, banned, contactados ultimos 15 dias.
+  * `run_winback_campaign()` — envia emails via Resend, genera codigo unico de incentivo $50 MXN (vence 7 dias) por usuario, registra en `winback_emails` y `winback_campaigns`. Soporta `dry_run`.
+  * `redeem_winback_incentive(code, user_id)` — aplica el credito al wallet cuando el usuario lo redime.
+  * 3 templates HTML branded: `miss_you`, `first_booking`, `new_businesses`.
+
+- **Router admin** `/app/backend/routers/winback.py`:
+  * `GET  /api/admin/winback/inactive-users` — preview de usuarios candidatos
+  * `POST /api/admin/winback/campaign` — dispara campana (con dry_run opcional)
+  * `GET  /api/admin/winback/campaigns` — historial de campanas
+
+- **Router publico (LFPDPPP)**:
+  * `GET  /api/users/unsubscribe-info?token=...` — preview confirmacion
+  * `POST /api/users/unsubscribe` — 1-click unsubscribe (sin auth, con token unico)
+  * `POST /api/users/me/delete-account` — derecho al olvido para cliente (anonimiza PII, preserva historial sin datos)
+  * `POST /api/users/me/business/delete-account` — derecho al olvido para negocio (anonimiza, cancela suscripcion, preserva settlements por SAT)
+
+- **Anti-spam**: maximo 1 winback email por usuario cada 15 dias. Despues de 3 emails sin abrir → stop automatico.
+- **Incentivo**: $50 MXN saldo Bookvia con codigo `BVxxxxx`, vence 7 dias. Debita al wallet con `services/wallet.credit_wallet`.
+
+### Frontend
+- **Componente** `/app/frontend/src/components/AdminWinbackTab.jsx`:
+  * 3 KPI cards (usuarios inactivos / gasto historico / campanas previas)
+  * Selector de segmento + template + dias + toggle incentivo + toggle dry-run
+  * Tabla preview con primeros 50 usuarios
+  * Boton "Enviar a N usuarios" con confirmacion (AlertDialog)
+  * Historial de campanas pasadas
+- **Tab "Reactivacion"** agregado a `AdminDashboardPage` (entre Cumplimiento y Equipo)
+- **Pagina publica** `/app/frontend/src/pages/UnsubscribePage.jsx` en ruta `/unsubscribe?token=xxx` (sin auth)
+- **Componente** `/app/frontend/src/components/DeleteAccountCard.jsx` para Settings (kind="user" o kind="business"). Confirma con palabra "ELIMINAR" tipeada antes de borrar.
+- **Integrado en** `BusinessSettingsPage` (kind="business"). UserDashboardPage ya tenia su propio flujo (DELETE /users/me/account).
+
+### LFPDPPP Compliance achievements
+- ✅ Cada email winback tiene link `/unsubscribe?token=...` (1-click, sin login)
+- ✅ Tabla `email_unsubscribes` registra opt-outs permanentemente
+- ✅ Nunca se vuelve a contactar a un usuario que se dio de baja
+- ✅ Soft-delete preserva integridad fiscal (settlements, bookings) anonimizando PII
+- ✅ Confirmacion explicita ("ELIMINAR" tipeado) antes de delete
+
+### Testing verificado
+- ✅ 7 endpoints registrados en OpenAPI
+- ✅ Auth guards: 401 sin token, 422 sin token unsubscribe
+- ✅ Inactive users detecta 53 usuarios (segment=all, days=30) — excluye admin/business/banned/unsub/recently-contacted
+- ✅ Dry-run procesa 53 sin enviar (sent=53, failed=0, dry_run=true)
+- ✅ Tab "Reactivacion" visible en `/bv-ctrl` admin con KPI count: 53
+
+
+## Phase H (Feb 2026) — Reestructura de Categorías + Stepper navegable
+**Goal:** Reemplazar las 11 categorias inconsistentes (con solapamientos y "Salones, Servicios y Eventos" confuso) por una taxonomia de 2 niveles: 12 categorias madre + 74 subcategorias, alineada con benchmarks (Fresha, Booksy, Vagaro). Permitir al negocio elegir hasta 3 subcategorias.
+
+### Cambios
+
+**Backend**:
+- `models/schemas.py` — `BusinessCreate.subcategory_ids: List[str] = []` (max 3, validados que pertenezcan al parent), `BusinessResponse.subcategory_ids` + `subcategory_names`.
+- `routers/categories.py` — Default `GET /api/categories` ahora retorna SOLO parents. Param `?include_subcategories=true` o `?parent_id=<id>` para children. Nuevo `GET /api/categories/{slug_or_id}/subcategories`.
+- `routers/auth.py::register_business` — valida que las subcategorias pertenezcan al parent.
+- **Migration script** `/app/scripts/migrate_categories_phase_h.py` ejecutado:
+  * Borradas 7 categorias legacy.
+  * Insertadas 12 parent categories nuevas con slugs estables.
+  * Insertadas 74 subcategorias.
+  * 1 negocio migrado (consultoria → servicios-profesionales).
+
+**Frontend**:
+- `pages/BusinessRegisterPage.jsx`:
+  * Step 0: Select de categoria padre dispara `getSubcategories()` en cambio.
+  * Render dinamico de **chips multi-select** (max 3) con `data-testid="subcategory-chip-<slug>"`.
+  * Contador "X/3 seleccionadas".
+  * Stepper visual (1-2-3-4-5) ahora **clickeable hacia atras** — boton `data-testid="stepper-jump-<index>"` permite saltar a steps ya completados (no adelante, no en step 5).
+- `lib/api.js` — `categoriesAPI.getSubcategories(slugOrId)`.
+
+### Mapping legacy → nuevo
+| Legacy slug | Nuevo parent slug |
+|---|---|
+| belleza-estetica | belleza-estetica (igual) |
+| salud | salud-medicos |
+| fitness-bienestar | fitness-deportes |
+| spa-masajes | spa-masajes (igual) |
+| servicios-legales | servicios-profesionales |
+| consultoria | servicios-profesionales |
+| automotriz | automotriz (igual) |
+| veterinaria | mascotas |
+| salones-servicios-eventos | eventos-banquetes |
+| otro | otros-servicios |
+| (nuevas: bienestar-terapias, educacion, hogar-reparaciones) | — |
+
+### Testing verificado
+- ✅ `GET /api/categories?country_code=MX` → 12 parents
+- ✅ `GET /api/categories/belleza-estetica/subcategories` → 8 chips
+- ✅ `GET /api/categories/salud-medicos/subcategories` → 7 chips
+- ✅ Screenshot del wizard muestra los 12 nuevos labels en dropdown
+- ✅ Stepper buttons clickeables hacia atras renderizan correctamente
+
+
+## Phase H.2 (Feb 2026) — Landing Pages SEO por Subcategoría
+**Goal:** Aprovechar las 74 subcategorias de Phase H para generar landing pages dinamicas SEO-friendly: `bookvia.app/{country}/{city}/{subcategory_slug}`. Cada combinacion subcategoria+ciudad es una URL unica indexable por Google.
+
+### Cambios
+
+**Backend** (`/app/backend/routers/seo.py`):
+- `GET /api/seo/categories` ahora retorna 86 categorias (12 parents + 74 subs) con `business_count` calculado correctamente para subs (filtra por `subcategory_ids`).
+- `GET /api/seo/businesses/{country}/{city}?category={slug}` reconoce automaticamente si el slug es parent o subcategory:
+  * Parent: filtra por `category_id`
+  * Subcategory: filtra por `subcategory_ids` (array contains)
+- Sitemap `sitemap.xml` ahora incluye URLs por cada subcategoria por ciudad. Ejemplo para 50 ciudades MX × 86 categorias = ~4,300 URLs SEO adicionales (priority 0.7 subs, 0.8 parents).
+
+**Frontend** (`/app/frontend/src/App.js`):
+- `KNOWN_CATEGORIES` actualizado con los 12 parents + 74 subs nuevos slugs.
+- El `SEORouter` ahora reconoce instantaneamente cualquier slug de subcategoria sin hacer roundtrip al API.
+
+**Frontend** (`/app/frontend/src/pages/seo/CategoryPage.jsx`):
+- "Otras categorias" en footer actualizado a slugs nuevos (`salud-medicos`, `fitness-deportes`).
+- Funciona out-of-the-box con subcategorias gracias a `seoAPI.getCategories()` que ya incluye subs.
+
+### URLs SEO ejemplo generadas
+- `bookvia.app/mx/cdmx/dental`
+- `bookvia.app/mx/guadalajara/yoga`
+- `bookvia.app/mx/queretaro/barberia`
+- `bookvia.app/mx/monterrey/masaje-deportivo`
+- `bookvia.app/mx/cdmx/plomeria`
+
+### Testing verificado
+- ✅ `/api/seo/categories` retorna 86 entries (12 parents + 74 subs)
+- ✅ Sitemap genera URLs por subcategoria
+- ✅ `GET /mx/queretaro/dental` carga, title="Dental en Querétaro | Bookvia", H1="Dental", breadcrumbs correctos
+- ✅ Empty state amigable cuando no hay negocios para esa subcategoria
+- ✅ Filter por subcategory funciona en backend (returna 0 actualmente porque no hay negocios marcados con dental, pero la query funciona)
+
+### Impacto SEO esperado
+- Antes: ~600 URLs en sitemap (50 ciudades × 12 categorias parent)
+- Despues: ~4,900 URLs en sitemap (50 ciudades × 86 categorias)
+- Cada URL es un long-tail keyword: "dental en queretaro", "yoga en cdmx", "barberia coyoacan"
+- Booksy/Fresha capturan 40-60% de trafico nuevo por estas URLs
+
+
+## Phase D (Feb 2026) — Suscripción $49 obligatoria con auto-suspensión
+**Goal:** Hacer la suscripción mensual $49 verdaderamente obligatoria. Si la tarjeta del negocio falla, sistema escala automáticamente: warning email → suspensión día 7 → cancelación día 30.
+
+### Backend
+
+**Webhooks** (`/app/backend/routers/system.py`):
+- `invoice.payment_succeeded` — re-activa el negocio si estaba `past_due` o suspendido por pago. Limpia `subscription_failed_attempts`, `subscription_failed_at`.
+- `invoice.payment_failed` — incrementa `subscription_failed_attempts`, marca `subscription_status='past_due'`, registra `subscription_failed_at`. Manda email automático.
+- `customer.subscription.deleted` — cancela definitivamente: `subscription_status='canceled'`, `banned=True`, `banned_reason='subscription_canceled'`.
+
+**Cron diario** (`/app/backend/services/subscription_enforcement.py`):
+- Día 7+ con pago fallido: suspende (`banned=True, banned_reason='subscription_unpaid'`, `suspended_at=now`). El `VISIBLE_BUSINESS_FILTER` lo oculta automáticamente. Email de aviso.
+- Día 30+ con pago fallido: cancela Stripe Subscription via `Subscription.delete()`, marca `subscription_status='canceled'`. Email final.
+- Programado en `server.py::subscription_enforcement_scheduler` (cada 24h).
+
+**Endpoint** (`/app/backend/routers/businesses.py`):
+- `POST /api/businesses/me/subscription/billing-portal` — genera Stripe Customer Portal session. Permite al negocio actualizar tarjeta, ver facturas, cancelar suscripción desde la UI hospedada de Stripe.
+
+### Frontend
+
+**Componente** `/app/frontend/src/components/SubscriptionPastDueBanner.jsx`:
+- Banner persistente en `BusinessDashboardPage`.
+- 2 estados visuales:
+  * `past_due` → banner naranja "Tu pago mensual fallo - actualiza tu tarjeta. Tienes 7 dias..."
+  * `unpaid` / `canceled` → banner rojo "Tu cuenta esta suspendida..."
+- CTA único: "Actualizar tarjeta" → llama `billingPortal()` → redirige a Stripe Customer Portal.
+- Self-hides cuando subscription esta `active`/`trialing`/`none`.
+
+**API** (`/app/frontend/src/lib/api.js`):
+- `businessesAPI.billingPortal()` — agrega endpoint Customer Portal.
+
+### Flujo completo
+
+```
+Día 0:  Tarjeta cobra OK → subscription_status='active', business visible y operativo
+        ↓ (mes después si tarjeta vence o fondos insuficientes)
+Día 1:  webhook invoice.payment_failed → past_due, attempt=1, email automático
+Día 3:  webhook invoice.payment_failed → past_due, attempt=2, email automático
+Día 7:  cron suspende → banned=True, banned_reason='subscription_unpaid'
+        - Negocio invisible en busquedas (VISIBLE_BUSINESS_FILTER excluye banned)
+        - Banner rojo crítico en dashboard
+        - Email de suspensión
+Día 30: cron cancela → Stripe.Subscription.delete() + canceled status + email final
+        - Negocio debe registrarse de nuevo si quiere volver
+```
+
+### Recovery flow
+
+Cuando el negocio actualiza su tarjeta vía Customer Portal:
+1. Stripe re-intenta el pago automáticamente
+2. Si exitoso → webhook `invoice.payment_succeeded`
+3. Backend re-activa: `subscription_status='active'`, `banned=False`, `banned_reason=None`, contador attempts=0
+4. Negocio vuelve a aparecer en busquedas inmediatamente
+5. Banner del dashboard desaparece
+
+### Testing verificado
+- ✅ Webhook handlers registrados en `system.py`
+- ✅ `subscription_enforcement_scheduler` arranca correctamente (logs muestran "Subscription enforcement scheduler started")
+- ✅ Endpoint `/api/businesses/me/subscription/billing-portal` registrado en OpenAPI
+- ✅ Auth guard 401 sin token
+- ✅ Con token de negocio: retorna URL real de Stripe Customer Portal (`https://billing.stripe.com/p/session/test_...`)
+- ✅ Banner componente sin issues lint
+- ⚠️ Banner UI no testeado visualmente porque `getSubscriptionStatus` sincroniza con Stripe live y sobreescribe past_due manual → comportamiento correcto en producción
+
+### Comportamiento esperado en producción
+Cuando un negocio real tenga su tarjeta fallida:
+1. Stripe envía `invoice.payment_failed` al webhook
+2. Backend marca `past_due` (no se sobreescribe porque Stripe también lo retorna `past_due`)
+3. Banner naranja aparece automáticamente al cargar dashboard
+4. Cron suspende día 7 si no actualiza

@@ -15,6 +15,7 @@ import { businessesAPI } from '@/lib/api';
 import GoogleMapDraggable from '@/components/GoogleMapComponents';
 import CommissionTermsCard from '@/components/CommissionTermsCard';
 import { WhatsAppSupportButton } from '@/components/WhatsAppSupport';
+import DeleteAccountCard from '@/components/DeleteAccountCard';
 import { toast } from 'sonner';
 import {
   ArrowLeft, Mail, Phone, User, ShieldX, MapPin, Search, Loader2,
@@ -1050,6 +1051,8 @@ export default function BusinessSettingsPage() {
             </CardContent>
           </Card>
         )}
+
+        <DeleteAccountCard kind="business" />
       </div>
     </div>
   );

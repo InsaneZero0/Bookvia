@@ -480,6 +480,81 @@ async def stripe_webhook(request: Request):
                         except Exception as e:
                             logger.warning(f"Could not revert wallet on checkout.session.expired: {e}")
 
+        elif event.type == "invoice.payment_succeeded":
+            # Phase D — Subscription paid successfully (re-activate if was past_due/unpaid)
+            inv = event.data.object
+            subscription_id = inv.get("subscription") if isinstance(inv, dict) else getattr(inv, "subscription", None)
+            if subscription_id:
+                biz = await db.businesses.find_one({"stripe_subscription_id": subscription_id})
+                if biz:
+                    update = {
+                        "subscription_status": "active",
+                        "subscription_failed_attempts": 0,
+                        "subscription_failed_at": None,
+                        "subscription_last_paid_at": datetime.now(timezone.utc).isoformat(),
+                    }
+                    # Re-enable banned-by-payment business
+                    if biz.get("banned_reason") == "subscription_unpaid":
+                        update["banned"] = False
+                        update["banned_reason"] = None
+                    await db.businesses.update_one({"id": biz["id"]}, {"$set": update})
+                    logger.info(f"Subscription paid - reactivated business {biz['id']}")
+
+        elif event.type == "invoice.payment_failed":
+            # Phase D — Track failed payment attempts. Cron escalates suspension.
+            inv = event.data.object
+            subscription_id = inv.get("subscription") if isinstance(inv, dict) else getattr(inv, "subscription", None)
+            if subscription_id:
+                biz = await db.businesses.find_one({"stripe_subscription_id": subscription_id})
+                if biz:
+                    attempts = int(biz.get("subscription_failed_attempts") or 0) + 1
+                    now_iso = datetime.now(timezone.utc).isoformat()
+                    update = {
+                        "subscription_status": "past_due",
+                        "subscription_failed_attempts": attempts,
+                    }
+                    if not biz.get("subscription_failed_at"):
+                        update["subscription_failed_at"] = now_iso
+                    await db.businesses.update_one({"id": biz["id"]}, {"$set": update})
+                    logger.info(f"Subscription payment failed for biz {biz['id']} - attempt #{attempts}")
+                    # Send email notification (best effort)
+                    try:
+                        from services.email import send_email
+                        await send_email(
+                            to=biz.get("email"),
+                            subject="Tu pago de Bookvia fallo - actualiza tu metodo de pago",
+                            body=(
+                                f"Hola {biz.get('name', 'negocio')},\n\n"
+                                f"Tu pago mensual de la suscripcion de $49 MXN no pudo procesarse "
+                                f"({attempts} intento{'s' if attempts > 1 else ''}). "
+                                f"Tienes 7 dias para actualizar tu tarjeta antes de que tu negocio sea suspendido.\n\n"
+                                f"Actualiza tu tarjeta: https://bookvia.app/business/finance\n\n"
+                                f"Bookvia"
+                            ),
+                            template="subscription_payment_failed",
+                            data={"business_id": biz["id"], "attempts": attempts},
+                        )
+                    except Exception as e:
+                        logger.warning(f"Could not send subscription failure email: {e}")
+
+        elif event.type == "customer.subscription.deleted":
+            # Phase D — Subscription canceled (after grace period or by user)
+            sub = event.data.object
+            subscription_id = sub.id if hasattr(sub, "id") else sub.get("id")
+            if subscription_id:
+                biz = await db.businesses.find_one({"stripe_subscription_id": subscription_id})
+                if biz:
+                    await db.businesses.update_one(
+                        {"id": biz["id"]},
+                        {"$set": {
+                            "subscription_status": "canceled",
+                            "subscription_canceled_at": datetime.now(timezone.utc).isoformat(),
+                            "banned": True,
+                            "banned_reason": "subscription_canceled",
+                        }},
+                    )
+                    logger.info(f"Subscription canceled for biz {biz['id']}")
+
         elif event.type == "account.updated":
             # Stripe Connect Express: sync account capabilities to DB
             acct = event.data.object

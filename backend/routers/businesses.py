@@ -2577,6 +2577,29 @@ async def cancel_subscription(token_data: TokenData = Depends(require_business))
         raise HTTPException(status_code=500, detail="Error canceling subscription")
 
 
+@router.post("/me/subscription/billing-portal")
+async def create_billing_portal_session(request: Request, token_data: TokenData = Depends(require_business)):
+    """Phase D — Generate a Stripe Customer Portal session so the business
+    can update its payment method, view invoices, etc."""
+    user = await db.users.find_one({"id": token_data.user_id})
+    if not user or not user.get("business_id"):
+        raise HTTPException(status_code=404, detail="Business not found")
+    business = await db.businesses.find_one({"id": user["business_id"]})
+    if not business or not business.get("stripe_customer_id"):
+        raise HTTPException(status_code=400, detail="No Stripe customer found")
+    origin = request.headers.get("origin") or os.environ.get("FRONTEND_URL", "https://bookvia.app")
+    return_url = f"{origin.rstrip('/')}/business/finance"
+    try:
+        session = stripe_lib.billing_portal.Session.create(
+            customer=business["stripe_customer_id"],
+            return_url=return_url,
+        )
+        return {"url": session.url}
+    except Exception as e:
+        logger.error(f"Stripe billing portal error: {e}")
+        raise HTTPException(status_code=500, detail="Error creating billing portal session")
+
+
 
 
 @router.get("/me/closures")

@@ -99,6 +99,14 @@ export default function SubscriptionSuccessPage() {
                   ? `Te enviamos un correo de verificacion${businessEmail ? ` a ${businessEmail}` : ''}. Revisa tu bandeja de entrada (y spam) y haz clic en el enlace para activar tu cuenta.`
                   : `We sent a verification email${businessEmail ? ` to ${businessEmail}` : ''}. Check your inbox (and spam) and click the link to activate your account.`}
               </p>
+              <div className="flex items-start gap-2 pt-2 border-t border-blue-200 dark:border-blue-800">
+                <Shield className="h-4 w-4 text-blue-600 shrink-0 mt-0.5" />
+                <p className="text-xs text-blue-700 dark:text-blue-300">
+                  {language === 'es'
+                    ? 'Despues de iniciar sesion, te pediremos conectar tu cuenta bancaria con Stripe (gratis) para poder recibir pagos de tus clientes.'
+                    : 'After logging in, we will ask you to connect your bank account with Stripe (free) so you can receive payments from clients.'}
+                </p>
+              </div>
             </div>
           )}
 

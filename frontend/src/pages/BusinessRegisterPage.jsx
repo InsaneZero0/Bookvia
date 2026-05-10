@@ -45,6 +45,8 @@ export default function BusinessRegisterPage() {
   const [currentStep, setCurrentStep] = useState(0);
   const [loading, setLoading] = useState(false);
   const [categories, setCategories] = useState([]);
+  const [subcategories, setSubcategories] = useState([]);
+  const [loadingSubcats, setLoadingSubcats] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [phoneNumber, setPhoneNumber] = useState('');
   const [countrySearch, setCountrySearch] = useState('');
@@ -82,6 +84,7 @@ export default function BusinessRegisterPage() {
     phone: '',
     description: '',
     category_id: '',
+    subcategory_ids: [],
     custom_category_description: '',
     // Location
     address: '',
@@ -424,7 +427,9 @@ export default function BusinessRegisterPage() {
       const registerData = {
         name: formData.name, email: formData.email, password: formData.password,
         phone: formData.phone, description: formData.description,
-        category_id: formData.category_id, address: fullAddress,
+        category_id: formData.category_id,
+        subcategory_ids: formData.subcategory_ids || [],
+        address: fullAddress,
         city: formData.city, state: formData.state, country: formData.country,
         zip_code: formData.zip_code, rfc: formData.rfc.toUpperCase(),
         legal_name: formData.legal_name, ine_url: ineUrl,
@@ -518,21 +523,32 @@ export default function BusinessRegisterPage() {
             {/* Progress indicator */}
             <div className="mb-8">
               <div className="flex justify-between mb-2">
-                {STEPS.map((step, index) => (
-                  <div 
-                    key={step.id}
-                    className={`flex flex-col items-center ${index <= currentStep ? 'text-[#F05D5E]' : 'text-muted-foreground'}`}
-                  >
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold
-                      ${index < currentStep ? 'bg-[#F05D5E] text-white' : 
-                        index === currentStep ? 'border-2 border-[#F05D5E] text-[#F05D5E]' : 
-                        'border-2 border-muted-foreground'}`}
+                {STEPS.map((step, index) => {
+                  const isPast = index < currentStep;
+                  const isActive = index === currentStep;
+                  // Allow jumping back to any past step (not forward) before final submit (step 4)
+                  const canJump = isPast && currentStep < 4;
+                  return (
+                    <button
+                      type="button"
+                      key={step.id}
+                      onClick={canJump ? () => setCurrentStep(index) : undefined}
+                      disabled={!canJump}
+                      title={canJump ? (language === 'es' ? `Volver a ${step.title[language]}` : `Back to ${step.title[language]}`) : undefined}
+                      data-testid={`stepper-jump-${index}`}
+                      className={`flex flex-col items-center ${isPast || isActive ? 'text-[#F05D5E]' : 'text-muted-foreground'} ${canJump ? 'cursor-pointer hover:opacity-80 transition-opacity' : 'cursor-default'}`}
                     >
-                      {index < currentStep ? <CheckCircle2 className="h-5 w-5" /> : index + 1}
-                    </div>
-                    <span className="text-xs mt-1 hidden sm:block">{step.title[language]}</span>
-                  </div>
-                ))}
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold
+                        ${isPast ? 'bg-[#F05D5E] text-white' :
+                          isActive ? 'border-2 border-[#F05D5E] text-[#F05D5E]' :
+                          'border-2 border-muted-foreground'}`}
+                      >
+                        {isPast ? <CheckCircle2 className="h-5 w-5" /> : index + 1}
+                      </div>
+                      <span className="text-xs mt-1 hidden sm:block">{step.title[language]}</span>
+                    </button>
+                  );
+                })}
               </div>
               <Progress value={progress} className="h-2" />
             </div>
@@ -652,9 +668,21 @@ export default function BusinessRegisterPage() {
 
                   <div className="space-y-2">
                     <Label>{language === 'es' ? 'Categoría' : 'Category'} *</Label>
-                    <Select 
-                      value={formData.category_id} 
-                      onValueChange={(value) => setFormData(prev => ({ ...prev, category_id: value }))}
+                    <Select
+                      value={formData.category_id}
+                      onValueChange={async (value) => {
+                        setFormData(prev => ({ ...prev, category_id: value, subcategory_ids: [] }));
+                        setSubcategories([]);
+                        setLoadingSubcats(true);
+                        try {
+                          const res = await categoriesAPI.getSubcategories(value);
+                          setSubcategories(res.data || []);
+                        } catch (e) {
+                          console.error('Error loading subcategories:', e);
+                        } finally {
+                          setLoadingSubcats(false);
+                        }
+                      }}
                     >
                       <SelectTrigger className="h-12" data-testid="category-select">
                         <SelectValue placeholder={language === 'es' ? 'Selecciona una categoría' : 'Select a category'} />
@@ -668,6 +696,52 @@ export default function BusinessRegisterPage() {
                       </SelectContent>
                     </Select>
                   </div>
+
+                  {/* Subcategory multi-select chips (Phase H) */}
+                  {formData.category_id && subcategories.length > 0 && (
+                    <div className="space-y-2" data-testid="subcategory-chips-container">
+                      <Label>
+                        {language === 'es' ? 'Servicios que ofreces' : 'Services you offer'}
+                        <span className="text-xs text-muted-foreground ml-2">
+                          {language === 'es' ? '(opcional, máximo 3)' : '(optional, max 3)'}
+                        </span>
+                      </Label>
+                      <div className="flex flex-wrap gap-2">
+                        {subcategories.map(sub => {
+                          const selected = formData.subcategory_ids.includes(sub.id);
+                          const disabled = !selected && formData.subcategory_ids.length >= 3;
+                          return (
+                            <button
+                              key={sub.id}
+                              type="button"
+                              disabled={disabled}
+                              onClick={() => setFormData(prev => ({
+                                ...prev,
+                                subcategory_ids: selected
+                                  ? prev.subcategory_ids.filter(id => id !== sub.id)
+                                  : [...prev.subcategory_ids, sub.id],
+                              }))}
+                              data-testid={`subcategory-chip-${sub.slug}`}
+                              className={`px-3 py-1.5 rounded-full text-sm border transition
+                                ${selected ? 'bg-[#F05D5E] text-white border-[#F05D5E]' :
+                                  disabled ? 'bg-slate-50 text-slate-400 border-slate-200 cursor-not-allowed' :
+                                  'bg-white text-slate-700 border-slate-300 hover:border-[#F05D5E] hover:text-[#F05D5E]'}`}
+                            >
+                              {language === 'es' ? sub.name_es : sub.name_en}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        {language === 'es'
+                          ? `${formData.subcategory_ids.length}/3 seleccionadas`
+                          : `${formData.subcategory_ids.length}/3 selected`}
+                      </p>
+                    </div>
+                  )}
+                  {loadingSubcats && (
+                    <p className="text-xs text-muted-foreground">{language === 'es' ? 'Cargando subcategorías...' : 'Loading subcategories...'}</p>
+                  )}
 
                   {/* Custom category description when "Otro" is selected */}
                   {categories.find(c => c.id === formData.category_id && (c.slug === 'otro' || c.name_es?.toLowerCase() === 'otro' || c.name_en?.toLowerCase() === 'other')) && (

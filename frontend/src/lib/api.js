@@ -128,6 +128,7 @@ export const usersAPI = {
 export const categoriesAPI = {
   getAll: () => api.get('/categories'),
   getBySlug: (slug) => api.get(`/categories/${slug}`),
+  getSubcategories: (slugOrId) => api.get(`/categories/${slugOrId}/subcategories`),
   create: (data) => api.post('/categories', data),
 };
 
@@ -194,10 +195,19 @@ export const businessesAPI = {
   createSubscription: (originUrl) => api.post('/businesses/me/subscribe', { origin_url: originUrl }),
   getSubscriptionStatus: (sessionId) => api.get(`/businesses/me/subscription/status${sessionId ? `?session_id=${sessionId}` : ''}`),
   cancelSubscription: () => api.post('/businesses/me/subscription/cancel'),
+  billingPortal: () => api.post('/businesses/me/subscription/billing-portal'),
   // Stripe Connect Express (Phase A)
   connectOnboard: () => api.post('/stripe-connect/onboard'),
   connectStatus: () => api.get('/stripe-connect/status'),
   connectDashboardLink: () => api.post('/stripe-connect/dashboard-link'),
+  // Phase G — Winback campaigns & privacy (LFPDPPP)
+  adminInactiveUsers: (params) => api.get('/admin/winback/inactive-users', { params }),
+  adminRunWinbackCampaign: (data) => api.post('/admin/winback/campaign', data),
+  adminWinbackHistory: () => api.get('/admin/winback/campaigns'),
+  unsubscribeInfo: (token) => api.get('/users/unsubscribe-info', { params: { token } }),
+  unsubscribe: (token) => api.post('/users/unsubscribe', { token }),
+  deleteMyAccount: () => api.post('/users/me/delete-account'),
+  deleteMyBusinessAccount: () => api.post('/users/me/business/delete-account'),
   // Blacklist
   getBlacklist: () => api.get('/businesses/me/blacklist'),
   addToBlacklist: (data) => api.post('/businesses/me/blacklist', data),

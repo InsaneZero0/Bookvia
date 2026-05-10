@@ -49,26 +49,56 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/categories", tags=["Categories"])
 
 @router.get("", response_model=List[CategoryResponse])
-async def get_categories(city: Optional[str] = None, country_code: Optional[str] = None):
-    categories = await db.categories.find({}, {"_id": 0}).to_list(100)
-    
+async def get_categories(
+    city: Optional[str] = None,
+    country_code: Optional[str] = None,
+    include_subcategories: bool = False,
+    parent_id: Optional[str] = None,
+):
+    """List categories. By default returns only parent categories (level 1).
+    Use `?include_subcategories=true` to get all, or `?parent_id=<id>` to
+    fetch the children of a single parent."""
+    if parent_id:
+        query = {"parent_id": parent_id}
+    elif include_subcategories:
+        query = {}
+    else:
+        query = {"parent_id": None}
+    categories = await db.categories.find(query, {"_id": 0}).to_list(500)
+
     # Build business filter - optionally scoped to city+country
     biz_filter = {**VISIBLE_BUSINESS_FILTER}
     if city:
         biz_filter["city"] = city
     if country_code:
         biz_filter["country_code"] = country_code.upper()
-    
-    # Add business count for each category
+
+    # Add business count for each category. For parents, count all businesses
+    # whose category_id == parent_id (since businesses are stored at parent level).
     for cat in categories:
         count = await db.businesses.count_documents({"category_id": cat["id"], **biz_filter})
         cat["business_count"] = count
-    
+
     # If filtering by city, only return categories that actually have businesses
     if city:
         categories = [c for c in categories if c["business_count"] > 0]
-    
+
     return [CategoryResponse(**c) for c in categories]
+
+
+@router.get("/{slug_or_id}/subcategories", response_model=List[CategoryResponse])
+async def get_subcategories(slug_or_id: str):
+    """Return subcategories for a parent category (looked up by slug or id)."""
+    parent = await db.categories.find_one(
+        {"$or": [{"slug": slug_or_id}, {"id": slug_or_id}], "parent_id": None},
+        {"_id": 0, "id": 1}
+    )
+    if not parent:
+        raise HTTPException(status_code=404, detail="Parent category not found")
+    subs = await db.categories.find({"parent_id": parent["id"]}, {"_id": 0}).to_list(200)
+    for s in subs:
+        s["business_count"] = 0
+    return [CategoryResponse(**s) for s in subs]
 
 
 

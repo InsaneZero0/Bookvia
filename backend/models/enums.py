@@ -172,6 +172,15 @@ VISIBLE_BUSINESS_FILTER = {
 }
 
 
+def _stripe_connect_gate_enabled() -> bool:
+    """Phase A.2 feature flag — when ON, businesses without an active Stripe
+    Connect Express account are hidden from public search and cannot accept
+    bookings. Defaults to OFF so testing flows are unblocked while the
+    platform owner finishes Connect activation."""
+    import os
+    return os.environ.get("ENFORCE_STRIPE_CONNECT_GATE", "false").lower() in ("1", "true", "yes")
+
+
 def visible_business_filter_now() -> dict:
     """
     Return the visibility filter for businesses, computed at call time so we can compare
@@ -179,7 +188,7 @@ def visible_business_filter_now() -> dict:
     """
     from datetime import datetime, timezone
     now_iso = datetime.now(timezone.utc).isoformat()
-    return {
+    base = {
         **VISIBLE_BUSINESS_FILTER,
         "$or": [
             {"suspended_until": None},
@@ -187,6 +196,9 @@ def visible_business_filter_now() -> dict:
             {"suspended_until": {"$lt": now_iso}},
         ],
     }
+    if _stripe_connect_gate_enabled():
+        base["stripe_connect_charges_enabled"] = True
+    return base
 
 DEFAULT_MANAGER_PERMISSIONS = {
     "complete_bookings": True,

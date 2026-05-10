@@ -44,6 +44,7 @@ from routers.seo import seo_router
 from routers.terms import router as terms_router  # Fase 10
 from routers.waitlist import router as waitlist_router, admin_router as waitlist_admin_router  # Fase 16
 from routers.stripe_connect import router as stripe_connect_router  # Fase 22 - Connect Express
+from routers.winback import admin_router as winback_admin_router, public_router as winback_public_router  # Fase G - Winback + LFPDPPP
 
 api_router.include_router(auth_router)
 api_router.include_router(users_router)
@@ -61,6 +62,8 @@ api_router.include_router(terms_router)
 api_router.include_router(waitlist_router)
 api_router.include_router(waitlist_admin_router)
 api_router.include_router(stripe_connect_router)
+api_router.include_router(winback_admin_router)
+api_router.include_router(winback_public_router)
 
 # SEO routes at root level (no /api prefix for sitemap/robots)
 app.include_router(seo_router)
@@ -232,6 +235,7 @@ async def startup_event():
     # Start background schedulers
     asyncio.create_task(appointment_reminder_scheduler())
     asyncio.create_task(subscription_reminder_scheduler())
+    asyncio.create_task(subscription_enforcement_scheduler())  # Phase D
     asyncio.create_task(wallet_expiration_scheduler())
     asyncio.create_task(funds_state_scheduler())
     asyncio.create_task(settlement_day20_scheduler())
@@ -401,6 +405,21 @@ async def subscription_reminder_scheduler():
         except Exception as e:
             logger.error(f"Subscription reminder scheduler error: {e}")
         await asyncio.sleep(21600)  # 6 hours
+
+
+async def subscription_enforcement_scheduler():
+    """Phase D — Daily: suspend businesses with >=7d unpaid, cancel >=30d."""
+    logger.info("Subscription enforcement scheduler started")
+    await asyncio.sleep(900)  # 15 min after startup
+    while True:
+        try:
+            from services.subscription_enforcement import run_subscription_enforcement
+            result = await run_subscription_enforcement()
+            if result.get("suspended", 0) > 0 or result.get("canceled", 0) > 0:
+                logger.info(f"Subscription enforcement: {result}")
+        except Exception as e:
+            logger.error(f"Subscription enforcement error: {e}")
+        await asyncio.sleep(86400)  # 24 hours
 
 
 async def wallet_expiration_scheduler():
