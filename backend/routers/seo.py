@@ -102,18 +102,20 @@ async def generate_sitemap_xml(base_url: str) -> str:
             ET.SubElement(url, "changefreq").text = "daily"
             ET.SubElement(url, "priority").text = "0.9"
             
-            # Get categories
-            categories = await db.categories.find({"active": {"$ne": False}}, {"_id": 0}).to_list(100)
-            
+            # Get categories (parents + subcategories) for SEO landing pages
+            categories = await db.categories.find({"active": {"$ne": False}}, {"_id": 0}).to_list(500)
+
             for category in categories:
                 cat_slug = category.get("slug", "")
                 if cat_slug:
-                    # Category listing page
+                    # Category/subcategory listing page
+                    is_sub = bool(category.get("parent_id"))
                     url = ET.SubElement(urlset, "url")
                     ET.SubElement(url, "loc").text = f"{base_url}/{country_code}/{city_slug}/{cat_slug}"
                     ET.SubElement(url, "lastmod").text = now
                     ET.SubElement(url, "changefreq").text = "daily"
-                    ET.SubElement(url, "priority").text = "0.8"
+                    # Subcategories get slightly lower priority than parents
+                    ET.SubElement(url, "priority").text = "0.7" if is_sub else "0.8"
         
         # Get businesses for this country
         businesses = await db.businesses.find(
@@ -347,20 +349,27 @@ async def get_active_countries():
 
 @seo_router.get("/api/seo/categories")
 async def get_seo_categories():
-    """Get all categories for SEO pages"""
+    """Get all categories (including subcategories) for SEO pages"""
     categories = await db.categories.find(
         {"active": {"$ne": False}},
         {"_id": 0}
-    ).to_list(100)
-    
+    ).to_list(500)
+
     # Add business counts
     for cat in categories:
-        count = await db.businesses.count_documents({
-            "category_id": cat.get("id"),
-            "status": "approved"
-        })
+        if cat.get("parent_id"):
+            # Subcategory: count businesses that include this id in subcategory_ids
+            count = await db.businesses.count_documents({
+                "subcategory_ids": cat.get("id"),
+                "status": "approved",
+            })
+        else:
+            count = await db.businesses.count_documents({
+                "category_id": cat.get("id"),
+                "status": "approved",
+            })
         cat["business_count"] = count
-    
+
     return categories
 
 
@@ -393,10 +402,14 @@ async def get_businesses_by_location(
         filters["city"] = {"$regex": city, "$options": "i"}
     
     if category:
-        # Find category by slug
+        # Find category by slug — could be a parent OR a subcategory
         cat_doc = await db.categories.find_one({"slug": category}, {"_id": 0})
         if cat_doc:
-            filters["category_id"] = cat_doc.get("id")
+            if cat_doc.get("parent_id"):
+                # Subcategory: filter businesses whose subcategory_ids contain this id
+                filters["subcategory_ids"] = cat_doc.get("id")
+            else:
+                filters["category_id"] = cat_doc.get("id")
     
     skip = (page - 1) * limit
     

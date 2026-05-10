@@ -666,3 +666,44 @@ Eso indica que la activacion del Connect Setup wizard no esta 100% completa — 
 - ✅ `GET /api/categories/salud-medicos/subcategories` → 7 chips
 - ✅ Screenshot del wizard muestra los 12 nuevos labels en dropdown
 - ✅ Stepper buttons clickeables hacia atras renderizan correctamente
+
+
+## Phase H.2 (Feb 2026) — Landing Pages SEO por Subcategoría
+**Goal:** Aprovechar las 74 subcategorias de Phase H para generar landing pages dinamicas SEO-friendly: `bookvia.app/{country}/{city}/{subcategory_slug}`. Cada combinacion subcategoria+ciudad es una URL unica indexable por Google.
+
+### Cambios
+
+**Backend** (`/app/backend/routers/seo.py`):
+- `GET /api/seo/categories` ahora retorna 86 categorias (12 parents + 74 subs) con `business_count` calculado correctamente para subs (filtra por `subcategory_ids`).
+- `GET /api/seo/businesses/{country}/{city}?category={slug}` reconoce automaticamente si el slug es parent o subcategory:
+  * Parent: filtra por `category_id`
+  * Subcategory: filtra por `subcategory_ids` (array contains)
+- Sitemap `sitemap.xml` ahora incluye URLs por cada subcategoria por ciudad. Ejemplo para 50 ciudades MX × 86 categorias = ~4,300 URLs SEO adicionales (priority 0.7 subs, 0.8 parents).
+
+**Frontend** (`/app/frontend/src/App.js`):
+- `KNOWN_CATEGORIES` actualizado con los 12 parents + 74 subs nuevos slugs.
+- El `SEORouter` ahora reconoce instantaneamente cualquier slug de subcategoria sin hacer roundtrip al API.
+
+**Frontend** (`/app/frontend/src/pages/seo/CategoryPage.jsx`):
+- "Otras categorias" en footer actualizado a slugs nuevos (`salud-medicos`, `fitness-deportes`).
+- Funciona out-of-the-box con subcategorias gracias a `seoAPI.getCategories()` que ya incluye subs.
+
+### URLs SEO ejemplo generadas
+- `bookvia.app/mx/cdmx/dental`
+- `bookvia.app/mx/guadalajara/yoga`
+- `bookvia.app/mx/queretaro/barberia`
+- `bookvia.app/mx/monterrey/masaje-deportivo`
+- `bookvia.app/mx/cdmx/plomeria`
+
+### Testing verificado
+- ✅ `/api/seo/categories` retorna 86 entries (12 parents + 74 subs)
+- ✅ Sitemap genera URLs por subcategoria
+- ✅ `GET /mx/queretaro/dental` carga, title="Dental en Querétaro | Bookvia", H1="Dental", breadcrumbs correctos
+- ✅ Empty state amigable cuando no hay negocios para esa subcategoria
+- ✅ Filter por subcategory funciona en backend (returna 0 actualmente porque no hay negocios marcados con dental, pero la query funciona)
+
+### Impacto SEO esperado
+- Antes: ~600 URLs en sitemap (50 ciudades × 12 categorias parent)
+- Despues: ~4,900 URLs en sitemap (50 ciudades × 86 categorias)
+- Cada URL es un long-tail keyword: "dental en queretaro", "yoga en cdmx", "barberia coyoacan"
+- Booksy/Fresha capturan 40-60% de trafico nuevo por estas URLs

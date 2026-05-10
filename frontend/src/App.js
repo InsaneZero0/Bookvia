@@ -160,16 +160,29 @@ import { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import { categoriesAPI } from '@/lib/api';
 
-// Category slugs that we know are categories
+// Category slugs (parents + subcategories) - used as fast hint for SEORouter.
+// The router still falls back to a live API check if the slug isn't here.
 const KNOWN_CATEGORIES = [
-  'belleza-estetica',
-  'salud',
-  'fitness-bienestar',
-  'spa-masajes',
-  'servicios-legales',
-  'consultoria',
-  'automotriz',
-  'veterinaria'
+  // Parents (12)
+  'belleza-estetica', 'spa-masajes', 'salud-medicos', 'fitness-deportes',
+  'bienestar-terapias', 'eventos-banquetes', 'servicios-profesionales',
+  'automotriz', 'mascotas', 'educacion', 'hogar-reparaciones', 'otros-servicios',
+  // Subcategories (74) — Phase H
+  'salon-cabello', 'barberia', 'unas', 'cejas-pestanas', 'maquillaje',
+  'depilacion', 'tatuajes-piercing', 'bronceado',
+  'masaje-relajante', 'masaje-deportivo', 'faciales', 'corporales', 'hammam', 'flotacion',
+  'dental', 'nutricion', 'psicologia', 'fisioterapia', 'quiropractica',
+  'podologia', 'medicina-general',
+  'gimnasio', 'crossfit', 'yoga', 'pilates', 'boxeo',
+  'entrenador-personal', 'spinning', 'natacion',
+  'terapia-holistica', 'reiki', 'acupuntura', 'meditacion', 'aromaterapia', 'coaching',
+  'salon-eventos', 'banquetes', 'dj', 'decoracion-eventos', 'mariachi', 'animacion-infantil',
+  'legal', 'contable', 'notarial', 'consultoria', 'asesoria-fiscal',
+  'mecanica', 'hojalateria', 'lavado', 'detailing', 'llantas', 'polarizado',
+  'veterinaria', 'estetica-canina', 'guarderia-mascotas', 'paseador', 'adiestramiento',
+  'tutorias', 'idiomas', 'musica', 'arte', 'regularizacion', 'preparacion-examen',
+  'plomeria', 'electricidad', 'limpieza', 'jardineria', 'pintura', 'carpinteria', 'cerrajeria',
+  'fotografia', 'video', 'reparacion-electronicos', 'otro',
 ];
 
 function SEORouter() {

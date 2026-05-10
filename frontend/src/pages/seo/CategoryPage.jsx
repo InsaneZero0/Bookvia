@@ -267,7 +267,7 @@ export default function CategoryPage() {
           </h2>
           <div className="flex flex-wrap gap-3">
             {/* Show other categories (excluding current) */}
-            {['belleza-estetica', 'salud', 'spa-masajes', 'fitness-bienestar']
+            {['belleza-estetica', 'salud-medicos', 'spa-masajes', 'fitness-deportes']
               .filter(slug => slug !== categorySlug.toLowerCase())
               .slice(0, 4)
               .map((catSlug) => (
