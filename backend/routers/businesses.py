@@ -1280,6 +1280,19 @@ async def get_business_by_slug(
             business["category_name"] = cat.get("name_es", "")
     
     await _track_profile_view(business["id"], request, current_user, business.get("user_id"))
+
+    # Phase I — track QR scan visit (?ref=qr) for admin analytics
+    if request.query_params.get("ref") == "qr":
+        try:
+            from datetime import datetime as _dt, timezone as _tz
+            await db.qr_scans.insert_one({
+                "business_id": business["id"],
+                "scanned_at": _dt.now(_tz.utc).isoformat(),
+                "user_id": current_user.user_id if current_user else None,
+                "ip": request.client.host if request.client else None,
+            })
+        except Exception:
+            pass
     return BusinessResponse(**business)
 
 
