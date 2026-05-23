@@ -1296,6 +1296,51 @@ async def get_business_by_slug(
     return BusinessResponse(**business)
 
 
+# Phase I — Branded QR codes for businesses (printable stickers)
+@router.get("/{business_id}/qr.png")
+async def get_business_qr_png(business_id: str):
+    """Public endpoint: returns the branded QR PNG for a business profile.
+
+    Public on purpose — the QR encodes the public profile URL which is also
+    public. Caching at the edge is desirable.
+    """
+    from services.business_qr import generate_business_qr_png
+    business = await db.businesses.find_one(
+        {"id": business_id}, {"_id": 0, "slug": 1, "status": 1}
+    )
+    if not business or not business.get("slug"):
+        raise HTTPException(status_code=404, detail="Business not found")
+    png = generate_business_qr_png(business["slug"])
+    return Response(
+        content=png,
+        media_type="image/png",
+        headers={
+            "Cache-Control": "public, max-age=86400",
+            "Content-Disposition": f'inline; filename="bookvia-qr-{business["slug"]}.png"',
+        },
+    )
+
+
+@router.get("/{business_id}/qr-card.png")
+async def get_business_qr_card_png(business_id: str):
+    """Public endpoint: returns the printable QR card (QR + business name + code)."""
+    from services.business_qr import generate_business_qr_with_caption
+    business = await db.businesses.find_one(
+        {"id": business_id},
+        {"_id": 0, "slug": 1, "name": 1, "public_code": 1, "status": 1},
+    )
+    if not business or not business.get("slug"):
+        raise HTTPException(status_code=404, detail="Business not found")
+    png = generate_business_qr_with_caption(business)
+    return Response(
+        content=png,
+        media_type="image/png",
+        headers={
+            "Cache-Control": "public, max-age=86400",
+            "Content-Disposition": f'attachment; filename="bookvia-qr-card-{business["slug"]}.png"',
+        },
+    )
+
 
 @router.get("/{business_id}", response_model=BusinessResponse)
 async def get_business(

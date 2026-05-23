@@ -1,0 +1,45 @@
+{
+  "summary": "Phase I — Branded Business QR codes. Backend fully tested with 12/12 pytest cases passing (PNG validity + pyzbar-decoded URL contains slug & ref=qr, qr-card with attachment header, 404 for unknown ids, ?ref=qr scan tracking via qr_scans collection, admin /qr/scans/summary and /qr/businesses with auth/search/days filters). Frontend AdminQRCodesTab code reviewed and looks correct (proper data-testid attributes, search filter, days pills, download/copy handlers), but live UI exercise blocked by Admin Dashboard auth: token-injection into localStorage gets immediately redirected to /bv-ctrl/login due to the AdminDashboardPage useEffect firing before useAuth hydrates from localStorage (pre-existing app behavior). Per task instructions we avoided real TOTP login.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {
+        "flow": "Admin token-injection bypass for testing",
+        "issue": "AdminDashboardPage redirects to /bv-ctrl/login on initial render before useAuth hydrates user from localStorage (race condition). This is a pre-existing app behavior, not new from QR work. Real TOTP login is needed to exercise the new QR tab UI in a fork session.",
+        "affected_selectors": ["[data-testid=admin-qr-tab]"]
+      }
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_phase_i_qr_codes.py",
+    "/app/test_reports/pytest/phase_i_qr.xml"
+  ],
+  "action_items": [
+    "QR codes feature backend is production-ready. Main agent can self-verify the UI by logging in as admin with real TOTP via /bv-ctrl/login (zamorachapa50@gmail.com + TOTP from /app/scripts/get_admin_totp.py) and clicking the new 'Códigos QR' tab.",
+    "Consider (low priority, not blocking): adjust AdminDashboardPage to wait one render tick before redirecting to /bv-ctrl/login so token-injection testing (and any deep links) works without race."
+  ],
+  "critical_code_review_comments": [
+    "services/business_qr.py: clean implementation, uses ERROR_CORRECT_H so the 20% logo overlay is safe; pyzbar successfully decoded the QR to https://bookvia.app/<slug>?ref=qr.",
+    "routers/businesses.py qr_scans tracking is wrapped in try/except (good — never blocks profile views) and persists business_id, scanned_at ISO UTC, user_id, ip.",
+    "routers/admin.py /qr/scans/summary and /qr/businesses correctly require admin, clamp days/limit, exclude _id, and surface scan counts per business in window.",
+    "AdminQRCodesTab.jsx: all interactive elements have data-testid (qr-refresh-btn, qr-search-input, qr-days-{d}, qr-grid, qr-card-{id}, qr-download-png-{id}, qr-download-card-{id}, qr-copy-img-{id}, qr-copy-link-{id}, qr-empty). Cache-busting via refreshKey on <img> is a nice touch. handleCopyImage falls back to URL copy when ClipboardItem is unsupported — robust.",
+    "Public QR endpoints intentionally do NOT require auth — correct (encoded URL is already public). Cache-Control 86400 set."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_phase_i_qr_codes.py (new)"
+  ],
+  "success_rate": {
+    "backend": "100% (12/12 pytest)",
+    "frontend": "code review only — runtime not exercised due to admin auth race; component code looks correct"
+  },
+  "test_credentials": "Admin: zamorachapa50@gmail.com (TOTP-protected). For backend tests we generated a JWT directly via core.security.create_token(bc12d4ed-f1c4-42bf-bae8-2f2731b54190, 'admin', 'zamorachapa50@gmail.com') and the token was accepted by /api/admin/qr/* endpoints.",
+  "seed_data_creation": "3 qr_scans rows inserted for business fbb3d0e3-37f2-417b-8cfa-b7fbf24f1ee0 (test-real-stripe-fbb3d0e3) during the tracking test. Harmless for prod data — they will roll out of any short days window naturally.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "test_phase_i_qr_codes.py covers all QR endpoints end-to-end and is idempotent (uses approved seed business id fbb3d0e3-37f2-417b-8cfa-b7fbf24f1ee0). Run with: pytest /app/backend/tests/test_phase_i_qr_codes.py -v. Frontend Admin tabs cannot be exercised by injecting a JWT into localStorage — the AdminDashboardPage redirects to /bv-ctrl/login before useAuth hydrates. Use a logged-in browser session (TOTP) or have main agent self-verify the UI."
+}

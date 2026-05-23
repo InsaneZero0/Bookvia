@@ -422,6 +422,9 @@ export const adminAPI = {
   previewWaitlistBroadcast: (city, country_code = 'MX', only_unnotified = true) =>
     api.get(`/admin/waitlist/cities/${encodeURIComponent(city)}/preview`, { params: { country_code, only_unnotified } }),
   sendWaitlistBroadcast: (body) => api.post('/admin/waitlist/broadcast', body),
+  // Phase I — Business QR codes
+  getQrBusinesses: (params = {}) => api.get('/admin/qr/businesses', { params }),
+  getQrScansSummary: (days = 30) => api.get('/admin/qr/scans/summary', { params: { days } }),
 };
 
 // Utility API
