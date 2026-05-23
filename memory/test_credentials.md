@@ -2,10 +2,11 @@
 
 ## Super Admin
 - Email: zamorachapa50@gmail.com
-- Password: RainbowLol3133!
-- TOTP: Required (use /app/scripts/get_admin_totp.py to generate codes)
+- Password: [Owner-managed — changed via /forgot-password Feb 2026, NOT stored here for security]
+- TOTP: Required (use /app/scripts/get_admin_totp.py to generate codes if owner needs CLI access)
 - Login endpoint: POST /api/auth/admin/login with {email, password, totp_code}
 - public_code: backfilled (CL-XXXXX visible in DB)
+- Note: If a fork agent needs admin access for testing, ask the owner for the current password instead of resetting.
 
 ## Staff (create via Super Admin panel)
 - Login: same endpoint POST /api/auth/admin/login

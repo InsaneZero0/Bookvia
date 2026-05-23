@@ -2846,3 +2846,86 @@ async def admin_pnl_report_send(
         "sent_to": result["sent_to"],
         "failed": result.get("failed", []),
     }
+
+
+
+# ============================================================================
+# Phase I — Business QR codes (admin overview)
+# ============================================================================
+
+@router.get("/qr/scans/summary")
+async def admin_qr_scans_summary(
+    days: int = 30,
+    token_data: TokenData = Depends(require_admin),
+):
+    """Per-business QR scan totals over the trailing `days` window."""
+    if days <= 0 or days > 365:
+        days = 30
+    since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    pipeline = [
+        {"$match": {"scanned_at": {"$gte": since}}},
+        {"$group": {"_id": "$business_id", "scans": {"$sum": 1}}},
+    ]
+    rows = await db.qr_scans.aggregate(pipeline).to_list(length=None)
+    total = await db.qr_scans.count_documents({"scanned_at": {"$gte": since}})
+    return {
+        "since": since,
+        "days": days,
+        "total_scans": total,
+        "by_business": {r["_id"]: r["scans"] for r in rows if r.get("_id")},
+    }
+
+
+@router.get("/qr/businesses")
+async def admin_qr_businesses_list(
+    q: Optional[str] = None,
+    limit: int = 200,
+    days: int = 30,
+    token_data: TokenData = Depends(require_admin),
+):
+    """List businesses with their public profile slug, QR endpoints and
+    scan counts so the admin can download / copy QR images for stickers."""
+    if limit <= 0 or limit > 500:
+        limit = 200
+    if days <= 0 or days > 365:
+        days = 30
+
+    query: Dict[str, Any] = {
+        "status": {"$in": ["approved", "active"]},
+        "slug": {"$exists": True, "$ne": ""},
+    }
+    if q:
+        rx = {"$regex": re.escape(q), "$options": "i"}
+        query["$or"] = [{"name": rx}, {"slug": rx}, {"public_code": rx}, {"city": rx}]
+
+    cursor = db.businesses.find(
+        query,
+        {"_id": 0, "id": 1, "name": 1, "slug": 1, "public_code": 1, "city": 1, "logo_url": 1},
+    ).sort("name", 1).limit(limit)
+    businesses = await cursor.to_list(length=limit)
+
+    # Scan counts in the trailing window
+    since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    pipeline = [
+        {"$match": {"scanned_at": {"$gte": since}}},
+        {"$group": {"_id": "$business_id", "scans": {"$sum": 1}}},
+    ]
+    rows = await db.qr_scans.aggregate(pipeline).to_list(length=None)
+    scans_by_biz = {r["_id"]: r["scans"] for r in rows if r.get("_id")}
+
+    items = []
+    for b in businesses:
+        bid = b["id"]
+        slug = b.get("slug") or ""
+        items.append({
+            "id": bid,
+            "name": b.get("name", ""),
+            "slug": slug,
+            "public_code": b.get("public_code", ""),
+            "city": b.get("city", ""),
+            "logo_url": b.get("logo_url"),
+            "qr_png_url": f"/api/businesses/{bid}/qr.png",
+            "qr_card_url": f"/api/businesses/{bid}/qr-card.png",
+            "scans": scans_by_biz.get(bid, 0),
+        })
+    return {"count": len(items), "days": days, "items": items}

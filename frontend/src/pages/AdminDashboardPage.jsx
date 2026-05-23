@@ -17,6 +17,7 @@ import { formatCurrency, formatDate } from '@/lib/utils';
 import { toast } from 'sonner';
 import { WaitlistBroadcastModal } from '@/components/WaitlistBroadcastModal';
 import AdminWinbackTab from '@/components/AdminWinbackTab';
+import AdminQRCodesTab from '@/components/AdminQRCodesTab';
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
 } from 'recharts';
@@ -26,7 +27,7 @@ import {
   Eye, Star, Wallet, BarChart3, Loader2, MapPin, Phone, Mail, Globe,
   CreditCard, Briefcase, MessageSquare, Trash2, ExternalLink, TrendingUp,
   Tags, Settings, LifeBuoy, Plus, Pencil, Send, X, AlertCircle,
-  Trophy, Bell, Map, ToggleLeft, ToggleRight, FileBarChart, UserPlus, Key, Flag
+  Trophy, Bell, Map, ToggleLeft, ToggleRight, FileBarChart, UserPlus, Key, Flag, QrCode
 } from 'lucide-react';
 
 const STATUS_COLORS = {
@@ -1215,6 +1216,7 @@ export default function AdminDashboardPage() {
     { id: 'finance', label: t('Finanzas', 'Finance'), icon: Wallet },
     { id: 'compliance', label: t('Cumplimiento', 'Compliance'), icon: Shield },
     { id: 'winback', label: t('Reactivacion', 'Winback'), icon: Mail },
+    { id: 'qrcodes', label: t('Códigos QR', 'QR Codes'), icon: QrCode },
     ...(isSuperAdmin ? [{ id: 'staff', label: t('Equipo', 'Team'), icon: UserPlus }] : []),
   ];
   const tabs = allTabs.filter(tab => hasTabPerm(tab.id));
@@ -3034,6 +3036,8 @@ export default function AdminDashboardPage() {
 
         {/* ============ WINBACK TAB (Phase G) ============ */}
         {activeTab === 'winback' && <AdminWinbackTab />}
+
+        {activeTab === 'qrcodes' && <AdminQRCodesTab />}
 
         {/* ============ COMPLIANCE TAB ============ */}
         {activeTab === 'compliance' && (
