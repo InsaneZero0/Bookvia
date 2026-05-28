@@ -472,7 +472,7 @@ function BusinessDetailDialog({ businessId, open, onClose, onApprove, onReject, 
 /* ─── Main Admin Page ─── */
 export default function AdminDashboardPage() {
   const { t, language } = useI18n();
-  const { user, isAuthenticated, isAdmin, isSuperAdmin } = useAuth();
+  const { user, isAuthenticated, isAdmin, isSuperAdmin, loading: authLoading } = useAuth();
   const navigate = useNavigate();
 
   const [activeTab, setActiveTab] = useState('overview');
@@ -604,12 +604,13 @@ export default function AdminDashboardPage() {
   const [myPermissions, setMyPermissions] = useState(null);
 
   useEffect(() => {
+    if (authLoading) return; // wait for hydration from localStorage
     if (!isAuthenticated || !isAdmin) { navigate('/bv-ctrl/login'); return; }
     // Super admin (role=admin) requires 2FA, staff does not
     if (isSuperAdmin && !user?.totp_enabled) { navigate('/bv-ctrl/login'); return; }
     loadOverview();
     loadMyPermissions();
-  }, [isAuthenticated, isAdmin, isSuperAdmin, user]);
+  }, [authLoading, isAuthenticated, isAdmin, isSuperAdmin, user]);
 
   const loadMyPermissions = async () => {
     try {
