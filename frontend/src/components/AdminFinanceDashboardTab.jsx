@@ -8,7 +8,7 @@ import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Legend,
 } from 'recharts';
-import { TrendingUp, Wallet, RefreshCcw, Calendar, ArrowUpRight, DollarSign } from 'lucide-react';
+import { TrendingUp, Wallet, RefreshCcw, Calendar, ArrowUpRight, DollarSign, Trophy, MapPin } from 'lucide-react';
 
 const fmt = (n) => `$${Number(n || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
@@ -19,14 +19,19 @@ const fmt = (n) => `$${Number(n || 0).toLocaleString('es-MX', { minimumFractionD
  */
 export default function AdminFinanceDashboardTab() {
   const [data, setData] = useState(null);
+  const [topBiz, setTopBiz] = useState(null);
   const [loading, setLoading] = useState(true);
   const [months, setMonths] = useState(6);
 
   const load = async () => {
     setLoading(true);
     try {
-      const res = await api.get('/admin/finance/dashboard', { params: { months } });
+      const [res, top] = await Promise.all([
+        api.get('/admin/finance/dashboard', { params: { months } }),
+        api.get('/admin/finance/top-businesses', { params: { months: Math.min(months, 1), limit: 5 } }),
+      ]);
       setData(res.data);
+      setTopBiz(top.data);
     } finally {
       setLoading(false);
     }
@@ -37,8 +42,14 @@ export default function AdminFinanceDashboardTab() {
     (async () => {
       setLoading(true);
       try {
-        const res = await api.get('/admin/finance/dashboard', { params: { months } });
-        if (!cancelled) setData(res.data);
+        const [res, top] = await Promise.all([
+          api.get('/admin/finance/dashboard', { params: { months } }),
+          api.get('/admin/finance/top-businesses', { params: { months: Math.min(months, 1), limit: 5 } }),
+        ]);
+        if (!cancelled) {
+          setData(res.data);
+          setTopBiz(top.data);
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -178,6 +189,64 @@ export default function AdminFinanceDashboardTab() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Top 5 negocios del mes */}
+      <Card data-testid="top-businesses-card">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-lg">
+            <Trophy className="h-5 w-5 text-amber-500" />
+            Top 5 negocios del mes
+          </CardTitle>
+          <CardDescription>
+            Tus aliados más activos — los embajadores naturales de Bookvia
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {topBiz?.items?.length ? (
+            <div className="space-y-2">
+              {topBiz.items.map((biz, idx) => (
+                <div
+                  key={biz.business_id}
+                  className="flex items-center gap-3 p-3 rounded-lg border hover:border-[#F05D5E]/40 hover:bg-muted/30 transition-colors"
+                  data-testid={`top-biz-${idx}`}
+                >
+                  <div className={`flex items-center justify-center w-9 h-9 rounded-full text-sm font-bold ${
+                    idx === 0 ? 'bg-amber-100 text-amber-700' :
+                    idx === 1 ? 'bg-slate-100 text-slate-700' :
+                    idx === 2 ? 'bg-orange-100 text-orange-800' :
+                    'bg-muted text-muted-foreground'
+                  }`}>
+                    {idx + 1}
+                  </div>
+                  {biz.logo_url ? (
+                    <img src={biz.logo_url} alt={biz.name} className="w-10 h-10 rounded-lg object-cover" />
+                  ) : (
+                    <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-[#F05D5E]/20 to-[#F05D5E]/10 flex items-center justify-center text-[#F05D5E] font-semibold">
+                      {biz.name?.[0]?.toUpperCase() || 'B'}
+                    </div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium truncate">{biz.name}</div>
+                    {biz.city ? (
+                      <div className="text-xs text-muted-foreground flex items-center gap-1">
+                        <MapPin className="h-3 w-3" />{biz.city}
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className="text-right">
+                    <div className="font-semibold">{biz.bookings} citas</div>
+                    <div className="text-xs text-muted-foreground">{fmt(biz.gross_amount)} brutos</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-8 text-muted-foreground text-sm">
+              Sin datos suficientes todavía. Cuando empiecen las reservas reales verás aquí a tus 5 mejores aliados.
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Gráfica mensual */}
       <Card>

@@ -3241,3 +3241,62 @@ async def admin_finance_dashboard(
             "paid_last_30d": paid_settlements_30d,
         },
     }
+
+
+@router.get("/finance/top-businesses")
+async def admin_finance_top_businesses(
+    months: int = 1,
+    limit: int = 5,
+    token_data: TokenData = Depends(require_admin),
+):
+    """Top N businesses by booking volume in the trailing window.
+
+    Used by the "Top 5 negocios del mes" widget on the Finanzas Bookvia tab.
+    Returns the businesses with the most successful bookings + total amount.
+    """
+    from datetime import datetime as _dt, timezone as _tz, timedelta as _td
+
+    if limit <= 0 or limit > 20:
+        limit = 5
+    if months <= 0 or months > 12:
+        months = 1
+    since = (_dt.now(_tz.utc) - _td(days=months * 31)).isoformat()
+
+    pipeline = [
+        {"$match": {
+            "created_at": {"$gte": since},
+            "status": {"$in": ["paid", "completed"]},
+        }},
+        {"$group": {
+            "_id": "$business_id",
+            "bookings": {"$sum": 1},
+            "gross": {"$sum": {"$ifNull": ["$amount", 0]}},
+            "platform_fee": {"$sum": {"$ifNull": ["$platform_fee_amount", 0]}},
+        }},
+        {"$sort": {"bookings": -1}},
+        {"$limit": limit},
+    ]
+    rows = await db.transactions.aggregate(pipeline).to_list(limit)
+
+    biz_ids = [r["_id"] for r in rows if r.get("_id")]
+    biz_docs = await db.businesses.find(
+        {"id": {"$in": biz_ids}},
+        {"_id": 0, "id": 1, "name": 1, "slug": 1, "city": 1, "logo_url": 1},
+    ).to_list(len(biz_ids) or 1)
+    biz_map = {b["id"]: b for b in biz_docs}
+
+    items = []
+    for r in rows:
+        b = biz_map.get(r["_id"]) or {}
+        items.append({
+            "business_id": r["_id"],
+            "name": b.get("name", "—"),
+            "slug": b.get("slug", ""),
+            "city": b.get("city", ""),
+            "logo_url": b.get("logo_url"),
+            "bookings": r.get("bookings", 0),
+            "gross_amount": round(float(r.get("gross") or 0), 2),
+            "commission_to_bookvia": round(float(r.get("platform_fee") or 0), 2),
+        })
+
+    return {"months": months, "limit": limit, "items": items}
