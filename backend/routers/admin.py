@@ -3300,3 +3300,42 @@ async def admin_finance_top_businesses(
         })
 
     return {"months": months, "limit": limit, "items": items}
+
+
+# ============================================================================
+# MongoDB Backups (daily automated + manual trigger from admin)
+# ============================================================================
+
+@router.get("/backups/list")
+async def admin_list_backups(
+    limit: int = 50,
+    token_data: TokenData = Depends(require_admin),
+):
+    """List recent MongoDB backups (most recent first) with download URL."""
+    from services.mongo_backup import list_backups
+    if limit <= 0 or limit > 200:
+        limit = 50
+    return {"items": await list_backups(limit=limit)}
+
+
+@router.post("/backups/trigger")
+async def admin_trigger_backup(
+    request: Request,
+    token_data: TokenData = Depends(require_admin),
+):
+    """Manually trigger a backup right now. Audited."""
+    from services.mongo_backup import create_backup
+    result = await create_backup()
+    await create_audit_log(
+        admin_id=token_data.user_id, admin_email=token_data.email,
+        action=AuditAction.CONFIG_UPDATE, target_type="mongo_backup",
+        target_id=result.get("id", "unknown"),
+        details={
+            "size_mb": result.get("size_mb"),
+            "total_docs": result.get("total_docs"),
+            "upload_ok": result.get("upload_ok"),
+        },
+        request=request,
+    )
+    return result
+

@@ -20,6 +20,7 @@ import AdminWinbackTab from '@/components/AdminWinbackTab';
 import AdminQRCodesTab from '@/components/AdminQRCodesTab';
 import AdminFinanceDashboardTab from '@/components/AdminFinanceDashboardTab';
 import AdminSettlementsTab from '@/components/AdminSettlementsTab';
+import AdminBackupsTab from '@/components/AdminBackupsTab';
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
 } from 'recharts';
@@ -29,7 +30,7 @@ import {
   Eye, Star, Wallet, BarChart3, Loader2, MapPin, Phone, Mail, Globe,
   CreditCard, Briefcase, MessageSquare, Trash2, ExternalLink, TrendingUp,
   Tags, Settings, LifeBuoy, Plus, Pencil, Send, X, AlertCircle,
-  Trophy, Bell, Map, ToggleLeft, ToggleRight, FileBarChart, UserPlus, Key, Flag, QrCode, Banknote
+  Trophy, Bell, Map, ToggleLeft, ToggleRight, FileBarChart, UserPlus, Key, Flag, QrCode, Banknote, Database
 } from 'lucide-react';
 
 const STATUS_COLORS = {
@@ -1222,6 +1223,7 @@ export default function AdminDashboardPage() {
     { id: 'qrcodes', label: t('Códigos QR', 'QR Codes'), icon: QrCode },
     { id: 'finance_pnl', label: t('Finanzas Bookvia', 'Bookvia Finance'), icon: DollarSign },
     { id: 'settlements_v2', label: t('Liquidación Negocios', 'Settlements'), icon: Banknote },
+    { id: 'backups', label: t('Backups DB', 'Backups'), icon: Database },
     ...(isSuperAdmin ? [{ id: 'staff', label: t('Equipo', 'Team'), icon: UserPlus }] : []),
   ];
   const tabs = allTabs.filter(tab => hasTabPerm(tab.id));
@@ -3047,6 +3049,8 @@ export default function AdminDashboardPage() {
         {activeTab === 'finance_pnl' && <AdminFinanceDashboardTab />}
 
         {activeTab === 'settlements_v2' && <AdminSettlementsTab />}
+
+        {activeTab === 'backups' && <AdminBackupsTab />}
 
         {/* ============ COMPLIANCE TAB ============ */}
         {activeTab === 'compliance' && (
