@@ -3000,3 +3000,244 @@ async def admin_execute_stripe_batch(
             request=request,
         )
     return result
+
+
+
+# ============================================================================
+# Fase D — Dashboard de Liquidación + Finanzas Bookvia (analítica neta)
+# ============================================================================
+
+@router.get("/settlements/period/{period_key}/detail")
+async def admin_settlement_period_detail(
+    period_key: str,
+    token_data: TokenData = Depends(require_admin),
+):
+    """Per-period breakdown for the admin Liquidacion Mensual dashboard.
+
+    For every settlement in the period, returns the totals plus the business'
+    Connect status so the UI can show whether each row can be paid via Stripe
+    Transfer or needs to fall back to manual SPEI.
+    """
+    settlements = await db.settlements.find(
+        {"period_key": period_key}, {"_id": 0}
+    ).sort("created_at", -1).to_list(2000)
+
+    biz_ids = list({s["business_id"] for s in settlements if s.get("business_id")})
+    biz_docs = await db.businesses.find(
+        {"id": {"$in": biz_ids}},
+        {
+            "_id": 0, "id": 1, "name": 1, "slug": 1, "clabe": 1, "rfc": 1,
+            "stripe_connect_account_id": 1,
+            "stripe_connect_payouts_enabled": 1,
+            "stripe_connect_charges_enabled": 1,
+            "payout_hold": 1,
+        },
+    ).to_list(len(biz_ids) or 1)
+    biz_map = {b["id"]: b for b in biz_docs}
+
+    items = []
+    totals = {
+        "amount_pending": 0.0,
+        "amount_paid": 0.0,
+        "amount_failed": 0.0,
+        "amount_held": 0.0,
+        "stripe_ready": 0,
+        "needs_spei": 0,
+        "blocked": 0,
+        "settlements_total": len(settlements),
+    }
+
+    for s in settlements:
+        biz = biz_map.get(s.get("business_id")) or {}
+        connected = bool(
+            biz.get("stripe_connect_account_id")
+            and biz.get("stripe_connect_payouts_enabled")
+            and biz.get("stripe_connect_charges_enabled")
+        )
+        amount = float(s.get("net_payout") or 0)
+        status = s.get("status") or "pending"
+
+        # Bucket totals
+        if status == "pending":
+            totals["amount_pending"] += amount
+        elif status == "paid":
+            totals["amount_paid"] += amount
+        elif status == "failed":
+            totals["amount_failed"] += amount
+        elif status == "held":
+            totals["amount_held"] += amount
+
+        if status == "pending":
+            if biz.get("payout_hold"):
+                totals["blocked"] += 1
+                method = "blocked"
+            elif connected:
+                totals["stripe_ready"] += 1
+                method = "stripe_transfer"
+            else:
+                totals["needs_spei"] += 1
+                method = "manual_spei"
+        else:
+            method = s.get("paid_via") or "manual_spei"
+
+        items.append({
+            "settlement_id": s["id"],
+            "business_id": s["business_id"],
+            "business_name": biz.get("name") or s.get("business_name", ""),
+            "business_slug": biz.get("slug", ""),
+            "amount": amount,
+            "booking_count": s.get("booking_count", 0),
+            "transactions_count": len(s.get("transaction_ids") or []),
+            "status": status,
+            "paid_via": s.get("paid_via"),
+            "stripe_transfer_id": s.get("stripe_transfer_id"),
+            "connect_ready": connected,
+            "payout_hold": bool(biz.get("payout_hold")),
+            "preferred_method": method,
+            "clabe": biz.get("clabe"),
+            "rfc": biz.get("rfc"),
+            "last_error": s.get("last_error"),
+        })
+
+    return {
+        "period_key": period_key,
+        "items": items,
+        "totals": {**totals,
+                   "total_net": round(sum(float(s.get("net_payout") or 0) for s in settlements), 2)},
+    }
+
+
+@router.get("/finance/dashboard")
+async def admin_finance_dashboard(
+    months: int = 6,
+    token_data: TokenData = Depends(require_admin),
+):
+    """Net finance metrics for Bookvia (Dashboard "Finanzas Bookvia").
+
+    Returns:
+      - revenue_commissions_net: net profit from booking commissions (after Stripe fees)
+      - revenue_subscriptions_net: net profit from monthly subscriptions
+      - revenue_total_net: sum of the two
+      - monthly_breakdown: per-month series for charting
+      - current_balance: live Stripe balance (available + pending)
+    """
+    from datetime import datetime as _dt, timezone as _tz, timedelta as _td
+
+    if months <= 0 or months > 24:
+        months = 6
+
+    now = _dt.now(_tz.utc)
+    since = (now - _td(days=months * 31)).isoformat()
+
+    # 1) Commissions: from transactions where funds_state moved past PAID
+    # platform_fee = our gross commission BEFORE stripe processing fees were deducted
+    # net commission = platform_fee - stripe_fee_amount (Stripe's cut)
+    tx_pipeline = [
+        {"$match": {
+            "created_at": {"$gte": since},
+            "status": {"$in": ["paid", "completed"]},
+        }},
+        {"$project": {
+            "_id": 0,
+            "month": {"$substr": ["$created_at", 0, 7]},  # "YYYY-MM"
+            "platform_fee": {"$ifNull": ["$platform_fee_amount", 0]},
+            "stripe_fee": {"$ifNull": ["$stripe_fee_amount", 0]},
+        }},
+        {"$group": {
+            "_id": "$month",
+            "platform_fee_total": {"$sum": "$platform_fee"},
+            "stripe_fee_total": {"$sum": "$stripe_fee"},
+        }},
+        {"$sort": {"_id": 1}},
+    ]
+    tx_rows = await db.transactions.aggregate(tx_pipeline).to_list(48)
+
+    # 2) Subscriptions: from successful subscription_payments (or invoices)
+    sub_pipeline = [
+        {"$match": {
+            "created_at": {"$gte": since},
+            "status": {"$in": ["paid", "succeeded", "completed"]},
+        }},
+        {"$project": {
+            "_id": 0,
+            "month": {"$substr": ["$created_at", 0, 7]},
+            "gross": {"$ifNull": ["$amount", 0]},
+            "stripe_fee": {"$ifNull": ["$stripe_fee_amount", 0]},
+        }},
+        {"$group": {
+            "_id": "$month",
+            "gross_total": {"$sum": "$gross"},
+            "stripe_fee_total": {"$sum": "$stripe_fee"},
+        }},
+        {"$sort": {"_id": 1}},
+    ]
+    sub_rows = await db.subscription_payments.aggregate(sub_pipeline).to_list(48)
+
+    # Build monthly breakdown
+    months_map: Dict[str, Dict[str, float]] = {}
+    for r in tx_rows:
+        m = r["_id"]
+        net = float(r.get("platform_fee_total", 0)) - float(r.get("stripe_fee_total", 0))
+        months_map.setdefault(m, {"commissions_net": 0, "subscriptions_net": 0})
+        months_map[m]["commissions_net"] = round(net, 2)
+    for r in sub_rows:
+        m = r["_id"]
+        net = float(r.get("gross_total", 0)) - float(r.get("stripe_fee_total", 0))
+        months_map.setdefault(m, {"commissions_net": 0, "subscriptions_net": 0})
+        months_map[m]["subscriptions_net"] = round(net, 2)
+
+    monthly_breakdown = [
+        {
+            "month": m,
+            "commissions_net": months_map[m].get("commissions_net", 0),
+            "subscriptions_net": months_map[m].get("subscriptions_net", 0),
+            "total_net": round(months_map[m].get("commissions_net", 0)
+                               + months_map[m].get("subscriptions_net", 0), 2),
+        }
+        for m in sorted(months_map.keys())
+    ]
+
+    rev_commissions = sum(x["commissions_net"] for x in monthly_breakdown)
+    rev_subscriptions = sum(x["subscriptions_net"] for x in monthly_breakdown)
+    rev_total = rev_commissions + rev_subscriptions
+
+    # 3) Live Stripe balance — best effort (don't fail dashboard if Stripe is down)
+    current_balance = {"available": 0.0, "pending": 0.0, "currency": "mxn", "live": False}
+    try:
+        import stripe as stripe_lib
+        from core.stripe_config import STRIPE_API_KEY
+        stripe_lib.api_key = STRIPE_API_KEY
+        bal = stripe_lib.Balance.retrieve()
+        mx_available = sum(b.amount for b in bal.available if b.currency == "mxn")
+        mx_pending = sum(b.amount for b in bal.pending if b.currency == "mxn")
+        current_balance = {
+            "available": round(mx_available / 100, 2),
+            "pending": round(mx_pending / 100, 2),
+            "currency": "mxn",
+            "live": True,
+        }
+    except Exception as e:
+        logger.warning(f"Stripe balance fetch failed: {e}")
+
+    # 4) Settlement counts (so admin sees how many pending releases are out there)
+    pending_settlements = await db.settlements.count_documents({"status": "pending"})
+    paid_settlements_30d = await db.settlements.count_documents({
+        "status": "paid",
+        "paid_at": {"$gte": (now - _td(days=30)).isoformat()},
+    })
+
+    return {
+        "months": months,
+        "since": since,
+        "totals_net": {
+            "commissions": round(rev_commissions, 2),
+            "subscriptions": round(rev_subscriptions, 2),
+            "total": round(rev_total, 2),
+        },
+        "monthly_breakdown": monthly_breakdown,
+        "current_balance": current_balance,
+        "settlements": {
+            "pending_count": pending_settlements,
+            "paid_last_30d": paid_settlements_30d,
+        },
+    }
