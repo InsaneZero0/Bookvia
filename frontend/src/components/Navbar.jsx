@@ -63,9 +63,9 @@ export function Navbar() {
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
-  // Load notifications for non-business users
+  // Load notifications for all authenticated users (clients, businesses, admins)
   useEffect(() => {
-    if (!isAuthenticated || isBusiness || isAdmin) return;
+    if (!isAuthenticated) return;
     const loadNavNotifs = async () => {
       try {
         const [res, countRes] = await Promise.all([
@@ -74,17 +74,17 @@ export function Navbar() {
         ]);
         setNavNotifications(Array.isArray(res.data) ? res.data : []);
         setNavUnreadCount(countRes.data?.count || 0);
-      } catch {}
+      } catch { /* ignore: silent retry on next poll */ }
     };
     loadNavNotifs();
     const interval = setInterval(async () => {
       try {
         const res = await notificationsAPI.getUnreadCount();
         setNavUnreadCount(res.data?.count || 0);
-      } catch {}
+      } catch { /* ignore: silent retry on next poll */ }
     }, 30000);
     return () => clearInterval(interval);
-  }, [isAuthenticated, isBusiness, isAdmin]);
+  }, [isAuthenticated]);
 
   // Close notification panel on outside click
   useEffect(() => {
@@ -103,7 +103,7 @@ export function Navbar() {
       await notificationsAPI.markAllRead();
       setNavNotifications(prev => prev.map(n => ({ ...n, read: true })));
       setNavUnreadCount(0);
-    } catch {}
+    } catch { /* ignore: state stays as-is */ }
   };
 
   const handleNavMarkRead = async (id) => {
@@ -111,7 +111,34 @@ export function Navbar() {
       await notificationsAPI.markRead(id);
       setNavNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
       setNavUnreadCount(prev => Math.max(0, prev - 1));
-    } catch {}
+    } catch { /* ignore: state stays as-is */ }
+  };
+
+  const handleNotifClick = async (n) => {
+    if (!n.read) handleNavMarkRead(n.id);
+    setNavNotifOpen(false);
+    const data = n.data || {};
+    // Smart routing per role + payload
+    if (data.booking_id) {
+      if (isBusiness) {
+        navigate(`/business/dashboard?booking=${data.booking_id}`);
+      } else {
+        navigate(`/bookings`);
+      }
+      return;
+    }
+    if (data.business_id) {
+      if (isAdmin) {
+        navigate(`/bv-ctrl?business=${data.business_id}`);
+      } else if (isBusiness) {
+        navigate(`/business/dashboard`);
+      }
+      return;
+    }
+    // Fallback: open the corresponding dashboard
+    if (isAdmin) navigate('/bv-ctrl');
+    else if (isBusiness) navigate('/business/dashboard');
+    else navigate('/dashboard');
   };
 
   return (
@@ -257,9 +284,8 @@ export function Navbar() {
 
             {isAuthenticated ? (
               <>
-                {/* Notification Bell for regular users */}
-                {!isBusiness && !isAdmin && (
-                  <div className="relative">
+                {/* Notification Bell - visible for all authenticated roles */}
+                <div className="relative">
                     <Button
                       variant="ghost"
                       size="icon"
@@ -270,7 +296,7 @@ export function Navbar() {
                             const [res, countRes] = await Promise.all([notificationsAPI.getAll(), notificationsAPI.getUnreadCount()]);
                             setNavNotifications(Array.isArray(res.data) ? res.data : []);
                             setNavUnreadCount(countRes.data?.count || 0);
-                          } catch {}
+                          } catch { /* ignore */ }
                         }
                         setNavNotifOpen(!navNotifOpen);
                       }}
@@ -303,7 +329,7 @@ export function Navbar() {
                             <div
                               key={n.id}
                               className={`px-4 py-3 cursor-pointer transition-colors hover:bg-muted/40 ${!n.read ? 'bg-blue-50/60 dark:bg-blue-900/10' : ''}`}
-                              onClick={() => { if (!n.read) handleNavMarkRead(n.id); }}
+                              onClick={() => handleNotifClick(n)}
                               data-testid={`nav-notif-item-${n.id}`}
                             >
                               <div className="flex items-start gap-2">
@@ -322,7 +348,6 @@ export function Navbar() {
                       </div>
                     )}
                   </div>
-                )}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button 
@@ -524,6 +549,7 @@ export function Navbar() {
                       <button
                         className="px-4 py-2.5 text-sm font-medium hover:bg-muted rounded-lg flex items-center gap-2 w-full text-left"
                         onClick={() => { setMobileMenuOpen(false); setNavNotifOpen(!navNotifOpen); }}
+                        data-testid="mobile-notification-toggle"
                       >
                         <Bell className="h-4 w-4 text-[#F05D5E]" />
                         {language === 'es' ? 'Notificaciones' : 'Notifications'}
@@ -532,6 +558,19 @@ export function Navbar() {
                         )}
                       </button>
                     </>
+                  )}
+                  {(isBusiness || isAdmin) && (
+                    <button
+                      className="px-4 py-2.5 text-sm font-medium hover:bg-muted rounded-lg flex items-center gap-2 w-full text-left"
+                      onClick={() => { setMobileMenuOpen(false); setNavNotifOpen(!navNotifOpen); }}
+                      data-testid="mobile-notification-toggle"
+                    >
+                      <Bell className="h-4 w-4 text-[#F05D5E]" />
+                      {language === 'es' ? 'Notificaciones' : 'Notifications'}
+                      {navUnreadCount > 0 && (
+                        <Badge className="ml-auto bg-[#F05D5E] text-white text-[10px] h-5 px-1.5">{navUnreadCount}</Badge>
+                      )}
+                    </button>
                   )}
                   <Link
                     to={isBusiness ? '/business/dashboard' : '/dashboard'}

@@ -794,6 +794,20 @@ Cuando un negocio real tenga su tarjeta fallida:
 - ✅ Verificado: endpoint backend devuelve 404; `/api/health` sigue 200 OK
 - Motivo: Sentry ya quedó validado en backend y frontend; las rutas de prueba ya no deben estar expuestas al público.
 
+**Notificaciones in-app 🔔 unificadas para todos los roles**
+- ✅ Habilitada la campana del Navbar (`nav-notification-bell`) para CLIENTES, NEGOCIOS y ADMIN (antes sólo clientes).
+- ✅ Polling automático cada 30 segundos para mantener el contador de no leídas actualizado.
+- ✅ Navegación inteligente al hacer click sobre una notificación:
+   - `data.booking_id` + rol negocio → `/business/dashboard?booking=<id>`
+   - `data.booking_id` + rol cliente → `/bookings`
+   - `data.business_id` + rol admin → `/bv-ctrl?business=<id>`
+   - Fallback: dashboard correspondiente al rol.
+- ✅ Eliminada la campana redundante del BusinessDashboardPage (data-testid antiguo `notification-bell`) para evitar dos campanas a la vez. El BusinessDashboardPage conserva la lógica de state interno por si otras secciones la consumen, pero ya no renderiza el botón.
+- ✅ Botón móvil de notificaciones disponible también para negocios y admin en el menú hamburguesa.
+- Endpoints backend ya existentes: `GET /api/notifications`, `GET /api/notifications/unread-count`, `PUT /api/notifications/{id}/read`, `PUT /api/notifications/read-all` — usados sin cambios.
+- 25+ disparadores automáticos ya activos (booking creada/cancelada/confirmada, pago recibido, suspensión negocio, etc.) — no se tocaron.
+- Smoke test: campana visible con badge "9+" en negocio, "5" en cliente; campana antigua del business dashboard confirmadamente removida.
+
 ### Pendientes inmediatos para apertura formal al público (P0)
 1. **Cloudinary**: Usuario debe crear cuenta gratuita en cloudinary.com y configurar `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` en Railway. Sin esto, los backups diarios de MongoDB fallarán.
 2. **Onboarding Stripe Connect del negocio piloto** ("barbería pitufo") para validar el flujo de Transfer real el día 20.

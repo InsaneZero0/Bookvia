@@ -591,60 +591,13 @@ export default function BusinessDashboardPage() {
             </div>
           </div>
           <div className="flex gap-2 items-center">
-            {/* Notification Bell */}
-            <div className="relative">
-              <Button variant="outline" size="icon" className="h-9 w-9 relative" onClick={() => { setNotifOpen(!notifOpen); if (!notifOpen) loadNotifications(); }} data-testid="notification-bell">
-                <Bell className="h-4 w-4" />
-                {unreadCount > 0 && (
-                  <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-[#F05D5E] text-white text-[10px] font-bold flex items-center justify-center" data-testid="unread-count">{unreadCount > 9 ? '9+' : unreadCount}</span>
-                )}
-              </Button>
-              {notifOpen && (
-                <div className="absolute right-0 top-11 w-80 sm:w-96 bg-background border border-border rounded-xl shadow-xl z-50 overflow-hidden" data-testid="notification-panel">
-                  <div className="flex items-center justify-between px-4 py-3 border-b border-border/60">
-                    <h3 className="text-sm font-semibold">{language === 'es' ? 'Notificaciones' : 'Notifications'}</h3>
-                    {unreadCount > 0 && (
-                      <button className="text-xs text-[#F05D5E] hover:underline" onClick={handleMarkAllRead} data-testid="mark-all-read">
-                        {language === 'es' ? 'Marcar todo como leido' : 'Mark all as read'}
-                      </button>
-                    )}
-                  </div>
-                  <div className="max-h-80 overflow-y-auto divide-y divide-border/40">
-                    {notifications.length === 0 ? (
-                      <div className="py-10 text-center">
-                        <Bell className="h-8 w-8 text-muted-foreground/30 mx-auto mb-2" />
-                        <p className="text-sm text-muted-foreground">{language === 'es' ? 'Sin notificaciones' : 'No notifications'}</p>
-                      </div>
-                    ) : notifications.map(n => (
-                      <div
-                        key={n.id}
-                        className={`px-4 py-3 cursor-pointer transition-colors hover:bg-muted/40 ${!n.read ? 'bg-blue-50/60 dark:bg-blue-900/10' : ''}`}
-                        onClick={() => { if (!n.read) handleMarkRead(n.id); }}
-                        data-testid={`notif-item-${n.id}`}
-                      >
-                        <div className="flex items-start gap-2">
-                          {!n.read && <span className="mt-1.5 h-2 w-2 rounded-full bg-[#F05D5E] shrink-0" />}
-                          <div className="flex-1 min-w-0">
-                            <p className={`text-sm ${!n.read ? 'font-semibold' : 'font-medium'}`}>{n.title}</p>
-                            <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{n.message}</p>
-                            <p className="text-[10px] text-muted-foreground mt-1">
-                              {new Date(n.created_at).toLocaleDateString(language === 'es' ? 'es-MX' : 'en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
             <Button variant="outline" size="sm" onClick={async () => {
               let profileSlug = biz?.slug || biz?.id;
               if (!profileSlug) {
                 try {
                   const meRes = await businessesAPI.getDashboard();
                   profileSlug = meRes.data?.business?.slug || meRes.data?.business?.id;
-                } catch {}
+                } catch { /* ignore */ }
               }
               if (profileSlug) {
                 navigate(`/business/${profileSlug}`);
@@ -923,7 +876,7 @@ export default function BusinessDashboardPage() {
                         try {
                           const res = await businessesAPI.getClientHistory(booking.user_id);
                           setClientHistory(res.data);
-                        } catch {}
+                        } catch { /* ignore */ }
                         setHistoryLoading(false);
                       }
                     }}
