@@ -175,6 +175,33 @@ async def execute_stripe_transfers_for_settlement(
         f"amount=${amount_mxn:.2f} transfer={transfer.id}"
     )
 
+    # Email negocio: "liquidamos $X via Stripe — llegará a tu CLABE en 1-2 días"
+    try:
+        biz_full = await db.businesses.find_one(
+            {"id": business["id"]},
+            {"_id": 0, "email": 1, "owner_user_id": 1, "name": 1},
+        )
+        owner_email = biz_full.get("email") if biz_full else None
+        if not owner_email and biz_full and biz_full.get("owner_user_id"):
+            owner = await db.users.find_one(
+                {"id": biz_full["owner_user_id"]}, {"_id": 0, "email": 1}
+            )
+            owner_email = owner.get("email") if owner else None
+        if owner_email:
+            from services.email import send_settlement_notification
+            await send_settlement_notification(
+                business_email=owner_email,
+                business_name=business.get("name", "Negocio"),
+                amount_mxn=amount_mxn,
+                period_key=settlement.get("period_key", ""),
+                settlement_id=settlement_id,
+                booking_count=settlement.get("booking_count", 0),
+                transactions_count=len(settlement.get("transaction_ids") or []),
+            )
+    except Exception as email_err:
+        # Email failures must NOT block the transfer success
+        logger.warning(f"Settlement email failed for {settlement_id}: {email_err}")
+
     return {
         "ok": True,
         "settlement_id": settlement_id,

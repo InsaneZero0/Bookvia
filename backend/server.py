@@ -20,6 +20,27 @@ load_dotenv(ROOT_DIR / '.env')
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+# Sentry — error monitoring and performance tracing (must be initialized
+# BEFORE the FastAPI app is created so middlewares are wired correctly).
+_SENTRY_DSN = os.environ.get("SENTRY_DSN", "").strip()
+if _SENTRY_DSN:
+    try:
+        import sentry_sdk
+        from sentry_sdk.integrations.fastapi import FastApiIntegration
+        from sentry_sdk.integrations.starlette import StarletteIntegration
+
+        sentry_sdk.init(
+            dsn=_SENTRY_DSN,
+            environment=os.environ.get("SENTRY_ENVIRONMENT", "development"),
+            traces_sample_rate=float(os.environ.get("SENTRY_TRACES_SAMPLE_RATE", "0.1")),
+            send_default_pii=False,  # never send raw card/PII data
+            integrations=[FastApiIntegration(), StarletteIntegration()],
+        )
+        logger.info("Sentry initialized for environment=%s",
+                    os.environ.get("SENTRY_ENVIRONMENT", "development"))
+    except Exception as _sentry_err:
+        logger.warning("Sentry init failed (continuing without): %s", _sentry_err)
+
 # Create the main app
 app = FastAPI(title="Bookvia API", version="2.0.0")
 

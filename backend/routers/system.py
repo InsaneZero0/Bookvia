@@ -75,6 +75,18 @@ async def get_platform_stats():
     return {"businesses": businesses, "bookings": bookings, "reviews": reviews, "avg_rating": avg_rating}
 
 
+
+@router.get("/_debug/sentry", tags=["System"])
+async def debug_sentry_trigger():
+    """Force a fake exception to verify Sentry catches backend errors.
+
+    This endpoint exists purely to validate the Sentry installation. It will
+    intentionally raise a `ZeroDivisionError` so the error shows up in the
+    Sentry project. Safe to leave in production — does no real damage.
+    """
+    raise ZeroDivisionError("Sentry test: forced exception from /api/_debug/sentry")
+
+
 @router.get("/health", tags=["System"])
 async def health_check():
     """Health check endpoint with configuration status"""

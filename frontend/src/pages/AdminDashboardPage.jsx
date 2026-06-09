@@ -18,6 +18,8 @@ import { toast } from 'sonner';
 import { WaitlistBroadcastModal } from '@/components/WaitlistBroadcastModal';
 import AdminWinbackTab from '@/components/AdminWinbackTab';
 import AdminQRCodesTab from '@/components/AdminQRCodesTab';
+import AdminFinanceDashboardTab from '@/components/AdminFinanceDashboardTab';
+import AdminSettlementsTab from '@/components/AdminSettlementsTab';
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
 } from 'recharts';
@@ -27,7 +29,7 @@ import {
   Eye, Star, Wallet, BarChart3, Loader2, MapPin, Phone, Mail, Globe,
   CreditCard, Briefcase, MessageSquare, Trash2, ExternalLink, TrendingUp,
   Tags, Settings, LifeBuoy, Plus, Pencil, Send, X, AlertCircle,
-  Trophy, Bell, Map, ToggleLeft, ToggleRight, FileBarChart, UserPlus, Key, Flag, QrCode
+  Trophy, Bell, Map, ToggleLeft, ToggleRight, FileBarChart, UserPlus, Key, Flag, QrCode, Banknote
 } from 'lucide-react';
 
 const STATUS_COLORS = {
@@ -1218,6 +1220,8 @@ export default function AdminDashboardPage() {
     { id: 'compliance', label: t('Cumplimiento', 'Compliance'), icon: Shield },
     { id: 'winback', label: t('Reactivacion', 'Winback'), icon: Mail },
     { id: 'qrcodes', label: t('Códigos QR', 'QR Codes'), icon: QrCode },
+    { id: 'finance_pnl', label: t('Finanzas Bookvia', 'Bookvia Finance'), icon: DollarSign },
+    { id: 'settlements_v2', label: t('Liquidación Negocios', 'Settlements'), icon: Banknote },
     ...(isSuperAdmin ? [{ id: 'staff', label: t('Equipo', 'Team'), icon: UserPlus }] : []),
   ];
   const tabs = allTabs.filter(tab => hasTabPerm(tab.id));
@@ -3039,6 +3043,10 @@ export default function AdminDashboardPage() {
         {activeTab === 'winback' && <AdminWinbackTab />}
 
         {activeTab === 'qrcodes' && <AdminQRCodesTab />}
+
+        {activeTab === 'finance_pnl' && <AdminFinanceDashboardTab />}
+
+        {activeTab === 'settlements_v2' && <AdminSettlementsTab />}
 
         {/* ============ COMPLIANCE TAB ============ */}
         {activeTab === 'compliance' && (
