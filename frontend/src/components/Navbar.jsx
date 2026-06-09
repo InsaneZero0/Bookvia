@@ -18,7 +18,8 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { 
   Menu, X, Sun, Moon, Globe, User, Calendar, Heart, Bell, 
-  LogOut, Building2, LayoutDashboard, ChevronDown, MapPin, Search
+  LogOut, Building2, LayoutDashboard, ChevronDown, MapPin, Search,
+  Settings, HelpCircle, FileText, CreditCard, BarChart3, Sparkles
 } from 'lucide-react';
 import { getInitials } from '@/lib/utils';
 import { countries } from '@/lib/countries';
@@ -394,7 +395,7 @@ export function Navbar() {
                     <ChevronDown className="h-4 w-4" />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuContent align="end" className="w-60" data-testid="user-menu-content">
                   <div className="px-2 py-1.5">
                     <p className="text-sm font-medium">{user?.full_name || user?.email}</p>
                     <p className="text-xs text-muted-foreground">{user?.email}</p>
@@ -402,40 +403,85 @@ export function Navbar() {
                   <DropdownMenuSeparator />
                   
                   {isAdmin && (
-                    <DropdownMenuItem onClick={() => navigate('/bv-ctrl')} data-testid="menu-admin">
-                      <LayoutDashboard className="mr-2 h-4 w-4" />
-                      Admin Panel
-                    </DropdownMenuItem>
+                    <>
+                      <DropdownMenuItem onClick={() => navigate('/bv-ctrl')} data-testid="menu-admin">
+                        <LayoutDashboard className="mr-2 h-4 w-4" />
+                        Admin Panel
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                    </>
                   )}
                   
                   {isBusiness && (
-                    <DropdownMenuItem onClick={() => navigate('/business/dashboard')} data-testid="menu-business-dashboard">
-                      <Building2 className="mr-2 h-4 w-4" />
-                      {t('nav.dashboard')}
-                    </DropdownMenuItem>
+                    <>
+                      <DropdownMenuItem onClick={() => navigate('/business/dashboard')} data-testid="menu-business-dashboard">
+                        <Building2 className="mr-2 h-4 w-4" />
+                        {language === 'es' ? 'Panel de negocio' : 'Business panel'}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => navigate('/business/dashboard?tab=settings')} data-testid="menu-business-settings">
+                        <Settings className="mr-2 h-4 w-4" />
+                        {language === 'es' ? 'Configuracion del negocio' : 'Business settings'}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => navigate('/business/dashboard?tab=billing')} data-testid="menu-business-billing">
+                        <CreditCard className="mr-2 h-4 w-4" />
+                        {language === 'es' ? 'Suscripcion y facturacion' : 'Subscription & billing'}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => navigate('/business/dashboard?tab=reports')} data-testid="menu-business-reports">
+                        <BarChart3 className="mr-2 h-4 w-4" />
+                        {language === 'es' ? 'Reportes' : 'Reports'}
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                    </>
                   )}
                   
                   {!isBusiness && !isAdmin && (
                     <>
                       <DropdownMenuItem onClick={() => navigate('/dashboard')} data-testid="menu-dashboard">
                         <User className="mr-2 h-4 w-4" />
-                        {t('nav.profile')}
+                        {language === 'es' ? 'Mi perfil' : 'My profile'}
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => navigate('/bookings')} data-testid="menu-bookings">
                         <Calendar className="mr-2 h-4 w-4" />
-                        {t('nav.bookings')}
+                        {language === 'es' ? 'Mis citas' : 'My bookings'}
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => navigate('/favorites')} data-testid="menu-favorites">
                         <Heart className="mr-2 h-4 w-4" />
-                        {t('nav.favorites')}
+                        {language === 'es' ? 'Favoritos' : 'Favorites'}
                       </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => navigate('/payment-history')} data-testid="menu-payment-history">
+                        <CreditCard className="mr-2 h-4 w-4" />
+                        {language === 'es' ? 'Historial de pagos' : 'Payment history'}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => navigate('/dashboard?tab=notifications')} data-testid="menu-notification-prefs">
+                        <Bell className="mr-2 h-4 w-4" />
+                        {language === 'es' ? 'Preferencias de avisos' : 'Notification preferences'}
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
                     </>
                   )}
-                  
+
+                  {/* Common to all roles */}
+                  <DropdownMenuItem onClick={() => { toggleTheme(); }} data-testid="menu-theme">
+                    {theme === 'dark' ? <Sun className="mr-2 h-4 w-4" /> : <Moon className="mr-2 h-4 w-4" />}
+                    {language === 'es' ? (theme === 'dark' ? 'Modo claro' : 'Modo oscuro') : (theme === 'dark' ? 'Light mode' : 'Dark mode')}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => toggleLanguage()} data-testid="menu-language">
+                    <Globe className="mr-2 h-4 w-4" />
+                    {language === 'es' ? 'English' : 'Español'}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => navigate('/contacto')} data-testid="menu-help">
+                    <HelpCircle className="mr-2 h-4 w-4" />
+                    {language === 'es' ? 'Ayuda y soporte' : 'Help & support'}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => navigate('/terminos')} data-testid="menu-terms">
+                    <FileText className="mr-2 h-4 w-4" />
+                    {language === 'es' ? 'Terminos y privacidad' : 'Terms & privacy'}
+                  </DropdownMenuItem>
+
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={handleLogout} className="text-red-600" data-testid="menu-logout">
                     <LogOut className="mr-2 h-4 w-4" />
-                    {t('nav.logout')}
+                    {language === 'es' ? 'Cerrar sesion' : 'Logout'}
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>

@@ -681,7 +681,11 @@ export default function BusinessDashboardPage() {
           {[
             { icon: CalendarIcon, label: language === 'es' ? 'Citas hoy' : "Today's bookings", value: stats?.today_appointments || 0, color: 'text-blue-500 bg-blue-50', type: 'today', title: language === 'es' ? 'Citas de hoy' : "Today's bookings", perm: 'view_today_bookings' },
             { icon: Clock, label: language === 'es' ? 'Confirmadas' : 'Confirmed', value: stats?.pending_appointments || 0, color: 'text-amber-500 bg-amber-50', type: 'pending', title: language === 'es' ? 'Citas confirmadas' : 'Confirmed bookings', perm: 'view_confirmed_bookings' },
-            { icon: DollarSign, label: language === 'es' ? 'Ingresos mes' : 'Monthly revenue', value: formatCurrency(stats?.month_revenue || 0), color: 'text-emerald-500 bg-emerald-50', type: 'revenue', title: language === 'es' ? 'Ingresos del mes' : 'Monthly revenue', perm: 'view_reports' },
+            // For deposit-enabled businesses → show platform revenue.
+            // For "pay-at-location" businesses → revenue isn't meaningful for them via the platform; show unique customers instead.
+            biz?.requires_deposit
+              ? { icon: DollarSign, label: language === 'es' ? 'Ingresos mes' : 'Monthly revenue', value: formatCurrency(stats?.month_revenue || 0), color: 'text-emerald-500 bg-emerald-50', type: 'revenue', title: language === 'es' ? 'Ingresos del mes' : 'Monthly revenue', perm: 'view_reports' }
+              : { icon: Users, label: language === 'es' ? 'Clientes del mes' : 'Customers this month', value: stats?.unique_customers_month ?? '—', color: 'text-emerald-500 bg-emerald-50', type: 'unique_customers', title: language === 'es' ? 'Clientes unicos del mes' : 'Unique customers this month', perm: 'view_reports' },
             { icon: TrendingUp, label: language === 'es' ? 'Total citas' : 'Total bookings', value: stats?.total_appointments || 0, color: 'text-violet-500 bg-violet-50', type: 'total', title: language === 'es' ? 'Total de citas' : 'Total bookings', perm: 'view_reports' },
           ].filter(stat => hasPermission(stat.perm)).map((stat, i) => (
             <Card 
@@ -708,8 +712,8 @@ export default function BusinessDashboardPage() {
         {/* Pending no-show reports requiring business response */}
         <NoShowAlertBanner bookings={dayBookings} onResolved={() => loadDayBookings()} />
 
-        {/* Stripe Connect required banner - hides itself once fully onboarded */}
-        <StripeConnectRequiredBanner />
+        {/* Stripe Connect required banner - only relevant if business takes deposits */}
+        {biz?.requires_deposit && <StripeConnectRequiredBanner />}
 
         {/* Phase D — Subscription past_due / unpaid banner */}
         <SubscriptionPastDueBanner />
@@ -1496,7 +1500,7 @@ export default function BusinessDashboardPage() {
                 </div>
               ) : statsModal.bookings.length > 0 ? (
                 <>
-                  {statsModal.totalRevenue !== null && (
+                  {statsModal.totalRevenue !== null && biz?.requires_deposit && (
                     <div className="flex items-center justify-between p-3 rounded-xl bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200">
                       <span className="text-sm font-medium text-emerald-700 dark:text-emerald-300">
                         {language === 'es' ? 'Ingresos totales' : 'Total revenue'}
@@ -1696,10 +1700,17 @@ export default function BusinessDashboardPage() {
                       <span className="text-muted-foreground">{language === 'es' ? 'Horario' : 'Time'}</span>
                       <span className="font-medium">{b.time} - {b.end_time}</span>
                     </div>
-                    {b.deposit_amount > 0 && (
+                    {b.deposit_amount > 0 ? (
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">{language === 'es' ? 'Anticipo' : 'Deposit'}</span>
                         <span className="font-medium">{b.deposit_paid ? '✓' : '✗'} ${b.deposit_amount} MXN</span>
+                      </div>
+                    ) : !biz?.requires_deposit && (
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">{language === 'es' ? 'Tipo de cobro' : 'Payment type'}</span>
+                        <span className="font-medium text-blue-600">
+                          {language === 'es' ? 'En el local' : 'At location'}
+                        </span>
                       </div>
                     )}
                     {(b.booked_by === 'business' || (b.skip_payment && b.client_name)) && (

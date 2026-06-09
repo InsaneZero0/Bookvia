@@ -26,6 +26,7 @@ class BusinessStatus(str, Enum):
     APPROVED = "approved"
     SUSPENDED = "suspended"
     REJECTED = "rejected"
+    DECOMMISSIONED = "decommissioned"
 
 
 class PaymentStatus(str, Enum):

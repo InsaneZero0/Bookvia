@@ -46,6 +46,7 @@ import FavoritesPage from '@/pages/FavoritesPage';
 import PaymentHistoryPage from '@/pages/PaymentHistoryPage';
 import GoogleAuthCallback from '@/pages/GoogleAuthCallback';
 import StatusPage from '@/pages/StatusPage';
+import BottomNav from '@/components/BottomNav';
 
 // SEO Pages
 import CountryPage from '@/pages/seo/CountryPage';
@@ -57,12 +58,13 @@ import { BetaBanner } from '@/components/BetaBanner';
 // Layout wrapper
 function Layout({ children, showFooter = true }) {
   return (
-    <div className="flex flex-col min-h-screen">
+    <div className="flex flex-col min-h-screen pb-[68px] md:pb-0">
       <BetaBanner />
       <Navbar />
       <main className="flex-1">{children}</main>
       {showFooter && <Footer />}
       <WhatsAppFloatingButton />
+      <BottomNav />
     </div>
   );
 }
