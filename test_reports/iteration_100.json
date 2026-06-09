@@ -1,0 +1,43 @@
+{
+  "summary": "Full validation of (1) Admin decommission/reactivate backend + ACL, (2) mobile BottomNav + desktop hidden, (3) expanded user dropdown (client + business), (4) conditional dashboard sin anticipo (banner + stat card). 9/9 backend pytest cases pass. Frontend exercised live via Playwright with real logins (test@example.com customer, testbiz_dashboard@test.com business). Admin UI for decommission was NOT exercised live because AdminDashboardPage requires TOTP login (pre-existing block documented in iter 99) — backend endpoints fully cover the logic so this is acceptable.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "verified_features": [
+    "Mobile (390x844) bottom-nav renders with data-testid=bottom-nav and 4 client items (bnav-explore/bookings/notifs/me). Tapping bnav-bookings navigates to /bookings; bnav-explore navigates to /.",
+    "Desktop (1920x800) bottom-nav is hidden (md:hidden) — query returns element but is_visible()==false (display:none via Tailwind).",
+    "Business mobile bottom-nav shows bnav-biz-dash, bnav-reception, bnav-me (3 items per role).",
+    "Client desktop dropdown via user-menu-trigger shows: menu-bookings, menu-payment-history, menu-notification-prefs, menu-theme, menu-language, menu-help, menu-terms + 'Mi perfil', 'Favoritos', 'Cerrar sesion'. All 7 expected data-testids present.",
+    "Business desktop dropdown shows: Business panel, Business settings, Subscription & billing, Reports, Dark mode, language toggle, Help & support, Terms & privacy, Logout. Matches spec.",
+    "Conditional dashboard: with biz.requires_deposit=true (current DB state) the StripeConnectRequiredBanner IS shown and 'Ingresos mes' stat card IS shown — correct. After flipping requires_deposit=false in DB, banner disappears AND stat card shows 'Clientes del mes — —' instead of 'Ingresos del mes'. Conditional logic confirmed working both ways. DB state restored to requires_deposit=true after test.",
+    "Notification bell (nav-notification-bell) visible for both client and business roles. /api/status returns 200. share-business-button visible on business dashboard.",
+    "Backend POST /api/admin/businesses/{id}/decommission returns 200 with export_csv (string containing SERVICES/BOOKINGS/CUSTOMERS markers) + csv_filename ending in .csv. Persists status=decommissioned with decommission_reason + decommissioned_at + decommissioned_by_admin_id in mongo.",
+    "Backend POST /api/admin/businesses/{id}/reactivate returns 200, restores status=approved, sets reactivated_at, unsets decommission_reason. Re-decommissioning works.",
+    "ACL: customer JWT gets 403 on both /decommission and /reactivate endpoints.",
+    "Edge cases: double-decommission returns 400 ('already decommissioned'); unknown business id returns 404."
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_decommission_flow.py",
+    "/app/test_reports/pytest/decommission_flow.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "BottomNav.jsx correctly hides on /login, /signup, /status, /auth/google/callback, /checkout, /business/reception and uses md:hidden Tailwind class for desktop hide. Safe-area-inset-bottom respected for iPhone notch. Active route detection handles '/' as exact match — good.",
+    "DecommissionDialog requires confirmText.trim().toUpperCase() === requiredConfirm (where requiredConfirm = business.name.toUpperCase()). Confirm button disabled until matched. Robust against accidental clicks.",
+    "admin.py decommission_business: persists decommissioned_by_admin_id and decommission_note (capped at 1000 chars). CSV preview is XSS-safe via .replace('<','&lt;'). Reuses BUSINESS_SUSPEND audit action — acceptable but a dedicated BUSINESS_DECOMMISSION action would be cleaner.",
+    "reactivate_business uses MongoDB $unset to clean decommission fields — correct. Returns idempotent message if already APPROVED.",
+    "Owner notification (create_notification) only fires if business.user_id exists — safely handles orphan biz docs (which is how the test fixture works)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_decommission_flow.py (new — 9 pytest cases)"
+  ],
+  "success_rate": { "backend": "100% (9/9 pytest)", "frontend": "100% on exercised flows (mobile bnav nav, desktop hide, client/business dropdowns, conditional dashboard sin anticipo, share button, notif bell)" },
+  "test_credentials": "Used test@example.com/TestPass123! (customer) and testbiz_dashboard@test.com/TestBiz123! (business). Admin JWT minted via core.security.create_token() for backend tests to avoid TOTP.",
+  "seed_data_creation": "Created and deleted a single throwaway TEST_DECOM_<uuid> business doc directly in mongo for decommission/reactivate tests. No real businesses touched. Temporarily flipped biz_dd14ed093b51.requires_deposit to false then restored to true.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "test_decommission_flow.py is fully idempotent — creates and deletes its own test business. Run with: pytest /app/backend/tests/test_decommission_flow.py -v. Admin UI for decommission/reactivate buttons could not be exercised by a fork session because AdminDashboardPage redirects to /bv-ctrl/login before useAuth hydrates from localStorage (same pre-existing race noted in iter 99). To exercise UI: real TOTP login required. testbiz_dashboard@test.com currently has requires_deposit=true in DB (restored post-test) — flip to false in DB to manually verify dashboard sin anticipo UI."
+}

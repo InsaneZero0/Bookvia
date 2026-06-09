@@ -780,3 +780,103 @@ Cuando un negocio real tenga su tarjeta fallida:
 2. Backend marca `past_due` (no se sobreescribe porque Stripe también lo retorna `past_due`)
 3. Banner naranja aparece automáticamente al cargar dashboard
 4. Cron suspende día 7 si no actualiza
+
+
+---
+
+## Changelog Reciente
+
+### Feb 2026 - Endurecimiento Pre-Lanzamiento
+
+**Eliminadas rutas de debug de Sentry (seguridad en producción)**
+- ❌ Removido `GET /api/_debug/sentry` de `/app/backend/routers/system.py` (lanzaba ZeroDivisionError de prueba)
+- ❌ Removida ruta `/_debug/sentry` y componente `SentryTestPage` de `/app/frontend/src/App.js`
+- ✅ Verificado: endpoint backend devuelve 404; `/api/health` sigue 200 OK
+- Motivo: Sentry ya quedó validado en backend y frontend; las rutas de prueba ya no deben estar expuestas al público.
+
+**Notificaciones in-app 🔔 unificadas para todos los roles**
+- ✅ Habilitada la campana del Navbar (`nav-notification-bell`) para CLIENTES, NEGOCIOS y ADMIN (antes sólo clientes).
+- ✅ Polling automático cada 30 segundos para mantener el contador de no leídas actualizado.
+- ✅ Navegación inteligente al hacer click sobre una notificación:
+   - `data.booking_id` + rol negocio → `/business/dashboard?booking=<id>`
+   - `data.booking_id` + rol cliente → `/bookings`
+   - `data.business_id` + rol admin → `/bv-ctrl?business=<id>`
+   - Fallback: dashboard correspondiente al rol.
+- ✅ Eliminada la campana redundante del BusinessDashboardPage (data-testid antiguo `notification-bell`) para evitar dos campanas a la vez. El BusinessDashboardPage conserva la lógica de state interno por si otras secciones la consumen, pero ya no renderiza el botón.
+- ✅ Botón móvil de notificaciones disponible también para negocios y admin en el menú hamburguesa.
+- ✅ **Toast flotantes en tiempo real**: cuando el polling detecta una nueva notificación no-leída, dispara un `toast()` con el título, mensaje y botón "Ver" que navega al recurso. Refs `seenIdsRef` + `initialisedRef` evitan toast-spam al cargar la sesión.
+- Endpoints backend ya existentes: `GET /api/notifications`, `GET /api/notifications/unread-count`, `PUT /api/notifications/{id}/read`, `PUT /api/notifications/read-all` — usados sin cambios.
+- 25+ disparadores automáticos ya activos (booking creada/cancelada/confirmada, pago recibido, suspensión negocio, etc.) — no se tocaron.
+- Smoke test: campana visible con badge "9+" en negocio, "5" en cliente; campana antigua del business dashboard confirmadamente removida.
+
+**Status page público `/status`**
+- ✅ Nuevo endpoint backend `GET /api/status` (público, sin auth, sin secretos) que pinguea: API, MongoDB y Stripe en paralelo, devolviendo latencia en ms + estado por componente (operational | degraded | down).
+- ✅ Stripe ping usa `stripe.Account.retrieve()` envuelto en `asyncio.to_thread` para no bloquear el event loop.
+- ✅ Nueva página pública `/status` (`StatusPage.jsx`) con:
+   - Banner global verde/amarillo/rojo según peor componente
+   - Lista de componentes con latencia visible (API, Database, Stripe)
+   - Auto-refresh cada 60 segundos + botón "Actualizar" manual
+   - Header minimalista (logo + botón refresh) — no depende del Navbar para máxima resiliencia
+   - Bilingüe es/en
+- ✅ Verificado en preview: muestra "Todos los sistemas operativos", Database 1ms, Stripe LIVE 293ms.
+
+**Botón "Compartir mi negocio" 📲**
+- ✅ Botón "Compartir" agregado al header del Business Dashboard junto a Ver perfil / Recepción / Config.
+- ✅ Genera un mensaje pre-armado bilingüe ("Hola! 👋 Reserva tu cita en {negocio} facil y rapido por Bookvia: {url}?ref=share") y abre `https://wa.me/?text=<msg>` en nueva pestaña.
+- ✅ Query param `?ref=share` permite trackear conversiones de tráfico orgánico vía WhatsApp.
+- ✅ Verificado en preview: click sobre el botón produce URL correcta con slug del negocio y ref=share.
+
+**ENFORCE_STRIPE_CONNECT_GATE activado en preview**
+- ✅ `.env` del backend ahora contiene `ENFORCE_STRIPE_CONNECT_GATE=true`
+- ✅ `visible_business_filter_now()` excluye negocios sin `stripe_connect_charges_enabled` del listado público
+- ✅ `POST /api/bookings` devuelve 400 si se intenta reservar a un negocio sin Connect
+- ⚠️ **Pendiente acción del usuario**: agregar la variable también en Railway para que se active en producción.
+
+**Dashboard adaptativo cuando el negocio NO usa anticipos**
+- ✅ Stat card "Ingresos mes" se reemplaza por **"Clientes del mes"** cuando `biz.requires_deposit=false`.
+- ✅ `StripeConnectRequiredBanner` se oculta cuando `requires_deposit=false` (no aplica porque no procesan dinero por la plataforma).
+- ✅ Modal de detalle de cita: muestra "Tipo de cobro: En el local" en lugar de "Anticipo pagado: ✗".
+- ✅ Modal de estadísticas: oculta fila "Ingresos totales" cuando `!requires_deposit`.
+- ✅ Verificado: testing agent flippeó `requires_deposit` en DB y validó ambos comportamientos.
+
+**Decommission flow para dar de baja negocios (con dignidad)**
+- ✅ Nuevo `BusinessStatus.DECOMMISSIONED` en enums.
+- ✅ Endpoint `POST /api/admin/businesses/{id}/decommission` con body `{reason, note, send_email, export_data}`.
+   - 7 razones categorizadas: pause_temporary, permanent_closure, platform_switch, low_activity, not_onboarded, owner_request, other.
+   - Email empático adaptado por razón (textos hand-crafted en español).
+   - Encuesta de salida embebida ("en una frase, qué pudimos haber hecho mejor?").
+   - Soft-delete (data preservada 30+ días para reactivación).
+   - Audit log + notificación in-app al dueño.
+   - Si `export_data=true` devuelve string CSV con servicios, clientes y reservas para handoff de buena fe.
+- ✅ Endpoint `POST /api/admin/businesses/{id}/reactivate` para revertir.
+- ✅ Componente `<DecommissionDialog />` (modal con dropdown, textarea, checkboxes, confirmación por nombre del negocio).
+- ✅ Botón "Dar de baja" + "Reactivar" en la lista de Negocios del Admin Dashboard.
+- ✅ Auto-download del CSV en el browser al confirmar.
+- ✅ 9 pytest cases creados en `/app/backend/tests/test_decommission_flow.py` — todos pasan.
+- ✅ ACL verificado: clientes regulares reciben 403 en los endpoints.
+
+**Menú de usuario ampliado + Bottom Nav móvil**
+- ✅ DropdownMenu del avatar expandido por rol:
+   - Cliente: Mi perfil, Mis citas, Favoritos, Historial de pagos, Preferencias de avisos, Tema, Idioma, Ayuda, Términos, Logout.
+   - Negocio: Panel, Configuración, Suscripción y facturación, Reportes, Tema, Idioma, Ayuda, Términos, Logout.
+   - Admin: Admin Panel + items comunes.
+- ✅ **Nuevo componente `BottomNav.jsx`**: barra fija inferior en móvil (≤md, oculta en desktop) con 4 íconos:
+   - Cliente: Explorar | Mis citas | Avisos | Yo.
+   - Negocio: Panel | Recepción | Yo.
+   - Admin: Inicio | Admin | Yo.
+   - No autenticado: Explorar | Entrar.
+- ✅ Oculta automáticamente en `/login`, `/signup`, `/status`, `/checkout`, `/business/reception`, `/auth/google/callback`.
+- ✅ Respeta `safe-area-inset-bottom` para notch de iPhone.
+- ✅ Padding-bottom 68px en Layout para que el contenido no quede tapado.
+
+### Pendientes inmediatos para apertura formal al público (P0)
+1. **Cloudinary**: Usuario debe crear cuenta gratuita en cloudinary.com y configurar `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` en Railway. Sin esto, los backups diarios de MongoDB fallarán.
+2. **Onboarding Stripe Connect del negocio piloto** ("barbería pitufo") para validar el flujo de Transfer real el día 20.
+
+### Backlog priorizado post-cleanup
+- P1: Status page público en `/status` (uptime DB, API, Stripe)
+- P1: Notificaciones in-app (campana en header)
+- P2: Activar flag `ENFORCE_STRIPE_CONNECT_GATE=true`
+- P2: Twilio A2P 10DLC para SMS reales
+- P3: Refactor de `bookings.py` y `AdminDashboardPage.jsx`
+- P3: Modelo multi-sucursal

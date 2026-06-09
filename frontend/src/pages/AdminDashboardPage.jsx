@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/dialog';
 import { useAuth } from '@/lib/auth';
 import { useI18n } from '@/lib/i18n';
-import { adminAPI, reviewsAPI } from '@/lib/api';
+import api, { adminAPI, reviewsAPI } from '@/lib/api';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { toast } from 'sonner';
 import { WaitlistBroadcastModal } from '@/components/WaitlistBroadcastModal';
@@ -21,6 +21,7 @@ import AdminQRCodesTab from '@/components/AdminQRCodesTab';
 import AdminFinanceDashboardTab from '@/components/AdminFinanceDashboardTab';
 import AdminSettlementsTab from '@/components/AdminSettlementsTab';
 import AdminBackupsTab from '@/components/AdminBackupsTab';
+import DecommissionDialog from '@/components/DecommissionDialog';
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
 } from 'recharts';
@@ -496,6 +497,7 @@ export default function AdminDashboardPage() {
   const [bizSearch, setBizSearch] = useState('');
   const [bizStatus, setBizStatus] = useState('');
   const [bizLoading, setBizLoading] = useState(false);
+  const [decommissionTarget, setDecommissionTarget] = useState(null); // business object
 
   // Users tab
   const [users, setUsers] = useState([]);
@@ -1628,9 +1630,32 @@ export default function AdminDashboardPage() {
                             </>
                           )}
                           {biz.status === 'approved' && (
-                            <Button size="sm" variant="outline" className="text-orange-600 hover:bg-orange-50"
-                              onClick={() => handleSuspendBusiness(biz.id)}>
-                              <Ban className="h-4 w-4 mr-1" />{t('Suspender', 'Suspend')}
+                            <>
+                              <Button size="sm" variant="outline" className="text-orange-600 hover:bg-orange-50"
+                                onClick={() => handleSuspendBusiness(biz.id)}>
+                                <Ban className="h-4 w-4 mr-1" />{t('Suspender', 'Suspend')}
+                              </Button>
+                              <Button size="sm" variant="outline" className="text-red-600 hover:bg-red-50"
+                                onClick={() => setDecommissionTarget(biz)}
+                                data-testid={`decommission-business-${biz.id}`}
+                                title={t('Dar de baja con email de despedida y export CSV', 'Decommission with goodbye email + CSV export')}>
+                                <XCircle className="h-4 w-4 mr-1" />{t('Dar de baja', 'Decommission')}
+                              </Button>
+                            </>
+                          )}
+                          {biz.status === 'decommissioned' && (
+                            <Button size="sm" variant="outline" className="text-emerald-600 hover:bg-emerald-50"
+                              onClick={async () => {
+                                try {
+                                  await api.post(`/admin/businesses/${biz.id}/reactivate`);
+                                  toast.success(t('Negocio reactivado', 'Business reactivated'));
+                                  loadBusinesses(bizPage);
+                                } catch (e) {
+                                  toast.error(e?.response?.data?.detail || t('Error al reactivar', 'Reactivation failed'));
+                                }
+                              }}
+                              data-testid={`reactivate-business-${biz.id}`}>
+                              <CheckCircle2 className="h-4 w-4 mr-1" />{t('Reactivar', 'Reactivate')}
                             </Button>
                           )}
                         </div>
@@ -3380,6 +3405,14 @@ export default function AdminDashboardPage() {
         country_code={broadcastCity?.country_code}
         onClose={() => setBroadcastCity(null)}
         onSent={() => loadCompliance()}
+      />
+
+      <DecommissionDialog
+        open={!!decommissionTarget}
+        onOpenChange={(o) => { if (!o) setDecommissionTarget(null); }}
+        business={decommissionTarget}
+        language={language}
+        onDone={() => loadBusinesses(bizPage)}
       />
     </div>
   );

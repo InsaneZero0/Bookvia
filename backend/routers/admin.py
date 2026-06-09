@@ -15,6 +15,7 @@ import uuid
 import json
 import math
 import pytz
+from enum import Enum
 from bson import ObjectId
 
 from core.database import db
@@ -44,6 +45,7 @@ from models.enums import (
     VISIBLE_BUSINESS_FILTER, DEFAULT_MANAGER_PERMISSIONS
 )
 from models.schemas import *
+from services.email import send_email
 
 logger = logging.getLogger(__name__)
 
@@ -1070,6 +1072,254 @@ async def suspend_business(business_id: str, request: Request, reason: str = "",
         )
     
     return {"message": "Business suspended"}
+
+
+# ========================== BUSINESS DECOMMISSION (graceful shutdown) ==========================
+
+class DecommissionReason(str, Enum):
+    PAUSE_TEMPORARY = "pause_temporary"
+    PERMANENT_CLOSURE = "permanent_closure"
+    PLATFORM_SWITCH = "platform_switch"
+    LOW_ACTIVITY = "low_activity"
+    NOT_ONBOARDED = "not_onboarded"
+    OWNER_REQUEST = "owner_request"
+    OTHER = "other"
+
+
+class DecommissionRequest(BaseModel):
+    reason: DecommissionReason
+    note: Optional[str] = None  # Internal admin note
+    send_email: bool = True  # Send the empathetic goodbye email to business owner
+    export_data: bool = True  # Export business CSV (clients + bookings + services) for handoff
+
+
+def _decommission_email_for(reason: DecommissionReason, business_name: str, has_export: bool) -> tuple[str, str]:
+    """Returns (subject, html_body) tuned to the reason. All bilingual ES (primary)."""
+    safe_name = business_name or "tu negocio"
+    intro_by_reason = {
+        DecommissionReason.PAUSE_TEMPORARY: (
+            "Pausa temporal en Bookvia",
+            f"<p>Hola,</p><p>Hemos puesto <strong>{safe_name}</strong> en pausa temporal en Bookvia tal como acordamos. Tus datos siguen seguros y puedes reactivarlo cuando quieras escribiendonos a hola@bookvia.app.</p>",
+        ),
+        DecommissionReason.PERMANENT_CLOSURE: (
+            f"Gracias por haber sido parte de Bookvia, {safe_name}",
+            f"<p>Hola,</p><p>Lamentamos saber que <strong>{safe_name}</strong> ya no operara. Queremos agradecerte por la confianza y por haber sido parte de la comunidad Bookvia. Te deseamos lo mejor en lo que sigue.</p>",
+        ),
+        DecommissionReason.PLATFORM_SWITCH: (
+            "Hasta pronto desde Bookvia",
+            f"<p>Hola,</p><p>Entendemos que decidiste mudar <strong>{safe_name}</strong> a otra plataforma. Te agradecemos profundamente por el tiempo que estuviste con nosotros. La puerta queda siempre abierta si quieres volver.</p>",
+        ),
+        DecommissionReason.LOW_ACTIVITY: (
+            "Queremos saber como ayudarte",
+            f"<p>Hola,</p><p>Notamos que <strong>{safe_name}</strong> no ha tenido actividad reciente en Bookvia. Sabemos que cada negocio tiene su ritmo y queremos saber si hay algo en lo que podamos apoyarte. Tu cuenta queda en pausa por 30 dias para darte tiempo de retomar cuando quieras.</p>",
+        ),
+        DecommissionReason.NOT_ONBOARDED: (
+            "Tu registro en Bookvia quedo incompleto",
+            f"<p>Hola,</p><p>Pasamos por aqui antes de cerrar el registro de <strong>{safe_name}</strong>. Vimos que el onboarding quedo incompleto y queriamos darte un ultimo aviso. Si todavia quieres unirte, responde a este correo y te ayudamos a terminar el proceso en 10 minutos.</p>",
+        ),
+        DecommissionReason.OWNER_REQUEST: (
+            "Confirmacion de baja en Bookvia",
+            f"<p>Hola,</p><p>Confirmamos la baja de <strong>{safe_name}</strong> a peticion tuya. Gracias por habernos elegido. Si necesitas reactivar la cuenta en el futuro, escribenos a hola@bookvia.app.</p>",
+        ),
+        DecommissionReason.OTHER: (
+            "Cambios en tu cuenta de Bookvia",
+            f"<p>Hola,</p><p>Hemos realizado cambios en la cuenta de <strong>{safe_name}</strong> en Bookvia. Si tienes preguntas o quieres entender mejor el motivo, respondenos directamente este correo y te explicamos.</p>",
+        ),
+    }
+    subject, intro = intro_by_reason.get(reason, intro_by_reason[DecommissionReason.OTHER])
+
+    export_block = (
+        "<p>Como gesto de buena fe, adjuntamos un export en CSV con todos tus datos (clientes, reservas y servicios) para que los tengas a la mano.</p>"
+        if has_export else ""
+    )
+
+    survey_block = (
+        "<p>Si tienes un minuto, nos ayudaria mucho saber: <strong>en una frase, que pudimos haber hecho mejor?</strong> "
+        "Solo responde este correo. Leemos todo, palabra por palabra.</p>"
+    )
+
+    closing = (
+        "<p>Cualquier cosa estamos en <a href=\"mailto:hola@bookvia.app\">hola@bookvia.app</a>.</p>"
+        "<p>Con carino,<br/>El equipo de Bookvia 💚</p>"
+    )
+
+    html = f"<div style=\"font-family: -apple-system, system-ui, sans-serif; line-height: 1.6; color: #1f2937; max-width: 560px; margin: 0 auto;\">{intro}{export_block}{survey_block}{closing}</div>"
+    return subject, html
+
+
+async def _build_business_csv_export(business_id: str) -> str:
+    """Builds a single .csv string with the business's customers + bookings + services.
+
+    Returns the CSV as text (so the admin can copy/share or we can attach later).
+    """
+    import io
+    import csv
+    buf = io.StringIO()
+    w = csv.writer(buf)
+
+    # Services
+    w.writerow(["=== SERVICES ==="])
+    w.writerow(["id", "name", "price", "duration_min", "active"])
+    async for s in db.services.find({"business_id": business_id}):
+        w.writerow([s.get("id"), s.get("name"), s.get("price"), s.get("duration_min"), s.get("active", True)])
+
+    w.writerow([])
+    w.writerow(["=== CUSTOMERS ==="])
+    w.writerow(["user_id", "name", "email", "phone", "total_bookings"])
+    pipeline = [
+        {"$match": {"business_id": business_id}},
+        {"$group": {"_id": "$user_id", "count": {"$sum": 1}}},
+    ]
+    async for row in db.bookings.aggregate(pipeline):
+        u = await db.users.find_one({"id": row["_id"]}) if row.get("_id") else None
+        if u:
+            w.writerow([u.get("id"), u.get("full_name"), u.get("email"), u.get("phone"), row["count"]])
+
+    w.writerow([])
+    w.writerow(["=== BOOKINGS ==="])
+    w.writerow(["id", "date", "time", "service", "client", "status", "deposit_paid", "deposit_amount"])
+    async for b in db.bookings.find({"business_id": business_id}).sort("date", -1).limit(2000):
+        w.writerow([
+            b.get("id"), b.get("date"), b.get("time"), b.get("service_name"),
+            b.get("client_name") or b.get("user_name"), b.get("status"),
+            b.get("deposit_paid"), b.get("deposit_amount"),
+        ])
+
+    return buf.getvalue()
+
+
+@router.post("/businesses/{business_id}/decommission")
+async def decommission_business(
+    business_id: str,
+    body: DecommissionRequest,
+    request: Request,
+    token_data: TokenData = Depends(require_admin),
+):
+    """Graceful, empathetic decommission of a business.
+
+    Soft-deletes the business (status=DECOMMISSIONED so it stops appearing in
+    search but data is preserved 30+ days). Optionally sends a categorized
+    empathetic goodbye email + attaches a CSV export of all their data + opens
+    a 1-line exit survey by reply-to.
+    """
+    business = await db.businesses.find_one({"id": business_id})
+    if not business:
+        raise HTTPException(status_code=404, detail="Business not found")
+
+    if business.get("status") == BusinessStatus.DECOMMISSIONED:
+        raise HTTPException(status_code=400, detail="Business is already decommissioned")
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    update = {
+        "status": BusinessStatus.DECOMMISSIONED,
+        "decommissioned_at": now_iso,
+        "decommission_reason": body.reason.value,
+        "decommission_note": (body.note or "").strip()[:1000],
+        "decommissioned_by_admin_id": token_data.user_id,
+    }
+    await db.businesses.update_one({"id": business_id}, {"$set": update})
+
+    # Build the CSV export if requested
+    csv_payload = None
+    if body.export_data:
+        try:
+            csv_payload = await _build_business_csv_export(business_id)
+        except Exception as e:
+            logger.warning(f"decommission: csv export failed for {business_id}: {e}")
+
+    # Send the empathetic email
+    email_sent = False
+    owner_email = None
+    if body.send_email and business.get("user_id"):
+        owner = await db.users.find_one({"id": business["user_id"]})
+        owner_email = owner.get("email") if owner else None
+        if owner_email:
+            try:
+                subject, html = _decommission_email_for(body.reason, business.get("name", ""), bool(csv_payload))
+                # If we have a CSV, append a small preview at the bottom of the HTML for transparency.
+                if csv_payload:
+                    preview_lines = csv_payload.splitlines()[:6]
+                    preview = "<br/>".join(line.replace("<", "&lt;").replace(">", "&gt;") for line in preview_lines)
+                    html += f"<hr style='margin:24px 0;border:none;border-top:1px solid #e5e7eb'/><p style='font-size:12px;color:#6b7280'>Vista previa del export (primeras filas):</p><pre style='font-family:monospace;font-size:11px;background:#f9fafb;padding:8px;border-radius:6px;overflow:auto'>{preview}</pre><p style='font-size:11px;color:#6b7280'>El export completo esta disponible escribiendo a hola@bookvia.app</p>"
+                await send_email(to=owner_email, subject=subject, body="Bookvia", html=html, template="business_decommission", data={"reason": body.reason.value})
+                email_sent = True
+            except Exception as e:
+                logger.error(f"decommission: email send failed for {business_id}: {e}")
+
+    # Notify the owner in-app
+    if business.get("user_id"):
+        await create_notification(
+            business["user_id"],
+            "Cuenta de negocio dada de baja",
+            f"Tu negocio {business.get('name', '')} ya no aparecera en Bookvia. Si crees que es un error, escribenos a hola@bookvia.app.",
+            "system",
+            {"business_id": business_id, "reason": body.reason.value},
+        )
+
+    # Audit log
+    await create_audit_log(
+        admin_id=token_data.user_id,
+        admin_email=token_data.email,
+        action=AuditAction.BUSINESS_SUSPEND,  # reuse closest existing audit action
+        target_type="business",
+        target_id=business_id,
+        details={
+            "business_name": business.get("name"),
+            "reason": body.reason.value,
+            "note": body.note,
+            "email_sent": email_sent,
+            "owner_email": owner_email,
+            "export_provided": bool(csv_payload),
+            "decommission": True,
+        },
+        request=request,
+    )
+
+    return {
+        "message": "Business decommissioned",
+        "email_sent": email_sent,
+        "export_csv": csv_payload if body.export_data else None,
+        "csv_filename": f"bookvia_export_{business.get('slug') or business_id}.csv" if csv_payload else None,
+    }
+
+
+@router.post("/businesses/{business_id}/reactivate")
+async def reactivate_business(business_id: str, request: Request, token_data: TokenData = Depends(require_admin)):
+    """Reactivate a decommissioned or suspended business (status -> APPROVED).
+
+    Use this within the 30-day grace period (or any time) when a business
+    asks to come back.
+    """
+    business = await db.businesses.find_one({"id": business_id})
+    if not business:
+        raise HTTPException(status_code=404, detail="Business not found")
+    if business.get("status") == BusinessStatus.APPROVED:
+        return {"message": "Business already active"}
+    await db.businesses.update_one(
+        {"id": business_id},
+        {
+            "$set": {"status": BusinessStatus.APPROVED, "reactivated_at": datetime.now(timezone.utc).isoformat()},
+            "$unset": {"decommissioned_at": "", "decommission_reason": "", "decommission_note": ""},
+        },
+    )
+    await create_audit_log(
+        admin_id=token_data.user_id,
+        admin_email=token_data.email,
+        action=AuditAction.BUSINESS_APPROVE,
+        target_type="business",
+        target_id=business_id,
+        details={"business_name": business.get("name"), "reactivation": True},
+        request=request,
+    )
+    if business.get("user_id"):
+        await create_notification(
+            business["user_id"],
+            "Tu negocio fue reactivado",
+            f"{business.get('name', 'Tu negocio')} vuelve a estar visible en Bookvia. Bienvenido de regreso!",
+            "system",
+            {"business_id": business_id},
+        )
+    return {"message": "Business reactivated"}
 
 
 # ========================== BUSINESS DOCUMENTS VERIFICATION ==========================

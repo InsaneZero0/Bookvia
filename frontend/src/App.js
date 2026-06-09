@@ -45,6 +45,8 @@ import UnsubscribePage from '@/pages/UnsubscribePage';
 import FavoritesPage from '@/pages/FavoritesPage';
 import PaymentHistoryPage from '@/pages/PaymentHistoryPage';
 import GoogleAuthCallback from '@/pages/GoogleAuthCallback';
+import StatusPage from '@/pages/StatusPage';
+import BottomNav from '@/components/BottomNav';
 
 // SEO Pages
 import CountryPage from '@/pages/seo/CountryPage';
@@ -56,19 +58,15 @@ import { BetaBanner } from '@/components/BetaBanner';
 // Layout wrapper
 function Layout({ children, showFooter = true }) {
   return (
-    <div className="flex flex-col min-h-screen">
+    <div className="flex flex-col min-h-screen pb-[68px] md:pb-0">
       <BetaBanner />
       <Navbar />
       <main className="flex-1">{children}</main>
       {showFooter && <Footer />}
       <WhatsAppFloatingButton />
+      <BottomNav />
     </div>
   );
-}
-
-function SentryTestPage() {
-  // Lazy throw — only happens when this route is actually visited.
-  throw new Error("Sentry test: forced frontend error from /_debug/sentry");
 }
 
 function App() {
@@ -93,8 +91,7 @@ function App() {
               <Route path="/reset-password" element={<ResetPasswordPage />} />
               <Route path="/unsubscribe" element={<UnsubscribePage />} />
               <Route path="/auth/google/callback" element={<GoogleAuthCallback />} />
-              {/* Sentry test trigger — debug endpoint, lazy throws only on visit */}
-              <Route path="/_debug/sentry" element={<SentryTestPage />} />
+              <Route path="/status" element={<StatusPage />} />
               
               {/* User Pages */}
               <Route path="/dashboard" element={<Layout><UserDashboardPage /></Layout>} />

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
 import { useI18n } from '@/lib/i18n';
@@ -18,11 +18,13 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { 
   Menu, X, Sun, Moon, Globe, User, Calendar, Heart, Bell, 
-  LogOut, Building2, LayoutDashboard, ChevronDown, MapPin, Search
+  LogOut, Building2, LayoutDashboard, ChevronDown, MapPin, Search,
+  Settings, HelpCircle, FileText, CreditCard, BarChart3, Sparkles
 } from 'lucide-react';
 import { getInitials } from '@/lib/utils';
 import { countries } from '@/lib/countries';
 import { notificationsAPI } from '@/lib/api';
+import { toast } from 'sonner';
 
 export function Navbar() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -63,28 +65,57 @@ export function Navbar() {
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
-  // Load notifications for non-business users
+  // Load notifications for all authenticated users (clients, businesses, admins)
+  const seenIdsRef = useRef(new Set());
+  const initialisedRef = useRef(false);
+
   useEffect(() => {
-    if (!isAuthenticated || isBusiness || isAdmin) return;
+    if (!isAuthenticated) return;
+
     const loadNavNotifs = async () => {
       try {
         const [res, countRes] = await Promise.all([
           notificationsAPI.getAll(),
           notificationsAPI.getUnreadCount()
         ]);
-        setNavNotifications(Array.isArray(res.data) ? res.data : []);
+        const list = Array.isArray(res.data) ? res.data : [];
+        setNavNotifications(list);
         setNavUnreadCount(countRes.data?.count || 0);
-      } catch {}
+        // Seed seen-set on first load so we don't toast pre-existing notifs
+        seenIdsRef.current = new Set(list.map(n => n.id));
+        initialisedRef.current = true;
+      } catch { /* ignore: silent retry on next poll */ }
     };
+
     loadNavNotifs();
+
     const interval = setInterval(async () => {
       try {
-        const res = await notificationsAPI.getUnreadCount();
-        setNavUnreadCount(res.data?.count || 0);
-      } catch {}
+        const res = await notificationsAPI.getAll();
+        const list = Array.isArray(res.data) ? res.data : [];
+        if (initialisedRef.current) {
+          // Find brand-new unread notifications since last poll
+          const fresh = list.filter(n => !n.read && !seenIdsRef.current.has(n.id));
+          fresh.slice(0, 3).forEach(n => {
+            toast(n.title || (language === 'es' ? 'Nueva notificación' : 'New notification'), {
+              description: n.message,
+              duration: 6000,
+              action: {
+                label: language === 'es' ? 'Ver' : 'View',
+                onClick: () => handleNotifClick(n),
+              },
+            });
+          });
+        }
+        seenIdsRef.current = new Set(list.map(n => n.id));
+        setNavNotifications(list);
+        const unread = list.filter(n => !n.read).length;
+        setNavUnreadCount(unread);
+        initialisedRef.current = true;
+      } catch { /* ignore: silent retry on next poll */ }
     }, 30000);
     return () => clearInterval(interval);
-  }, [isAuthenticated, isBusiness, isAdmin]);
+  }, [isAuthenticated, language]);
 
   // Close notification panel on outside click
   useEffect(() => {
@@ -103,7 +134,7 @@ export function Navbar() {
       await notificationsAPI.markAllRead();
       setNavNotifications(prev => prev.map(n => ({ ...n, read: true })));
       setNavUnreadCount(0);
-    } catch {}
+    } catch { /* ignore: state stays as-is */ }
   };
 
   const handleNavMarkRead = async (id) => {
@@ -111,7 +142,34 @@ export function Navbar() {
       await notificationsAPI.markRead(id);
       setNavNotifications(prev => prev.map(n => n.id === id ? { ...n, read: true } : n));
       setNavUnreadCount(prev => Math.max(0, prev - 1));
-    } catch {}
+    } catch { /* ignore: state stays as-is */ }
+  };
+
+  const handleNotifClick = async (n) => {
+    if (!n.read) handleNavMarkRead(n.id);
+    setNavNotifOpen(false);
+    const data = n.data || {};
+    // Smart routing per role + payload
+    if (data.booking_id) {
+      if (isBusiness) {
+        navigate(`/business/dashboard?booking=${data.booking_id}`);
+      } else {
+        navigate(`/bookings`);
+      }
+      return;
+    }
+    if (data.business_id) {
+      if (isAdmin) {
+        navigate(`/bv-ctrl?business=${data.business_id}`);
+      } else if (isBusiness) {
+        navigate(`/business/dashboard`);
+      }
+      return;
+    }
+    // Fallback: open the corresponding dashboard
+    if (isAdmin) navigate('/bv-ctrl');
+    else if (isBusiness) navigate('/business/dashboard');
+    else navigate('/dashboard');
   };
 
   return (
@@ -257,9 +315,8 @@ export function Navbar() {
 
             {isAuthenticated ? (
               <>
-                {/* Notification Bell for regular users */}
-                {!isBusiness && !isAdmin && (
-                  <div className="relative">
+                {/* Notification Bell - visible for all authenticated roles */}
+                <div className="relative">
                     <Button
                       variant="ghost"
                       size="icon"
@@ -270,7 +327,7 @@ export function Navbar() {
                             const [res, countRes] = await Promise.all([notificationsAPI.getAll(), notificationsAPI.getUnreadCount()]);
                             setNavNotifications(Array.isArray(res.data) ? res.data : []);
                             setNavUnreadCount(countRes.data?.count || 0);
-                          } catch {}
+                          } catch { /* ignore */ }
                         }
                         setNavNotifOpen(!navNotifOpen);
                       }}
@@ -303,7 +360,7 @@ export function Navbar() {
                             <div
                               key={n.id}
                               className={`px-4 py-3 cursor-pointer transition-colors hover:bg-muted/40 ${!n.read ? 'bg-blue-50/60 dark:bg-blue-900/10' : ''}`}
-                              onClick={() => { if (!n.read) handleNavMarkRead(n.id); }}
+                              onClick={() => handleNotifClick(n)}
                               data-testid={`nav-notif-item-${n.id}`}
                             >
                               <div className="flex items-start gap-2">
@@ -322,7 +379,6 @@ export function Navbar() {
                       </div>
                     )}
                   </div>
-                )}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button 
@@ -339,7 +395,7 @@ export function Navbar() {
                     <ChevronDown className="h-4 w-4" />
                   </Button>
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuContent align="end" className="w-60" data-testid="user-menu-content">
                   <div className="px-2 py-1.5">
                     <p className="text-sm font-medium">{user?.full_name || user?.email}</p>
                     <p className="text-xs text-muted-foreground">{user?.email}</p>
@@ -347,40 +403,85 @@ export function Navbar() {
                   <DropdownMenuSeparator />
                   
                   {isAdmin && (
-                    <DropdownMenuItem onClick={() => navigate('/bv-ctrl')} data-testid="menu-admin">
-                      <LayoutDashboard className="mr-2 h-4 w-4" />
-                      Admin Panel
-                    </DropdownMenuItem>
+                    <>
+                      <DropdownMenuItem onClick={() => navigate('/bv-ctrl')} data-testid="menu-admin">
+                        <LayoutDashboard className="mr-2 h-4 w-4" />
+                        Admin Panel
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                    </>
                   )}
                   
                   {isBusiness && (
-                    <DropdownMenuItem onClick={() => navigate('/business/dashboard')} data-testid="menu-business-dashboard">
-                      <Building2 className="mr-2 h-4 w-4" />
-                      {t('nav.dashboard')}
-                    </DropdownMenuItem>
+                    <>
+                      <DropdownMenuItem onClick={() => navigate('/business/dashboard')} data-testid="menu-business-dashboard">
+                        <Building2 className="mr-2 h-4 w-4" />
+                        {language === 'es' ? 'Panel de negocio' : 'Business panel'}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => navigate('/business/dashboard?tab=settings')} data-testid="menu-business-settings">
+                        <Settings className="mr-2 h-4 w-4" />
+                        {language === 'es' ? 'Configuracion del negocio' : 'Business settings'}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => navigate('/business/dashboard?tab=billing')} data-testid="menu-business-billing">
+                        <CreditCard className="mr-2 h-4 w-4" />
+                        {language === 'es' ? 'Suscripcion y facturacion' : 'Subscription & billing'}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => navigate('/business/dashboard?tab=reports')} data-testid="menu-business-reports">
+                        <BarChart3 className="mr-2 h-4 w-4" />
+                        {language === 'es' ? 'Reportes' : 'Reports'}
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
+                    </>
                   )}
                   
                   {!isBusiness && !isAdmin && (
                     <>
                       <DropdownMenuItem onClick={() => navigate('/dashboard')} data-testid="menu-dashboard">
                         <User className="mr-2 h-4 w-4" />
-                        {t('nav.profile')}
+                        {language === 'es' ? 'Mi perfil' : 'My profile'}
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => navigate('/bookings')} data-testid="menu-bookings">
                         <Calendar className="mr-2 h-4 w-4" />
-                        {t('nav.bookings')}
+                        {language === 'es' ? 'Mis citas' : 'My bookings'}
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={() => navigate('/favorites')} data-testid="menu-favorites">
                         <Heart className="mr-2 h-4 w-4" />
-                        {t('nav.favorites')}
+                        {language === 'es' ? 'Favoritos' : 'Favorites'}
                       </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => navigate('/payment-history')} data-testid="menu-payment-history">
+                        <CreditCard className="mr-2 h-4 w-4" />
+                        {language === 'es' ? 'Historial de pagos' : 'Payment history'}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => navigate('/dashboard?tab=notifications')} data-testid="menu-notification-prefs">
+                        <Bell className="mr-2 h-4 w-4" />
+                        {language === 'es' ? 'Preferencias de avisos' : 'Notification preferences'}
+                      </DropdownMenuItem>
+                      <DropdownMenuSeparator />
                     </>
                   )}
-                  
+
+                  {/* Common to all roles */}
+                  <DropdownMenuItem onClick={() => { toggleTheme(); }} data-testid="menu-theme">
+                    {theme === 'dark' ? <Sun className="mr-2 h-4 w-4" /> : <Moon className="mr-2 h-4 w-4" />}
+                    {language === 'es' ? (theme === 'dark' ? 'Modo claro' : 'Modo oscuro') : (theme === 'dark' ? 'Light mode' : 'Dark mode')}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => toggleLanguage()} data-testid="menu-language">
+                    <Globe className="mr-2 h-4 w-4" />
+                    {language === 'es' ? 'English' : 'Español'}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => navigate('/contacto')} data-testid="menu-help">
+                    <HelpCircle className="mr-2 h-4 w-4" />
+                    {language === 'es' ? 'Ayuda y soporte' : 'Help & support'}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => navigate('/terminos')} data-testid="menu-terms">
+                    <FileText className="mr-2 h-4 w-4" />
+                    {language === 'es' ? 'Terminos y privacidad' : 'Terms & privacy'}
+                  </DropdownMenuItem>
+
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={handleLogout} className="text-red-600" data-testid="menu-logout">
                     <LogOut className="mr-2 h-4 w-4" />
-                    {t('nav.logout')}
+                    {language === 'es' ? 'Cerrar sesion' : 'Logout'}
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -524,6 +625,7 @@ export function Navbar() {
                       <button
                         className="px-4 py-2.5 text-sm font-medium hover:bg-muted rounded-lg flex items-center gap-2 w-full text-left"
                         onClick={() => { setMobileMenuOpen(false); setNavNotifOpen(!navNotifOpen); }}
+                        data-testid="mobile-notification-toggle"
                       >
                         <Bell className="h-4 w-4 text-[#F05D5E]" />
                         {language === 'es' ? 'Notificaciones' : 'Notifications'}
@@ -532,6 +634,19 @@ export function Navbar() {
                         )}
                       </button>
                     </>
+                  )}
+                  {(isBusiness || isAdmin) && (
+                    <button
+                      className="px-4 py-2.5 text-sm font-medium hover:bg-muted rounded-lg flex items-center gap-2 w-full text-left"
+                      onClick={() => { setMobileMenuOpen(false); setNavNotifOpen(!navNotifOpen); }}
+                      data-testid="mobile-notification-toggle"
+                    >
+                      <Bell className="h-4 w-4 text-[#F05D5E]" />
+                      {language === 'es' ? 'Notificaciones' : 'Notifications'}
+                      {navUnreadCount > 0 && (
+                        <Badge className="ml-auto bg-[#F05D5E] text-white text-[10px] h-5 px-1.5">{navUnreadCount}</Badge>
+                      )}
+                    </button>
                   )}
                   <Link
                     to={isBusiness ? '/business/dashboard' : '/dashboard'}
