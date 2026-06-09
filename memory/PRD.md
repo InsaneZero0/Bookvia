@@ -780,3 +780,28 @@ Cuando un negocio real tenga su tarjeta fallida:
 2. Backend marca `past_due` (no se sobreescribe porque Stripe también lo retorna `past_due`)
 3. Banner naranja aparece automáticamente al cargar dashboard
 4. Cron suspende día 7 si no actualiza
+
+
+---
+
+## Changelog Reciente
+
+### Feb 2026 - Endurecimiento Pre-Lanzamiento
+
+**Eliminadas rutas de debug de Sentry (seguridad en producción)**
+- ❌ Removido `GET /api/_debug/sentry` de `/app/backend/routers/system.py` (lanzaba ZeroDivisionError de prueba)
+- ❌ Removida ruta `/_debug/sentry` y componente `SentryTestPage` de `/app/frontend/src/App.js`
+- ✅ Verificado: endpoint backend devuelve 404; `/api/health` sigue 200 OK
+- Motivo: Sentry ya quedó validado en backend y frontend; las rutas de prueba ya no deben estar expuestas al público.
+
+### Pendientes inmediatos para apertura formal al público (P0)
+1. **Cloudinary**: Usuario debe crear cuenta gratuita en cloudinary.com y configurar `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` en Railway. Sin esto, los backups diarios de MongoDB fallarán.
+2. **Onboarding Stripe Connect del negocio piloto** ("barbería pitufo") para validar el flujo de Transfer real el día 20.
+
+### Backlog priorizado post-cleanup
+- P1: Status page público en `/status` (uptime DB, API, Stripe)
+- P1: Notificaciones in-app (campana en header)
+- P2: Activar flag `ENFORCE_STRIPE_CONNECT_GATE=true`
+- P2: Twilio A2P 10DLC para SMS reales
+- P3: Refactor de `bookings.py` y `AdminDashboardPage.jsx`
+- P3: Modelo multi-sucursal

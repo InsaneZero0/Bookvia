@@ -66,11 +66,6 @@ function Layout({ children, showFooter = true }) {
   );
 }
 
-function SentryTestPage() {
-  // Lazy throw — only happens when this route is actually visited.
-  throw new Error("Sentry test: forced frontend error from /_debug/sentry");
-}
-
 function App() {
   return (
     <ThemeProvider defaultTheme="light" storageKey="bookvia-theme">
@@ -93,8 +88,6 @@ function App() {
               <Route path="/reset-password" element={<ResetPasswordPage />} />
               <Route path="/unsubscribe" element={<UnsubscribePage />} />
               <Route path="/auth/google/callback" element={<GoogleAuthCallback />} />
-              {/* Sentry test trigger — debug endpoint, lazy throws only on visit */}
-              <Route path="/_debug/sentry" element={<SentryTestPage />} />
               
               {/* User Pages */}
               <Route path="/dashboard" element={<Layout><UserDashboardPage /></Layout>} />
