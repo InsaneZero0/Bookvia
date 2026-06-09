@@ -114,6 +114,84 @@ async def health_check():
     }
 
 
+@router.get("/status", tags=["System"])
+async def public_status():
+    """Public status page: shallow uptime check of DB + Stripe API + backend.
+
+    Returns per-component status (operational | degraded | down) plus latency
+    in ms. Safe to expose publicly — no secrets, no PII.
+    """
+    import time
+    components = []
+
+    # API itself (we are responding, so it's operational by definition)
+    components.append({
+        "name": "API",
+        "status": "operational",
+        "latency_ms": 0,
+        "message": "Backend responding",
+    })
+
+    # Database
+    db_start = time.perf_counter()
+    try:
+        await db.command("ping")
+        db_latency = int((time.perf_counter() - db_start) * 1000)
+        components.append({
+            "name": "Database",
+            "status": "operational",
+            "latency_ms": db_latency,
+            "message": "MongoDB connection healthy",
+        })
+    except Exception as e:
+        components.append({
+            "name": "Database",
+            "status": "down",
+            "latency_ms": int((time.perf_counter() - db_start) * 1000),
+            "message": f"MongoDB unreachable: {type(e).__name__}",
+        })
+
+    # Stripe API (lightweight ping via Account.retrieve, only if key configured)
+    stripe_key = os.environ.get("STRIPE_API_KEY", "")
+    if stripe_key:
+        s_start = time.perf_counter()
+        try:
+            # Stripe SDK is sync — wrap in thread to avoid blocking event loop
+            import asyncio
+            await asyncio.to_thread(stripe_lib.Account.retrieve)
+            s_latency = int((time.perf_counter() - s_start) * 1000)
+            components.append({
+                "name": "Stripe",
+                "status": "operational",
+                "latency_ms": s_latency,
+                "message": "Live" if stripe_key.startswith("sk_live_") else "Test mode",
+            })
+        except Exception as e:
+            components.append({
+                "name": "Stripe",
+                "status": "degraded",
+                "latency_ms": int((time.perf_counter() - s_start) * 1000),
+                "message": f"Stripe API unreachable: {type(e).__name__}",
+            })
+    else:
+        components.append({
+            "name": "Stripe",
+            "status": "down",
+            "latency_ms": 0,
+            "message": "Stripe API key not configured",
+        })
+
+    # Aggregate overall status: down > degraded > operational
+    priority = {"operational": 0, "degraded": 1, "down": 2}
+    overall = max(components, key=lambda c: priority.get(c["status"], 0))["status"]
+
+    return {
+        "overall": overall,
+        "checked_at": datetime.now(timezone.utc).isoformat(),
+        "components": components,
+    }
+
+
 
 @router.post("/webhook/stripe")
 async def stripe_webhook(request: Request):

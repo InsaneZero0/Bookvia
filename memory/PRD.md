@@ -804,9 +804,27 @@ Cuando un negocio real tenga su tarjeta fallida:
    - Fallback: dashboard correspondiente al rol.
 - ✅ Eliminada la campana redundante del BusinessDashboardPage (data-testid antiguo `notification-bell`) para evitar dos campanas a la vez. El BusinessDashboardPage conserva la lógica de state interno por si otras secciones la consumen, pero ya no renderiza el botón.
 - ✅ Botón móvil de notificaciones disponible también para negocios y admin en el menú hamburguesa.
+- ✅ **Toast flotantes en tiempo real**: cuando el polling detecta una nueva notificación no-leída, dispara un `toast()` con el título, mensaje y botón "Ver" que navega al recurso. Refs `seenIdsRef` + `initialisedRef` evitan toast-spam al cargar la sesión.
 - Endpoints backend ya existentes: `GET /api/notifications`, `GET /api/notifications/unread-count`, `PUT /api/notifications/{id}/read`, `PUT /api/notifications/read-all` — usados sin cambios.
 - 25+ disparadores automáticos ya activos (booking creada/cancelada/confirmada, pago recibido, suspensión negocio, etc.) — no se tocaron.
 - Smoke test: campana visible con badge "9+" en negocio, "5" en cliente; campana antigua del business dashboard confirmadamente removida.
+
+**Status page público `/status`**
+- ✅ Nuevo endpoint backend `GET /api/status` (público, sin auth, sin secretos) que pinguea: API, MongoDB y Stripe en paralelo, devolviendo latencia en ms + estado por componente (operational | degraded | down).
+- ✅ Stripe ping usa `stripe.Account.retrieve()` envuelto en `asyncio.to_thread` para no bloquear el event loop.
+- ✅ Nueva página pública `/status` (`StatusPage.jsx`) con:
+   - Banner global verde/amarillo/rojo según peor componente
+   - Lista de componentes con latencia visible (API, Database, Stripe)
+   - Auto-refresh cada 60 segundos + botón "Actualizar" manual
+   - Header minimalista (logo + botón refresh) — no depende del Navbar para máxima resiliencia
+   - Bilingüe es/en
+- ✅ Verificado en preview: muestra "Todos los sistemas operativos", Database 1ms, Stripe LIVE 293ms.
+
+**Botón "Compartir mi negocio" 📲**
+- ✅ Botón "Compartir" agregado al header del Business Dashboard junto a Ver perfil / Recepción / Config.
+- ✅ Genera un mensaje pre-armado bilingüe ("Hola! 👋 Reserva tu cita en {negocio} facil y rapido por Bookvia: {url}?ref=share") y abre `https://wa.me/?text=<msg>` en nueva pestaña.
+- ✅ Query param `?ref=share` permite trackear conversiones de tráfico orgánico vía WhatsApp.
+- ✅ Verificado en preview: click sobre el botón produce URL correcta con slug del negocio y ref=share.
 
 ### Pendientes inmediatos para apertura formal al público (P0)
 1. **Cloudinary**: Usuario debe crear cuenta gratuita en cloudinary.com y configurar `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` en Railway. Sin esto, los backups diarios de MongoDB fallarán.

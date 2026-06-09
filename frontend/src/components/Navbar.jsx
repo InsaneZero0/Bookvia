@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/lib/auth';
 import { useI18n } from '@/lib/i18n';
@@ -23,6 +23,7 @@ import {
 import { getInitials } from '@/lib/utils';
 import { countries } from '@/lib/countries';
 import { notificationsAPI } from '@/lib/api';
+import { toast } from 'sonner';
 
 export function Navbar() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -64,27 +65,56 @@ export function Navbar() {
   }, []);
 
   // Load notifications for all authenticated users (clients, businesses, admins)
+  const seenIdsRef = useRef(new Set());
+  const initialisedRef = useRef(false);
+
   useEffect(() => {
     if (!isAuthenticated) return;
+
     const loadNavNotifs = async () => {
       try {
         const [res, countRes] = await Promise.all([
           notificationsAPI.getAll(),
           notificationsAPI.getUnreadCount()
         ]);
-        setNavNotifications(Array.isArray(res.data) ? res.data : []);
+        const list = Array.isArray(res.data) ? res.data : [];
+        setNavNotifications(list);
         setNavUnreadCount(countRes.data?.count || 0);
+        // Seed seen-set on first load so we don't toast pre-existing notifs
+        seenIdsRef.current = new Set(list.map(n => n.id));
+        initialisedRef.current = true;
       } catch { /* ignore: silent retry on next poll */ }
     };
+
     loadNavNotifs();
+
     const interval = setInterval(async () => {
       try {
-        const res = await notificationsAPI.getUnreadCount();
-        setNavUnreadCount(res.data?.count || 0);
+        const res = await notificationsAPI.getAll();
+        const list = Array.isArray(res.data) ? res.data : [];
+        if (initialisedRef.current) {
+          // Find brand-new unread notifications since last poll
+          const fresh = list.filter(n => !n.read && !seenIdsRef.current.has(n.id));
+          fresh.slice(0, 3).forEach(n => {
+            toast(n.title || (language === 'es' ? 'Nueva notificación' : 'New notification'), {
+              description: n.message,
+              duration: 6000,
+              action: {
+                label: language === 'es' ? 'Ver' : 'View',
+                onClick: () => handleNotifClick(n),
+              },
+            });
+          });
+        }
+        seenIdsRef.current = new Set(list.map(n => n.id));
+        setNavNotifications(list);
+        const unread = list.filter(n => !n.read).length;
+        setNavUnreadCount(unread);
+        initialisedRef.current = true;
       } catch { /* ignore: silent retry on next poll */ }
     }, 30000);
     return () => clearInterval(interval);
-  }, [isAuthenticated]);
+  }, [isAuthenticated, language]);
 
   // Close notification panel on outside click
   useEffect(() => {

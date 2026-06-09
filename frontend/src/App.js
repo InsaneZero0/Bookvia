@@ -45,6 +45,7 @@ import UnsubscribePage from '@/pages/UnsubscribePage';
 import FavoritesPage from '@/pages/FavoritesPage';
 import PaymentHistoryPage from '@/pages/PaymentHistoryPage';
 import GoogleAuthCallback from '@/pages/GoogleAuthCallback';
+import StatusPage from '@/pages/StatusPage';
 
 // SEO Pages
 import CountryPage from '@/pages/seo/CountryPage';
@@ -88,6 +89,7 @@ function App() {
               <Route path="/reset-password" element={<ResetPasswordPage />} />
               <Route path="/unsubscribe" element={<UnsubscribePage />} />
               <Route path="/auth/google/callback" element={<GoogleAuthCallback />} />
+              <Route path="/status" element={<StatusPage />} />
               
               {/* User Pages */}
               <Route path="/dashboard" element={<Layout><UserDashboardPage /></Layout>} />
