@@ -263,6 +263,12 @@ async def startup_event():
     asyncio.create_task(expire_holds_scheduler())
     asyncio.create_task(stripe_reconciliation_scheduler())
     asyncio.create_task(monthly_pnl_report_scheduler())
+    # MongoDB daily backup to Cloudinary
+    try:
+        from services.mongo_backup import mongo_backup_scheduler
+        asyncio.create_task(mongo_backup_scheduler())
+    except Exception as _e:
+        logger.warning(f"Mongo backup scheduler not started: {_e}")
 
 
 # ========================== BACKGROUND SCHEDULERS ==========================
