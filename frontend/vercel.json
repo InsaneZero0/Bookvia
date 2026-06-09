@@ -2,5 +2,11 @@
   "installCommand": "yarn install",
   "buildCommand": "CI=false yarn build",
   "outputDirectory": "build",
-  "framework": "create-react-app"
+  "framework": "create-react-app",
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "https://bookvia-production.up.railway.app/api/:path*"
+    }
+  ]
 }

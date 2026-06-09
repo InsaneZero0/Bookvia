@@ -2929,3 +2929,74 @@ async def admin_qr_businesses_list(
             "scans": scans_by_biz.get(bid, 0),
         })
     return {"count": len(items), "days": days, "items": items}
+
+
+
+# ============================================================================
+# Fase C — Liquidaciones automáticas vía Stripe Connect Transfers
+# ============================================================================
+
+@router.post("/settlements/{settlement_id}/execute-stripe-transfer")
+async def admin_execute_stripe_transfer(
+    settlement_id: str,
+    request: Request,
+    dry_run: bool = False,
+    token_data: TokenData = Depends(require_admin),
+):
+    """Execute a real Stripe Transfer for ONE settlement.
+
+    Money flow:
+      Bookvia Stripe Balance ──Transfer──► Connect Acct (negocio)
+                                              │
+                                              ▼ payout_schedule=daily
+                                          CLABE del negocio
+
+    If the business doesn't have Connect yet → returns `reason=no_connect`
+    and the settlement stays PENDING for manual SPEI processing.
+    """
+    from services.stripe_settlements import execute_stripe_transfers_for_settlement
+
+    result = await execute_stripe_transfers_for_settlement(
+        settlement_id, actor_id=token_data.user_id, dry_run=dry_run,
+    )
+    if not dry_run and result.get("ok") and not result.get("already_paid"):
+        await create_audit_log(
+            admin_id=token_data.user_id, admin_email=token_data.email,
+            action=AuditAction.PAYMENT_RELEASE, target_type="settlement",
+            target_id=settlement_id,
+            details={
+                "stripe_transfer_id": result.get("stripe_transfer_id"),
+                "amount": result.get("amount"),
+            },
+            request=request,
+        )
+    return result
+
+
+@router.post("/settlements/period/{period_key}/execute-stripe-batch")
+async def admin_execute_stripe_batch(
+    period_key: str,
+    request: Request,
+    dry_run: bool = False,
+    token_data: TokenData = Depends(require_admin),
+):
+    """Execute Stripe Transfers for every PENDING settlement in the period.
+
+    Returns counts: succeeded / failed / no_connect / skipped.
+    Settlements that fall to `no_connect` can still be paid via the SPEI CSV
+    export endpoint as a fallback.
+    """
+    from services.stripe_settlements import execute_stripe_transfers_batch
+
+    result = await execute_stripe_transfers_batch(
+        period_key, actor_id=token_data.user_id, dry_run=dry_run,
+    )
+    if not dry_run:
+        await create_audit_log(
+            admin_id=token_data.user_id, admin_email=token_data.email,
+            action=AuditAction.PAYMENT_RELEASE, target_type="settlement_batch",
+            target_id=period_key,
+            details={"counts": result.get("counts"), "total": result.get("total")},
+            request=request,
+        )
+    return result

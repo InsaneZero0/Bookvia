@@ -92,8 +92,11 @@ async def connect_onboard(request: Request, current=Depends(require_business)):
                     "mcc": "7299",  # Services - Miscellaneous personal services
                 },
                 settings={
-                    # Payouts triggered manually by Bookvia cron (day 1 of month)
-                    "payouts": {"schedule": {"interval": "manual"}},
+                    # Daily payouts to bank: once Bookvia releases funds (Transfer)
+                    # to this Connect account, Stripe automatically forwards them
+                    # to the business' CLABE the next banking day. The business
+                    # never sees a Stripe balance accumulating.
+                    "payouts": {"schedule": {"interval": "daily"}},
                 },
                 metadata={
                     "bookvia_business_id": business["id"],
