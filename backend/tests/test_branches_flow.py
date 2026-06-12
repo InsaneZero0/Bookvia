@@ -283,3 +283,149 @@ def test_public_branches_endpoint_no_auth(biz_business_id):
 def test_public_branches_404_for_unknown_business():
     r = requests.get(f"{API}/businesses/does-not-exist-xyz/branches", timeout=15)
     assert r.status_code == 404
+
+
+# ------------- 9. Fase D: branch_id filter on /me/dashboard -------------
+
+def test_dashboard_no_branch_returns_aggregate(biz_headers):
+    r = requests.get(f"{API}/businesses/me/dashboard", headers=biz_headers, timeout=15)
+    assert r.status_code == 200, f"{r.status_code} {r.text}"
+    data = r.json()
+    assert "stats" in data
+    stats = data["stats"]
+    # New field
+    assert "unique_customers_month" in stats, "Stats response must include 'unique_customers_month'"
+    assert isinstance(stats["unique_customers_month"], int)
+    # Other expected keys remain
+    for key in ("today_appointments", "pending_appointments", "month_revenue", "total_appointments"):
+        assert key in stats
+
+
+def test_dashboard_with_branch_id_filters_stats(biz_headers):
+    # Get current primary branch id
+    rb = requests.get(f"{API}/businesses/me/branches", headers=biz_headers, timeout=15)
+    assert rb.status_code == 200
+    branches = [b for b in rb.json() if b.get("is_active")]
+    assert len(branches) >= 1
+    primary = next((b for b in branches if b.get("is_primary")), branches[0])
+
+    # Aggregate (no branch filter)
+    r_all = requests.get(f"{API}/businesses/me/dashboard", headers=biz_headers, timeout=15)
+    assert r_all.status_code == 200
+    s_all = r_all.json()["stats"]
+
+    # With branch filter
+    r_b = requests.get(f"{API}/businesses/me/dashboard?branch_id={primary['id']}", headers=biz_headers, timeout=15)
+    assert r_b.status_code == 200, f"{r_b.status_code} {r_b.text}"
+    s_b = r_b.json()["stats"]
+
+    # Branch-filtered counts must be <= aggregate
+    for key in ("today_appointments", "pending_appointments", "total_appointments", "unique_customers_month"):
+        assert s_b[key] <= s_all[key], f"branch-filtered {key} ({s_b[key]}) > aggregate ({s_all[key]})"
+
+
+def test_dashboard_with_unknown_branch_zero_stats(biz_headers):
+    fake_id = f"non-existent-{uuid.uuid4().hex[:8]}"
+    r = requests.get(f"{API}/businesses/me/dashboard?branch_id={fake_id}", headers=biz_headers, timeout=15)
+    assert r.status_code == 200
+    s = r.json()["stats"]
+    assert s["today_appointments"] == 0
+    assert s["pending_appointments"] == 0
+    assert s["total_appointments"] == 0
+    assert s["unique_customers_month"] == 0
+    assert s["month_revenue"] == 0
+
+
+# ------------- 10. Fase D: branch_id filter on /bookings/business -------------
+
+def test_bookings_business_no_branch_returns_all(biz_headers):
+    r = requests.get(f"{API}/bookings/business", headers=biz_headers, timeout=15)
+    assert r.status_code == 200, f"{r.status_code} {r.text}"
+    arr = r.json()
+    assert isinstance(arr, list)
+
+
+def test_bookings_business_with_branch_id_filters(biz_headers):
+    rb = requests.get(f"{API}/businesses/me/branches", headers=biz_headers, timeout=15)
+    assert rb.status_code == 200
+    active = [b for b in rb.json() if b.get("is_active")]
+    assert active, "Expected at least 1 active branch"
+    primary = next((b for b in active if b.get("is_primary")), active[0])
+
+    r_all = requests.get(f"{API}/bookings/business", headers=biz_headers, timeout=15)
+    r_b = requests.get(f"{API}/bookings/business?branch_id={primary['id']}", headers=biz_headers, timeout=15)
+    assert r_all.status_code == 200 and r_b.status_code == 200
+    all_arr = r_all.json()
+    branch_arr = r_b.json()
+    # Subset semantics: every branch result is also present in aggregate (by id)
+    all_ids = {bk.get("id") for bk in all_arr}
+    for bk in branch_arr:
+        assert bk.get("id") in all_ids, "Branch booking missing from aggregate list"
+    # Every booking returned with branch filter must have matching branch_id (when field present)
+    for bk in branch_arr:
+        if "branch_id" in bk and bk["branch_id"] is not None:
+            assert bk["branch_id"] == primary["id"], f"booking {bk.get('id')} has branch_id={bk.get('branch_id')} != {primary['id']}"
+
+
+def test_bookings_business_with_unknown_branch_returns_empty(biz_headers):
+    fake_id = f"non-existent-{uuid.uuid4().hex[:8]}"
+    r = requests.get(f"{API}/bookings/business?branch_id={fake_id}", headers=biz_headers, timeout=15)
+    assert r.status_code == 200
+    arr = r.json()
+    assert isinstance(arr, list)
+    assert len(arr) == 0, f"Expected empty list for unknown branch, got {len(arr)}"
+
+
+def test_bookings_business_with_date_and_branch(biz_headers):
+    rb = requests.get(f"{API}/businesses/me/branches", headers=biz_headers, timeout=15)
+    primary = next((b for b in rb.json() if b.get("is_primary")), None)
+    assert primary
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    r = requests.get(f"{API}/bookings/business?branch_id={primary['id']}&date={today}",
+                     headers=biz_headers, timeout=15)
+    assert r.status_code == 200, f"{r.status_code} {r.text}"
+    arr = r.json()
+    for bk in arr:
+        assert bk.get("date") == today
+        if bk.get("branch_id"):
+            assert bk["branch_id"] == primary["id"]
+
+
+# ------------- 11. Fase D: branch_id filter on /bookings/business/stats-detail -------------
+
+def test_stats_detail_today_with_branch_filter(biz_headers):
+    rb = requests.get(f"{API}/businesses/me/branches", headers=biz_headers, timeout=15)
+    primary = next((b for b in rb.json() if b.get("is_primary")), None)
+    assert primary
+    r_all = requests.get(f"{API}/bookings/business/stats-detail?stat_type=today",
+                        headers=biz_headers, timeout=15)
+    r_b = requests.get(f"{API}/bookings/business/stats-detail?stat_type=today&branch_id={primary['id']}",
+                      headers=biz_headers, timeout=15)
+    assert r_all.status_code == 200, f"{r_all.status_code} {r_all.text}"
+    assert r_b.status_code == 200, f"{r_b.status_code} {r_b.text}"
+    all_data = r_all.json()
+    b_data = r_b.json()
+    # The detail endpoint may return list or dict — handle both shapes
+    def _items(payload):
+        if isinstance(payload, list): return payload
+        if isinstance(payload, dict):
+            for key in ("bookings", "items", "data", "results"):
+                if isinstance(payload.get(key), list): return payload[key]
+        return []
+    all_items = _items(all_data)
+    b_items = _items(b_data)
+    assert len(b_items) <= len(all_items), "Branch-filtered detail must be subset of aggregate"
+
+
+def test_stats_detail_unknown_branch_returns_empty(biz_headers):
+    fake_id = f"non-existent-{uuid.uuid4().hex[:8]}"
+    r = requests.get(f"{API}/bookings/business/stats-detail?stat_type=today&branch_id={fake_id}",
+                    headers=biz_headers, timeout=15)
+    assert r.status_code == 200
+    payload = r.json()
+    if isinstance(payload, list):
+        assert len(payload) == 0
+    elif isinstance(payload, dict):
+        for key in ("bookings", "items", "data", "results"):
+            if isinstance(payload.get(key), list):
+                assert len(payload[key]) == 0

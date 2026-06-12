@@ -140,7 +140,7 @@ export const businessesAPI = {
   getById: (id) => api.get(`/businesses/${id}`),
   getTrustScore: (id) => api.get(`/businesses/${id}/trust-score`),
   updateMe: (data) => api.put('/businesses/me', data),
-  getDashboard: () => api.get('/businesses/me/dashboard'),
+  getDashboard: (params) => api.get('/businesses/me/dashboard', { params }),
   getPrivateInfo: () => api.get('/businesses/me/private-info'),
   updateLegalDocs: (data) => api.put('/businesses/me/legal-docs', data),
   getBusinessHours: () => api.get('/businesses/me/hours'),
@@ -284,8 +284,8 @@ export const bookingsAPI = {
   confirm: (id) => api.put(`/bookings/${id}/confirm`),
   complete: (id) => api.put(`/bookings/${id}/complete`),
   markNoShow: (id) => api.put(`/bookings/${id}/no-show`),
-  getStatsDetail: (statType, dateFrom, dateTo) => api.get('/bookings/business/stats-detail', { 
-    params: { stat_type: statType, date_from: dateFrom, date_to: dateTo } 
+  getStatsDetail: (statType, dateFrom, dateTo, branchId) => api.get('/bookings/business/stats-detail', { 
+    params: { stat_type: statType, date_from: dateFrom, date_to: dateTo, branch_id: branchId || undefined } 
   }),
   searchClients: (q) => api.get('/bookings/search-clients', { params: { q } }),
 };

@@ -203,9 +203,13 @@ async def get_business_stats_detail(
     stat_type: str,
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
+    branch_id: Optional[str] = None,
     token_data: TokenData = Depends(require_business)
 ):
-    """Get detailed bookings for a specific stat card."""
+    """Get detailed bookings for a specific stat card.
+
+    Optional `branch_id` narrows results to a single branch (multi-branch support).
+    """
     user = await db.users.find_one({"id": token_data.user_id})
     if not user or not user.get("business_id"):
         raise HTTPException(status_code=404, detail="Business not found")
@@ -215,6 +219,8 @@ async def get_business_stats_detail(
     first_of_month = datetime.now(timezone.utc).replace(day=1).strftime("%Y-%m-%d")
     
     filters = {"business_id": business_id}
+    if branch_id:
+        filters["branch_id"] = branch_id
     
     if stat_type == "today":
         filters["date"] = today
@@ -821,6 +827,7 @@ async def get_my_bookings(
 async def get_business_bookings(
     date: Optional[str] = None,
     status: Optional[str] = None,
+    branch_id: Optional[str] = None,
     token_data: TokenData = Depends(require_business)
 ):
     user = await db.users.find_one({"id": token_data.user_id})
@@ -828,6 +835,8 @@ async def get_business_bookings(
         raise HTTPException(status_code=404, detail="Business not found")
     
     filters = {"business_id": user["business_id"]}
+    if branch_id:
+        filters["branch_id"] = branch_id
     
     if date:
         filters["date"] = date

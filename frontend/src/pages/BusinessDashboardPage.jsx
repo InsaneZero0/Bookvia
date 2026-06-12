@@ -26,6 +26,7 @@ import AgendaTimeline from '@/components/AgendaTimeline';
 import { ProfileCompletionBanner } from '@/components/ProfileCompletionBanner';
 import StripeConnectRequiredBanner from '@/components/StripeConnectRequiredBanner';
 import BranchesTab from '@/components/BranchesTab';
+import BranchSelector from '@/components/BranchSelector';
 import SubscriptionPastDueBanner from '@/components/SubscriptionPastDueBanner';
 import BusinessClientsTab from '@/components/BusinessClientsTab';
 import {
@@ -53,6 +54,10 @@ export default function BusinessDashboardPage() {
   const [closures, setClosures] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [activeTab, setActiveTabRaw] = useState(() => searchParams.get('tab') || 'overview');
+  // Active branch filter (Phase D — multi-branch). null = "All branches".
+  const [activeBranchId, setActiveBranchId] = useState(() => {
+    try { return localStorage.getItem('bookvia-active-branch-id') || null; } catch { return null; }
+  });
   // Keep URL ?tab=X in sync with the active tab so deep links from the navbar dropdown work.
   const VALID_TABS = ['overview', 'reports', 'clients', 'services', 'team', 'branches', 'closures', 'photos', 'subscription', 'activity'];
   const setActiveTab = (next) => {
@@ -154,6 +159,12 @@ export default function BusinessDashboardPage() {
     return () => document.removeEventListener('mousedown', handler);
   }, [notifOpen]);
 
+  useEffect(() => {
+    loadDashboard();
+    loadDayBookings();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeBranchId]);
+
   // React to URL ?tab=X changes (e.g., when user clicks navbar dropdown while already on this page)
   useEffect(() => {
     const tab = searchParams.get('tab');
@@ -188,7 +199,7 @@ export default function BusinessDashboardPage() {
     try {
       setDashboardError(null);
       const [dashRes, servicesRes, workersRes, photosRes, closuresRes] = await Promise.all([
-        businessesAPI.getDashboard(),
+        businessesAPI.getDashboard({ branch_id: activeBranchId || undefined }),
         servicesAPI.getByBusiness(business?.id || user?.business_id || ''),
         businessesAPI.getMyWorkers().catch(() => ({ data: [] })),
         businessesAPI.getMyPhotos().catch(() => ({ data: [] })),
@@ -232,7 +243,7 @@ export default function BusinessDashboardPage() {
   const loadDayBookings = async () => {
     try {
       const dateStr = format(selectedDate, 'yyyy-MM-dd');
-      const res = await bookingsAPI.getBusiness({ date: dateStr });
+      const res = await bookingsAPI.getBusiness({ date: dateStr, branch_id: activeBranchId || undefined });
       setDayBookings(Array.isArray(res.data) ? res.data : []);
     } catch (error) {
       console.error('Error loading bookings:', error);
@@ -613,7 +624,8 @@ export default function BusinessDashboardPage() {
               </div>
             </div>
           </div>
-          <div className="flex gap-2 items-center">
+          <div className="flex gap-2 items-center flex-wrap">
+            <BranchSelector value={activeBranchId} onChange={setActiveBranchId} language={language} />
             <Button variant="outline" size="sm" onClick={async () => {
               let profileSlug = biz?.slug || biz?.id;
               if (!profileSlug) {

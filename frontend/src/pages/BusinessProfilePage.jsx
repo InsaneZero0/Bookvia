@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { TrustBadge } from '@/components/TrustBadge';
+import BusinessBranchesSection from '@/components/BusinessBranchesSection';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Calendar } from '@/components/ui/calendar';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
@@ -915,6 +916,9 @@ export default function BusinessProfilePage() {
                 </div>
               </section>
             )}
+
+            {/* ── Branches (multi-location) ───────── */}
+            <BusinessBranchesSection businessId={business.id} language={language} />
 
             {/* ── Location ─────────────────────────── */}
             <section ref={locationRef} className="scroll-mt-32" data-testid="location-section">
