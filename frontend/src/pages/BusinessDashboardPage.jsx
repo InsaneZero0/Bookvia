@@ -25,6 +25,7 @@ import ReportsTab from '@/components/ReportsTab';
 import AgendaTimeline from '@/components/AgendaTimeline';
 import { ProfileCompletionBanner } from '@/components/ProfileCompletionBanner';
 import StripeConnectRequiredBanner from '@/components/StripeConnectRequiredBanner';
+import BranchesTab from '@/components/BranchesTab';
 import SubscriptionPastDueBanner from '@/components/SubscriptionPastDueBanner';
 import BusinessClientsTab from '@/components/BusinessClientsTab';
 import {
@@ -32,7 +33,7 @@ import {
   XCircle, AlertTriangle, TrendingUp, Settings, UserCog, Image, Upload,
   Trash2, Eye, Plus, Pencil, BarChart3, Briefcase, ArrowUpRight,
   Ban, CalendarOff, CreditCard, Shield, RefreshCw, Mail, Phone, History,
-  ChevronLeft, ChevronRight, Filter, Bell, ClipboardList
+  ChevronLeft, ChevronRight, Filter, Bell, ClipboardList, Building2
 } from 'lucide-react';
 
 export default function BusinessDashboardPage() {
@@ -53,7 +54,7 @@ export default function BusinessDashboardPage() {
   const [uploading, setUploading] = useState(false);
   const [activeTab, setActiveTabRaw] = useState(() => searchParams.get('tab') || 'overview');
   // Keep URL ?tab=X in sync with the active tab so deep links from the navbar dropdown work.
-  const VALID_TABS = ['overview', 'reports', 'clients', 'services', 'team', 'closures', 'photos', 'subscription', 'activity'];
+  const VALID_TABS = ['overview', 'reports', 'clients', 'services', 'team', 'branches', 'closures', 'photos', 'subscription', 'activity'];
   const setActiveTab = (next) => {
     setActiveTabRaw(next);
     const params = new URLSearchParams(searchParams);
@@ -750,6 +751,7 @@ export default function BusinessDashboardPage() {
             { value: 'clients', show: hasPermission('view_reports') || !isManager, icon: ClipboardList, label: language === 'es' ? 'Clientes' : 'Clients' },
             { value: 'services', show: hasPermission('edit_services'), icon: Briefcase, label: language === 'es' ? 'Servicios' : 'Services' },
             { value: 'team', show: hasPermission('view_team'), icon: Users, label: language === 'es' ? 'Equipo' : 'Team' },
+            { value: 'branches', show: !isManager, icon: Building2, label: language === 'es' ? 'Sucursales' : 'Branches' },
             { value: 'closures', show: !isManager, icon: CalendarOff, label: language === 'es' ? 'Cierres' : 'Closures' },
             { value: 'photos', show: hasPermission('edit_photos'), icon: Image, label: language === 'es' ? 'Fotos' : 'Photos' },
             { value: 'subscription', show: !isManager, icon: CreditCard, label: language === 'es' ? 'Suscripcion' : 'Subscription' },
@@ -1113,6 +1115,11 @@ export default function BusinessDashboardPage() {
                 )}
               </CardContent>
             </Card>
+          </TabsContent>
+
+          {/* ── Branches (Sucursales) Tab ────────────── */}
+          <TabsContent value="branches" className="mt-6">
+            <BranchesTab language={language} />
           </TabsContent>
 
           {/* ── Closures Tab ────────────────────────── */}

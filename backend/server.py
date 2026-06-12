@@ -52,6 +52,7 @@ api_router = APIRouter(prefix="/api")
 from routers.auth import router as auth_router
 from routers.users import router as users_router
 from routers.businesses import router as businesses_router
+from routers.branches import router as branches_router
 from routers.services import router as services_router
 from routers.bookings import router as bookings_router
 from routers.reviews import router as reviews_router
@@ -70,6 +71,7 @@ from routers.winback import admin_router as winback_admin_router, public_router 
 api_router.include_router(auth_router)
 api_router.include_router(users_router)
 api_router.include_router(businesses_router)
+api_router.include_router(branches_router)
 api_router.include_router(services_router)
 api_router.include_router(bookings_router)
 api_router.include_router(reviews_router)

@@ -179,6 +179,59 @@ class BusinessResponse(BaseModel):
     stripe_connect_payouts_enabled: bool = False
     stripe_connect_details_submitted: bool = False
 
+
+# BRANCH (SUCURSAL) MODELS — Phase Multi-Branch
+# A Branch is a physical location of a Business. A Business can have N branches.
+# Existing single-location businesses get a "Sucursal Principal" auto-created on first access.
+
+class BranchBase(BaseModel):
+    name: str  # "Plaza Centro", "Sucursal Norte"
+    address: str
+    city: str
+    state: str
+    zip_code: Optional[str] = ""
+    country: str = "MX"
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    phone: Optional[str] = None
+    timezone: str = "America/Mexico_City"
+    business_hours: Optional[Dict[str, Any]] = None
+    photos: List[str] = []
+    cover_photo: Optional[str] = None
+
+
+class BranchCreate(BranchBase):
+    pass
+
+
+class BranchUpdate(BaseModel):
+    name: Optional[str] = None
+    address: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    zip_code: Optional[str] = None
+    country: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    phone: Optional[str] = None
+    timezone: Optional[str] = None
+    business_hours: Optional[Dict[str, Any]] = None
+    photos: Optional[List[str]] = None
+    cover_photo: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class BranchResponse(BranchBase):
+    id: str
+    business_id: str
+    is_active: bool = True
+    is_primary: bool = False
+    services_count: Optional[int] = None
+    bookings_month: Optional[int] = None
+    created_at: str
+    updated_at: str
+
+
 class BusinessUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None

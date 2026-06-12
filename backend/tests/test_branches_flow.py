@@ -1,0 +1,285 @@
+"""Backend tests for multi-branch (sucursales) flow.
+
+Covers:
+- Auto-migration: GET /branches creates primary on first call (idempotent)
+- Backfill: existing bookings get branch_id of primary
+- CRUD: create / patch / soft-delete
+- set-primary atomicity (only 1 primary per business)
+- Public endpoint vs authenticated endpoint
+- Delete restrictions (primary, future bookings)
+"""
+import os
+import uuid
+import asyncio
+import pytest
+import requests
+from datetime import datetime, timezone, timedelta
+
+BASE_URL = os.environ.get("REACT_APP_BACKEND_URL", "").rstrip("/")
+API = f"{BASE_URL}/api"
+
+BIZ_EMAIL = "testbiz_dashboard@test.com"
+BIZ_PASS = "TestBiz123!"
+USER_EMAIL = "test@example.com"
+USER_PASS = "TestPass123!"
+
+
+# ------------- helpers -------------
+
+def _login(email: str, password: str, login_path: str = "/auth/login") -> str:
+    r = requests.post(f"{API}{login_path}", json={"email": email, "password": password}, timeout=15)
+    if r.status_code != 200:
+        pytest.skip(f"Login failed for {email}: {r.status_code} {r.text[:200]}")
+    return r.json().get("access_token") or r.json().get("token")
+
+
+@pytest.fixture(scope="module")
+def biz_token():
+    return _login(BIZ_EMAIL, BIZ_PASS)
+
+
+@pytest.fixture(scope="module")
+def biz_headers(biz_token):
+    return {"Authorization": f"Bearer {biz_token}"}
+
+
+@pytest.fixture(scope="module")
+def biz_business_id(biz_headers):
+    # First call to /branches will auto-create primary; then read business_id from any branch
+    r = requests.get(f"{API}/businesses/me/branches", headers=biz_headers, timeout=15)
+    assert r.status_code == 200, f"Could not bootstrap branches: {r.status_code} {r.text}"
+    arr = r.json()
+    assert len(arr) >= 1, "Expected at least the auto-created primary"
+    return arr[0]["business_id"]
+
+
+# ------------- 1. Auth gate -------------
+
+def test_branches_requires_auth():
+    r = requests.get(f"{API}/businesses/me/branches", timeout=15)
+    assert r.status_code in (401, 403), f"Expected 401/403, got {r.status_code}"
+
+
+# ------------- 2. Auto-migration creates exactly 1 primary -------------
+
+def test_auto_migration_creates_primary(biz_headers):
+    r = requests.get(f"{API}/businesses/me/branches", headers=biz_headers, timeout=15)
+    assert r.status_code == 200
+    branches = r.json()
+    primaries = [b for b in branches if b.get("is_primary")]
+    assert len(primaries) == 1, f"Expected exactly 1 primary branch, got {len(primaries)}"
+    p = primaries[0]
+    assert p.get("is_active") is True
+    assert "id" in p and "business_id" in p
+    assert p.get("name"), "Primary branch must have a name"
+
+
+def test_auto_migration_idempotent(biz_headers):
+    r1 = requests.get(f"{API}/businesses/me/branches", headers=biz_headers, timeout=15)
+    r2 = requests.get(f"{API}/businesses/me/branches", headers=biz_headers, timeout=15)
+    assert r1.status_code == 200 and r2.status_code == 200
+    primaries_1 = [b for b in r1.json() if b.get("is_primary")]
+    primaries_2 = [b for b in r2.json() if b.get("is_primary")]
+    assert len(primaries_1) == 1 and len(primaries_2) == 1
+    assert primaries_1[0]["id"] == primaries_2[0]["id"], "Primary branch id must remain stable"
+
+
+# ------------- 3. Backfill of bookings -------------
+
+def test_backfill_bookings_have_branch_id(biz_headers, biz_business_id):
+    """After GET /branches, existing bookings of business should have branch_id set."""
+    from motor.motor_asyncio import AsyncIOMotorClient
+
+    async def _check():
+        mongo_url = os.environ.get("MONGO_URL")
+        db_name = os.environ.get("DB_NAME")
+        if not mongo_url or not db_name:
+            pytest.skip("MONGO_URL/DB_NAME not in env")
+        client = AsyncIOMotorClient(mongo_url)
+        db = client[db_name]
+        total = await db.bookings.count_documents({"business_id": biz_business_id})
+        missing = await db.bookings.count_documents({
+            "business_id": biz_business_id,
+            "$or": [{"branch_id": {"$exists": False}}, {"branch_id": None}, {"branch_id": ""}],
+        })
+        client.close()
+        return total, missing
+
+    total, missing = asyncio.get_event_loop().run_until_complete(_check())
+    # If there are no bookings this assertion is trivially true.
+    assert missing == 0, f"{missing} bookings still missing branch_id (of {total} total) — backfill failed"
+
+
+# ------------- 4. CRUD create -------------
+
+_created_branch_id = {"id": None}
+
+
+def test_create_branch_ok(biz_headers):
+    payload = {
+        "name": f"TEST_Sucursal_{uuid.uuid4().hex[:6]}",
+        "address": "Av Test 123",
+        "city": "CDMX",
+        "state": "CDMX",
+        "zip_code": "01000",
+        "phone": "+525512345678",
+    }
+    r = requests.post(f"{API}/businesses/me/branches", json=payload, headers=biz_headers, timeout=15)
+    assert r.status_code == 200, f"{r.status_code} {r.text}"
+    data = r.json()
+    assert data["name"] == payload["name"]
+    assert data["address"] == payload["address"]
+    assert data["is_primary"] is False
+    assert data["is_active"] is True
+    assert "id" in data
+    _created_branch_id["id"] = data["id"]
+
+
+def test_create_branch_missing_required_returns_422(biz_headers):
+    # Missing 'name'
+    r = requests.post(f"{API}/businesses/me/branches",
+                      json={"address": "X", "city": "Y", "state": "Z"},
+                      headers=biz_headers, timeout=15)
+    assert r.status_code == 422, f"Expected 422, got {r.status_code}"
+    # Missing 'address'
+    r2 = requests.post(f"{API}/businesses/me/branches",
+                       json={"name": "X", "city": "Y", "state": "Z"},
+                       headers=biz_headers, timeout=15)
+    assert r2.status_code == 422
+
+
+def test_create_branch_unauthenticated_returns_401_or_403():
+    r = requests.post(f"{API}/businesses/me/branches",
+                      json={"name": "x", "address": "x", "city": "x", "state": "x"},
+                      timeout=15)
+    assert r.status_code in (401, 403)
+
+
+def test_create_branch_as_regular_user_blocked():
+    """A normal user (not business owner) should be blocked from creating branches."""
+    tok = _login(USER_EMAIL, USER_PASS)
+    headers = {"Authorization": f"Bearer {tok}"}
+    r = requests.post(f"{API}/businesses/me/branches",
+                      json={"name": "TEST_x", "address": "x", "city": "x", "state": "x"},
+                      headers=headers, timeout=15)
+    # require_business should reject non-business users (401/403/404)
+    assert r.status_code in (401, 403, 404), f"Expected non-200 for non-business, got {r.status_code}"
+
+
+# ------------- 5. PATCH update -------------
+
+def test_patch_branch_updates_fields(biz_headers):
+    bid = _created_branch_id["id"]
+    assert bid, "Previous test must have created a branch"
+    new_phone = "+525599999999"
+    r = requests.patch(f"{API}/businesses/me/branches/{bid}",
+                       json={"phone": new_phone, "city": "Guadalajara"},
+                       headers=biz_headers, timeout=15)
+    assert r.status_code == 200, f"{r.status_code} {r.text}"
+    data = r.json()
+    assert data["phone"] == new_phone
+    assert data["city"] == "Guadalajara"
+    # Verify persistence via GET
+    g = requests.get(f"{API}/businesses/me/branches/{bid}", headers=biz_headers, timeout=15)
+    assert g.status_code == 200
+    assert g.json()["phone"] == new_phone
+
+
+def test_patch_cross_business_not_found(biz_headers):
+    # Fake branch id should give 404
+    r = requests.patch(f"{API}/businesses/me/branches/nonexistent-id-xyz",
+                       json={"phone": "x"},
+                       headers=biz_headers, timeout=15)
+    assert r.status_code == 404
+
+
+# ------------- 6. Set-primary atomicity -------------
+
+def test_set_primary_demotes_old_and_only_one_primary(biz_headers):
+    bid = _created_branch_id["id"]
+    assert bid
+    # Capture the current primary id
+    r0 = requests.get(f"{API}/businesses/me/branches", headers=biz_headers, timeout=15)
+    primaries_before = [b for b in r0.json() if b.get("is_primary")]
+    assert len(primaries_before) == 1
+    old_primary_id = primaries_before[0]["id"]
+    assert old_primary_id != bid, "Test branch should not already be primary"
+
+    # Promote
+    r = requests.post(f"{API}/businesses/me/branches/{bid}/set-primary",
+                      headers=biz_headers, timeout=15)
+    assert r.status_code == 200, f"{r.status_code} {r.text}"
+
+    # Re-list and assert atomicity
+    r2 = requests.get(f"{API}/businesses/me/branches", headers=biz_headers, timeout=15)
+    arr = r2.json()
+    primaries_after = [b for b in arr if b.get("is_primary")]
+    assert len(primaries_after) == 1, f"Expected exactly 1 primary after promote, got {len(primaries_after)}"
+    assert primaries_after[0]["id"] == bid
+
+    # Restore old primary to keep db sane for other tests
+    requests.post(f"{API}/businesses/me/branches/{old_primary_id}/set-primary",
+                  headers=biz_headers, timeout=15)
+
+
+def test_set_primary_inactive_branch_blocked(biz_headers):
+    """Cannot promote an inactive branch."""
+    # Create a temp branch and deactivate it via PATCH is_active=False
+    payload = {"name": f"TEST_Inactive_{uuid.uuid4().hex[:6]}",
+               "address": "x", "city": "x", "state": "x"}
+    cr = requests.post(f"{API}/businesses/me/branches", json=payload, headers=biz_headers, timeout=15)
+    assert cr.status_code == 200
+    bid = cr.json()["id"]
+    pr = requests.patch(f"{API}/businesses/me/branches/{bid}",
+                        json={"is_active": False}, headers=biz_headers, timeout=15)
+    assert pr.status_code == 200
+    # Try promote
+    sp = requests.post(f"{API}/businesses/me/branches/{bid}/set-primary",
+                       headers=biz_headers, timeout=15)
+    assert sp.status_code == 400, f"Expected 400 promoting inactive, got {sp.status_code}"
+
+
+# ------------- 7. Delete restrictions -------------
+
+def test_delete_primary_blocked(biz_headers):
+    r0 = requests.get(f"{API}/businesses/me/branches", headers=biz_headers, timeout=15)
+    primary = [b for b in r0.json() if b.get("is_primary")][0]
+    r = requests.delete(f"{API}/businesses/me/branches/{primary['id']}",
+                        headers=biz_headers, timeout=15)
+    assert r.status_code == 400, f"Primary delete should be 400, got {r.status_code}"
+
+
+def test_delete_non_primary_soft_deletes(biz_headers):
+    # Create a clean branch with no bookings and delete it
+    payload = {"name": f"TEST_ToDelete_{uuid.uuid4().hex[:6]}",
+               "address": "x", "city": "x", "state": "x"}
+    cr = requests.post(f"{API}/businesses/me/branches", json=payload, headers=biz_headers, timeout=15)
+    assert cr.status_code == 200
+    bid = cr.json()["id"]
+    dr = requests.delete(f"{API}/businesses/me/branches/{bid}",
+                         headers=biz_headers, timeout=15)
+    assert dr.status_code == 200, f"{dr.status_code} {dr.text}"
+    # Confirm soft-delete: GET returns it but is_active=False
+    g = requests.get(f"{API}/businesses/me/branches/{bid}", headers=biz_headers, timeout=15)
+    assert g.status_code == 200
+    assert g.json()["is_active"] is False
+
+
+# ------------- 8. Public endpoint -------------
+
+def test_public_branches_endpoint_no_auth(biz_business_id):
+    r = requests.get(f"{API}/businesses/{biz_business_id}/branches", timeout=15)
+    assert r.status_code == 200, f"{r.status_code} {r.text}"
+    arr = r.json()
+    assert isinstance(arr, list)
+    assert len(arr) >= 1, "Should auto-create primary if none present"
+    # Only active branches
+    for b in arr:
+        assert b.get("is_active") is True, "Public endpoint must return only active branches"
+    # Primary first
+    assert arr[0].get("is_primary") is True, "Primary branch must be first in public list"
+
+
+def test_public_branches_404_for_unknown_business():
+    r = requests.get(f"{API}/businesses/does-not-exist-xyz/branches", timeout=15)
+    assert r.status_code == 404
