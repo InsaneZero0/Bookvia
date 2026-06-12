@@ -1069,3 +1069,56 @@ async def get_my_tickets(page: int = 1, limit: int = 20, token_data: TokenData =
         {"user_id": token_data.user_id}, {"_id": 0}
     ).sort("created_at", -1).skip((page - 1) * limit).limit(limit).to_list(limit)
     return {"tickets": tickets, "total": total}
+
+
+class PublicSupportTicket(BaseModel):
+    name: str
+    email: EmailStr
+    category: str = "general"  # general | booking | payment | account | bug | other
+    subject: str
+    message: str
+
+
+@router.post("/support/public-ticket")
+async def create_public_support_ticket(ticket: PublicSupportTicket):
+    """Public endpoint for non-authenticated visitors to submit a help request.
+
+    Generates a human-friendly BV-YYYY-XXXX ticket id and creates the same
+    document shape as the authenticated /support/tickets endpoint so the admin
+    panel can consume both seamlessly.
+    """
+    now_dt = datetime.now(timezone.utc)
+    now = now_dt.isoformat()
+
+    # Human-friendly id: BV-2026-0001 (counts unique tickets created that year)
+    year_str = now_dt.strftime("%Y")
+    year_start = now_dt.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
+    count_this_year = await db.support_tickets.count_documents({"created_at": {"$gte": year_start}})
+    public_ref = f"BV-{year_str}-{(count_this_year + 1):04d}"
+
+    # If the email matches an existing user, link them (best-effort)
+    linked_user = await db.users.find_one({"email": ticket.email.lower()}, {"_id": 0, "id": 1, "role": 1})
+
+    doc = {
+        "id": generate_id(),
+        "public_ref": public_ref,
+        "user_id": linked_user.get("id") if linked_user else None,
+        "user_name": ticket.name.strip()[:120],
+        "user_email": ticket.email.lower(),
+        "reporter_code": None,
+        "reporter_role": (linked_user or {}).get("role", "guest"),
+        "subject": ticket.subject.strip()[:200],
+        "message": ticket.message.strip()[:5000],
+        "category": ticket.category,
+        "status": "open",
+        "business_id": None,
+        "business_name": None,
+        "business_public_code": None,
+        "booking_id": None,
+        "source": "public_form",
+        "messages": [{"sender": "user", "sender_name": ticket.name.strip()[:120], "message": ticket.message.strip()[:5000], "created_at": now}],
+        "created_at": now,
+        "updated_at": now,
+    }
+    await db.support_tickets.insert_one(doc)
+    return {"public_ref": public_ref, "status": "open", "message": "Ticket recibido. Te responderemos en menos de 24 horas."}

@@ -1,0 +1,52 @@
+{
+  "summary": "Comprehensive E2E validation of Bookvia Help Center + Legal Center redesign. Backend: 6/6 tests PASS (1 skipped admin endpoint - no TOTP env). Public ticket endpoint generates BV-YYYY-XXXX correctly, validates pydantic email, persists with source='public_form'. Frontend: /ayuda renders for guest with help-form-card+help-email-card+help-emergency-card visible, help-whatsapp-card correctly HIDDEN. FAQ filters (Todo/Clientes/Negocios), search box and accordion all work. Empty submit shows toast 'Completa todos los campos'. Valid submit creates ticket BV-2026-0012 and shows help-ticket-success block. /legal renders all 5 tabs (terms/privacy/commissions/refunds/cookies) with content switching, deep link ?doc=privacy works, print button present. All 6 redirections work: /terminos /terms /privacidad /privacy /contacto /contact. Business user: help-whatsapp-card visible, menu-help navigates to /ayuda, menu-terms navigates to /legal, notification bell visible. Regression: /api/status=200, login/auth works.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/legal (LegalPage.jsx line 58-61)", "issues": ["HTML nesting hydration warning: <p> contains <Badge> which renders <div> — invalid nesting, causes React hydration warning in console. Fix: change wrapping <p> to <div> or render Badge as inline span. Not blocking but emits errors on every page load."]}
+    ]
+  },
+  "verified_features": [
+    "POST /api/support/public-ticket (no auth) -> 200 with {public_ref: 'BV-2026-XXXX', status: 'open', message}. Format BV-YYYY-XXXX validated by regex.",
+    "Pydantic email validation: bad email -> 422; missing required fields -> 422.",
+    "public_ref unique across 3 rapid consecutive POSTs (count-based generator works).",
+    "DB persistence verified directly via Motor: support_tickets with source='public_form' >= 1.",
+    "POST /api/support/tickets (auth client) regression -> 200 with {id, status='open'}.",
+    "GET /ayuda renders [data-testid=help-page] without auth.",
+    "Guest cards: help-form-card + help-email-card + help-emergency-card visible; help-whatsapp-card HIDDEN (correct).",
+    "FAQ tabs faq-filter-all / -client / -business reduce items count when filter active (9 -> 4 client). Search input filters to 2 items on query 'cita'. faq-item-X accordion expand/collapse works.",
+    "Form submit with empty fields -> red toast 'Completa todos los campos'. Valid submit -> green toast 'Mensaje enviado' + help-ticket-success block shows 'BV-2026-0012' + email confirmation.",
+    "GET /legal renders [data-testid=legal-page]. All 5 tabs present (legal-tab-terms, -privacy, -commissions, -refunds, -cookies) + legal-print-btn. Click each tab -> respective legal-content-X becomes visible.",
+    "Deep link /legal?doc=privacy -> legal-content-privacy visible on load.",
+    "Redirections all OK: /terminos /terms /privacidad /privacy -> legal-page; /contacto /contact -> help-page.",
+    "Business login (testbiz_dashboard@test.com): help-whatsapp-card visible on /ayuda. Navbar menu-help navigates to /ayuda; menu-terms navigates to /legal. Notification bell visible (9+ badge).",
+    "/api/status -> 200."
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_public_ticket_flow.py",
+    "/app/test_reports/pytest/public_ticket_flow.xml"
+  ],
+  "action_items": [
+    "(Minor / non-blocking) Fix HTML nesting in /app/frontend/src/pages/LegalPage.jsx line 58: <p> wrapper contains <Badge> (renders <div>). Either change <p> to <div> or use <span> for Badge variant. Causes React hydration console errors on every /legal load."
+  ],
+  "critical_code_review_comments": [
+    "create_public_support_ticket uses count_documents+1 of current year to generate BV-YYYY-XXXX. This is NOT race-safe under high concurrency (two simultaneous requests may receive same count). For low-traffic public form this is acceptable but consider an atomic counter via $inc on a counters collection if traffic grows.",
+    "linked_user lookup uses .lower() on email — good. reporter_role defaults to 'guest' when no match — good.",
+    "Field truncations [:120], [:200], [:5000] applied — good for storage hygiene.",
+    "Endpoint is unauthenticated and unrated — recommend adding simple rate limit (e.g., slowapi 5/min by IP) to prevent ticket spam. NOT critical for MVP.",
+    "Sentry/Resend in mock mode is fine — ticket is correctly persisted to DB regardless (verified via Motor count).",
+    "LegalPage hydration warning is the only frontend issue — see action_items."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_public_ticket_flow.py (new, 7 pytest cases)"
+  ],
+  "success_rate": {"backend": "100% (6/6 executed, 1 skipped due to missing admin TOTP env)", "frontend": "100% on exercised flows (cards visibility per role, FAQ filters/search/accordion, form submit valid+invalid, legal tabs, deep link, 6/6 redirections, navbar dropdown)"},
+  "test_credentials": "Business: testbiz_dashboard@test.com/TestBiz123! used for business view tests. Public ticket endpoint requires no auth. Admin tests skipped — to enable run with env TEST_ADMIN_EMAIL/PASS/TOTP.",
+  "seed_data_creation": "Created 5 public tickets during test run (TEST_ prefix in name+email+subject for cleanup): BV-2026-0007 through ~0012. Last visible BV-2026-0012 (from Playwright form submission). Safe to leave or cleanup via db.support_tickets.delete_many({'user_name': {'$regex': '^TEST_'}}).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend tests run with env loaded: `set -a && . /app/frontend/.env && . /app/backend/.env && set +a && pytest backend/tests/test_public_ticket_flow.py`. Admin endpoint test is skip-on-missing-env (TEST_ADMIN_EMAIL/PASS/TOTP) — if you want full admin coverage, set these envs. The hydration warning at LegalPage.jsx:58 was noted but not fixed (cosmetic, did not break functionality). ipapi.co CORS errors observed are pre-existing (noted in iteration_101). Public ticket counter is count_documents-based — not race-safe under heavy concurrency but acceptable for MVP traffic.",
+  "rca_of_the_issue": "N/A — all spec scenarios behave correctly. Only one cosmetic HTML nesting warning at LegalPage.jsx:58 (Badge inside <p>) reported as minor design issue."
+}
