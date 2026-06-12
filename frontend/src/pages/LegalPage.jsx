@@ -55,11 +55,11 @@ export default function LegalPage() {
           <h1 className="text-3xl sm:text-4xl font-heading font-bold tracking-tight">
             {t('Centro Legal', 'Legal Center')}
           </h1>
-          <p className="text-sm text-muted-foreground mt-1 flex flex-wrap items-center gap-2">
+          <div className="text-sm text-muted-foreground mt-1 flex flex-wrap items-center gap-2">
             <Calendar className="h-3.5 w-3.5" />
             {t('Última actualización:', 'Last updated:')} <span className="font-medium">{lastUpdatedLabel}</span>
             <Badge variant="secondary" className="font-mono text-[10px]">v{LEGAL_VERSION}</Badge>
-          </p>
+          </div>
         </header>
 
         <div className="grid lg:grid-cols-[240px_1fr] gap-8">
