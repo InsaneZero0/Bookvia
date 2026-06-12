@@ -869,6 +869,30 @@ Cuando un negocio real tenga su tarjeta fallida:
 - ✅ Respeta `safe-area-inset-bottom` para notch de iPhone.
 - ✅ Padding-bottom 68px en Layout para que el contenido no quede tapado.
 
+**Fix UX: menú dropdown respeta `?tab=X` + ChevronRight visible en stat cards**
+- ✅ `BusinessDashboardPage` ahora lee `?tab=X` del URL y activa la pestaña correspondiente.
+- ✅ `setActiveTab()` sincroniza el URL para permitir compartir/refrescar enlaces directos.
+- ✅ Items del menú dropdown corregidos: `?tab=settings` → `/business/settings`, `?tab=billing` → `?tab=subscription`.
+- ✅ Stat cards en overview ahora tienen `ChevronRight ›` con animación al hover + tooltip — claramente clickeables.
+
+**Modalidad de cobro switchable (anticipo / sin anticipo) con anti-abuso**
+- ✅ Modelo de negocio confirmado: **mensualidad universal $49.99 MXN con 30 días gratis** para todos los negocios. Los que cobran anticipo además pagan comisión variable ($8 al cliente + 8.5% al negocio).
+- ✅ Backend constante `DEPOSIT_MODE_CHANGE_COOLDOWN_DAYS = 30` (anti-abuso de switching).
+- ✅ Endpoints nuevos:
+   - `GET /api/businesses/me/payment-mode` → devuelve estado + cooldown info.
+   - `PATCH /api/businesses/me/payment-mode` con `{requires_deposit: bool}`.
+   - Cooldown 30 días enforzado; mismo valor → no-op; activar sin Stripe Connect → 412 (auto-redirect a onboarding).
+- ✅ **Stripe Connect queda DORMIDA al desactivar anticipos** (NO se elimina `stripe_connect_account_id`). Reactivar = 1 click.
+- ✅ Refactor del visibility gate `visible_business_filter_now()`: negocios sin anticipo aparecen aunque NO tengan Stripe Connect. Sólo se exige Connect a los que SÍ procesan dinero por la plataforma.
+- ✅ Nuevo componente `<PaymentModeCard />` en `/business/settings` tab "Cobros":
+   - Card grande con modalidad actual.
+   - Banner amber con días restantes si está en cooldown.
+   - Botón "Cambiar a: X" → modal con 4 items (3 checklist + cooldown notice).
+   - Si el negocio intenta activar anticipos sin Connect, redirige automáticamente a `/api/stripe-connect/onboard`.
+- ✅ Email automático bilingüe al dueño en cada cambio (template `payment_mode_change`).
+- ✅ Notificación in-app + audit (vía `payment_mode_changes_count` para analytics).
+- ✅ 11/11 pytest cases en `/app/backend/tests/test_payment_mode_flow.py` cubren: auth gate, schema, no-op, flip true→false con Stripe dormido preservado, 412 sin Connect, 429 cooldown, expiry, visibility gate.
+
 ### Pendientes inmediatos para apertura formal al público (P0)
 1. **Cloudinary**: Usuario debe crear cuenta gratuita en cloudinary.com y configurar `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` en Railway. Sin esto, los backups diarios de MongoDB fallarán.
 2. **Onboarding Stripe Connect del negocio piloto** ("barbería pitufo") para validar el flujo de Transfer real el día 20.
