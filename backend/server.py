@@ -188,6 +188,80 @@ async def startup_event():
         logger.warning(f"public_code backfill failed: {e}")
 
     # ------------------------------------------------------------------
+    # Performance indexes for high-traffic collections.
+    # Each index runs in its own try so a single conflict (e.g. duplicate
+    # data) does not abort the rest. MongoDB createIndex is idempotent.
+    # ------------------------------------------------------------------
+    from core.database import db as _db_idx
+    _index_specs = [
+        # users: login by email is the single most frequent query.
+        # Note: non-unique on purpose (existing data may have dups that
+        # need manual dedupe before flipping to unique).
+        ("users", [("email", 1)], {"sparse": True}),
+        ("users", [("stripe_customer_id", 1)], {"sparse": True}),
+        ("users", [("business_id", 1)], {"sparse": True}),
+        # businesses: public search + ownership lookups
+        ("businesses", [("status", 1), ("country_code", 1), ("city", 1)], {}),
+        ("businesses", [("user_id", 1)], {}),
+        ("businesses", [("slug", 1)], {"sparse": True}),
+        ("businesses", [("stripe_connect_account_id", 1)], {"sparse": True}),
+        # branches
+        ("branches", [("business_id", 1), ("is_active", 1)], {}),
+        ("branches", [("business_id", 1), ("is_primary", 1)], {}),
+        # services
+        ("services", [("business_id", 1), ("is_active", 1)], {}),
+        ("services", [("business_id", 1), ("branch_id", 1)], {}),
+        # bookings
+        ("bookings", [("business_id", 1), ("date", 1)], {}),
+        ("bookings", [("business_id", 1), ("status", 1)], {}),
+        ("bookings", [("user_id", 1), ("date", -1)], {}),
+        ("bookings", [("worker_id", 1), ("date", 1)], {}),
+        ("bookings", [("branch_id", 1), ("date", 1)], {"sparse": True}),
+        ("bookings", [("status", 1), ("hold_expires_at", 1)], {}),
+        ("bookings", [("stripe_session_id", 1)], {"sparse": True}),
+        # transactions
+        ("transactions", [("business_id", 1), ("created_at", -1)], {}),
+        ("transactions", [("user_id", 1), ("created_at", -1)], {}),
+        ("transactions", [("funds_state", 1), ("business_id", 1)], {}),
+        ("transactions", [("settlement_id", 1)], {"sparse": True}),
+        ("transactions", [("stripe_session_id", 1)], {"sparse": True}),
+        ("transactions", [("booking_id", 1)], {"sparse": True}),
+        # reviews
+        ("reviews", [("business_id", 1), ("created_at", -1)], {}),
+        ("reviews", [("user_id", 1)], {}),
+        # notifications: bell badge counts query daily
+        ("notifications", [("user_id", 1), ("is_read", 1), ("created_at", -1)], {}),
+        # wallet
+        ("user_wallets", [("user_id", 1)], {"unique": True}),
+        ("wallet_transactions", [("user_id", 1), ("created_at", -1)], {}),
+        # strikes
+        ("strikes", [("business_id", 1), ("status", 1)], {}),
+        ("strikes", [("business_id", 1), ("created_at", -1)], {}),
+        # settlements
+        ("settlements", [("business_id", 1), ("period_key", 1)], {}),
+        ("settlements", [("status", 1), ("period_key", 1)], {}),
+        # support tickets
+        ("support_tickets", [("status", 1), ("created_at", -1)], {}),
+        ("support_tickets", [("reporter_user_id", 1)], {"sparse": True}),
+        # favorites
+        ("user_favorites", [("user_id", 1), ("business_id", 1)], {"unique": True}),
+        # qr scans
+        ("qr_scans", [("business_id", 1), ("scanned_at", -1)], {}),
+        # audit log
+        ("audit_logs", [("created_at", -1)], {}),
+        ("audit_logs", [("actor_id", 1), ("created_at", -1)], {}),
+    ]
+    _idx_ok, _idx_fail = 0, 0
+    for _coll, _keys, _opts in _index_specs:
+        try:
+            await _db_idx[_coll].create_index(_keys, **_opts)
+            _idx_ok += 1
+        except Exception as _e:
+            _idx_fail += 1
+            logger.warning(f"Index {_coll}{_keys} failed: {_e}")
+    logger.info(f"MongoDB performance indexes: {_idx_ok} ok, {_idx_fail} failed")
+
+    # ------------------------------------------------------------------
     # Fase 8 grandfather clause: any business that was already APPROVED
     # before the documents_verified flag existed keeps receiving bookings.
     # New businesses will flip to documents_verified=False on first legal
