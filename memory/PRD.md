@@ -910,6 +910,15 @@ Cuando un negocio real tenga su tarjeta fallida:
 - ✅ Mensualidad $49.99 cubre TODAS las sucursales (sin cargo extra por sucursal adicional).
 - ✅ 16/16 pytest cases en `/app/backend/tests/test_branches_flow.py` cubren: auto-migration, idempotencia, backfill bookings, CRUD, validación 422, auth 401/403, set-primary atomicity, inactive promote 400, primary delete 400, soft-delete, endpoint público.
 
+**Multi-sucursal (Branches) — Fase D (filtros globales + UI cliente)**
+- ✅ Backend: `GET /api/businesses/me/dashboard?branch_id=X` filtra stats por sucursal; nuevo campo `unique_customers_month: int` en response.
+- ✅ Backend: `GET /api/bookings/business?branch_id=X` filtra agenda por sucursal (combinable con date/status).
+- ✅ Backend: `GET /api/bookings/business/stats-detail?branch_id=X` filtra desglose por sucursal.
+- ✅ Frontend: nuevo componente `<BranchSelector />` global en el header del Business Dashboard. Auto-oculta si solo hay 1 sucursal. Persiste en localStorage. Refetch automático del dashboard + dayBookings al cambiar.
+- ✅ Frontend: nuevo componente `<BusinessBranchesSection />` en perfil público del negocio. Muestra cards de cada sucursal activa (nombre + dirección + teléfono + badge Principal) y al click abre Google Maps en nueva pestaña. Auto-oculta si solo hay 1.
+- ✅ Diseño coherente: ambos selectores honran el mismo patrón (esconder cuando es ruido para single-location).
+- ✅ 25/25 pytest cases total en `/app/backend/tests/test_branches_flow.py` (16 originales + 9 nuevos para Fase D).
+
 ### Pendientes inmediatos para apertura formal al público (P0)
 1. **Cloudinary**: Usuario debe crear cuenta gratuita en cloudinary.com y configurar `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` en Railway. Sin esto, los backups diarios de MongoDB fallarán.
 2. **Onboarding Stripe Connect del negocio piloto** ("barbería pitufo") para validar el flujo de Transfer real el día 20.
