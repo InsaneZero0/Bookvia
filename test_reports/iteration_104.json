@@ -1,0 +1,51 @@
+{
+  "summary": "Fase D (selector global de sucursal + sección 'Nuestras sucursales' en perfil público) validated end-to-end. Backend: 25/25 pytest cases PASS (16 originales + 9 nuevos para Fase D). New cases cover GET /api/businesses/me/dashboard?branch_id=X (filter aplica + stats response incluye unique_customers_month:int + sin branch_id devuelve agregados + unknown branch_id=ceros), GET /api/bookings/business?branch_id=X (filter aplica, sin filter devuelve todo, unknown id=[], date+branch funciona), GET /api/bookings/business/stats-detail?stat_type=today&branch_id=X (branch-filtered subset of aggregate; unknown branch=empty). Frontend (testbiz_dashboard@test.com, 3 active branches): data-testid='branch-selector-wrapper' visible in dashboard header, data-testid='branch-selector-trigger' opens 'branch-selector-menu' con 'branch-selector-all' + 3 'branch-selector-option-<id>' items. Selecting an option triggers refetch with branch_id=X (verified: /api/businesses/me/dashboard?branch_id=... + /api/bookings/business?date=...&branch_id=...). localStorage 'bookvia-active-branch-id' persists/clears correctly. Public profile (/business/test-dashboard-business): data-testid='business-branches-section' renders with heading 'Nuestras sucursales' + 3 'branch-public-card-<id>' cards; clicking a card calls window.open with correct https://www.google.com/maps/search/... URL (intercepted via override). Regression OK: branches CRUD tab still shows 5 cards + create/edit/set-primary, Stripe 'Conectar Stripe' payment card visible, navbar dropdown + bell visible, tabs (Agenda/Reportes/Clientes/Servicios/Equipo/Sucursales/Cierres/Fotos/Suscripción Actividad) all present, deep link ?tab=branches works, calendar renders, /api/status=200 (verified separately via curl).",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "verified_features": [
+    "GET /api/businesses/me/dashboard returns stats with new 'unique_customers_month' int field; aggregate values when no branch_id (test_dashboard_no_branch_returns_aggregate).",
+    "GET /api/businesses/me/dashboard?branch_id=<primary> returns subset stats (today/pending/total/unique_customers_month all <= aggregate) (test_dashboard_with_branch_id_filters_stats).",
+    "Unknown branch_id -> all stats zeroed including unique_customers_month and month_revenue (test_dashboard_with_unknown_branch_zero_stats).",
+    "GET /api/bookings/business?branch_id=X returns only bookings of that branch; aggregate is superset (test_bookings_business_with_branch_id_filters).",
+    "GET /api/bookings/business?branch_id=<unknown> -> [] (test_bookings_business_with_unknown_branch_returns_empty).",
+    "GET /api/bookings/business?branch_id=X&date=YYYY-MM-DD filters by both (test_bookings_business_with_date_and_branch).",
+    "GET /api/bookings/business/stats-detail?stat_type=today&branch_id=X is subset of aggregate; unknown branch -> empty (test_stats_detail_*).",
+    "Frontend: BranchSelector renders only when activeBranches.length > 1 (verified with biz that has 3 active branches; hide-when-<=1 logic exists in component code lines 55-56).",
+    "Frontend: Selecting a branch triggers refetch with branch_id= query param on /api/businesses/me/dashboard and /api/bookings/business (verified via Playwright request listener).",
+    "Frontend: localStorage 'bookvia-active-branch-id' set on selection, cleared on 'All branches'.",
+    "Frontend: Public BusinessBranchesSection renders with cards; card click intercepts window.open with https://www.google.com/maps/search/?api=1&query=...",
+    "Frontend regression: branches tab CRUD (5 cards rendered), Stripe payment-mode card, dashboard tabs deep link (?tab=branches), unique_customers_month label visible in stat row."
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_branches_flow.py",
+    "/app/test_reports/pytest/branches_flow.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "BranchSelector hides when loading OR activeBranches.length <= 1. Edge case: while initial fetch is in flight, the selector is hidden — for a biz with multiple branches this causes a brief layout shift when the header gains the selector. Acceptable but consider a skeleton placeholder.",
+    "BusinessBranchesSection in BusinessProfilePage will fetch /branches twice if BranchSelector elsewhere also fetches them. Consider centralising via context or react-query cache to avoid duplicate network round-trips.",
+    "_serialize_branch + dashboard/bookings filtering rely on branch_id being present on every booking. The previous backfill (via /me/branches GET) handles legacy data, but new branches still need to be filtered. Bookings created via /api/bookings/create must persist branch_id — already covered separately but worth a unit test on booking creation.",
+    "unique_customers_month uses a set of (user_id or client_email or client_phone). Bookings created with only a phone+name (no email/user_id) will still be counted distinctly per phone — correct. However, the same user reserving once as guest (email) and once authenticated (user_id) would be counted as 2 unique customers. Minor edge case worth noting.",
+    "stats-detail endpoint correctly accepts branch_id (verified via test); response shape contract is preserved (subset of aggregate)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_branches_flow.py (added 9 new pytest cases for Fase D: dashboard filter + bookings filter + stats-detail filter)"
+  ],
+  "success_rate": {
+    "backend": "100% (25/25 passed in 5.69s)",
+    "frontend": "100% on exercised flows (selector render/open/select/persist, public branches section + card click google maps, regression dashboard tabs/payment card/branches CRUD)"
+  },
+  "test_credentials": "Business: testbiz_dashboard@test.com / TestBiz123! (3 active branches: 'Test Dashboard Business - Principal' [primary], 'Sucursal Norte', 'TEST_Sucursal_9067f9'). Regular user: test@example.com / TestPass123! for require_business negatives.",
+  "seed_data_creation": "Test run added a few transient TEST_* branches via backend pytest (1 new TEST_Sucursal_* created + 1 TEST_Inactive_* + 1 TEST_ToDelete_* soft-deleted). All TEST_* branches can be cleaned with db.branches.delete_many({'name': {'$regex': '^TEST_'}}). Primary remains 'Test Dashboard Business - Principal' (verified post-run).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Run: `set -a && . /app/frontend/.env && . /app/backend/.env && set +a && cd /app/backend && python -m pytest tests/test_branches_flow.py -v --junitxml=/app/test_reports/pytest/branches_flow.xml`. All 25 cases pass. Frontend testing was done against http://localhost:3000 because Cloudflare preview occasionally serves 'Preview Unavailable' webflow page (transient infrastructure issue, NOT app bug — the same preview URL works intermittently and home page returns 200). Pre-existing CORS warnings from ipapi.co are unrelated to Fase D. Pre-existing ws://localhost:443/ws WebSocket errors are unrelated to Fase D. The '405 Method Not Allowed' noise observed initially was caused by my own page.evaluate(fetch('/api/status')) hitting CRA dev server (localhost:3000/api/status) which doesn't proxy /api/* — false alarm; verified clean reload had zero 405s. Fase D feature is fully working.",
+  "rca_of_the_issue": "N/A — Fase D works as specified. All 8 review checkpoints (3 backend endpoints + 5 frontend behaviors) pass."
+}

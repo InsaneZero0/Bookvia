@@ -1,0 +1,52 @@
+{
+  "summary": "Phase E (multi-sucursal expansion in search + branch_id persistence on bookings) validated. Backend: 30/30 pytest passed (25 from prior + 5 new: 3 search expansion + 2 booking branch_id persistence). New tests: (a) expansion-multi-branches returns N rows for N>=2 active branches, each row has branch_id/branch_name/is_primary_branch + name format 'Business - Branch' for non-primary (primary keeps original name); (b) single-branch businesses still emit 1 row; (c) city filter post-expansion correctly returns only branches matching city; (d) POST /api/bookings with branch_id persists branch_id in DB; (e) POST /api/bookings WITHOUT branch_id auto-assigns the primary branch. Verified via curl: GET /api/businesses?limit=20 returns 3 rows (1 Test Real Stripe + 2 testbiz_dashboard expansions = Principal [is_primary_branch=true, name='Test Dashboard Business'] + Sucursal Norte [name='Test Dashboard Business - Sucursal Norte']). Frontend code review of BusinessCard.jsx confirms Link href correctly includes ?branch=<id> when business.branch_id exists. BusinessBranchesSection.jsx correctly accepts selectedBranchId prop, renders ring/Seleccionada badge, and updates URL on click via window.history.replaceState + popstate event. Phase D regression untouched (all 25 prior tests still pass). FRONTEND VISUAL VERIFICATION partial: the Cloudflare preview shows 'Preview Unavailable' resting page intermittently (already noted in iteration_104); localhost:3000 search page filters by country_code=MX which excludes testbiz_dashboard because that biz's country_code is not 'MX' in DB. This is a seed-data inconsistency (NOT a Phase E code bug). When the business does have country_code=MX, the expansion will render multiple cards as designed; this is confirmed by /api/businesses returning the expanded rows correctly.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "verified_features": [
+    "GET /api/businesses?limit=20 returns 3 rows: 1 single-branch biz (Test Real Stripe, no branch suffix) + 2 expansion rows of testbiz_dashboard (Principal keeps name 'Test Dashboard Business' with is_primary_branch=true; Sucursal Norte has name 'Test Dashboard Business - Sucursal Norte' with is_primary_branch=false).",
+    "Each expansion row carries branch_id, branch_name, is_primary_branch, and branch-overridden address/city/state/zip/phone.",
+    "Search city filter applied post-expansion: creating a TEST_ branch with unique city + patching biz.city to match → searching by that city returns ONLY the one matching branch (verified with assertion len==1).",
+    "Single-branch businesses still return exactly 1 row in search results (Test Real Stripe verified).",
+    "POST /api/bookings with branch_id in body persists branch_id on the booking doc (DB-verified via motor query).",
+    "POST /api/bookings WITHOUT branch_id auto-assigns primary branch_id (DB-verified).",
+    "BookingCreate schema accepts optional branch_id field (schemas.py line 442).",
+    "BusinessCard.jsx Link href appends ?branch=<id> conditionally when business.branch_id is present (lines 96, 172).",
+    "BusinessBranchesSection.jsx accepts selectedBranchId prop, renders ring + 'Seleccionada' badge on the selected card, and updates URL via replaceState + popstate dispatch on card click.",
+    "Phase D regression: all 9 dashboard/bookings/stats-detail branch_id filter tests still pass (25 prior tests untouched).",
+    "Auth gate, CRUD, set-primary atomicity, delete restrictions, public branches endpoint — all 16 original branch-management tests pass."
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_branches_flow.py",
+    "/app/test_reports/pytest/branches_flow.xml"
+  ],
+  "action_items": [
+    "Seed-data hygiene (NOT a Phase E bug): testbiz_dashboard does not have country_code='MX' on the business record, so it does not appear in the frontend /search page (which always sends country_code=MX). To visually verify Phase E expansion in the UI, either backfill country_code='MX' onto testbiz_dashboard OR create a second multi-branch biz that is country_code=MX + Stripe-enabled. The expansion logic itself is correct and confirmed via direct /api/businesses curl + backend pytest.",
+    "Optional cleanup: TEST_ branches accumulate over test runs (a defensive cleanup deleted 10 leftover TEST_* branches from prior iterations). Backend pytest tests now self-clean (test_search_city_filter and booking tests teardown their temp branches), but consider a global pytest fixture that wipes TEST_* branches at teardown to keep the DB tidy."
+  ],
+  "critical_code_review_comments": [
+    "businesses.py expansion (lines 1160-1209): post-expansion city filter is case-insensitive substring match (line 1192 `city.lower() not in br['city'].lower()`). This is consistent with the upstream business-level filter (line 1016 uses $regex i). Good.",
+    "businesses.py line 1200: 'name' override only adds the ' - BranchName' suffix when br.is_primary is False — correct, preserves the primary as the canonical row.",
+    "businesses.py line 1195: row['id'] = b['id'] (business_id) — kept intentionally so the booking link still targets the business. branch_id is on a separate key. This decouples routing from branch identity. OK.",
+    "bookings.py lines 741-748: branch_id is set via an extra update_one AFTER the insert. Functionally correct but adds a second DB roundtrip per booking. Could be inlined into booking_doc before insert_one — minor performance nit.",
+    "BookingCreate.branch_id is Optional[str]; no validation that the branch belongs to the same business_id. A malicious client could pass an arbitrary UUID. Consider validating with `await db.branches.find_one({'id': branch_id, 'business_id': booking.business_id, 'is_active': True})` before persisting; if not found, fall back to primary instead of trusting the input.",
+    "BusinessBranchesSection useEffect (line 18-29): missing dependency on `selectedBranchId` doesn't matter for fetch (only businessId is used), but on URL change the parent re-renders and the visual badge updates correctly via prop only. OK.",
+    "BusinessCard.jsx has the branch-aware Link in BOTH the h3 heading link (line 96) AND the 'Ver disponibilidad' button (line 172) — duplication is fine but a small extracted variable `profileHref` would dry it up."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_branches_flow.py (added 5 new pytest cases: test_search_expansion_business_with_multi_branches_returns_one_row_per_branch, test_search_expansion_single_branch_business_is_not_expanded, test_search_city_filter_applies_to_branches, test_booking_post_with_branch_id_persists, test_booking_post_without_branch_id_auto_assigns_primary). Includes a helper _find_or_skip_bookable_setup that falls back to testspa@test.com when testbiz_dashboard lacks workers/services and auto-seeds a TEST_ service if needed.)"
+  ],
+  "success_rate": {
+    "backend": "100% (30/30 passed in 8.92s)",
+    "frontend": "Code-level verification only — runtime UI verification of expanded cards was blocked because testbiz_dashboard lacks country_code='MX' so it's filtered out of the country-scoped /search page. Public profile + BusinessBranchesSection are reachable directly and code paths are correct."
+  },
+  "test_credentials": "Business: testbiz_dashboard@test.com / TestBiz123! (2 active branches: Principal [primary] + Sucursal Norte). Business fallback for booking tests: testspa@test.com / Test123! (3 workers + 4 services + 1 primary branch — temp non-primary branch is created by the test). User: test@example.com / TestPass123!.",
+  "seed_data_creation": "Test run created a temp TEST_BookingBranch_* on testspa during the with-branch-id booking test (auto-cleaned up at end). Also seeded TEST_BookingService_* on testspa once for the booking flow (NOT cleaned up — pricing 100, duration 30 — safe to leave).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Run: `set -a && . /app/frontend/.env && . /app/backend/.env && set +a && cd /app/backend && python -m pytest tests/test_branches_flow.py -v --junitxml=/app/test_reports/pytest/branches_flow.xml`. All 30 pass in ~9s. For frontend UI verification of Phase E search expansion, the visible business must have country_code='MX' (testbiz_dashboard currently does NOT have this — visible only when filter is dropped). Test Real Stripe is single-branch so doesn't show expansion. To fully verify the UI flow, main agent should either (1) patch testbiz_dashboard.country_code='MX' in DB, or (2) ensure another multi-branch biz with country_code='MX' + stripe_connect_charges_enabled=true is seeded.",
+  "rca_of_the_issue": "N/A — Phase E backend works perfectly per spec. The only finding is that the frontend /search uses country_code=MX as a hard filter, and testbiz_dashboard (the only multi-branch test biz) lacks that field on its business record. This causes the visual frontend test to show only Test Real Stripe (single-branch). The expansion logic IS executed when the business passes the country filter — verified via direct curl GET /api/businesses?limit=20 returning 3 rows."
+}

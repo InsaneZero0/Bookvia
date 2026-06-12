@@ -93,7 +93,7 @@ export function BusinessCard({ business, onFavorite, isFavorite = false }) {
               {business.category_name}
             </span>
           </div>
-          <Link to={`/business/${business.slug}`}>
+          <Link to={business.branch_id ? `/business/${business.slug}?branch=${business.branch_id}` : `/business/${business.slug}`}>
             <h3 className="font-heading font-bold text-lg hover:text-[#F05D5E] transition-colors line-clamp-1">
               {titleCase(business.name)}
             </h3>
@@ -169,7 +169,7 @@ export function BusinessCard({ business, onFavorite, isFavorite = false }) {
             )}
           </div>
           <Button asChild variant="outline" className="text-sm px-4 py-2 border-slate-300 hover:border-[#F05D5E] hover:text-[#F05D5E]" data-testid={`book-btn-${business.id}`}>
-            <Link to={`/business/${business.slug}`}>
+            <Link to={business.branch_id ? `/business/${business.slug}?branch=${business.branch_id}` : `/business/${business.slug}`}>
               {language === 'es' ? 'Ver disponibilidad' : 'See availability'}
             </Link>
           </Button>

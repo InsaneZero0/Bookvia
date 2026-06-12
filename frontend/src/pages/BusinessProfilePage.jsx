@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { TrustBadge } from '@/components/TrustBadge';
+import BusinessBranchesSection from '@/components/BusinessBranchesSection';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Calendar } from '@/components/ui/calendar';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
@@ -596,8 +597,10 @@ export default function BusinessProfilePage() {
   const handleConfirmBooking = async () => {
     setSubmitting(true);
     try {
+      const branchFromUrl = new URLSearchParams(window.location.search).get('branch');
       const payload = {
         business_id: business.id,
+        branch_id: branchFromUrl || undefined,
         service_id: selectedService.id,
         worker_id: selectedWorker.id,
         date: format(selectedDate, 'yyyy-MM-dd'),
@@ -915,6 +918,9 @@ export default function BusinessProfilePage() {
                 </div>
               </section>
             )}
+
+            {/* ── Branches (multi-location) ───────── */}
+            <BusinessBranchesSection businessId={business.id} selectedBranchId={new URLSearchParams(window.location.search).get('branch')} language={language} />
 
             {/* ── Location ─────────────────────────── */}
             <section ref={locationRef} className="scroll-mt-32" data-testid="location-section">

@@ -166,6 +166,11 @@ class BusinessResponse(BaseModel):
     logo_public_id: Optional[str] = None
     distance_km: Optional[float] = None
     next_available_text: Optional[str] = None
+    # Multi-branch expansion (Phase E): when a business has multiple branches,
+    # search results expand to one entry per branch with these fields populated.
+    branch_id: Optional[str] = None
+    branch_name: Optional[str] = None
+    is_primary_branch: Optional[bool] = None
     is_open_now: Optional[bool] = None
     business_hours: Optional[Dict[str, Any]] = None
     notify_email: bool = True
@@ -178,6 +183,59 @@ class BusinessResponse(BaseModel):
     stripe_connect_charges_enabled: bool = False
     stripe_connect_payouts_enabled: bool = False
     stripe_connect_details_submitted: bool = False
+
+
+# BRANCH (SUCURSAL) MODELS — Phase Multi-Branch
+# A Branch is a physical location of a Business. A Business can have N branches.
+# Existing single-location businesses get a "Sucursal Principal" auto-created on first access.
+
+class BranchBase(BaseModel):
+    name: str  # "Plaza Centro", "Sucursal Norte"
+    address: str
+    city: str
+    state: str
+    zip_code: Optional[str] = ""
+    country: str = "MX"
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    phone: Optional[str] = None
+    timezone: str = "America/Mexico_City"
+    business_hours: Optional[Dict[str, Any]] = None
+    photos: List[str] = []
+    cover_photo: Optional[str] = None
+
+
+class BranchCreate(BranchBase):
+    pass
+
+
+class BranchUpdate(BaseModel):
+    name: Optional[str] = None
+    address: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    zip_code: Optional[str] = None
+    country: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    phone: Optional[str] = None
+    timezone: Optional[str] = None
+    business_hours: Optional[Dict[str, Any]] = None
+    photos: Optional[List[str]] = None
+    cover_photo: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class BranchResponse(BranchBase):
+    id: str
+    business_id: str
+    is_active: bool = True
+    is_primary: bool = False
+    services_count: Optional[int] = None
+    bookings_month: Optional[int] = None
+    created_at: str
+    updated_at: str
+
 
 class BusinessUpdate(BaseModel):
     name: Optional[str] = None
@@ -381,6 +439,7 @@ class ServiceResponse(BaseModel):
 
 class BookingCreate(BaseModel):
     business_id: str
+    branch_id: Optional[str] = None  # Multi-branch: which branch this booking belongs to
     service_id: str
     worker_id: Optional[str] = None
     date: str

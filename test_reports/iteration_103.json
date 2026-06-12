@@ -1,0 +1,57 @@
+{
+  "summary": "Comprehensive E2E validation of Bookvia multi-branch (Sucursales) feature. Backend: 16/16 pytest cases PASS covering auto-migration, idempotency, booking backfill, CRUD (create/patch/delete), 422 validation, auth gating (401/403 for guest, 403 for non-business user), set-primary atomicity (exactly 1 is_primary per business), inactive branch promotion blocked (400), primary delete blocked (400), non-primary soft-delete (is_active=false, not removed), public endpoint (no auth, returns only is_active=true, primary first, 404 for unknown business). Frontend (testbiz_dashboard@test.com on /business/dashboard?tab=branches): branches-tab present, branch-create-btn present, 5 branch cards rendered with primary badge atomicity (exactly 1 primary), edit/set-primary/toggle/delete buttons present (delete hidden on primary -> 4 delete btns for 5 cards), modal opens correctly, empty-submit shows validation toast 'Completa nombre, dirección, ciudad y estado', valid submit creates branch (cards 5->6), edit pre-populates form fields and saves changes, set-primary atomically moves primary badge with only 1 primary on page after promotion. Regression OK: /api/status=200, payment-mode card 'Conectar Stripe' visible, navbar dropdown + notification bell visible, dashboard tabs (Agenda/Reportes/Clientes/Servicios/Equipo/Sucursales/Cierres/Fotos/Suscripcion Actividad) all present.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "verified_features": [
+    "GET /api/businesses/me/branches without auth -> 401/403 (test_branches_requires_auth).",
+    "GET /api/businesses/me/branches auto-creates primary branch on first call for legacy business (test_auto_migration_creates_primary).",
+    "Subsequent GETs do not duplicate primary; same id returned (test_auto_migration_idempotent).",
+    "Backfill verified via direct Motor query: 0 bookings remain without branch_id for testbiz_dashboard (test_backfill_bookings_have_branch_id).",
+    "POST /api/businesses/me/branches with valid body -> 200 + is_primary=false + is_active=true.",
+    "POST with missing 'name' or 'address' -> 422.",
+    "POST without auth -> 401/403; POST as regular user (test@example.com) -> 401/403/404 (require_business).",
+    "PATCH /api/businesses/me/branches/{id} updates fields and persists (verified via subsequent GET).",
+    "PATCH for unknown id -> 404 (cross-business protection).",
+    "POST /set-primary demotes current primary and promotes target atomically -> exactly 1 primary remains.",
+    "POST /set-primary on inactive branch -> 400.",
+    "DELETE primary branch -> 400 (cannot delete primary).",
+    "DELETE non-primary branch without future bookings -> 200 with soft-delete (is_active=false, still exists).",
+    "GET /api/businesses/{biz_id}/branches public (no auth) -> 200, only is_active=true, primary first.",
+    "GET public branches for unknown business -> 404.",
+    "Frontend: branches-tab + create btn render; cards render with primary badge correctly; delete btn hidden on primary; modal validation + create + edit + set-primary flows all work end-to-end."
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_branches_flow.py",
+    "/app/test_reports/pytest/branches_flow.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "set-primary uses two sequential update_many+update_one calls — not transactionally atomic. A simultaneous request could theoretically result in 0 primaries during the window (~ms). For production scale consider a single $set in a Mongo transaction or replace with a 'primary_branch_id' pointer on the business document. Acceptable for current MVP traffic.",
+    "_serialize_branch services_count metric counts services with branch_id=null AND business_id match. That's a deliberate inclusive fallback for legacy single-branch services, but it means all branches of a business will show the same services_count for legacy services. Once services get branch_id properly assigned this resolves itself. Worth a code comment.",
+    "delete_branch checks upcoming bookings only by date>=today and status in (pending,confirmed). Doesn't check for active bookings on today AFTER current time would be missed if status moved to 'in_progress' — verify status enum coverage.",
+    "_ensure_primary_branch backfills bookings but NOT services. Services with branch_id=null will continue to behave as 'shared' (covered by the $or in metric query) — acceptable but worth documenting as the chosen behaviour in the docstring.",
+    "Manager (is_manager) is blocked from create/update/delete/set-primary correctly via 403 in router code. Tested implicitly via require_business + is_manager check. No manager-credentialed test in scope but logic is symmetric across all 4 endpoints — good.",
+    "Pydantic BranchCreate requires name/address/city/state (no Optional default) — produces clean 422 on missing fields. Good.",
+    "ObjectId _id excluded in _serialize_branch — good (uses out.pop('_id', None))."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_branches_flow.py (new, 16 pytest cases)"
+  ],
+  "success_rate": {
+    "backend": "100% (16/16 passed in 3.82s)",
+    "frontend": "100% on exercised flows (tab render, card render, primary badge atomicity, delete hide on primary, modal open/validate/create/edit/set-primary, regression checks)"
+  },
+  "test_credentials": "Business: testbiz_dashboard@test.com / TestBiz123! used for both backend and frontend testing. Regular user: test@example.com / TestPass123! used for require_business negative test.",
+  "seed_data_creation": "Created 4 test branches for testbiz_dashboard (TEST_Sucursal_XXX, TEST_Inactive_XXX, TEST_ToDelete_XXX, TEST_UI_XXX). One was soft-deleted (is_active=false). One was promoted to primary via UI test. Cleanup safe: db.branches.delete_many({'name': {'$regex': '^TEST_'}}) — but consider restoring 'Test Dashboard Business - Principal' as primary first (or just db.branches.update_many({'business_id':<id>},{'$set':{'is_primary':false}}) then update one named '... Principal' to is_primary=true). 1 primary on testbiz_dashboard at end of test run is named 'TEST_UI_104695'.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Run: `set -a && . /app/frontend/.env && . /app/backend/.env && set +a && cd /app/backend && python -m pytest tests/test_branches_flow.py -v`. The current primary branch on testbiz_dashboard is the UI-created TEST_UI_xxx — if you re-run from a clean DB the auto-migration will recreate 'Test Dashboard Business - Principal' as primary. The set_primary code is not transactional (sequential updates) — flagged as code review comment, not a bug. Pre-existing event loop issue in test_decommission_flow.py (RuntimeError: no current event loop) is unrelated to branches and should be reported separately. ipapi.co CORS errors in console are pre-existing (iteration_101+).",
+  "rca_of_the_issue": "N/A — all spec scenarios behave correctly. No defects found in branches feature."
+}

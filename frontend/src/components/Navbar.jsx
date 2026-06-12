@@ -469,11 +469,11 @@ export function Navbar() {
                     <Globe className="mr-2 h-4 w-4" />
                     {language === 'es' ? 'English' : 'Español'}
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => navigate('/contacto')} data-testid="menu-help">
+                  <DropdownMenuItem onClick={() => navigate('/ayuda')} data-testid="menu-help">
                     <HelpCircle className="mr-2 h-4 w-4" />
                     {language === 'es' ? 'Ayuda y soporte' : 'Help & support'}
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => navigate('/terminos')} data-testid="menu-terms">
+                  <DropdownMenuItem onClick={() => navigate('/legal')} data-testid="menu-terms">
                     <FileText className="mr-2 h-4 w-4" />
                     {language === 'es' ? 'Terminos y privacidad' : 'Terms & privacy'}
                   </DropdownMenuItem>

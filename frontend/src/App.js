@@ -32,6 +32,7 @@ import BusinessSettingsPage from '@/pages/BusinessSettingsPage';
 import PaymentSuccessPage from '@/pages/PaymentSuccessPage';
 import PaymentCancelPage from '@/pages/PaymentCancelPage';
 import HelpPage from '@/pages/HelpPage';
+import LegalPage from '@/pages/LegalPage';
 import TermsPage from '@/pages/TermsPage';
 import PrivacyPage from '@/pages/PrivacyPage';
 import AboutPage from '@/pages/AboutPage';
@@ -123,12 +124,15 @@ function App() {
               {/* Help Page */}
               <Route path="/ayuda" element={<Layout><HelpPage /></Layout>} />
               <Route path="/help" element={<Layout><HelpPage /></Layout>} />
+              <Route path="/contacto" element={<Layout><HelpPage /></Layout>} />
+              <Route path="/contact" element={<Layout><HelpPage /></Layout>} />
               
               {/* Legal Pages */}
-              <Route path="/terminos" element={<Layout><TermsPage /></Layout>} />
-              <Route path="/terms" element={<Layout><TermsPage /></Layout>} />
-              <Route path="/privacidad" element={<Layout><PrivacyPage /></Layout>} />
-              <Route path="/privacy" element={<Layout><PrivacyPage /></Layout>} />
+              <Route path="/legal" element={<Layout><LegalPage /></Layout>} />
+              <Route path="/terminos" element={<Layout><LegalPage /></Layout>} />
+              <Route path="/terms" element={<Layout><LegalPage /></Layout>} />
+              <Route path="/privacidad" element={<Layout><LegalPage /></Layout>} />
+              <Route path="/privacy" element={<Layout><LegalPage /></Layout>} />
               <Route path="/nosotros" element={<Layout><AboutPage /></Layout>} />
               <Route path="/about" element={<Layout><AboutPage /></Layout>} />
               <Route path="/sobre-nosotros" element={<Layout><AboutPage /></Layout>} />

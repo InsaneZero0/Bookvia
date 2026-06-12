@@ -203,9 +203,13 @@ async def get_business_stats_detail(
     stat_type: str,
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
+    branch_id: Optional[str] = None,
     token_data: TokenData = Depends(require_business)
 ):
-    """Get detailed bookings for a specific stat card."""
+    """Get detailed bookings for a specific stat card.
+
+    Optional `branch_id` narrows results to a single branch (multi-branch support).
+    """
     user = await db.users.find_one({"id": token_data.user_id})
     if not user or not user.get("business_id"):
         raise HTTPException(status_code=404, detail="Business not found")
@@ -215,6 +219,8 @@ async def get_business_stats_detail(
     first_of_month = datetime.now(timezone.utc).replace(day=1).strftime("%Y-%m-%d")
     
     filters = {"business_id": business_id}
+    if branch_id:
+        filters["branch_id"] = branch_id
     
     if stat_type == "today":
         filters["date"] = today
@@ -666,7 +672,24 @@ async def create_booking(booking: BookingCreate, token_data: TokenData = Depends
     # Determine if this is a business-created booking (skip payment)
     is_biz_booking = booking.skip_payment and token_data.role == UserRole.BUSINESS
     now_iso = datetime.now(timezone.utc).isoformat()
-    
+
+    # Multi-branch: resolve branch_id BEFORE insert.
+    # Validate ownership if client-provided (must belong to this business & be active);
+    # otherwise fall back to the business's primary branch.
+    resolved_branch_id = None
+    if booking.branch_id:
+        owned_branch = await db.branches.find_one({
+            "id": booking.branch_id,
+            "business_id": booking.business_id,
+            "is_active": True,
+        })
+        if owned_branch:
+            resolved_branch_id = owned_branch["id"]
+    if not resolved_branch_id:
+        primary = await db.branches.find_one({"business_id": booking.business_id, "is_primary": True})
+        if primary:
+            resolved_branch_id = primary["id"]
+
     if is_biz_booking:
         # Business creates booking: confirmed directly, no deposit needed
         booking_doc = {
@@ -699,6 +722,7 @@ async def create_booking(booking: BookingCreate, token_data: TokenData = Depends
             "client_phone": booking.client_phone,
             "client_info": booking.client_info,
             "booked_by": "business",
+            "branch_id": resolved_branch_id,
         }
     else:
         # Regular user: hold status, pending payment
@@ -728,10 +752,11 @@ async def create_booking(booking: BookingCreate, token_data: TokenData = Depends
             "cancelled_at": None,
             "cancelled_by": None,
             "cancellation_reason": None,
+            "branch_id": resolved_branch_id,
         }
     
     await db.bookings.insert_one(booking_doc)
-    
+
     # Update user active appointments count
     await db.users.update_one(
         {"id": token_data.user_id},
@@ -821,6 +846,7 @@ async def get_my_bookings(
 async def get_business_bookings(
     date: Optional[str] = None,
     status: Optional[str] = None,
+    branch_id: Optional[str] = None,
     token_data: TokenData = Depends(require_business)
 ):
     user = await db.users.find_one({"id": token_data.user_id})
@@ -828,6 +854,8 @@ async def get_business_bookings(
         raise HTTPException(status_code=404, detail="Business not found")
     
     filters = {"business_id": user["business_id"]}
+    if branch_id:
+        filters["branch_id"] = branch_id
     
     if date:
         filters["date"] = date

@@ -1157,6 +1157,58 @@ async def search_businesses(
             else:
                 b["top_services"] = []
     
+    # ── Multi-branch expansion (Phase E) ───────────────────────────────────
+    # If a business has multiple active branches, return ONE entry per branch
+    # so each shows up independently in search results (e.g. "Barbería Pitufo
+    # - Suc. Valle", "Barbería Pitufo - Suc. Poniente").
+    # When city is requested, only include branches that match the city.
+    if biz_ids:
+        try:
+            all_branches = await db.branches.find(
+                {"business_id": {"$in": biz_ids}, "is_active": True}
+            ).to_list(2000)
+        except Exception:
+            all_branches = []
+        biz_branches_map = {}
+        for br in all_branches:
+            biz_branches_map.setdefault(br["business_id"], []).append(br)
+
+        expanded = []
+        for b in businesses:
+            branches_of_biz = biz_branches_map.get(b["id"], [])
+            # If business has 0 or 1 branch -> keep as a single row (legacy/single-location)
+            if len(branches_of_biz) <= 1:
+                if branches_of_biz:
+                    br = branches_of_biz[0]
+                    # Even with 1 branch, prefer branch contact info if available
+                    b["branch_id"] = br["id"]
+                    if br.get("phone"): b["phone"] = br["phone"]
+                expanded.append(b)
+                continue
+            # Sort: primary first
+            branches_of_biz.sort(key=lambda x: (not x.get("is_primary", False), x.get("name", "")))
+            for br in branches_of_biz:
+                # Skip branches that don't match the city filter (if requested)
+                if city and br.get("city") and city.lower() not in br["city"].lower():
+                    continue
+                row = {**b}
+                row["id"] = b["id"]  # keep business id (for booking link)
+                row["branch_id"] = br["id"]
+                row["branch_name"] = br.get("name", "")
+                row["is_primary_branch"] = bool(br.get("is_primary", False))
+                # Override address/location with the branch's own values
+                row["name"] = f"{b['name']} - {br['name']}" if not br.get("is_primary") else b["name"]
+                row["address"] = br.get("address") or b.get("address", "")
+                row["city"] = br.get("city") or b.get("city", "")
+                row["state"] = br.get("state") or b.get("state", "")
+                row["zip_code"] = br.get("zip_code") or b.get("zip_code", "")
+                if br.get("latitude") is not None: row["latitude"] = br["latitude"]
+                if br.get("longitude") is not None: row["longitude"] = br["longitude"]
+                if br.get("phone"): row["phone"] = br["phone"]
+                expanded.append(row)
+        businesses = expanded
+    # ───────────────────────────────────────────────────────────────────────
+    
     return [BusinessResponse(**b) for b in businesses]
 
 
@@ -1966,7 +2018,10 @@ async def update_my_legal_docs(
 
 
 @router.get("/me/dashboard")
-async def get_business_dashboard(token_data: TokenData = Depends(require_business)):
+async def get_business_dashboard(
+    branch_id: Optional[str] = None,
+    token_data: TokenData = Depends(require_business),
+):
     user = await db.users.find_one({"id": token_data.user_id})
     if not user or not user.get("business_id"):
         raise HTTPException(status_code=404, detail="Business not found")
@@ -1991,33 +2046,43 @@ async def get_business_dashboard(token_data: TokenData = Depends(require_busines
     business.setdefault("zip_code", "")
     business.setdefault("subscription_status", "none")
     
-    # Get stats
+    # Get stats — optionally filter by branch_id (multi-branch support)
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     bid = business["id"]
+    base_filter = {"business_id": bid}
+    if branch_id:
+        base_filter["branch_id"] = branch_id
     
     today_appointments = await db.bookings.count_documents({
-        "business_id": bid,
+        **base_filter,
         "date": today,
         "status": AppointmentStatus.CONFIRMED
     })
     
     pending_appointments = await db.bookings.count_documents({
-        "business_id": bid,
+        **base_filter,
         "status": AppointmentStatus.CONFIRMED
     })
     
     # This month revenue
     first_of_month = datetime.now(timezone.utc).replace(day=1).strftime("%Y-%m-%d")
     month_bookings = await db.bookings.find({
-        "business_id": bid,
+        **base_filter,
         "date": {"$gte": first_of_month},
         "status": AppointmentStatus.COMPLETED
     }).to_list(1000)
     
     month_revenue = sum(b.get("total_amount", 0) for b in month_bookings)
+
+    # Unique customers this month (used by dashboards in pay-at-location mode)
+    unique_user_ids = set()
+    for b in month_bookings:
+        uid = b.get("user_id") or b.get("client_email") or b.get("client_phone")
+        if uid: unique_user_ids.add(uid)
+    unique_customers_month = len(unique_user_ids)
     
     total_appointments = await db.bookings.count_documents({
-        "business_id": bid,
+        **base_filter,
         "status": {"$in": [AppointmentStatus.CONFIRMED, AppointmentStatus.COMPLETED, AppointmentStatus.NO_SHOW]}
     })
     
@@ -2035,6 +2100,7 @@ async def get_business_dashboard(token_data: TokenData = Depends(require_busines
             "pending_appointments": pending_appointments,
             "month_revenue": month_revenue,
             "total_appointments": total_appointments,
+            "unique_customers_month": unique_customers_month,
             "total_reviews": business.get("review_count", 0),
             "rating": business.get("rating", 0)
         },
