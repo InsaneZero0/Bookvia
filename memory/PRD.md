@@ -893,14 +893,32 @@ Cuando un negocio real tenga su tarjeta fallida:
 - ✅ Notificación in-app + audit (vía `payment_mode_changes_count` para analytics).
 - ✅ 11/11 pytest cases en `/app/backend/tests/test_payment_mode_flow.py` cubren: auth gate, schema, no-op, flip true→false con Stripe dormido preservado, 412 sin Connect, 429 cooldown, expiry, visibility gate.
 
+**Centro de Ayuda + Centro Legal (rediseño completo)**
+- ✅ `/ayuda` (HelpPage rediseñada): FAQ con búsqueda + filtros por audiencia, 3 canales por rol (WhatsApp solo negocios, email contacto@bookvia.com, emergencia), formulario que genera ticket BV-YYYY-XXXX.
+- ✅ `/legal` unificada con 5 tabs (Términos, Privacidad, Comisiones, Reembolsos, Cookies) en español formal con LFPDPPP/derechos ARCO + tribunales QRO.
+- ✅ Backend: nuevo endpoint público `POST /api/support/public-ticket` (no auth) que asigna public_ref incremental por año.
+- ✅ Redirecciones suaves: /terminos, /privacidad, /contacto → páginas correctas (no 404).
+- ✅ Fix dropdown Navbar: `/contacto` → `/ayuda`, `/terminos` → `/legal`.
+
+**Multi-sucursal (Branches) — Fase A+B+C**
+- ✅ Nuevo modelo `Branch` con id, business_id, name, address, lat/lng, schedule, photos, is_primary, is_active.
+- ✅ Nuevo router `/api/businesses/me/branches` con 7 endpoints (CRUD + set-primary + público).
+- ✅ **Auto-migración**: cualquier negocio existente (incluyendo barbería pitufo) recibe automáticamente una "Sucursal Principal" en su primer GET, con backfill de bookings históricos.
+- ✅ Reglas: no se puede eliminar la primary; no se puede eliminar branch con bookings futuras pendientes; set-primary atomic (solo 1 primary por business).
+- ✅ Frontend: nuevo componente `<BranchesTab />` en BusinessDashboard tab "Sucursales" con cards (name + badges Principal/Inactiva + métricas live: bookings_month + services_count) + modal Create/Edit + acciones (Set primary, Toggle Active, Delete con confirmación).
+- ✅ Servicios y precios pueden variar por sucursal (modelo soporta branch_id en Service).
+- ✅ Mensualidad $49.99 cubre TODAS las sucursales (sin cargo extra por sucursal adicional).
+- ✅ 16/16 pytest cases en `/app/backend/tests/test_branches_flow.py` cubren: auto-migration, idempotencia, backfill bookings, CRUD, validación 422, auth 401/403, set-primary atomicity, inactive promote 400, primary delete 400, soft-delete, endpoint público.
+
 ### Pendientes inmediatos para apertura formal al público (P0)
 1. **Cloudinary**: Usuario debe crear cuenta gratuita en cloudinary.com y configurar `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` en Railway. Sin esto, los backups diarios de MongoDB fallarán.
 2. **Onboarding Stripe Connect del negocio piloto** ("barbería pitufo") para validar el flujo de Transfer real el día 20.
 
-### Backlog priorizado post-cleanup
-- P1: Status page público en `/status` (uptime DB, API, Stripe)
-- P1: Notificaciones in-app (campana en header)
-- P2: Activar flag `ENFORCE_STRIPE_CONNECT_GATE=true`
-- P2: Twilio A2P 10DLC para SMS reales
-- P3: Refactor de `bookings.py` y `AdminDashboardPage.jsx`
-- P3: Modelo multi-sucursal
+### Backlog
+- Fase D Multi-sucursal: selector global de sucursal en dashboard que filtra agenda/clientes/reportes + UI cliente con selector visual en perfil público
+- Fase E Multi-sucursal: cobro extra por sucursal en Stripe Subscription
+- Email de bienvenida con checklist para nuevos negocios
+- PWA instalable (camino a app móvil)
+- Dashboard "De dónde vienen mis clientes" (orgánico/QR/share)
+- Twilio A2P 10DLC para SMS reales
+- Refactor de `bookings.py` y `AdminDashboardPage.jsx`
