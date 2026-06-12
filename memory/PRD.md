@@ -919,14 +919,20 @@ Cuando un negocio real tenga su tarjeta fallida:
 - ✅ Diseño coherente: ambos selectores honran el mismo patrón (esconder cuando es ruido para single-location).
 - ✅ 25/25 pytest cases total en `/app/backend/tests/test_branches_flow.py` (16 originales + 9 nuevos para Fase D).
 
+**Multi-sucursal (Branches) — Fase E (búsqueda + persistencia branch_id en bookings) [Feb 2026]**
+- ✅ Backend: `GET /api/businesses` ahora EXPANDE negocios con N>=2 sucursales activas en N filas (1 por sucursal), cada una con `branch_id`, `branch_name`, `is_primary_branch` y address/city/state/zip/phone override de la sucursal. Sucursal no-primaria muestra nombre como "Negocio - Sucursal X"; primary mantiene el nombre canónico.
+- ✅ Backend: filtro `city` se aplica POST-expansión sobre la dirección de cada sucursal (substring case-insensitive).
+- ✅ Backend: `POST /api/bookings` acepta `branch_id` opcional. **Validación de propiedad**: solo se acepta si la sucursal pertenece al `business_id` y está activa; si no, fallback al primary. `branch_id` se inlinea en `booking_doc` antes del `insert_one` (sin segundo roundtrip).
+- ✅ Frontend: `BusinessCard.jsx` Link href añade `?branch=<id>` cuando `business.branch_id` está presente; `BusinessBranchesSection.jsx` consume `selectedBranchId`, renderiza ring + badge "Seleccionada" y actualiza URL via `replaceState` + `popstate`.
+- ✅ 30/30 pytest cases en `test_branches_flow.py` (iteration_105.json) — 5 nuevos: expansión multi-branch, expansión single-branch (1 fila), filtro city post-expansión, POST booking con branch_id persiste, POST sin branch_id auto-asigna primary.
+
 ### Pendientes inmediatos para apertura formal al público (P0)
 1. **Cloudinary**: Usuario debe crear cuenta gratuita en cloudinary.com y configurar `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` en Railway. Sin esto, los backups diarios de MongoDB fallarán.
 2. **Onboarding Stripe Connect del negocio piloto** ("barbería pitufo") para validar el flujo de Transfer real el día 20.
 
 ### Backlog
-- Fase D Multi-sucursal: selector global de sucursal en dashboard que filtra agenda/clientes/reportes + UI cliente con selector visual en perfil público
 - Fase E Multi-sucursal: cobro extra por sucursal en Stripe Subscription
-- Email de bienvenida con checklist para nuevos negocios
+- Email de bienvenida con checklist para nuevos negocios (DESCARTADO: ya hay email de verificación, evitar gasto duplicado)
 - PWA instalable (camino a app móvil)
 - Dashboard "De dónde vienen mis clientes" (orgánico/QR/share)
 - Twilio A2P 10DLC para SMS reales

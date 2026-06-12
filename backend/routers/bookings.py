@@ -672,7 +672,24 @@ async def create_booking(booking: BookingCreate, token_data: TokenData = Depends
     # Determine if this is a business-created booking (skip payment)
     is_biz_booking = booking.skip_payment and token_data.role == UserRole.BUSINESS
     now_iso = datetime.now(timezone.utc).isoformat()
-    
+
+    # Multi-branch: resolve branch_id BEFORE insert.
+    # Validate ownership if client-provided (must belong to this business & be active);
+    # otherwise fall back to the business's primary branch.
+    resolved_branch_id = None
+    if booking.branch_id:
+        owned_branch = await db.branches.find_one({
+            "id": booking.branch_id,
+            "business_id": booking.business_id,
+            "is_active": True,
+        })
+        if owned_branch:
+            resolved_branch_id = owned_branch["id"]
+    if not resolved_branch_id:
+        primary = await db.branches.find_one({"business_id": booking.business_id, "is_primary": True})
+        if primary:
+            resolved_branch_id = primary["id"]
+
     if is_biz_booking:
         # Business creates booking: confirmed directly, no deposit needed
         booking_doc = {
@@ -705,6 +722,7 @@ async def create_booking(booking: BookingCreate, token_data: TokenData = Depends
             "client_phone": booking.client_phone,
             "client_info": booking.client_info,
             "booked_by": "business",
+            "branch_id": resolved_branch_id,
         }
     else:
         # Regular user: hold status, pending payment
@@ -734,19 +752,11 @@ async def create_booking(booking: BookingCreate, token_data: TokenData = Depends
             "cancelled_at": None,
             "cancelled_by": None,
             "cancellation_reason": None,
+            "branch_id": resolved_branch_id,
         }
     
     await db.bookings.insert_one(booking_doc)
 
-    # Multi-branch: persist branch_id if provided, else default to primary branch
-    branch_id = booking.branch_id
-    if not branch_id:
-        primary = await db.branches.find_one({"business_id": booking.business_id, "is_primary": True})
-        if primary:
-            branch_id = primary["id"]
-    if branch_id:
-        await db.bookings.update_one({"id": booking_doc["id"]}, {"$set": {"branch_id": branch_id}})
-    
     # Update user active appointments count
     await db.users.update_one(
         {"id": token_data.user_id},
