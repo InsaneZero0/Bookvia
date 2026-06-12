@@ -41,6 +41,7 @@ from models.enums import (
     SettlementStatus, AuditAction,
     PLATFORM_FEE_PERCENT, HOLD_EXPIRATION_MINUTES, MIN_DEPOSIT_AMOUNT,
     SUBSCRIPTION_PRICE_MXN, SUBSCRIPTION_PRICE_USD, SUBSCRIPTION_TRIAL_DAYS,
+    DEPOSIT_MODE_CHANGE_COOLDOWN_DAYS, BOOKVIA_FEE_MXN, STRIPE_FEE_PERCENT_ESTIMATED,
     VISIBLE_BUSINESS_FILTER, DEFAULT_MANAGER_PERMISSIONS, visible_business_filter_now
 )
 from models.schemas import *
@@ -1408,6 +1409,148 @@ async def update_my_business(update: BusinessUpdate, token_data: TokenData = Dep
     business.setdefault("zip_code", "")
     business.setdefault("subscription_status", "none")
     return BusinessResponse(**business)
+
+
+# ========================== DEPOSIT MODE (anticipo) — change with cooldown ==========================
+
+class PaymentModeChangeRequest(BaseModel):
+    requires_deposit: bool
+
+
+@router.get("/me/payment-mode")
+async def get_payment_mode(token_data: TokenData = Depends(require_business)):
+    """Returns the current deposit modality + cooldown status (anti-abuse)."""
+    user = await db.users.find_one({"id": token_data.user_id})
+    if not user or not user.get("business_id"):
+        raise HTTPException(status_code=404, detail="Business not found")
+    business = await db.businesses.find_one({"id": user["business_id"]})
+    if not business:
+        raise HTTPException(status_code=404, detail="Business not found")
+
+    last_change = business.get("payment_mode_changed_at")
+    can_change_at = None
+    days_until_change = 0
+    if last_change:
+        try:
+            last_dt = datetime.fromisoformat(last_change.replace("Z", "+00:00")) if isinstance(last_change, str) else last_change
+            next_allowed = last_dt + timedelta(days=DEPOSIT_MODE_CHANGE_COOLDOWN_DAYS)
+            now = datetime.now(timezone.utc)
+            if next_allowed > now:
+                can_change_at = next_allowed.isoformat()
+                days_until_change = max(0, (next_allowed - now).days + (1 if (next_allowed - now).seconds > 0 else 0))
+        except Exception:
+            pass
+
+    return {
+        "requires_deposit": bool(business.get("requires_deposit", False)),
+        "stripe_connect_charges_enabled": bool(business.get("stripe_connect_charges_enabled", False)),
+        "stripe_connect_account_id": business.get("stripe_connect_account_id"),
+        "can_change_at": can_change_at,
+        "days_until_change": days_until_change,
+        "changes_count": int(business.get("payment_mode_changes_count", 0)),
+        "cooldown_days": DEPOSIT_MODE_CHANGE_COOLDOWN_DAYS,
+    }
+
+
+@router.patch("/me/payment-mode")
+async def change_payment_mode(
+    body: PaymentModeChangeRequest,
+    token_data: TokenData = Depends(require_business),
+):
+    """Switch between deposit / pay-at-location modes with a 30-day cooldown."""
+    if token_data.is_manager:
+        raise HTTPException(status_code=403, detail="Solo el dueno puede cambiar la modalidad de cobro")
+
+    user = await db.users.find_one({"id": token_data.user_id})
+    if not user or not user.get("business_id"):
+        raise HTTPException(status_code=404, detail="Business not found")
+    business = await db.businesses.find_one({"id": user["business_id"]})
+    if not business:
+        raise HTTPException(status_code=404, detail="Business not found")
+
+    current = bool(business.get("requires_deposit", False))
+    new_mode = bool(body.requires_deposit)
+    if current == new_mode:
+        return {"message": "No change", "requires_deposit": current}
+
+    # Cooldown enforcement (anti-abuse)
+    last_change = business.get("payment_mode_changed_at")
+    if last_change:
+        try:
+            last_dt = datetime.fromisoformat(last_change.replace("Z", "+00:00")) if isinstance(last_change, str) else last_change
+            next_allowed = last_dt + timedelta(days=DEPOSIT_MODE_CHANGE_COOLDOWN_DAYS)
+            now = datetime.now(timezone.utc)
+            if now < next_allowed:
+                remaining_days = (next_allowed - now).days + 1
+                raise HTTPException(
+                    status_code=429,
+                    detail=f"Solo puedes cambiar la modalidad cada {DEPOSIT_MODE_CHANGE_COOLDOWN_DAYS} dias. Espera {remaining_days} dias mas.",
+                )
+        except HTTPException:
+            raise
+        except Exception:
+            pass
+
+    # Activating deposits requires Stripe Connect ready
+    if new_mode is True and not business.get("stripe_connect_charges_enabled"):
+        raise HTTPException(
+            status_code=412,
+            detail="Necesitas completar tu cuenta de Stripe Connect antes de activar los anticipos. Ve a Configuracion -> Stripe Connect.",
+        )
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    update = {
+        "requires_deposit": new_mode,
+        "payment_mode_changed_at": now_iso,
+        "payment_mode_changes_count": int(business.get("payment_mode_changes_count", 0)) + 1,
+        "payout_schedule": "monthly_cutoff_20" if new_mode else None,
+    }
+    if not new_mode:
+        # Disabling: zero the deposit amount, preserve Stripe Connect account (dormant)
+        update["deposit_amount"] = 0.0
+
+    await db.businesses.update_one({"id": user["business_id"]}, {"$set": update})
+
+    # In-app notification
+    title_es = "Modalidad de cobro actualizada"
+    msg_es = (
+        f"Ahora cobras anticipo en linea ({int(BOOKVIA_FEE_MXN)} MXN al cliente + {int(STRIPE_FEE_PERCENT_ESTIMATED * 100)}% comision sobre el anticipo)."
+        if new_mode
+        else "Ahora cobras directamente en el local. Tus reservas YA cobradas siguen su curso normal."
+    )
+    await create_notification(token_data.user_id, title_es, msg_es, "system", {"business_id": user["business_id"], "requires_deposit": new_mode})
+
+    # Owner email (non-blocking)
+    try:
+        from services.email import send_email
+        subject = "Modalidad de cobro en Bookvia actualizada"
+        lines = [f"<p>Hola,</p><p>Confirmamos que <strong>{business.get('name', 'tu negocio')}</strong> "]
+        lines.append("ahora cobra anticipos en linea.</p>" if new_mode else "ya no cobra anticipos: el cobro sera completo en el local.</p>")
+        lines.append("<p><strong>Que sigue:</strong></p><ul>")
+        if new_mode:
+            lines.append("<li>Las nuevas reservas pediran un anticipo al cliente.</li>")
+            lines.append("<li>Bookvia retiene el dinero y lo libera el dia 20 de cada mes a tu cuenta Stripe Connect.</li>")
+        else:
+            lines.append("<li>Las reservas que ya pagaron anticipo siguen su flujo normal (liberacion dia 20).</li>")
+            lines.append("<li>Las nuevas reservas no cobraran anticipo: el cliente paga todo en tu local.</li>")
+            if business.get("stripe_connect_account_id"):
+                lines.append("<li>Tu cuenta de Stripe Connect queda <strong>dormida</strong> (no eliminada). Si vuelves a activar anticipos, lo haces con 1 click.</li>")
+        lines.append(f"<li>Solo podras volver a cambiar la modalidad despues de {DEPOSIT_MODE_CHANGE_COOLDOWN_DAYS} dias.</li>")
+        lines.append("</ul><p>Cualquier duda, <a href=\"mailto:hola@bookvia.app\">hola@bookvia.app</a>.</p><p>Saludos,<br/>Equipo Bookvia 💚</p>")
+        html = "<div style=\"font-family: -apple-system, system-ui, sans-serif; line-height: 1.6;\">" + "".join(lines) + "</div>"
+        owner_email = business.get("email") or user.get("email")
+        if owner_email:
+            await send_email(to=owner_email, subject=subject, body="Bookvia", html=html, template="payment_mode_change", data={"requires_deposit": new_mode})
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning(f"payment-mode email failed: {e}")
+
+    return {
+        "message": "Payment mode updated",
+        "requires_deposit": new_mode,
+        "next_change_allowed_at": (datetime.now(timezone.utc) + timedelta(days=DEPOSIT_MODE_CHANGE_COOLDOWN_DAYS)).isoformat(),
+        "changes_count": update["payment_mode_changes_count"],
+    }
 
 
 

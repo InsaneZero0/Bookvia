@@ -164,6 +164,7 @@ MIN_BUSINESS_COMMISSION_MXN = 8.50  # Minimum business commission floor (enforce
 SUBSCRIPTION_PRICE_MXN = 49.99
 SUBSCRIPTION_PRICE_USD = 4.99
 SUBSCRIPTION_TRIAL_DAYS = 30
+DEPOSIT_MODE_CHANGE_COOLDOWN_DAYS = 30  # Min days a business must wait between deposit mode flips (anti-abuse)
 
 VISIBLE_BUSINESS_FILTER = {
     "status": BusinessStatus.APPROVED,
@@ -198,7 +199,17 @@ def visible_business_filter_now() -> dict:
         ],
     }
     if _stripe_connect_gate_enabled():
-        base["stripe_connect_charges_enabled"] = True
+        # Only require Stripe Connect for businesses that actually take deposits.
+        # Businesses with requires_deposit=false do NOT process money via the platform,
+        # so forcing Connect on them would unfairly hide them from search.
+        base["$and"] = [
+            {
+                "$or": [
+                    {"requires_deposit": {"$ne": True}},
+                    {"stripe_connect_charges_enabled": True},
+                ]
+            }
+        ]
     return base
 
 DEFAULT_MANAGER_PERMISSIONS = {

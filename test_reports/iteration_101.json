@@ -1,0 +1,46 @@
+{
+  "summary": "Full E2E validation of payment-mode (anticipo) flow. 11/11 backend pytest cases PASS covering auth gate, GET schema, same-value no-op, true->false flip (Stripe Connect preserved as dormant), 412 gate when activating without Connect, 429 cooldown enforcement, cooldown expiry (31-day DB manipulation), and visibility gate regression. Frontend exercised live: PaymentModeCard renders on /business/settings tab 'Cobros' with correct testids (payment-mode-card, payment-mode-current-label, payment-mode-switch-btn, payment-mode-confirm-dialog, payment-mode-cancel-btn, payment-mode-confirm-btn). Confirm dialog opens with 4 list items (3 checklist + cooldown notice), Cancel closes without API call. Notification bell + /api/status + decommission flow (9/9 pytest) regression PASS.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "verified_features": [
+    "GET /api/businesses/me/payment-mode (200) returns full schema {requires_deposit, stripe_connect_charges_enabled, stripe_connect_account_id, can_change_at, days_until_change, changes_count, cooldown_days=30}. Without auth returns 401/403.",
+    "PATCH /api/businesses/me/payment-mode {requires_deposit: false}: 200, DB persistence verified — requires_deposit=false, deposit_amount=0.0, payout_schedule=null, payment_mode_changed_at set to ISO, changes_count incremented, AND stripe_connect_account_id PRESERVED (dormant, not deleted) — CRITICAL spec satisfied.",
+    "PATCH same value (true->true) returns 200 with message='No change'; changes_count and payment_mode_changed_at unchanged.",
+    "PATCH true when stripe_connect_charges_enabled=false -> 412 with detail containing 'Stripe Connect'.",
+    "Cooldown: PATCH succeed → immediate opposite PATCH returns 429 with detail mentioning 30 dias. Resetting payment_mode_changed_at to 31 days ago in DB unblocks PATCH (200).",
+    "Visibility gate (ENFORCE_STRIPE_CONNECT_GATE=true): business with requires_deposit=true but stripe_connect_charges_enabled=false is hidden from /api/businesses listing (id absent in response).",
+    "Frontend PaymentModeCard renders on tab Cobros with testid=payment-mode-card. Current label shows 'Cobras anticipo en linea' when requires_deposit=true. Switch button text shows 'Cambiar a: Cobro en el local'. Button is enabled when days_until_change=0.",
+    "Confirm dialog (testid=payment-mode-confirm-dialog) opens with title 'Dejar de cobrar anticipos', 4 list items (3 checklist + amber 30-day cooldown notice), Cancelar + Confirmar buttons present.",
+    "Cancel button (testid=payment-mode-cancel-btn) closes dialog with no API call and no state change.",
+    "Regression: nav-notification-bell present, /api/status=200, decommission flow (9/9 pytest) pass, share-business-button visible on dashboard."
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_payment_mode_flow.py",
+    "/app/test_reports/pytest/payment_mode_flow.xml",
+    "/app/backend/tests/test_decommission_flow.py"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "businesses.py change_payment_mode: cooldown check correctly precedes Stripe Connect gate, so flipping back too soon returns 429 (not 412) even without Connect — clean UX precedence.",
+    "PaymentModeCard.jsx line 35 useEffect with `eslint-disable-next-line` is fine; fetchState is stable and only needs to run once on mount. Pre-existing lint false-positive noted by main agent (react-hooks/set-state-in-effect) does not affect runtime.",
+    "PaymentModeCard handles 412 by triggering Stripe Connect onboard redirect — good UX. Toast feedback consistent (sonner).",
+    "visible_business_filter_now $and refactor (enums.py 201-213) is correctly nested under base; combined with base $or (suspended_until) means both filters AND together. Verified live — requires_deposit=false biz visible without Connect; requires_deposit=true biz without Connect hidden.",
+    "change_payment_mode update payload uses `update[\"deposit_amount\"] = 0.0` only when disabling — but doesn't unset stripe_connect_account_id (which is the dormant preservation requirement). Verified ✓.",
+    "Minor: payment_mode_changed_at is stored as ISO string. Parsing path uses `replace('Z','+00:00')` then fromisoformat — robust. timedelta-based cooldown math is timezone-aware. OK.",
+    "PaymentModeCard does not currently show stripe_connect_account_id presence indicator (e.g. 'tu cuenta dormida quedará en standby'). Acceptable but a small status badge would improve clarity when user has dormant Connect after disabling."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_payment_mode_flow.py (new — 11 pytest cases covering all spec scenarios)"
+  ],
+  "success_rate": {"backend": "100% (11/11 payment_mode + 9/9 decommission regression)", "frontend": "100% on exercised flows (PaymentModeCard render, switch button, confirm dialog open, cancel close, regressions)"},
+  "test_credentials": "Used testbiz_dashboard@test.com/TestBiz123! (business). Direct DB writes via MONGO_URL for cooldown manipulation and state setup.",
+  "seed_data_creation": "No new business docs created. Temporarily modified testbiz_dashboard fields (requires_deposit, stripe_connect_charges_enabled, stripe_connect_account_id, payment_mode_changed_at, deposit_amount, payout_schedule, payment_mode_changes_count) during testing and RESTORED to a known clean state at the end: requires_deposit=true, stripe_connect_charges_enabled=true, stripe_connect_account_id='acct_test_dormant_xyz', changes_count=0, no cooldown timestamp.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "test_payment_mode_flow.py is fully idempotent — mutates testbiz_dashboard via DB then restores. Login endpoint returns key 'token' (NOT 'access_token') — tests fall back to both. The signup-business radio testids option-with-deposit/option-without-deposit could NOT be verified live because /signup-business page shows 'País no encontrado' error due to ipapi.co CORS block (pre-existing, unrelated to this iteration). To verify those testids manually: bypass country detection or mock ipapi. Frontend lint false-positive on PaymentModeCard.jsx line 38 (react-hooks/set-state-in-effect) is pre-existing and benign. testbiz currently restored to requires_deposit=true + Connect ready, no cooldown — clean for next test.",
+  "rca_of_the_issue": "N/A — no bugs found. All spec scenarios behave as documented in businesses.py 1412-1551 and enums.py 167+201-213."
+}
