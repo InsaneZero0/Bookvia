@@ -418,11 +418,11 @@ export function Navbar() {
                         <Building2 className="mr-2 h-4 w-4" />
                         {language === 'es' ? 'Panel de negocio' : 'Business panel'}
                       </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => navigate('/business/dashboard?tab=settings')} data-testid="menu-business-settings">
+                      <DropdownMenuItem onClick={() => navigate('/business/settings')} data-testid="menu-business-settings">
                         <Settings className="mr-2 h-4 w-4" />
                         {language === 'es' ? 'Configuracion del negocio' : 'Business settings'}
                       </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => navigate('/business/dashboard?tab=billing')} data-testid="menu-business-billing">
+                      <DropdownMenuItem onClick={() => navigate('/business/dashboard?tab=subscription')} data-testid="menu-business-billing">
                         <CreditCard className="mr-2 h-4 w-4" />
                         {language === 'es' ? 'Suscripcion y facturacion' : 'Subscription & billing'}
                       </DropdownMenuItem>
