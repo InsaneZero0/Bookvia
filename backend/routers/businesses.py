@@ -1157,6 +1157,58 @@ async def search_businesses(
             else:
                 b["top_services"] = []
     
+    # ── Multi-branch expansion (Phase E) ───────────────────────────────────
+    # If a business has multiple active branches, return ONE entry per branch
+    # so each shows up independently in search results (e.g. "Barbería Pitufo
+    # - Suc. Valle", "Barbería Pitufo - Suc. Poniente").
+    # When city is requested, only include branches that match the city.
+    if biz_ids:
+        try:
+            all_branches = await db.branches.find(
+                {"business_id": {"$in": biz_ids}, "is_active": True}
+            ).to_list(2000)
+        except Exception:
+            all_branches = []
+        biz_branches_map = {}
+        for br in all_branches:
+            biz_branches_map.setdefault(br["business_id"], []).append(br)
+
+        expanded = []
+        for b in businesses:
+            branches_of_biz = biz_branches_map.get(b["id"], [])
+            # If business has 0 or 1 branch -> keep as a single row (legacy/single-location)
+            if len(branches_of_biz) <= 1:
+                if branches_of_biz:
+                    br = branches_of_biz[0]
+                    # Even with 1 branch, prefer branch contact info if available
+                    b["branch_id"] = br["id"]
+                    if br.get("phone"): b["phone"] = br["phone"]
+                expanded.append(b)
+                continue
+            # Sort: primary first
+            branches_of_biz.sort(key=lambda x: (not x.get("is_primary", False), x.get("name", "")))
+            for br in branches_of_biz:
+                # Skip branches that don't match the city filter (if requested)
+                if city and br.get("city") and city.lower() not in br["city"].lower():
+                    continue
+                row = {**b}
+                row["id"] = b["id"]  # keep business id (for booking link)
+                row["branch_id"] = br["id"]
+                row["branch_name"] = br.get("name", "")
+                row["is_primary_branch"] = bool(br.get("is_primary", False))
+                # Override address/location with the branch's own values
+                row["name"] = f"{b['name']} - {br['name']}" if not br.get("is_primary") else b["name"]
+                row["address"] = br.get("address") or b.get("address", "")
+                row["city"] = br.get("city") or b.get("city", "")
+                row["state"] = br.get("state") or b.get("state", "")
+                row["zip_code"] = br.get("zip_code") or b.get("zip_code", "")
+                if br.get("latitude") is not None: row["latitude"] = br["latitude"]
+                if br.get("longitude") is not None: row["longitude"] = br["longitude"]
+                if br.get("phone"): row["phone"] = br["phone"]
+                expanded.append(row)
+        businesses = expanded
+    # ───────────────────────────────────────────────────────────────────────
+    
     return [BusinessResponse(**b) for b in businesses]
 
 

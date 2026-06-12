@@ -737,6 +737,15 @@ async def create_booking(booking: BookingCreate, token_data: TokenData = Depends
         }
     
     await db.bookings.insert_one(booking_doc)
+
+    # Multi-branch: persist branch_id if provided, else default to primary branch
+    branch_id = booking.branch_id
+    if not branch_id:
+        primary = await db.branches.find_one({"business_id": booking.business_id, "is_primary": True})
+        if primary:
+            branch_id = primary["id"]
+    if branch_id:
+        await db.bookings.update_one({"id": booking_doc["id"]}, {"$set": {"branch_id": branch_id}})
     
     # Update user active appointments count
     await db.users.update_one(

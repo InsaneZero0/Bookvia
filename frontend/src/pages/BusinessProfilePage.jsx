@@ -597,8 +597,10 @@ export default function BusinessProfilePage() {
   const handleConfirmBooking = async () => {
     setSubmitting(true);
     try {
+      const branchFromUrl = new URLSearchParams(window.location.search).get('branch');
       const payload = {
         business_id: business.id,
+        branch_id: branchFromUrl || undefined,
         service_id: selectedService.id,
         worker_id: selectedWorker.id,
         date: format(selectedDate, 'yyyy-MM-dd'),
@@ -918,7 +920,7 @@ export default function BusinessProfilePage() {
             )}
 
             {/* ── Branches (multi-location) ───────── */}
-            <BusinessBranchesSection businessId={business.id} language={language} />
+            <BusinessBranchesSection businessId={business.id} selectedBranchId={new URLSearchParams(window.location.search).get('branch')} language={language} />
 
             {/* ── Location ─────────────────────────── */}
             <section ref={locationRef} className="scroll-mt-32" data-testid="location-section">

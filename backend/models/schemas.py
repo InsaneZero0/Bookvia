@@ -166,6 +166,11 @@ class BusinessResponse(BaseModel):
     logo_public_id: Optional[str] = None
     distance_km: Optional[float] = None
     next_available_text: Optional[str] = None
+    # Multi-branch expansion (Phase E): when a business has multiple branches,
+    # search results expand to one entry per branch with these fields populated.
+    branch_id: Optional[str] = None
+    branch_name: Optional[str] = None
+    is_primary_branch: Optional[bool] = None
     is_open_now: Optional[bool] = None
     business_hours: Optional[Dict[str, Any]] = None
     notify_email: bool = True
@@ -434,6 +439,7 @@ class ServiceResponse(BaseModel):
 
 class BookingCreate(BaseModel):
     business_id: str
+    branch_id: Optional[str] = None  # Multi-branch: which branch this booking belongs to
     service_id: str
     worker_id: Optional[str] = None
     date: str

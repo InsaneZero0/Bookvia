@@ -10,7 +10,7 @@ import api from '@/lib/api';
  * Lists all active branches of a business so customers can pick the one closest to them.
  * Hides itself if the business only has 1 branch (legacy single-location).
  */
-export default function BusinessBranchesSection({ businessId, language = 'es' }) {
+export default function BusinessBranchesSection({ businessId, language = 'es', selectedBranchId = null }) {
   const [branches, setBranches] = useState([]);
   const [loading, setLoading] = useState(true);
   const t = (es, en) => (language === 'es' ? es : en);
@@ -45,25 +45,46 @@ export default function BusinessBranchesSection({ businessId, language = 'es' })
         <Badge variant="secondary" className="text-xs">{branches.length}</Badge>
       </div>
       <p className="text-sm text-muted-foreground mb-4">
-        {t('Tenemos varias ubicaciones. Elige la más cercana a ti.', 'We have multiple locations. Pick the closest to you.')}
+        {selectedBranchId
+          ? t('Reservarás en la sucursal resaltada. Puedes cambiar haciendo click en otra.', "You'll book at the highlighted location. Click another to change.")
+          : t('Tenemos varias ubicaciones. Elige la más cercana a ti.', 'We have multiple locations. Pick the closest to you.')}
       </p>
       <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-        {branches.map(b => (
+        {branches.map(b => {
+          const isSelected = selectedBranchId === b.id;
+          return (
           <Card
             key={b.id}
-            className="border-border/60 hover:border-[#F05D5E]/40 hover:shadow-md transition-all cursor-pointer group"
-            onClick={() => openMap(b)}
+            className={`border transition-all cursor-pointer group ${isSelected ? 'border-[#F05D5E] ring-2 ring-[#F05D5E]/30 shadow-md' : 'border-border/60 hover:border-[#F05D5E]/40 hover:shadow-md'}`}
+            onClick={() => {
+              if (!isSelected) {
+                // Switch URL param to this branch without scroll jump
+                const params = new URLSearchParams(window.location.search);
+                params.set('branch', b.id);
+                window.history.replaceState(null, '', `${window.location.pathname}?${params}`);
+                window.dispatchEvent(new Event('popstate'));
+              } else {
+                openMap(b);
+              }
+            }}
             data-testid={`branch-public-card-${b.id}`}
           >
             <CardContent className="p-4 space-y-2.5">
               <div className="flex items-start justify-between gap-2">
                 <h3 className="font-semibold text-sm flex-1 min-w-0">{b.name}</h3>
-                {b.is_primary && (
-                  <Badge className="bg-[#F05D5E] text-white text-[10px] shrink-0">
-                    <Star className="h-2.5 w-2.5 mr-1" />
-                    {t('Principal', 'Main')}
-                  </Badge>
-                )}
+                <div className="flex gap-1 shrink-0">
+                  {isSelected && (
+                    <Badge className="bg-emerald-600 text-white text-[10px]">
+                      {t('Seleccionada', 'Selected')}
+                    </Badge>
+                  )}
+                  {b.is_primary && !isSelected && (
+                    <Badge className="bg-[#F05D5E] text-white text-[10px]">
+                      <Star className="h-2.5 w-2.5 mr-1" />
+                      {t('Principal', 'Main')}
+                    </Badge>
+                  )}
+                </div>
               </div>
               <p className="text-xs text-muted-foreground flex items-start gap-1.5 leading-relaxed">
                 <MapPin className="h-3 w-3 mt-0.5 shrink-0 text-[#F05D5E]" />
@@ -79,11 +100,12 @@ export default function BusinessBranchesSection({ businessId, language = 'es' })
               )}
               <div className="pt-1 flex items-center gap-1 text-[#F05D5E] text-xs font-medium opacity-0 group-hover:opacity-100 transition-opacity">
                 <ExternalLink className="h-3 w-3" />
-                {t('Ver en Google Maps', 'Open in Google Maps')}
+                {isSelected ? t('Ver en Google Maps', 'Open in Google Maps') : t('Seleccionar esta sucursal', 'Select this location')}
               </div>
             </CardContent>
           </Card>
-        ))}
+          );
+        })}
       </div>
     </section>
   );
