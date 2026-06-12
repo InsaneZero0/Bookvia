@@ -14,6 +14,7 @@ import { useI18n } from '@/lib/i18n';
 import { businessesAPI } from '@/lib/api';
 import GoogleMapDraggable from '@/components/GoogleMapComponents';
 import CommissionTermsCard from '@/components/CommissionTermsCard';
+import PaymentModeCard from '@/components/PaymentModeCard';
 import { WhatsAppSupportButton } from '@/components/WhatsAppSupport';
 import DeleteAccountCard from '@/components/DeleteAccountCard';
 import { toast } from 'sonner';
@@ -747,11 +748,14 @@ export default function BusinessSettingsPage() {
 
         {/* ===================== COMMISSION TERMS TAB (Phase 19) ===================== */}
         {activeTab === 'commission' && privateInfo && !isManager && (
-          <CommissionTermsCard
-            privateInfo={privateInfo}
-            language={language}
-            onRefresh={loadData}
-          />
+          <div className="space-y-4">
+            <PaymentModeCard language={language} onChanged={loadData} />
+            <CommissionTermsCard
+              privateInfo={privateInfo}
+              language={language}
+              onRefresh={loadData}
+            />
+          </div>
         )}
 
         {/* ===================== SUBSCRIPTION TAB ===================== */}

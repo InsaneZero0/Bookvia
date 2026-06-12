@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -39,6 +39,7 @@ export default function BusinessDashboardPage() {
   const { t, language } = useI18n();
   const { business, user, isAuthenticated, isBusiness, isManager, hasPermission, loading: authLoading } = useAuth();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [loading, setLoading] = useState(true);
   const [dashboardData, setDashboardData] = useState(null);
@@ -50,7 +51,19 @@ export default function BusinessDashboardPage() {
   const [photos, setPhotos] = useState([]);
   const [closures, setClosures] = useState([]);
   const [uploading, setUploading] = useState(false);
-  const [activeTab, setActiveTab] = useState('overview');
+  const [activeTab, setActiveTabRaw] = useState(() => searchParams.get('tab') || 'overview');
+  // Keep URL ?tab=X in sync with the active tab so deep links from the navbar dropdown work.
+  const VALID_TABS = ['overview', 'reports', 'clients', 'services', 'team', 'closures', 'photos', 'subscription', 'activity'];
+  const setActiveTab = (next) => {
+    setActiveTabRaw(next);
+    const params = new URLSearchParams(searchParams);
+    if (next && next !== 'overview') {
+      params.set('tab', next);
+    } else {
+      params.delete('tab');
+    }
+    setSearchParams(params, { replace: true });
+  };
   const [subscriptionData, setSubscriptionData] = useState(null);
   const [cancelingSubscription, setCancelingSubscription] = useState(false);
   const [statsModal, setStatsModal] = useState({ open: false, type: null, title: '', bookings: [], loading: false, totalRevenue: null });
@@ -139,6 +152,15 @@ export default function BusinessDashboardPage() {
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, [notifOpen]);
+
+  // React to URL ?tab=X changes (e.g., when user clicks navbar dropdown while already on this page)
+  useEffect(() => {
+    const tab = searchParams.get('tab');
+    if (tab && VALID_TABS.includes(tab) && tab !== activeTab) {
+      setActiveTabRaw(tab);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   useEffect(() => {
     if (isManager && activeTab === 'overview' && !hasPermission('view_agenda')) {
@@ -690,19 +712,21 @@ export default function BusinessDashboardPage() {
           ].filter(stat => hasPermission(stat.perm)).map((stat, i) => (
             <Card 
               key={i} 
-              className="border-border/60 cursor-pointer hover:border-[#F05D5E]/30 hover:shadow-sm transition-all"
+              className="border-border/60 cursor-pointer hover:border-[#F05D5E]/30 hover:shadow-sm transition-all group"
               onClick={() => openStatsModal(stat.type, stat.title)}
               data-testid={`stat-card-${stat.type}`}
+              title={language === 'es' ? 'Click para ver el detalle' : 'Click to see breakdown'}
             >
               <CardContent className="p-4">
                 <div className="flex items-center gap-3">
                   <div className={`p-2.5 rounded-xl ${stat.color}`}>
                     <stat.icon className="h-5 w-5" />
                   </div>
-                  <div>
+                  <div className="flex-1 min-w-0">
                     <p className="text-xl font-bold font-heading">{stat.value}</p>
                     <p className="text-xs text-muted-foreground">{stat.label}</p>
                   </div>
+                  <ChevronRight className="h-4 w-4 text-muted-foreground/40 group-hover:text-[#F05D5E] group-hover:translate-x-0.5 transition-all" />
                 </div>
               </CardContent>
             </Card>
