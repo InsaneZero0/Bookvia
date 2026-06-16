@@ -383,9 +383,6 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* ═══ Platform Stats Bar ══════════════════════ */}
-      <PlatformStatsBar stats={platformStats} />
-
       {/* ═══ How It Works ═════════════════════════════ */}
       <section className="section-padding bg-background" data-testid="how-it-works-section">
         <div className="container-app">
