@@ -43,13 +43,14 @@ export default function HomePage() {
   const serviceRef = useRef(null);
   const cityRef = useRef(null);
 
-  // Hero rotating images — professional service photos
+  // Hero rotating images — diverse professional services across categories
   const heroImages = [
     { src: 'https://images.unsplash.com/photo-1522337660859-02fbefca4702?auto=format&fit=crop&q=80&w=1200', alt: 'Servicio profesional de manicura' },
-    { src: 'https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&q=80&w=1200', alt: 'Barbero cortando cabello profesionalmente' },
-    { src: 'https://images.unsplash.com/photo-1580618672591-eb180b1a973f?auto=format&fit=crop&q=80&w=1200', alt: 'Estilista cortando cabello en salón' },
-    { src: 'https://images.unsplash.com/photo-1600334129128-685c5582fd35?auto=format&fit=crop&q=80&w=1200', alt: 'Masaje relajante en spa profesional' },
-    { src: 'https://images.unsplash.com/photo-1487412947147-5cebf100ffc2?auto=format&fit=crop&q=80&w=1200', alt: 'Maquillista aplicando labial con brocha profesional' },
+    { src: 'https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&q=80&w=1200', alt: 'Barbero recortando barba con tijeras' },
+    { src: 'https://images.unsplash.com/photo-1580618672591-eb180b1a973f?auto=format&fit=crop&q=80&w=1200', alt: 'Estilista profesional secando y peinando cabello' },
+    { src: 'https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?auto=format&fit=crop&q=80&w=1200', alt: 'Profesional de la salud atendiendo consulta médica' },
+    { src: 'https://images.unsplash.com/photo-1625047509248-ec889cbff17f?auto=format&fit=crop&q=80&w=1200', alt: 'Mecánico automotriz trabajando en motor de auto' },
+    { src: 'https://images.unsplash.com/photo-1556761175-b413da4baf72?auto=format&fit=crop&q=80&w=1200', alt: 'Asesoría profesional en reunión de negocios' },
   ];
   const [heroImageIdx, setHeroImageIdx] = useState(0);
 
