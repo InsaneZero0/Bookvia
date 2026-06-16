@@ -261,6 +261,63 @@ async def send_welcome_business(email: str, business_name: str) -> str:
         html=email_html(subject, content), template="welcome_business", data={"business_name": business_name}
     )
 
+DOC_LABELS_ES = {
+    "ine": "INE / Identificación oficial",
+    "rfc": "RFC",
+    "constancia": "Constancia de situación fiscal",
+    "comprobante_bancario": "Comprobante bancario / CLABE",
+    "cover_photo": "Foto de portada del negocio",
+    "logo": "Logo",
+}
+
+
+async def send_business_revision_request(
+    email: str,
+    business_name: str,
+    reason: str,
+    fields_to_fix: list[str],
+    dashboard_url: str = "https://www.bookvia.app/dashboard",
+) -> str:
+    """Email business owner when admin requests document corrections."""
+    items = "".join(
+        f'<li style="margin-bottom:6px;">{DOC_LABELS_ES.get(f, f)}</li>'
+        for f in (fields_to_fix or [])
+    )
+    items_block = (
+        f'<p style="color:#334155;font-size:14px;margin-top:18px;margin-bottom:8px;"><strong>Documentos a corregir:</strong></p>'
+        f'<ul style="color:#334155;font-size:14px;line-height:1.6;padding-left:20px;">{items}</ul>'
+        if items
+        else ""
+    )
+    reason_block = (
+        f'<div style="background:#fef3c7;border-left:4px solid #f59e0b;padding:14px 18px;margin:18px 0;border-radius:6px;">'
+        f'<p style="margin:0;color:#78350f;font-size:14px;line-height:1.5;"><strong>Comentario del equipo Bookvia:</strong><br>{reason}</p>'
+        f"</div>"
+        if reason
+        else ""
+    )
+    subject = f"Bookvia: tu perfil necesita correcciones"
+    content = (
+        f'<p style="color:#334155;font-size:15px;line-height:1.6;">Hola <strong>{business_name}</strong>,</p>'
+        f'<p style="color:#334155;font-size:15px;line-height:1.6;">Revisamos los documentos que subiste y necesitamos que corrijas algunas cosas antes de aprobar tu perfil para que aparezca en Bookvia.</p>'
+        f"{reason_block}"
+        f"{items_block}"
+        f'<p style="color:#334155;font-size:14px;line-height:1.6;margin-top:18px;">Tu cuenta sigue activa y puedes seguir gestionando tus servicios, pero los clientes <strong>no podrán verte ni reservar contigo</strong> hasta que actualices los documentos y los volvamos a revisar.</p>'
+        f'<table cellpadding="0" cellspacing="0" style="margin:24px 0;"><tr><td style="background:#F05D5E;border-radius:8px;padding:12px 28px;">'
+        f'<a href="{dashboard_url}" style="color:#ffffff;text-decoration:none;font-weight:bold;font-size:15px;">Actualizar mis documentos</a>'
+        f"</td></tr></table>"
+        f'<p style="color:#64748b;font-size:13px;">Si tienes dudas, responde a este correo o escríbenos a <a href="mailto:contacto@bookvia.com" style="color:#F05D5E;">contacto@bookvia.com</a>.</p>'
+    )
+    return await send_email(
+        to=email,
+        subject=subject,
+        body=f"Tu perfil de Bookvia necesita correcciones. {reason}",
+        html=email_html(subject, content),
+        template="business_revision_request",
+        data={"business_name": business_name, "reason": reason, "fields_to_fix": fields_to_fix},
+    )
+
+
 async def send_booking_confirmation(
     user_email: str,
     user_name: str,

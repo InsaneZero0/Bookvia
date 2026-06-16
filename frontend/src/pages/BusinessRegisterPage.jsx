@@ -23,7 +23,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { 
   ArrowLeft, ArrowRight, Mail, Lock, Phone, Building2, MapPin, 
   FileText, CreditCard, Upload, CheckCircle2, AlertTriangle, Eye, EyeOff,
-  HelpCircle, CalendarX, Banknote, Globe, Search, Camera, Calendar, ShieldCheck
+  HelpCircle, CalendarX, Banknote, Globe, Search, Camera, Calendar, ShieldCheck, Info
 } from 'lucide-react';
 import CommissionBreakdownModal, { COMMISSION_TERMS_VERSION } from '@/components/CommissionBreakdownModal';
 
@@ -89,6 +89,9 @@ export default function BusinessRegisterPage() {
     // Location
     address: '',
     address_number: '',
+    interior_number: '',
+    building_name: '',
+    colony: '',
     city: '',
     state: '',
     country: getDetectedCountry(),
@@ -139,7 +142,8 @@ export default function BusinessRegisterPage() {
   const handlePlaceSelect = (place) => {
     setFormData(prev => ({
       ...prev,
-      address: [place.street, place.street_number].filter(Boolean).join(' ') || place.formatted_address?.split(',')[0] || '',
+      address: place.street || place.formatted_address?.split(',')[0]?.replace(/\d+$/, '').trim() || '',
+      address_number: place.street_number || prev.address_number,
       city: place.city || prev.city,
       state: place.state || prev.state,
       zip_code: place.zip || prev.zip_code,
@@ -291,6 +295,12 @@ export default function BusinessRegisterPage() {
             : 'Complete all location fields');
           return false;
         }
+        if (!formData.colony || !formData.colony.trim()) {
+          toast.error(language === 'es'
+            ? 'La colonia es obligatoria'
+            : 'Neighborhood is required');
+          return false;
+        }
         return true;
         
       case 2: // Documents
@@ -324,10 +334,10 @@ export default function BusinessRegisterPage() {
         return true;
         
       case 3: // Account
-        if (!formData.password || !formData.clabe) {
+        if (!formData.password) {
           toast.error(language === 'es' 
-            ? 'Contraseña y CLABE son obligatorios' 
-            : 'Password and CLABE are required');
+            ? 'La contraseña es obligatoria' 
+            : 'Password is required');
           return false;
         }
         if (formData.password.length < 8) {
@@ -342,12 +352,20 @@ export default function BusinessRegisterPage() {
             : 'Passwords do not match');
           return false;
         }
-        // CLABE validation (18 digits)
-        if (!/^\d{18}$/.test(formData.clabe)) {
-          toast.error(language === 'es' 
-            ? 'La CLABE debe tener 18 dígitos' 
-            : 'CLABE must have 18 digits');
-          return false;
+        // CLABE only required when collecting deposits
+        if (formData.requires_deposit) {
+          if (!formData.clabe) {
+            toast.error(language === 'es'
+              ? 'La CLABE es obligatoria si vas a cobrar anticipos'
+              : 'CLABE is required when collecting deposits');
+            return false;
+          }
+          if (!/^\d{18}$/.test(formData.clabe)) {
+            toast.error(language === 'es' 
+              ? 'La CLABE debe tener 18 dígitos' 
+              : 'CLABE must have 18 digits');
+            return false;
+          }
         }
         // Deposit validation: if enabled, must be >= 100 MXN
         if (formData.requires_deposit && Number(formData.deposit_amount) < 100) {
@@ -416,6 +434,14 @@ export default function BusinessRegisterPage() {
       const fullAddress = formData.address_number 
         ? `${formData.address} ${formData.address_number}` 
         : formData.address;
+      // Build full street_full label with interior + building if provided
+      const addressExtras = [
+        formData.interior_number ? `Int. ${formData.interior_number}` : null,
+        formData.building_name || null,
+      ].filter(Boolean);
+      const fullAddressLabel = addressExtras.length
+        ? `${fullAddress}, ${addressExtras.join(', ')}`
+        : fullAddress;
 
       // Merge any inline overrides (e.g. commission terms just-accepted in the
       // forced-modal flow whose state may not have flushed yet)
@@ -429,11 +455,14 @@ export default function BusinessRegisterPage() {
         phone: formData.phone, description: formData.description,
         category_id: formData.category_id,
         subcategory_ids: formData.subcategory_ids || [],
-        address: fullAddress,
+        address: fullAddressLabel,
+        colony: formData.colony || '',
+        interior_number: formData.interior_number || '',
+        building_name: formData.building_name || '',
         city: formData.city, state: formData.state, country: formData.country,
         zip_code: formData.zip_code, rfc: formData.rfc.toUpperCase(),
         legal_name: formData.legal_name, ine_url: ineUrl,
-        proof_of_address_url: proofUrl, clabe: formData.clabe,
+        proof_of_address_url: proofUrl, clabe: formData.requires_deposit ? formData.clabe : '',
         requires_deposit: formData.requires_deposit,
         deposit_amount: formData.requires_deposit ? Number(formData.deposit_amount) : 100,
         cancellation_days: Number(formData.cancellation_days) || 1,
@@ -881,6 +910,14 @@ export default function BusinessRegisterPage() {
                         className="flex h-12 w-full rounded-md border border-input bg-background pl-10 pr-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                       />
                     </div>
+                    <div className="flex items-start gap-2 text-xs text-muted-foreground bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-md p-2.5">
+                      <Info className="h-4 w-4 text-blue-600 shrink-0 mt-0.5" />
+                      <p className="leading-snug">
+                        {language === 'es'
+                          ? 'Asegúrate de que tu ubicación coincida con el pin en el mapa. Si no aparece, prueba con el nombre completo de la calle o avenida (ej: escribe "Abraham Lincoln" en lugar de "Lincoln").'
+                          : 'Make sure your location matches the pin on the map. If it doesn\'t appear, try the full street/avenue name (e.g. type "Abraham Lincoln" instead of "Lincoln").'}
+                      </p>
+                    </div>
                   </div>
 
                   {/* Interactive Google Map */}
@@ -916,7 +953,9 @@ export default function BusinessRegisterPage() {
                       </div>
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="address_number">{formData.country === 'US' ? 'Suite / Apt' : (language === 'es' ? 'Num. ext.' : 'Number')}</Label>
+                      <Label htmlFor="address_number" className="text-xs sm:text-sm">
+                        {formData.country === 'US' ? 'Suite / Apt' : (language === 'es' ? 'Num. ext.' : 'Number')}
+                      </Label>
                       <Input
                         id="address_number"
                         name="address_number"
@@ -925,6 +964,56 @@ export default function BusinessRegisterPage() {
                         onChange={handleChange}
                         className="h-12"
                         data-testid="address-number-input"
+                      />
+                      <p className="text-[10px] text-muted-foreground leading-tight">
+                        {language === 'es' ? 'Se autocompleta del mapa' : 'Auto-filled from map'}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Colonia (required) */}
+                  <div className="space-y-2">
+                    <Label htmlFor="colony">{language === 'es' ? 'Colonia' : 'Neighborhood'} *</Label>
+                    <Input
+                      id="colony"
+                      name="colony"
+                      placeholder={language === 'es' ? 'Ej: Centro, Del Valle, Madero' : 'E.g. Downtown, Midtown'}
+                      value={formData.colony || ''}
+                      onChange={handleChange}
+                      className="h-12"
+                      required
+                      data-testid="colony-input"
+                    />
+                  </div>
+
+                  {/* Interior + Building (both optional) */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-2">
+                      <Label htmlFor="interior_number" className="text-xs sm:text-sm">
+                        {language === 'es' ? 'Núm. interior (opcional)' : 'Interior # (optional)'}
+                      </Label>
+                      <Input
+                        id="interior_number"
+                        name="interior_number"
+                        placeholder={language === 'es' ? 'Ej: 5B, Local 12' : 'E.g. 5B, Suite 12'}
+                        value={formData.interior_number || ''}
+                        onChange={handleChange}
+                        className="h-12"
+                        data-testid="interior-number-input"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="building_name" className="text-xs sm:text-sm">
+                        {language === 'es' ? 'Plaza / Torre / Edificio (opcional)' : 'Plaza / Tower / Building (optional)'}
+                      </Label>
+                      <Input
+                        id="building_name"
+                        name="building_name"
+                        placeholder={language === 'es' ? 'Ej: Plaza Galerías, Torre A' : 'E.g. Galerías Plaza, Tower A'}
+                        value={formData.building_name || ''}
+                        onChange={handleChange}
+                        className="h-12"
+                        data-testid="building-name-input"
                       />
                     </div>
                   </div>
@@ -1276,33 +1365,6 @@ export default function BusinessRegisterPage() {
                     </div>
                   </div>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="clabe">
-                      {formData.country === 'US' ? 'Routing number + Account number' : (language === 'es' ? 'CLABE interbancaria' : 'CLABE number')} *
-                    </Label>
-                    <div className="relative">
-                      <CreditCard className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-                      <Input
-                        id="clabe"
-                        name="clabe"
-                        placeholder={formData.country === 'US' ? '021000021 / 123456789' : '012345678901234567'}
-                        value={formData.clabe}
-                        onChange={(e) => setFormData(prev => ({ ...prev, clabe: formData.country === 'US' ? e.target.value : e.target.value.replace(/\D/g, '') }))}
-                        className="pl-10 h-12"
-                        maxLength={formData.country === 'US' ? 25 : 18}
-                        required
-                        data-testid="clabe-input"
-                      />
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      {formData.country === 'US'
-                        ? 'Routing number (9 digits) / Account number - where you\'ll receive payments'
-                        : (language === 'es' 
-                          ? 'Aqui recibiras tus pagos (18 digitos)'
-                          : 'This is where you\'ll receive payments (18 digits)')}
-                    </p>
-                  </div>
-
                   <label className="flex items-start gap-2 pt-2 cursor-pointer select-none" data-testid="business-accept-terms-label">
                     <input
                       type="checkbox"
@@ -1401,6 +1463,34 @@ export default function BusinessRegisterPage() {
                               {language === 'es' 
                                 ? `Minimo $100 MXN. Recibiras ${formatCurrencyMXN((Number(formData.deposit_amount) || 0) * 0.915)} por cada anticipo (8.5% cuota procesamiento).`
                                 : `Minimum $100 MXN. You'll receive ${formatCurrencyMXN((Number(formData.deposit_amount) || 0) * 0.915)} per deposit (8.5% processing fee).`}
+                            </p>
+                          </div>
+
+                          {/* CLABE — only required when collecting deposits */}
+                          <div className="space-y-1.5">
+                            <div className="flex items-center gap-1.5">
+                              <Label htmlFor="clabe" className="text-sm">
+                                <CreditCard className="inline h-3.5 w-3.5 mr-1 text-muted-foreground" />
+                                {formData.country === 'US' ? 'Routing number + Account number' : (language === 'es' ? 'CLABE interbancaria' : 'CLABE number')}
+                              </Label>
+                            </div>
+                            <Input
+                              id="clabe"
+                              name="clabe"
+                              placeholder={formData.country === 'US' ? '021000021 / 123456789' : '012345678901234567'}
+                              value={formData.clabe}
+                              onChange={(e) => setFormData(prev => ({ ...prev, clabe: formData.country === 'US' ? e.target.value : e.target.value.replace(/\D/g, '') }))}
+                              className="h-10"
+                              maxLength={formData.country === 'US' ? 25 : 18}
+                              required={formData.requires_deposit}
+                              data-testid="clabe-input"
+                            />
+                            <p className="text-xs text-muted-foreground">
+                              {formData.country === 'US'
+                                ? 'Routing number (9 digits) / Account number — where you\'ll receive payments'
+                                : (language === 'es'
+                                  ? 'Aquí recibirás tus pagos (18 dígitos)'
+                                  : 'This is where you\'ll receive payments (18 digits)')}
                             </p>
                           </div>
 

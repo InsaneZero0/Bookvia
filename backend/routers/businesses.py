@@ -1702,6 +1702,80 @@ async def get_my_private_info(token_data: TokenData = Depends(require_business))
     }
 
 
+@router.post("/me/resubmit-documents")
+async def resubmit_business_documents(
+    payload: ResubmitDocumentsPayload,
+    request: Request,
+    token_data: TokenData = Depends(require_business),
+):
+    """Business owner resubmits documents after admin requested revision.
+
+    Behavior:
+    - Updates only the document URLs provided (partial update)
+    - Marks revision_request.status = 'resubmitted'
+    - Keeps business.status = 'needs_revision' until admin re-approves
+    - Notifies all admins (in-app)
+    """
+    business = await db.businesses.find_one({"user_id": token_data.user_id})
+    if not business:
+        raise HTTPException(status_code=404, detail="Business not found")
+
+    updates: Dict[str, Any] = {}
+    provided = payload.model_dump(exclude_unset=True, exclude_none=True)
+
+    # Map payload fields → business document fields
+    field_map = {
+        "ine_url": "ine_url",
+        "rfc_url": "rfc_url",
+        "constancia_url": "constancia_url",
+        "proof_of_address_url": "proof_of_address_url",
+        "cover_photo_url": "cover_photo_url",
+        "logo_url": "logo_url",
+        "clabe": "clabe",
+    }
+    for k, biz_field in field_map.items():
+        if k in provided:
+            updates[biz_field] = provided[k]
+
+    if not updates:
+        raise HTTPException(status_code=400, detail="No documents provided")
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    updates["revision_request.status"] = "resubmitted"
+    updates["revision_request.resubmitted_at"] = now_iso
+    if provided.get("note"):
+        updates["revision_request.business_note"] = provided["note"][:500]
+
+    await db.businesses.update_one({"id": business["id"]}, {"$set": updates})
+
+    # Notify all admins
+    admins = await db.users.find({"role": "admin"}, {"id": 1, "_id": 0}).to_list(50)
+    for adm in admins:
+        await create_notification(
+            adm["id"],
+            "Documentos resubidos para revisión",
+            f"{business.get('name', 'Un negocio')} actualizó sus documentos y espera tu aprobación.",
+            "business_resubmitted",
+            {"business_id": business["id"]},
+        )
+
+    await create_audit_log(
+        admin_id=token_data.user_id,
+        admin_email=token_data.email,
+        action=AuditAction.DOCS_REJECT,  # reuse closest existing action
+        target_type="business",
+        target_id=business["id"],
+        details={"kind": "documents_resubmitted", "fields": list(updates.keys())},
+        request=request,
+    )
+
+    return {
+        "message": "Documents resubmitted, pending admin review",
+        "status": business.get("status"),
+        "revision_status": "resubmitted",
+    }
+
+
 @router.post("/me/commission-terms/accept")
 async def accept_commission_terms(
     payload: Dict[str, Any],

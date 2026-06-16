@@ -27,6 +27,7 @@ import { ProfileCompletionBanner } from '@/components/ProfileCompletionBanner';
 import StripeConnectRequiredBanner from '@/components/StripeConnectRequiredBanner';
 import BranchesTab from '@/components/BranchesTab';
 import BranchSelector from '@/components/BranchSelector';
+import { RevisionRequestBanner } from '@/components/RevisionRequestBanner';
 import SubscriptionPastDueBanner from '@/components/SubscriptionPastDueBanner';
 import BusinessClientsTab from '@/components/BusinessClientsTab';
 import {
@@ -709,6 +710,9 @@ export default function BusinessDashboardPage() {
               </div>
             </CardContent>
           </Card>
+        )}
+        {biz?.status === 'needs_revision' && (
+          <RevisionRequestBanner biz={biz} language={language} onResubmitted={loadDashboard} />
         )}
 
         {/* ── Stats Cards ────────────────────────────── */}

@@ -143,6 +143,7 @@ export const businessesAPI = {
   getDashboard: (params) => api.get('/businesses/me/dashboard', { params }),
   getPrivateInfo: () => api.get('/businesses/me/private-info'),
   updateLegalDocs: (data) => api.put('/businesses/me/legal-docs', data),
+  resubmitDocuments: (data) => api.post('/businesses/me/resubmit-documents', data),
   getBusinessHours: () => api.get('/businesses/me/hours'),
   updateBusinessHours: (hours) => api.put('/businesses/me/hours', hours),
   // Workers (for specific business - public)
@@ -347,6 +348,7 @@ export const adminAPI = {
   suspendBusiness: (id, reason) => api.put(`/admin/businesses/${id}/suspend`, null, { params: { reason } }),
   verifyBusinessDocuments: (id) => api.post(`/admin/businesses/${id}/verify-documents`),
   rejectBusinessDocuments: (id, reason) => api.post(`/admin/businesses/${id}/reject-documents`, { reason }),
+  requestBusinessRevision: (id, body) => api.post(`/admin/businesses/${id}/request-revision`, body),
   getPendingDocsBusinesses: (limit = 50) => api.get('/admin/businesses/pending-docs', { params: { limit } }),
   suspendUser: (id, days, reason) => api.put(`/admin/users/${id}/suspend`, null, { params: { days, reason } }),
   deleteReview: (id, reason) => api.delete(`/admin/reviews/${id}`, { params: { reason } }),

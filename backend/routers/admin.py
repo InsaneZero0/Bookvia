@@ -977,6 +977,20 @@ async def approve_business(business_id: str, request: Request, token_data: Token
         {"id": business_id},
         {"$set": {"status": BusinessStatus.APPROVED}}
     )
+
+    # If the business was in revision, mark the revision request as resolved
+    if business.get("status") == BusinessStatus.NEEDS_REVISION.value and business.get("revision_request"):
+        now_iso = datetime.now(timezone.utc).isoformat()
+        await db.businesses.update_one(
+            {"id": business_id},
+            {"$set": {
+                "revision_request.status": "resolved",
+                "revision_request.resolved_at": now_iso,
+                "documents_verified": True,
+                "documents_verified_at": now_iso,
+                "documents_verified_by": token_data.user_id,
+            }},
+        )
     
     # Create audit log
     await create_audit_log(
@@ -1429,6 +1443,93 @@ async def reject_business_documents(
         )
 
     return {"message": "Documents rejected"}
+
+
+@router.post("/businesses/{business_id}/request-revision")
+async def request_business_revision(
+    business_id: str,
+    payload: RevisionRequestPayload,
+    request: Request,
+    token_data: TokenData = Depends(require_admin),
+):
+    """Admin asks the business owner to fix specific documents.
+
+    Behavior:
+    - Sets business.status = 'needs_revision' (invisible to clients, dashboard still works)
+    - Saves revision_request with reason + flagged fields
+    - Sends email to owner + creates in-app notification
+    - Audit logged
+    """
+    business = await db.businesses.find_one({"id": business_id})
+    if not business:
+        raise HTTPException(status_code=404, detail="Business not found")
+
+    reason = (payload.reason or "").strip()
+    if len(reason) < 5:
+        raise HTTPException(status_code=400, detail="Reason too short (min 5 chars)")
+
+    allowed_fields = {"ine", "rfc", "constancia", "comprobante_bancario", "cover_photo", "logo"}
+    fields_to_fix = [f for f in (payload.fields_to_fix or []) if f in allowed_fields]
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    revision_request = {
+        "reason": reason,
+        "fields_to_fix": fields_to_fix,
+        "requested_at": now_iso,
+        "requested_by": token_data.user_id,
+        "status": "open",  # open | resubmitted | resolved
+        "resubmitted_at": None,
+        "resolved_at": None,
+    }
+
+    await db.businesses.update_one(
+        {"id": business_id},
+        {"$set": {
+            "status": BusinessStatus.NEEDS_REVISION.value,
+            "documents_verified": False,
+            "revision_request": revision_request,
+        }},
+    )
+
+    # Email owner
+    if business.get("email"):
+        try:
+            from services.email import send_business_revision_request
+            await send_business_revision_request(
+                email=business["email"],
+                business_name=business.get("name", "tu negocio"),
+                reason=reason,
+                fields_to_fix=fields_to_fix,
+            )
+        except Exception as e:
+            logger.warning(f"Failed to send revision email: {e}")
+
+    # In-app notification
+    if business.get("user_id"):
+        await create_notification(
+            business["user_id"],
+            "Tu perfil necesita correcciones",
+            f"El equipo Bookvia revisó tus documentos: {reason}",
+            "business_revision_request",
+            {"business_id": business_id, "reason": reason, "fields_to_fix": fields_to_fix},
+        )
+
+    await create_audit_log(
+        admin_id=token_data.user_id,
+        admin_email=token_data.email,
+        action=AuditAction.DOCS_REJECT,
+        target_type="business",
+        target_id=business_id,
+        details={
+            "business_name": business.get("name"),
+            "reason": reason,
+            "fields_to_fix": fields_to_fix,
+            "kind": "revision_request",
+        },
+        request=request,
+    )
+
+    return {"message": "Revision requested", "status": BusinessStatus.NEEDS_REVISION.value}
 
 
 @router.get("/businesses/pending-docs")
@@ -3673,9 +3774,8 @@ async def archive_test_businesses(
     )
 
     await create_audit_log(
-        db=db,
-        actor_id=token_data.user_id,
-        actor_role="admin",
+        admin_id=token_data.user_id,
+        admin_email=token_data.email,
         action="cleanup.archive_test_businesses",
         target_type="businesses",
         target_id="bulk",
@@ -3741,9 +3841,8 @@ async def restore_archived_businesses(
     )
 
     await create_audit_log(
-        db=db,
-        actor_id=token_data.user_id,
-        actor_role="admin",
+        admin_id=token_data.user_id,
+        admin_email=token_data.email,
         action="cleanup.restore_archived",
         target_type="businesses",
         target_id="bulk",

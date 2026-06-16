@@ -146,6 +146,19 @@ function TermsContent({ language }) {
         <p>These terms are governed by Mexican law. Any dispute will be resolved in the courts of Querétaro, México.</p>
         <h3>8. Changes</h3>
         <p>We may update these terms. We will notify you of material changes via email or in-app notification at least 7 days in advance.</p>
+
+        <h3>9. Owner and contact details</h3>
+        <p>
+          <strong>Bookvia</strong> is an internationally registered trademark, owned by
+          <strong> Digital Inovaciones S. de R.L. de C.V.</strong>
+        </p>
+        <ul>
+          <li><strong>Legal entity:</strong> Digital Inovaciones S. de R.L. de C.V.</li>
+          <li><strong>Contact email:</strong> <a href="mailto:direccion@digitalinovaciones.com">direccion@digitalinovaciones.com</a></li>
+        </ul>
+        <p className="text-xs text-muted-foreground">
+          All rights to the brand, logos, design and content of the Platform are reserved to its owner.
+        </p>
       </>
     );
   }
@@ -183,6 +196,19 @@ function TermsContent({ language }) {
 
       <h3>9. Cambios a los términos</h3>
       <p>Podemos actualizar estos términos en el futuro. Te notificaremos cualquier cambio material por correo electrónico o notificación dentro de la app con al menos 7 días de anticipación. El uso continuado de la Plataforma después de la fecha efectiva constituye tu aceptación.</p>
+
+      <h3>10. Titular y datos de contacto</h3>
+      <p>
+        <strong>Bookvia</strong> es una marca registrada internacional, propiedad de
+        <strong> Digital Inovaciones S. de R.L. de C.V.</strong>
+      </p>
+      <ul>
+        <li><strong>Razón social:</strong> Digital Inovaciones S. de R.L. de C.V.</li>
+        <li><strong>Correo de contacto:</strong> <a href="mailto:direccion@digitalinovaciones.com">direccion@digitalinovaciones.com</a></li>
+      </ul>
+      <p className="text-xs text-muted-foreground">
+        Todos los derechos sobre la marca, logotipos, diseño y contenido de la Plataforma están reservados a su titular.
+      </p>
     </>
   );
 }
