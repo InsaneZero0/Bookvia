@@ -43,6 +43,24 @@ export default function HomePage() {
   const serviceRef = useRef(null);
   const cityRef = useRef(null);
 
+  // Hero rotating images — diverse professional services across categories
+  const heroImages = [
+    { src: 'https://images.unsplash.com/photo-1522337660859-02fbefca4702?auto=format&fit=crop&q=80&w=1200', alt: 'Servicio profesional de manicura' },
+    { src: 'https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&q=80&w=1200', alt: 'Barbero recortando barba con tijeras' },
+    { src: 'https://images.unsplash.com/photo-1580618672591-eb180b1a973f?auto=format&fit=crop&q=80&w=1200', alt: 'Estilista profesional secando y peinando cabello' },
+    { src: 'https://images.pexels.com/photos/4270095/pexels-photo-4270095.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=900&w=720', alt: 'Dentista mostrando modelo dental a paciente en consulta' },
+    { src: 'https://customer-assets.emergentagent.com/job_63d07d25-f91a-41d9-abd3-14123baf6a9f/artifacts/nfemxt0d_image.png', alt: 'Mecánico en overol azul trabajando bajo auto elevado con llave' },
+    { src: 'https://images.unsplash.com/photo-1551836022-d5d88e9218df?auto=format&fit=crop&q=80&w=1200', alt: 'Asesora profesional atendiendo a cliente en consulta' },
+  ];
+  const [heroImageIdx, setHeroImageIdx] = useState(0);
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      setHeroImageIdx((i) => (i + 1) % heroImages.length);
+    }, 4500);
+    return () => clearInterval(id);
+  }, [heroImages.length]);
+
   useEffect(() => {
     const handler = (e) => {
       if (serviceRef.current && !serviceRef.current.contains(e.target)) setServiceOpen(false);
@@ -306,14 +324,18 @@ export default function HomePage() {
             {/* RIGHT: Image + Floating cards */}
             <div className="lg:col-span-5 relative hidden lg:block animate-fade-in" style={{ animationDelay: '0.6s' }}>
               <div className="relative">
-                {/* Main image */}
+                {/* Main image — rotating carousel of professional services */}
                 <div className="relative rounded-3xl overflow-hidden shadow-2xl border border-slate-900/10 aspect-[4/5]">
-                  <img
-                    src="https://images.unsplash.com/photo-1522337660859-02fbefca4702?auto=format&fit=crop&q=80&w=1200"
-                    alt="Cliente disfrutando servicio profesional en Bookvia"
-                    className="w-full h-full object-cover"
-                    loading="eager"
-                  />
+                  {heroImages.map((img, i) => (
+                    <img
+                      key={img.src}
+                      src={img.src}
+                      alt={img.alt}
+                      className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-1000 ease-in-out ${i === heroImageIdx ? 'opacity-100' : 'opacity-0'}`}
+                      loading={i === 0 ? 'eager' : 'lazy'}
+                      data-testid={`hero-image-${i}`}
+                    />
+                  ))}
                 </div>
 
                 {/* CTA: Registrar negocio - LLAMATIVO (bottom-right) */}
@@ -360,9 +382,6 @@ export default function HomePage() {
           </div>
         </div>
       </section>
-
-      {/* ═══ Platform Stats Bar ══════════════════════ */}
-      <PlatformStatsBar stats={platformStats} />
 
       {/* ═══ How It Works ═════════════════════════════ */}
       <section className="section-padding bg-background" data-testid="how-it-works-section">

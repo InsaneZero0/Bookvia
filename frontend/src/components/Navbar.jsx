@@ -408,6 +408,10 @@ export function Navbar() {
                         <LayoutDashboard className="mr-2 h-4 w-4" />
                         Admin Panel
                       </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => navigate('/bookings')} data-testid="menu-admin-bookings">
+                        <Calendar className="mr-2 h-4 w-4" />
+                        {language === 'es' ? 'Mis citas' : 'My bookings'}
+                      </DropdownMenuItem>
                       <DropdownMenuSeparator />
                     </>
                   )}
