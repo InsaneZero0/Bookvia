@@ -48,8 +48,8 @@ export default function HomePage() {
     { src: 'https://images.unsplash.com/photo-1522337660859-02fbefca4702?auto=format&fit=crop&q=80&w=1200', alt: 'Servicio profesional de manicura' },
     { src: 'https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&q=80&w=1200', alt: 'Barbero recortando barba con tijeras' },
     { src: 'https://images.unsplash.com/photo-1580618672591-eb180b1a973f?auto=format&fit=crop&q=80&w=1200', alt: 'Estilista profesional secando y peinando cabello' },
-    { src: 'https://images.unsplash.com/photo-1606811971618-4486d14f3f99?auto=format&fit=crop&q=80&w=1200', alt: 'Dentista examinando a paciente con instrumentos' },
-    { src: 'https://images.unsplash.com/photo-1625047509248-ec889cbff17f?auto=format&fit=crop&q=80&w=1200', alt: 'Mecánico automotriz trabajando en motor de auto' },
+    { src: 'https://images.pexels.com/photos/4270095/pexels-photo-4270095.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=900&w=720', alt: 'Dentista mostrando modelo dental a paciente en consulta' },
+    { src: 'https://images.unsplash.com/photo-1599256872237-5dcc0fbe9668?auto=format&fit=crop&q=80&w=1200', alt: 'Mecánico trabajando con llaves en motor de auto' },
     { src: 'https://images.unsplash.com/photo-1551836022-d5d88e9218df?auto=format&fit=crop&q=80&w=1200', alt: 'Asesora profesional atendiendo a cliente en consulta' },
   ];
   const [heroImageIdx, setHeroImageIdx] = useState(0);
