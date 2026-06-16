@@ -277,6 +277,22 @@ class BusinessLegalDocsUpdate(BaseModel):
 class DocumentsRejectRequest(BaseModel):
     reason: str
 
+
+class RevisionRequestPayload(BaseModel):
+    reason: str
+    fields_to_fix: list[str] = []  # e.g. ["ine", "rfc", "constancia", "comprobante_bancario", "cover_photo", "logo"]
+
+
+class ResubmitDocumentsPayload(BaseModel):
+    ine_url: Optional[str] = None
+    rfc_url: Optional[str] = None
+    constancia_url: Optional[str] = None
+    proof_of_address_url: Optional[str] = None  # comprobante bancario
+    cover_photo_url: Optional[str] = None
+    logo_url: Optional[str] = None
+    clabe: Optional[str] = None
+    note: Optional[str] = None  # Optional note from business to admin
+
 class CategoryCreate(BaseModel):
     name_es: str
     name_en: str

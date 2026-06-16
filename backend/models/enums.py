@@ -24,6 +24,7 @@ class AppointmentStatus(str, Enum):
 class BusinessStatus(str, Enum):
     PENDING = "pending"
     APPROVED = "approved"
+    NEEDS_REVISION = "needs_revision"
     SUSPENDED = "suspended"
     REJECTED = "rejected"
     DECOMMISSIONED = "decommissioned"

@@ -126,7 +126,7 @@ function DocPreviewCard({ url, label, testid, highlight, t }) {
 }
 
 /* ─── Business Detail Dialog ─── */
-function BusinessDetailDialog({ businessId, open, onClose, onApprove, onReject, onVerifyDocs, onRejectDocs, refreshKey, t, language }) {
+function BusinessDetailDialog({ businessId, open, onClose, onApprove, onReject, onVerifyDocs, onRejectDocs, onRefresh, refreshKey, t, language }) {
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(false);
   const [allCategories, setAllCategories] = useState([]);
@@ -136,6 +136,46 @@ function BusinessDetailDialog({ businessId, open, onClose, onApprove, onReject, 
   const [newCatName, setNewCatName] = useState('');
   const [newCatNameEn, setNewCatNameEn] = useState('');
   const [creatingCat, setCreatingCat] = useState(false);
+
+  // Revision request modal
+  const [revisionOpen, setRevisionOpen] = useState(false);
+  const [revisionReason, setRevisionReason] = useState('');
+  const [revisionFields, setRevisionFields] = useState({
+    ine: false, rfc: false, constancia: false,
+    comprobante_bancario: false, cover_photo: false, logo: false,
+  });
+  const [revisionSubmitting, setRevisionSubmitting] = useState(false);
+
+  const FIELD_LABELS = {
+    ine: t('INE / Identificación oficial', 'INE / Official ID'),
+    rfc: t('RFC', 'RFC'),
+    constancia: t('Constancia de situación fiscal', 'Tax status certificate'),
+    comprobante_bancario: t('Comprobante bancario / CLABE', 'Bank statement / CLABE'),
+    cover_photo: t('Foto de portada del negocio', 'Cover photo'),
+    logo: t('Logo', 'Logo'),
+  };
+
+  const submitRevisionRequest = async () => {
+    const reason = revisionReason.trim();
+    if (reason.length < 5) {
+      toast.error(t('Escribe una razón clara (mínimo 5 caracteres)', 'Write a clear reason (min 5 chars)'));
+      return;
+    }
+    const fieldsList = Object.entries(revisionFields).filter(([, v]) => v).map(([k]) => k);
+    setRevisionSubmitting(true);
+    try {
+      await adminAPI.requestBusinessRevision(businessId, { reason, fields_to_fix: fieldsList });
+      toast.success(t('Petición enviada. El negocio fue notificado por correo.', 'Request sent. The business was notified by email.'));
+      setRevisionOpen(false);
+      setRevisionReason('');
+      setRevisionFields({ ine: false, rfc: false, constancia: false, comprobante_bancario: false, cover_photo: false, logo: false });
+      onClose();
+      if (onRefresh) onRefresh();
+    } catch (e) {
+      toast.error(e.response?.data?.detail || t('Error al enviar', 'Error sending request'));
+    }
+    setRevisionSubmitting(false);
+  };
 
   useEffect(() => {
     if (!open || !businessId) return;
@@ -477,11 +517,14 @@ function BusinessDetailDialog({ businessId, open, onClose, onApprove, onReject, 
 
         {/* Footer actions */}
         {biz && (
-          <DialogFooter className="gap-2 sm:gap-0">
-            {biz.status === 'pending' && (
+          <DialogFooter className="gap-2 sm:gap-0 flex-wrap">
+            {(biz.status === 'pending' || biz.status === 'needs_revision') && (
               <>
                 <Button variant="outline" className="text-red-600 hover:bg-red-50" onClick={() => { onReject(biz.id); onClose(); }} data-testid="detail-reject-btn">
                   <XCircle className="h-4 w-4 mr-2" />{t('Rechazar', 'Reject')}
+                </Button>
+                <Button variant="outline" className="text-amber-600 border-amber-300 hover:bg-amber-50" onClick={() => setRevisionOpen(true)} data-testid="detail-request-revision-btn">
+                  <AlertCircle className="h-4 w-4 mr-2" />{t('Solicitar correcciones', 'Request corrections')}
                 </Button>
                 <Button className="bg-green-600 hover:bg-green-700 text-white" onClick={() => { onApprove(biz.id); onClose(); }} data-testid="detail-approve-btn">
                   <CheckCircle2 className="h-4 w-4 mr-2" />{t('Aprobar', 'Approve')}
@@ -494,6 +537,70 @@ function BusinessDetailDialog({ businessId, open, onClose, onApprove, onReject, 
           </DialogFooter>
         )}
       </DialogContent>
+
+      {/* Request revision modal */}
+      <Dialog open={revisionOpen} onOpenChange={setRevisionOpen}>
+        <DialogContent className="max-w-md" data-testid="revision-request-dialog">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertCircle className="h-5 w-5 text-amber-600" />
+              {t('Solicitar correcciones', 'Request corrections')}
+            </DialogTitle>
+            <DialogDescription>
+              {t('El negocio recibirá un correo con tu mensaje. Su perfil queda invisible para clientes hasta que reenvíe los documentos y los apruebes.',
+                 'The business will receive an email with your message. Their profile stays hidden from customers until they resubmit and you approve.')}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div>
+              <p className="text-sm font-medium mb-2">{t('¿Qué necesita corregir?', 'What needs fixing?')}</p>
+              <div className="space-y-1.5">
+                {Object.entries(FIELD_LABELS).map(([key, label]) => (
+                  <label key={key} className="flex items-center gap-2 text-sm cursor-pointer hover:bg-muted/50 rounded px-2 py-1" data-testid={`revision-field-${key}`}>
+                    <input
+                      type="checkbox"
+                      checked={revisionFields[key]}
+                      onChange={(e) => setRevisionFields(prev => ({ ...prev, [key]: e.target.checked }))}
+                      className="rounded"
+                    />
+                    {label}
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div>
+              <label className="text-sm font-medium block mb-1.5">
+                {t('Mensaje al negocio', 'Message to business')} *
+              </label>
+              <textarea
+                rows={4}
+                value={revisionReason}
+                onChange={(e) => setRevisionReason(e.target.value)}
+                placeholder={t('Ej: La foto del INE está borrosa. Por favor sube una imagen donde se lean todos los datos.',
+                             'E.g. The INE photo is blurry. Please upload a clearer one.')}
+                className="w-full text-sm border border-input rounded-md p-2 focus:outline-none focus:ring-2 focus:ring-amber-300"
+                data-testid="revision-reason-textarea"
+                maxLength={500}
+              />
+              <p className="text-xs text-muted-foreground mt-1">{revisionReason.length}/500</p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRevisionOpen(false)} disabled={revisionSubmitting}>
+              {t('Cancelar', 'Cancel')}
+            </Button>
+            <Button
+              onClick={submitRevisionRequest}
+              disabled={revisionSubmitting || revisionReason.trim().length < 5}
+              className="bg-amber-600 hover:bg-amber-700 text-white"
+              data-testid="revision-submit-btn"
+            >
+              {revisionSubmitting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <AlertCircle className="h-4 w-4 mr-2" />}
+              {t('Enviar petición', 'Send request')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Dialog>
   );
 }
