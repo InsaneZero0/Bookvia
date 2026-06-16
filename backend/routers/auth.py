@@ -472,6 +472,21 @@ async def register_business(business: BusinessCreate, request: Request):
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
 
+    # CLABE is only required when the business will collect deposits via Stripe.
+    if business.requires_deposit:
+        clabe_clean = (business.clabe or "").strip()
+        if not clabe_clean:
+            raise HTTPException(
+                status_code=400,
+                detail="CLABE es obligatoria cuando solicitas anticipos",
+            )
+        # MX CLABE format: 18 digits
+        if business.country and business.country.upper()[:2] == "MX" and not (clabe_clean.isdigit() and len(clabe_clean) == 18):
+            raise HTTPException(
+                status_code=400,
+                detail="CLABE debe tener 18 dígitos numéricos",
+            )
+
     # Phase H — validate subcategories
     sub_ids = (business.subcategory_ids or [])[:3]  # cap at 3
     if sub_ids:
@@ -531,7 +546,7 @@ async def register_business(business: BusinessCreate, request: Request):
         "ine_url": business.ine_url,
         "rfc": business.rfc,
         "proof_of_address_url": business.proof_of_address_url,
-        "clabe": business.clabe,
+        "clabe": business.clabe if business.requires_deposit else "",
         "legal_name": business.legal_name,
         "owner_birth_date": business.owner_birth_date,
         "status": BusinessStatus.PENDING,

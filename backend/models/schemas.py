@@ -98,7 +98,7 @@ class BusinessCreate(BaseModel):
     ine_url: Optional[str] = None
     rfc: str
     proof_of_address_url: Optional[str] = None
-    clabe: str
+    clabe: Optional[str] = None  # Only required when requires_deposit=True
     legal_name: str
     owner_birth_date: Optional[str] = None
     requires_deposit: bool = False

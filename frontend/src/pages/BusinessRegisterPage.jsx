@@ -324,10 +324,10 @@ export default function BusinessRegisterPage() {
         return true;
         
       case 3: // Account
-        if (!formData.password || !formData.clabe) {
+        if (!formData.password) {
           toast.error(language === 'es' 
-            ? 'Contraseña y CLABE son obligatorios' 
-            : 'Password and CLABE are required');
+            ? 'La contraseña es obligatoria' 
+            : 'Password is required');
           return false;
         }
         if (formData.password.length < 8) {
@@ -342,12 +342,20 @@ export default function BusinessRegisterPage() {
             : 'Passwords do not match');
           return false;
         }
-        // CLABE validation (18 digits)
-        if (!/^\d{18}$/.test(formData.clabe)) {
-          toast.error(language === 'es' 
-            ? 'La CLABE debe tener 18 dígitos' 
-            : 'CLABE must have 18 digits');
-          return false;
+        // CLABE only required when collecting deposits
+        if (formData.requires_deposit) {
+          if (!formData.clabe) {
+            toast.error(language === 'es'
+              ? 'La CLABE es obligatoria si vas a cobrar anticipos'
+              : 'CLABE is required when collecting deposits');
+            return false;
+          }
+          if (!/^\d{18}$/.test(formData.clabe)) {
+            toast.error(language === 'es' 
+              ? 'La CLABE debe tener 18 dígitos' 
+              : 'CLABE must have 18 digits');
+            return false;
+          }
         }
         // Deposit validation: if enabled, must be >= 100 MXN
         if (formData.requires_deposit && Number(formData.deposit_amount) < 100) {
@@ -433,7 +441,7 @@ export default function BusinessRegisterPage() {
         city: formData.city, state: formData.state, country: formData.country,
         zip_code: formData.zip_code, rfc: formData.rfc.toUpperCase(),
         legal_name: formData.legal_name, ine_url: ineUrl,
-        proof_of_address_url: proofUrl, clabe: formData.clabe,
+        proof_of_address_url: proofUrl, clabe: formData.requires_deposit ? formData.clabe : '',
         requires_deposit: formData.requires_deposit,
         deposit_amount: formData.requires_deposit ? Number(formData.deposit_amount) : 100,
         cancellation_days: Number(formData.cancellation_days) || 1,
@@ -1276,33 +1284,6 @@ export default function BusinessRegisterPage() {
                     </div>
                   </div>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="clabe">
-                      {formData.country === 'US' ? 'Routing number + Account number' : (language === 'es' ? 'CLABE interbancaria' : 'CLABE number')} *
-                    </Label>
-                    <div className="relative">
-                      <CreditCard className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
-                      <Input
-                        id="clabe"
-                        name="clabe"
-                        placeholder={formData.country === 'US' ? '021000021 / 123456789' : '012345678901234567'}
-                        value={formData.clabe}
-                        onChange={(e) => setFormData(prev => ({ ...prev, clabe: formData.country === 'US' ? e.target.value : e.target.value.replace(/\D/g, '') }))}
-                        className="pl-10 h-12"
-                        maxLength={formData.country === 'US' ? 25 : 18}
-                        required
-                        data-testid="clabe-input"
-                      />
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      {formData.country === 'US'
-                        ? 'Routing number (9 digits) / Account number - where you\'ll receive payments'
-                        : (language === 'es' 
-                          ? 'Aqui recibiras tus pagos (18 digitos)'
-                          : 'This is where you\'ll receive payments (18 digits)')}
-                    </p>
-                  </div>
-
                   <label className="flex items-start gap-2 pt-2 cursor-pointer select-none" data-testid="business-accept-terms-label">
                     <input
                       type="checkbox"
@@ -1401,6 +1382,34 @@ export default function BusinessRegisterPage() {
                               {language === 'es' 
                                 ? `Minimo $100 MXN. Recibiras ${formatCurrencyMXN((Number(formData.deposit_amount) || 0) * 0.915)} por cada anticipo (8.5% cuota procesamiento).`
                                 : `Minimum $100 MXN. You'll receive ${formatCurrencyMXN((Number(formData.deposit_amount) || 0) * 0.915)} per deposit (8.5% processing fee).`}
+                            </p>
+                          </div>
+
+                          {/* CLABE — only required when collecting deposits */}
+                          <div className="space-y-1.5">
+                            <div className="flex items-center gap-1.5">
+                              <Label htmlFor="clabe" className="text-sm">
+                                <CreditCard className="inline h-3.5 w-3.5 mr-1 text-muted-foreground" />
+                                {formData.country === 'US' ? 'Routing number + Account number' : (language === 'es' ? 'CLABE interbancaria' : 'CLABE number')}
+                              </Label>
+                            </div>
+                            <Input
+                              id="clabe"
+                              name="clabe"
+                              placeholder={formData.country === 'US' ? '021000021 / 123456789' : '012345678901234567'}
+                              value={formData.clabe}
+                              onChange={(e) => setFormData(prev => ({ ...prev, clabe: formData.country === 'US' ? e.target.value : e.target.value.replace(/\D/g, '') }))}
+                              className="h-10"
+                              maxLength={formData.country === 'US' ? 25 : 18}
+                              required={formData.requires_deposit}
+                              data-testid="clabe-input"
+                            />
+                            <p className="text-xs text-muted-foreground">
+                              {formData.country === 'US'
+                                ? 'Routing number (9 digits) / Account number — where you\'ll receive payments'
+                                : (language === 'es'
+                                  ? 'Aquí recibirás tus pagos (18 dígitos)'
+                                  : 'This is where you\'ll receive payments (18 digits)')}
                             </p>
                           </div>
 
