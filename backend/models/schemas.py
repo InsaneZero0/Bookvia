@@ -88,6 +88,9 @@ class BusinessCreate(BaseModel):
     category_id: str
     subcategory_ids: List[str] = []  # Phase H — up to 3 subcategory ids
     address: str
+    colony: Optional[str] = None
+    interior_number: Optional[str] = None
+    building_name: Optional[str] = None
     city: str
     state: str
     country: str = "MX"

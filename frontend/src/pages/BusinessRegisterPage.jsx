@@ -23,7 +23,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { 
   ArrowLeft, ArrowRight, Mail, Lock, Phone, Building2, MapPin, 
   FileText, CreditCard, Upload, CheckCircle2, AlertTriangle, Eye, EyeOff,
-  HelpCircle, CalendarX, Banknote, Globe, Search, Camera, Calendar, ShieldCheck
+  HelpCircle, CalendarX, Banknote, Globe, Search, Camera, Calendar, ShieldCheck, Info
 } from 'lucide-react';
 import CommissionBreakdownModal, { COMMISSION_TERMS_VERSION } from '@/components/CommissionBreakdownModal';
 
@@ -89,6 +89,9 @@ export default function BusinessRegisterPage() {
     // Location
     address: '',
     address_number: '',
+    interior_number: '',
+    building_name: '',
+    colony: '',
     city: '',
     state: '',
     country: getDetectedCountry(),
@@ -139,7 +142,8 @@ export default function BusinessRegisterPage() {
   const handlePlaceSelect = (place) => {
     setFormData(prev => ({
       ...prev,
-      address: [place.street, place.street_number].filter(Boolean).join(' ') || place.formatted_address?.split(',')[0] || '',
+      address: place.street || place.formatted_address?.split(',')[0]?.replace(/\d+$/, '').trim() || '',
+      address_number: place.street_number || prev.address_number,
       city: place.city || prev.city,
       state: place.state || prev.state,
       zip_code: place.zip || prev.zip_code,
@@ -291,6 +295,12 @@ export default function BusinessRegisterPage() {
             : 'Complete all location fields');
           return false;
         }
+        if (!formData.colony || !formData.colony.trim()) {
+          toast.error(language === 'es'
+            ? 'La colonia es obligatoria'
+            : 'Neighborhood is required');
+          return false;
+        }
         return true;
         
       case 2: // Documents
@@ -424,6 +434,14 @@ export default function BusinessRegisterPage() {
       const fullAddress = formData.address_number 
         ? `${formData.address} ${formData.address_number}` 
         : formData.address;
+      // Build full street_full label with interior + building if provided
+      const addressExtras = [
+        formData.interior_number ? `Int. ${formData.interior_number}` : null,
+        formData.building_name || null,
+      ].filter(Boolean);
+      const fullAddressLabel = addressExtras.length
+        ? `${fullAddress}, ${addressExtras.join(', ')}`
+        : fullAddress;
 
       // Merge any inline overrides (e.g. commission terms just-accepted in the
       // forced-modal flow whose state may not have flushed yet)
@@ -437,7 +455,10 @@ export default function BusinessRegisterPage() {
         phone: formData.phone, description: formData.description,
         category_id: formData.category_id,
         subcategory_ids: formData.subcategory_ids || [],
-        address: fullAddress,
+        address: fullAddressLabel,
+        colony: formData.colony || '',
+        interior_number: formData.interior_number || '',
+        building_name: formData.building_name || '',
         city: formData.city, state: formData.state, country: formData.country,
         zip_code: formData.zip_code, rfc: formData.rfc.toUpperCase(),
         legal_name: formData.legal_name, ine_url: ineUrl,
@@ -889,6 +910,14 @@ export default function BusinessRegisterPage() {
                         className="flex h-12 w-full rounded-md border border-input bg-background pl-10 pr-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                       />
                     </div>
+                    <div className="flex items-start gap-2 text-xs text-muted-foreground bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-md p-2.5">
+                      <Info className="h-4 w-4 text-blue-600 shrink-0 mt-0.5" />
+                      <p className="leading-snug">
+                        {language === 'es'
+                          ? 'Asegúrate de que tu ubicación coincida con el pin en el mapa. Si no aparece, prueba con el nombre completo de la calle o avenida (ej: escribe "Abraham Lincoln" en lugar de "Lincoln").'
+                          : 'Make sure your location matches the pin on the map. If it doesn\'t appear, try the full street/avenue name (e.g. type "Abraham Lincoln" instead of "Lincoln").'}
+                      </p>
+                    </div>
                   </div>
 
                   {/* Interactive Google Map */}
@@ -924,7 +953,9 @@ export default function BusinessRegisterPage() {
                       </div>
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="address_number">{formData.country === 'US' ? 'Suite / Apt' : (language === 'es' ? 'Num. ext.' : 'Number')}</Label>
+                      <Label htmlFor="address_number" className="text-xs sm:text-sm">
+                        {formData.country === 'US' ? 'Suite / Apt' : (language === 'es' ? 'Num. ext.' : 'Number')}
+                      </Label>
                       <Input
                         id="address_number"
                         name="address_number"
@@ -933,6 +964,56 @@ export default function BusinessRegisterPage() {
                         onChange={handleChange}
                         className="h-12"
                         data-testid="address-number-input"
+                      />
+                      <p className="text-[10px] text-muted-foreground leading-tight">
+                        {language === 'es' ? 'Se autocompleta del mapa' : 'Auto-filled from map'}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Colonia (required) */}
+                  <div className="space-y-2">
+                    <Label htmlFor="colony">{language === 'es' ? 'Colonia' : 'Neighborhood'} *</Label>
+                    <Input
+                      id="colony"
+                      name="colony"
+                      placeholder={language === 'es' ? 'Ej: Centro, Del Valle, Madero' : 'E.g. Downtown, Midtown'}
+                      value={formData.colony || ''}
+                      onChange={handleChange}
+                      className="h-12"
+                      required
+                      data-testid="colony-input"
+                    />
+                  </div>
+
+                  {/* Interior + Building (both optional) */}
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-2">
+                      <Label htmlFor="interior_number" className="text-xs sm:text-sm">
+                        {language === 'es' ? 'Núm. interior (opcional)' : 'Interior # (optional)'}
+                      </Label>
+                      <Input
+                        id="interior_number"
+                        name="interior_number"
+                        placeholder={language === 'es' ? 'Ej: 5B, Local 12' : 'E.g. 5B, Suite 12'}
+                        value={formData.interior_number || ''}
+                        onChange={handleChange}
+                        className="h-12"
+                        data-testid="interior-number-input"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="building_name" className="text-xs sm:text-sm">
+                        {language === 'es' ? 'Plaza / Torre / Edificio (opcional)' : 'Plaza / Tower / Building (optional)'}
+                      </Label>
+                      <Input
+                        id="building_name"
+                        name="building_name"
+                        placeholder={language === 'es' ? 'Ej: Plaza Galerías, Torre A' : 'E.g. Galerías Plaza, Tower A'}
+                        value={formData.building_name || ''}
+                        onChange={handleChange}
+                        className="h-12"
+                        data-testid="building-name-input"
                       />
                     </div>
                   </div>
