@@ -126,7 +126,7 @@ export const usersAPI = {
 
 // Categories API
 export const categoriesAPI = {
-  getAll: () => api.get('/categories'),
+  getAll: (params = {}) => api.get('/categories', { params }),
   getBySlug: (slug) => api.get(`/categories/${slug}`),
   getSubcategories: (slugOrId) => api.get(`/categories/${slugOrId}/subcategories`),
   create: (data) => api.post('/categories', data),

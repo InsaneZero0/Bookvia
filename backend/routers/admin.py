@@ -3864,3 +3864,140 @@ async def restore_archived_businesses(
     }
 
 
+# ============================================================================
+# ONE-SHOT CLEANUP: Archive test bookings + their transactions
+# ============================================================================
+@router.post("/cleanup/archive-test-bookings")
+async def archive_test_bookings(
+    request: Request,
+    before_date: Optional[str] = None,
+    confirm: bool = False,
+    token_data: TokenData = Depends(require_admin),
+):
+    """
+    Archive bookings made before `before_date` (default = today) — they get
+    `status='archived_test'`. Their associated transactions are flipped to
+    `funds_state='test_archived'` so they are NOT counted in settlement reports
+    or revenue calculations. Reversible.
+    """
+    cutoff = before_date or datetime.now(timezone.utc).date().isoformat()
+
+    booking_filter = {
+        "status": {"$nin": ["archived_test", "cancelled"]},
+        "$or": [
+            {"created_at": {"$lt": cutoff + "T23:59:59"}},
+            {"date": {"$lt": cutoff}},
+        ],
+    }
+
+    to_archive = await db.bookings.find(
+        booking_filter,
+        {"id": 1, "business_id": 1, "date": 1, "status": 1, "total_amount": 1, "_id": 0},
+    ).to_list(2000)
+
+    booking_ids = [b["id"] for b in to_archive]
+    tx_count = await db.transactions.count_documents({
+        "booking_id": {"$in": booking_ids},
+        "funds_state": {"$ne": "test_archived"},
+    })
+
+    preview = {
+        "dry_run": not confirm,
+        "cutoff_date": cutoff,
+        "would_archive_bookings": len(to_archive),
+        "would_archive_transactions": tx_count,
+        "sample_bookings": [
+            {"id": b["id"][:8], "date": b.get("date"), "status": b.get("status"), "amount": b.get("total_amount")}
+            for b in to_archive[:10]
+        ],
+    }
+
+    if not confirm:
+        preview["next_step"] = "Re-run with ?confirm=true to actually archive"
+        return preview
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    bk_res = await db.bookings.update_many(
+        booking_filter,
+        {"$set": {
+            "status": "archived_test",
+            "archived_at": now_iso,
+            "archived_reason": "Cleanup of test data before public launch",
+        }},
+    )
+
+    tx_res = await db.transactions.update_many(
+        {"booking_id": {"$in": booking_ids}, "funds_state": {"$ne": "test_archived"}},
+        {"$set": {"funds_state": "test_archived", "archived_at": now_iso}},
+    )
+
+    await create_audit_log(
+        admin_id=token_data.user_id,
+        admin_email=token_data.email,
+        action="cleanup.archive_test_bookings",
+        target_type="bookings",
+        target_id="bulk",
+        details={
+            "cutoff_date": cutoff,
+            "bookings_archived": bk_res.modified_count,
+            "transactions_archived": tx_res.modified_count,
+        },
+        request=request,
+    )
+
+    return {
+        "executed": True,
+        "cutoff_date": cutoff,
+        "bookings_archived": bk_res.modified_count,
+        "transactions_archived": tx_res.modified_count,
+        "reversible": "Restore via /api/admin/cleanup/restore-archived-bookings",
+    }
+
+
+@router.post("/cleanup/restore-archived-bookings")
+async def restore_archived_bookings(
+    request: Request,
+    confirm: bool = False,
+    token_data: TokenData = Depends(require_admin),
+):
+    """Emergency rollback: restore archived test bookings + transactions."""
+    archived = await db.bookings.find(
+        {"status": "archived_test"}, {"id": 1, "_id": 0}
+    ).to_list(2000)
+
+    if not confirm:
+        return {
+            "dry_run": True,
+            "would_restore_bookings": len(archived),
+            "next_step": "Re-run with ?confirm=true",
+        }
+
+    archived_ids = [b["id"] for b in archived]
+
+    bk_res = await db.bookings.update_many(
+        {"status": "archived_test"},
+        {"$set": {"status": "completed"}, "$unset": {"archived_at": "", "archived_reason": ""}},
+    )
+    tx_res = await db.transactions.update_many(
+        {"booking_id": {"$in": archived_ids}, "funds_state": "test_archived"},
+        {"$set": {"funds_state": "pending_payout"}, "$unset": {"archived_at": ""}},
+    )
+
+    await create_audit_log(
+        admin_id=token_data.user_id,
+        admin_email=token_data.email,
+        action="cleanup.restore_archived_bookings",
+        target_type="bookings",
+        target_id="bulk",
+        details={"bookings": bk_res.modified_count, "transactions": tx_res.modified_count},
+        request=request,
+    )
+
+    return {
+        "executed": True,
+        "bookings_restored": bk_res.modified_count,
+        "transactions_restored": tx_res.modified_count,
+    }
+
+

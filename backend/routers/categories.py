@@ -54,16 +54,25 @@ async def get_categories(
     country_code: Optional[str] = None,
     include_subcategories: bool = False,
     parent_id: Optional[str] = None,
+    include_other: bool = False,
 ):
     """List categories. By default returns only parent categories (level 1).
     Use `?include_subcategories=true` to get all, or `?parent_id=<id>` to
-    fetch the children of a single parent."""
+    fetch the children of a single parent.
+
+    The "Otro" category is hidden from public listings by default — businesses
+    can still pick it during registration with `?include_other=true`.
+    """
     if parent_id:
         query = {"parent_id": parent_id}
     elif include_subcategories:
         query = {}
     else:
         query = {"parent_id": None}
+    # Hide the catch-all "Otro" / "Other" category from the public explorer.
+    # Matches any slug that starts with "otro" or "other" (incl. "otros-servicios").
+    if not include_other:
+        query["slug"] = {"$not": {"$regex": "^(otro|other)", "$options": "i"}}
     categories = await db.categories.find(query, {"_id": 0}).to_list(500)
 
     # Build business filter - optionally scoped to city+country

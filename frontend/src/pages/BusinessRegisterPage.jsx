@@ -176,7 +176,7 @@ export default function BusinessRegisterPage() {
 
   const loadCategories = async () => {
     try {
-      const response = await categoriesAPI.getAll();
+      const response = await categoriesAPI.getAll({ include_other: true });
       setCategories(response.data);
     } catch (error) {
       console.error('Error loading categories:', error);
