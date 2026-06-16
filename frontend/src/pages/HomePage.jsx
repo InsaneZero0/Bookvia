@@ -47,9 +47,9 @@ export default function HomePage() {
   const heroImages = [
     { src: 'https://images.unsplash.com/photo-1522337660859-02fbefca4702?auto=format&fit=crop&q=80&w=1200', alt: 'Servicio profesional de manicura' },
     { src: 'https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&q=80&w=1200', alt: 'Barbero cortando cabello profesionalmente' },
-    { src: 'https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&q=80&w=1200', alt: 'Estilista profesional en salón de belleza' },
+    { src: 'https://images.unsplash.com/photo-1580618672591-eb180b1a973f?auto=format&fit=crop&q=80&w=1200', alt: 'Estilista cortando cabello en salón' },
     { src: 'https://images.unsplash.com/photo-1600334129128-685c5582fd35?auto=format&fit=crop&q=80&w=1200', alt: 'Masaje relajante en spa profesional' },
-    { src: 'https://images.unsplash.com/photo-1487412947147-5cebf100ffc2?auto=format&fit=crop&q=80&w=1200', alt: 'Maquillaje profesional aplicado por experta' },
+    { src: 'https://images.unsplash.com/photo-1487412947147-5cebf100ffc2?auto=format&fit=crop&q=80&w=1200', alt: 'Maquillista aplicando labial con brocha profesional' },
   ];
   const [heroImageIdx, setHeroImageIdx] = useState(0);
 
@@ -335,19 +335,6 @@ export default function HomePage() {
                       data-testid={`hero-image-${i}`}
                     />
                   ))}
-                  {/* Dots indicator */}
-                  <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-1.5 z-10">
-                    {heroImages.map((_, i) => (
-                      <button
-                        key={i}
-                        type="button"
-                        onClick={() => setHeroImageIdx(i)}
-                        aria-label={`Ir a imagen ${i + 1}`}
-                        className={`h-1.5 rounded-full transition-all duration-300 ${i === heroImageIdx ? 'w-6 bg-white' : 'w-1.5 bg-white/60 hover:bg-white/80'}`}
-                        data-testid={`hero-dot-${i}`}
-                      />
-                    ))}
-                  </div>
                 </div>
 
                 {/* CTA: Registrar negocio - LLAMATIVO (bottom-right) */}
