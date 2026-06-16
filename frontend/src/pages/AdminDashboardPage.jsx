@@ -64,9 +64,25 @@ function SectionTitle({ children }) {
 /* Inline preview of an uploaded doc (PDF/image). Falls back to a link if
    the URL is missing or the content type cannot be embedded. */
 function DocPreviewCard({ url, label, testid, highlight, t }) {
-  const isPdf = url && /\.pdf(\?|$)/i.test(url);
-  const isImage = url && /\.(png|jpg|jpeg|webp|gif)(\?|$)/i.test(url);
+  const [renderMode, setRenderMode] = useState('auto'); // 'auto' | 'image' | 'pdf' | 'link'
   const borderCls = highlight ? 'border-indigo-300 ring-1 ring-indigo-200' : 'border-border';
+
+  // Detect type. Strip query string and lowercase.
+  const cleanPath = url ? url.split('?')[0].toLowerCase() : '';
+  const isPdfByExt = /\.pdf$/.test(cleanPath);
+  const isImageByExt = /\.(png|jpg|jpeg|webp|gif|heic|heif)$/.test(cleanPath);
+  // Cloudinary delivery URLs: /image/upload/ or no extension at all → treat as image first
+  const isCloudinaryImage = url && (/\/image\/upload\//.test(url) || (!isPdfByExt && !isImageByExt && /cloudinary\.com/.test(url)));
+  const isCloudinaryRaw = url && /\/raw\/upload\//.test(url);
+
+  // Decide initial mode
+  let mode = renderMode;
+  if (mode === 'auto') {
+    if (isPdfByExt || isCloudinaryRaw) mode = 'pdf';
+    else if (isImageByExt || isCloudinaryImage) mode = 'image';
+    else mode = 'image'; // try image first, fallback to pdf via onError
+  }
+
   return (
     <div className={`rounded-lg border ${borderCls} p-2 bg-muted/30 flex flex-col`} data-testid={testid}>
       <div className="flex items-center justify-between mb-1">
@@ -83,13 +99,22 @@ function DocPreviewCard({ url, label, testid, highlight, t }) {
         <div className="h-28 rounded bg-muted/60 flex items-center justify-center text-center text-xs text-muted-foreground italic px-2">
           {t('No subido', 'Not uploaded')}
         </div>
-      ) : isImage ? (
+      ) : mode === 'image' ? (
         <a href={url} target="_blank" rel="noopener noreferrer" className="block">
-          <img src={url} alt={label} className="h-28 w-full object-cover rounded bg-white"
-            onError={(e) => { e.target.style.display = 'none'; }} />
+          <img
+            src={url}
+            alt={label}
+            className="h-28 w-full object-cover rounded bg-white"
+            onError={() => setRenderMode('pdf')}
+          />
         </a>
-      ) : isPdf ? (
-        <iframe src={url + '#toolbar=0'} title={label} className="h-28 w-full rounded bg-white" />
+      ) : mode === 'pdf' ? (
+        <iframe
+          src={url + (url.includes('#') ? '' : '#toolbar=0')}
+          title={label}
+          className="h-28 w-full rounded bg-white"
+          onError={() => setRenderMode('link')}
+        />
       ) : (
         <a href={url} target="_blank" rel="noopener noreferrer"
           className="h-28 rounded bg-white border flex items-center justify-center text-xs text-blue-600 hover:underline">
