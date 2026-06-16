@@ -138,7 +138,7 @@ export default function CommissionBreakdownModal({
             </div>
             <div className="rounded-md bg-slate-100 border border-slate-200 p-3">
               <p className="text-[11px] uppercase tracking-wider text-slate-700 font-semibold">
-                {t('Impuestos por transacción', 'Transaction taxes')}
+                {t('Comisión por transacción', 'Transaction fee')}
               </p>
               <p className="text-2xl font-heading font-bold text-slate-700 tabular-nums mt-0.5">
                 -{fmt(calc.commission)}
@@ -172,7 +172,7 @@ export default function CommissionBreakdownModal({
 
           <div className="divide-y divide-slate-200">
             <FeeRow
-              concept={t('Impuestos por transacción', 'Transaction taxes')}
+              concept={t('Comisión por transacción', 'Transaction fee')}
               sub={t('8.5% del anticipo · IVA incluido · descontados automáticamente del depósito',
                 '8.5% of deposit · VAT included · automatically deducted from the payout')}
               amount="8.5%"

@@ -211,7 +211,7 @@ export default function CommissionTermsCard({ privateInfo, onRefresh, language =
                 {t('Fees vigentes en tu acuerdo', 'Fees you agreed to')}
               </p>
               <div className="text-sm space-y-1.5">
-                <Row label={t('Impuestos por transacción (IVA incluido)', 'Transaction taxes (VAT included)')}>
+                <Row label={t('Comisión por transacción (IVA incluido)', 'Transaction fee (VAT included)')}>
                   {((terms.snapshot?.fees?.commission_pct ?? STRIPE_FEE_PCT) * 100).toFixed(1)}%
                 </Row>
                 <Row label={t('Suscripción mensual', 'Monthly subscription')}>
