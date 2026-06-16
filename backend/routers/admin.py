@@ -3589,3 +3589,179 @@ async def admin_trigger_backup(
     )
     return result
 
+# ============================================================================
+# ONE-SHOT CLEANUP: Archive test businesses (keeps only real ones by regex match)
+# ============================================================================
+@router.post("/cleanup/archive-test-businesses")
+async def archive_test_businesses(
+    request: Request,
+    keep_regex: str = "pitufo|estetica.*mine",
+    confirm: bool = False,
+    token_data: TokenData = Depends(require_admin),
+):
+    """
+    Archives all businesses whose name does NOT match the keep_regex (case-insensitive).
+    Also inactivates their workers/services/branches and cancels their pending bookings.
+
+    Use confirm=false (default) for a dry-run preview.
+    Use confirm=true to actually execute the archive.
+
+    All changes are SOFT (status=archived, active=false) and reversible.
+    """
+    # Find what would be kept
+    keep_filter = {"name": {"$regex": keep_regex, "$options": "i"}}
+    archive_filter = {
+        "name": {"$not": {"$regex": keep_regex, "$options": "i"}},
+        "status": {"$ne": "archived"},  # don't re-archive
+    }
+
+    kept = await db.businesses.find(
+        keep_filter, {"id": 1, "name": 1, "status": 1, "_id": 0}
+    ).to_list(100)
+
+    to_archive = await db.businesses.find(
+        archive_filter, {"id": 1, "name": 1, "status": 1, "_id": 0}
+    ).to_list(1000)
+
+    archive_ids = [b["id"] for b in to_archive]
+
+    # Count cascade items
+    bookings_to_cancel = await db.bookings.count_documents({
+        "business_id": {"$in": archive_ids},
+        "status": {"$in": ["pending", "confirmed", "held"]},
+    })
+    workers_to_inactivate = await db.workers.count_documents({"business_id": {"$in": archive_ids}})
+    services_to_inactivate = await db.services.count_documents({"business_id": {"$in": archive_ids}})
+    branches_to_inactivate = await db.branches.count_documents({"business_id": {"$in": archive_ids}})
+
+    preview = {
+        "dry_run": not confirm,
+        "kept_count": len(kept),
+        "kept_businesses": [{"name": b.get("name"), "status": b.get("status")} for b in kept],
+        "would_archive_count": len(to_archive),
+        "would_archive_sample": [b.get("name") for b in to_archive[:20]],
+        "cascade": {
+            "bookings_to_cancel": bookings_to_cancel,
+            "workers_to_inactivate": workers_to_inactivate,
+            "services_to_inactivate": services_to_inactivate,
+            "branches_to_inactivate": branches_to_inactivate,
+        },
+    }
+
+    if not confirm:
+        preview["next_step"] = "Re-run with ?confirm=true to actually execute"
+        return preview
+
+    # EXECUTE
+    now = datetime.now(timezone.utc).isoformat()
+    biz_res = await db.businesses.update_many(
+        archive_filter,
+        {"$set": {"status": "archived", "active": False, "archived_at": now}},
+    )
+    workers_res = await db.workers.update_many(
+        {"business_id": {"$in": archive_ids}}, {"$set": {"active": False}}
+    )
+    services_res = await db.services.update_many(
+        {"business_id": {"$in": archive_ids}}, {"$set": {"active": False}}
+    )
+    branches_res = await db.branches.update_many(
+        {"business_id": {"$in": archive_ids}}, {"$set": {"is_active": False}}
+    )
+    bookings_res = await db.bookings.update_many(
+        {"business_id": {"$in": archive_ids}, "status": {"$in": ["pending", "confirmed", "held"]}},
+        {"$set": {"status": "cancelled", "cancelled_at": now, "cancellation_reason": "Business archived via cleanup"}},
+    )
+
+    await create_audit_log(
+        db=db,
+        actor_id=token_data.user_id,
+        actor_role="admin",
+        action="cleanup.archive_test_businesses",
+        target_type="businesses",
+        target_id="bulk",
+        details={
+            "keep_regex": keep_regex,
+            "archived": biz_res.modified_count,
+            "workers_inactivated": workers_res.modified_count,
+            "services_inactivated": services_res.modified_count,
+            "branches_inactivated": branches_res.modified_count,
+            "bookings_cancelled": bookings_res.modified_count,
+        },
+        request=request,
+    )
+
+    return {
+        "executed": True,
+        "kept_count": len(kept),
+        "kept_businesses": [b.get("name") for b in kept],
+        "archived_count": biz_res.modified_count,
+        "archived_sample": [b.get("name") for b in to_archive[:20]],
+        "cascade_applied": {
+            "workers_inactivated": workers_res.modified_count,
+            "services_inactivated": services_res.modified_count,
+            "branches_inactivated": branches_res.modified_count,
+            "bookings_cancelled": bookings_res.modified_count,
+        },
+        "reversible": "Run /api/admin/cleanup/restore-archived to undo if needed",
+    }
+
+
+@router.post("/cleanup/restore-archived")
+async def restore_archived_businesses(
+    request: Request,
+    confirm: bool = False,
+    token_data: TokenData = Depends(require_admin),
+):
+    """Emergency rollback for archive-test-businesses. Restores all archived → approved/active."""
+    archived = await db.businesses.find(
+        {"status": "archived"}, {"id": 1, "name": 1, "_id": 0}
+    ).to_list(1000)
+
+    if not confirm:
+        return {
+            "dry_run": True,
+            "would_restore_count": len(archived),
+            "would_restore_sample": [b.get("name") for b in archived[:20]],
+            "next_step": "Re-run with ?confirm=true to actually restore",
+        }
+
+    archive_ids = [b["id"] for b in archived]
+    biz_res = await db.businesses.update_many(
+        {"status": "archived"},
+        {"$set": {"status": "approved", "active": True}, "$unset": {"archived_at": ""}},
+    )
+    workers_res = await db.workers.update_many(
+        {"business_id": {"$in": archive_ids}}, {"$set": {"active": True}}
+    )
+    services_res = await db.services.update_many(
+        {"business_id": {"$in": archive_ids}}, {"$set": {"active": True}}
+    )
+    branches_res = await db.branches.update_many(
+        {"business_id": {"$in": archive_ids}}, {"$set": {"is_active": True}}
+    )
+
+    await create_audit_log(
+        db=db,
+        actor_id=token_data.user_id,
+        actor_role="admin",
+        action="cleanup.restore_archived",
+        target_type="businesses",
+        target_id="bulk",
+        details={
+            "restored": biz_res.modified_count,
+            "workers": workers_res.modified_count,
+            "services": services_res.modified_count,
+            "branches": branches_res.modified_count,
+        },
+        request=request,
+    )
+
+    return {
+        "executed": True,
+        "restored_count": biz_res.modified_count,
+        "workers_reactivated": workers_res.modified_count,
+        "services_reactivated": services_res.modified_count,
+        "branches_reactivated": branches_res.modified_count,
+    }
+
+
