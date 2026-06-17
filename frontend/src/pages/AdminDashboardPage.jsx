@@ -22,6 +22,7 @@ import AdminFinanceDashboardTab from '@/components/AdminFinanceDashboardTab';
 import AdminSettlementsTab from '@/components/AdminSettlementsTab';
 import AdminBackupsTab from '@/components/AdminBackupsTab';
 import DecommissionDialog from '@/components/DecommissionDialog';
+import BrokenDocsBulkRequestCard from '@/components/BrokenDocsBulkRequestCard';
 import {
   AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
 } from 'recharts';
@@ -3238,6 +3239,9 @@ export default function AdminDashboardPage() {
         {/* ============ COMPLIANCE TAB ============ */}
         {activeTab === 'compliance' && (
           <div className="space-y-6" data-testid="compliance-tab">
+            {/* Bulk re-request docs from businesses whose files were lost */}
+            <BrokenDocsBulkRequestCard t={t} language={language} />
+
             {/* Reported reviews moderation queue (Phase 17) */}
             <Card data-testid="reported-reviews-card">
               <CardHeader className="flex flex-row items-center justify-between">

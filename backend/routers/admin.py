@@ -1532,6 +1532,208 @@ async def request_business_revision(
     return {"message": "Revision requested", "status": BusinessStatus.NEEDS_REVISION.value}
 
 
+# ════════════════════════════════════════════════════════════════════════
+# BULK: Detect and request re-upload for businesses with broken legal docs
+# ════════════════════════════════════════════════════════════════════════
+@router.get("/businesses/with-broken-docs")
+async def list_businesses_with_broken_docs(
+    token_data: TokenData = Depends(require_admin),
+):
+    """Scan all businesses and return the ones whose legal document URLs
+    point to the backend's ephemeral disk (old uploads lost when Railway
+    rebooted) instead of Cloudinary.
+
+    Heuristic: URL is broken if it contains `/api/files/` (served by us)
+    OR points to a known backend host. URLs hosted on res.cloudinary.com
+    are considered safe.
+    """
+    cursor = db.businesses.find(
+        {
+            "is_archived": {"$ne": True},
+        },
+        {
+            "_id": 0,
+            "id": 1,
+            "name": 1,
+            "email": 1,
+            "status": 1,
+            "documents_verified": 1,
+            "ine_url": 1,
+            "proof_of_address_url": 1,
+            "bank_proof_url": 1,
+            "logo_url": 1,
+            "cover_photo": 1,
+        },
+    )
+
+    def is_broken(url: str) -> bool:
+        if not url:
+            return False
+        return ("/api/files/" in url) or ("bookvia-production.up.railway.app" in url)
+
+    field_to_label = {
+        "ine_url": "ine",
+        "proof_of_address_url": "constancia",
+        "bank_proof_url": "comprobante_bancario",
+        "logo_url": "logo",
+        "cover_photo": "cover_photo",
+    }
+
+    rows = []
+    async for biz in cursor:
+        broken_fields = []
+        for field, label in field_to_label.items():
+            if is_broken(biz.get(field)):
+                broken_fields.append(label)
+        if broken_fields:
+            rows.append({
+                "id": biz["id"],
+                "name": biz.get("name"),
+                "email": biz.get("email"),
+                "status": biz.get("status"),
+                "documents_verified": biz.get("documents_verified", False),
+                "broken_fields": broken_fields,
+            })
+
+    return {"count": len(rows), "businesses": rows}
+
+
+@router.post("/businesses/bulk-request-redocs")
+async def bulk_request_redocs(
+    request: Request,
+    token_data: TokenData = Depends(require_admin),
+):
+    """Run the broken-docs scan and, for every affected business, mark it as
+    `needs_revision` with the broken fields flagged and send the standard
+    revision-request email. Idempotent: if a business is already in
+    needs_revision with the same fields, it is skipped.
+    """
+    # Reuse the heuristic above by querying the same cursor
+    cursor = db.businesses.find(
+        {"is_archived": {"$ne": True}},
+        {
+            "_id": 0,
+            "id": 1,
+            "name": 1,
+            "email": 1,
+            "user_id": 1,
+            "status": 1,
+            "ine_url": 1,
+            "proof_of_address_url": 1,
+            "bank_proof_url": 1,
+            "logo_url": 1,
+            "cover_photo": 1,
+            "revision_request": 1,
+        },
+    )
+
+    def is_broken(url: str) -> bool:
+        if not url:
+            return False
+        return ("/api/files/" in url) or ("bookvia-production.up.railway.app" in url)
+
+    field_to_label = {
+        "ine_url": "ine",
+        "proof_of_address_url": "constancia",
+        "bank_proof_url": "comprobante_bancario",
+        "logo_url": "logo",
+        "cover_photo": "cover_photo",
+    }
+
+    reason = "Tus documentos se subieron antes de nuestra migracion a Cloudinary y ya no estan disponibles. Por favor vuelve a subirlos para que podamos verificarlos."
+
+    affected = []
+    skipped = []
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    async for biz in cursor:
+        broken_fields = []
+        for field, label in field_to_label.items():
+            if is_broken(biz.get(field)):
+                broken_fields.append(label)
+
+        if not broken_fields:
+            continue
+
+        # Skip if already in needs_revision with the exact same fields
+        existing = biz.get("revision_request") or {}
+        if (
+            biz.get("status") == BusinessStatus.NEEDS_REVISION.value
+            and existing.get("status") == "open"
+            and set(existing.get("fields_to_fix") or []) == set(broken_fields)
+        ):
+            skipped.append({"id": biz["id"], "name": biz.get("name"), "reason": "already_open"})
+            continue
+
+        revision_request = {
+            "reason": reason,
+            "fields_to_fix": broken_fields,
+            "requested_at": now_iso,
+            "requested_by": token_data.user_id,
+            "status": "open",
+            "resubmitted_at": None,
+            "resolved_at": None,
+        }
+
+        await db.businesses.update_one(
+            {"id": biz["id"]},
+            {"$set": {
+                "status": BusinessStatus.NEEDS_REVISION.value,
+                "documents_verified": False,
+                "revision_request": revision_request,
+            }},
+        )
+
+        # Email owner (best effort)
+        if biz.get("email"):
+            try:
+                from services.email import send_business_revision_request
+                await send_business_revision_request(
+                    email=biz["email"],
+                    business_name=biz.get("name", "tu negocio"),
+                    reason=reason,
+                    fields_to_fix=broken_fields,
+                )
+            except Exception as e:
+                logger.warning(f"Failed to send revision email to {biz.get('email')}: {e}")
+
+        # In-app notification
+        if biz.get("user_id"):
+            try:
+                await create_notification(
+                    biz["user_id"],
+                    "Tu perfil necesita correcciones",
+                    f"El equipo Bookvia revisó tus documentos: {reason}",
+                    "business_revision_request",
+                    {"business_id": biz["id"], "reason": reason, "fields_to_fix": broken_fields},
+                )
+            except Exception:
+                pass
+
+        affected.append({"id": biz["id"], "name": biz.get("name"), "fields": broken_fields})
+
+    await create_audit_log(
+        admin_id=token_data.user_id,
+        admin_email=token_data.email,
+        action=AuditAction.DOCS_REJECT,
+        target_type="business",
+        target_id="bulk",
+        details={
+            "kind": "bulk_redoc_request",
+            "affected_count": len(affected),
+            "skipped_count": len(skipped),
+        },
+        request=request,
+    )
+
+    return {
+        "affected_count": len(affected),
+        "skipped_count": len(skipped),
+        "affected": affected,
+        "skipped": skipped,
+    }
+
+
 @router.get("/businesses/pending-docs")
 async def list_businesses_pending_docs(
     limit: int = 50,
