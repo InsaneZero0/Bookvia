@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { useI18n } from '@/lib/i18n';
-import { Facebook, Twitter, Instagram, Linkedin, Mail, MapPin, Phone, Shield } from 'lucide-react';
+import { Facebook, Twitter, Instagram, Linkedin, Mail, MapPin, Shield } from 'lucide-react';
 
 export function Footer() {
   const { t, language } = useI18n();
@@ -120,13 +120,9 @@ export function Footer() {
                 <Mail className="h-4 w-4 text-[#F05D5E] shrink-0" />
                 <span>contacto@bookvia.com</span>
               </li>
-              <li className="flex items-center gap-3 text-slate-300 text-sm">
-                <Phone className="h-4 w-4 text-[#F05D5E] shrink-0" />
-                <span>+52 55 1234 5678</span>
-              </li>
               <li className="flex items-start gap-3 text-slate-300 text-sm">
                 <MapPin className="h-4 w-4 text-[#F05D5E] mt-0.5 shrink-0" />
-                <span>Ciudad de México, México</span>
+                <span>Santiago de Querétaro, Qro.</span>
               </li>
             </ul>
           </div>
