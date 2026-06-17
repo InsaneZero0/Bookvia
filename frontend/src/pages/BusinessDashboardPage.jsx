@@ -787,10 +787,70 @@ export default function BusinessDashboardPage() {
 
           {/* ── Overview/Schedule Tab ────────────────── */}
           <TabsContent value="overview" className="mt-6">
+            {/* Calendar + Today's bookings — TOP so the business sees them first */}
+            <div className="grid lg:grid-cols-3 gap-6 mb-6">
+              <Card className="lg:col-span-1">
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-base font-heading">{language === 'es' ? 'Calendario' : 'Calendar'}</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <Calendar
+                    mode="single"
+                    selected={selectedDate}
+                    onSelect={(date) => date && setSelectedDate(date)}
+                    locale={language === 'es' ? es : enUS}
+                    className="rounded-md border"
+                  />
+                </CardContent>
+              </Card>
+
+              <Card className="lg:col-span-2" data-testid="agenda-bookings-card">
+                <CardHeader className="pb-2 flex flex-row items-center justify-between">
+                  <CardTitle className="text-base font-heading">
+                    {language === 'es' ? 'Citas del ' : 'Bookings for '}
+                    {format(selectedDate, 'PPP', { locale: language === 'es' ? es : enUS })}
+                  </CardTitle>
+                  <Badge variant="outline">{dayBookings.length}</Badge>
+                </CardHeader>
+                <CardContent>
+                  {/* Leyenda de colores */}
+                  <div className="flex flex-wrap gap-x-4 gap-y-1 mb-4 text-xs text-muted-foreground">
+                    <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-blue-500" />{language === 'es' ? 'Confirmada' : 'Confirmed'}</span>
+                    <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />{language === 'es' ? 'Completada' : 'Completed'}</span>
+                    <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-amber-500" />{language === 'es' ? 'Pendiente de pago' : 'Pending payment'}</span>
+                    <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-red-500" />{language === 'es' ? 'Cancelada' : 'Cancelled'}</span>
+                  </div>
+                  <AgendaTimeline
+                    bookings={dayBookings}
+                    language={language}
+                    hasPermission={hasPermission}
+                    getStatusColor={getStatusColor}
+                    t={t}
+                    onClientClick={async (booking) => {
+                      setBookingDetail(booking);
+                      setClientHistory(null);
+                      if (booking.user_id) {
+                        setHistoryLoading(true);
+                        try {
+                          const res = await businessesAPI.getClientHistory(booking.user_id);
+                          setClientHistory(res.data);
+                        } catch { /* ignore */ }
+                        setHistoryLoading(false);
+                      }
+                    }}
+                    onComplete={(id) => handleBookingAction(id, 'complete')}
+                    onReschedule={openReschedule}
+                    onCancel={(id) => handleBookingAction(id, 'cancel')}
+                  />
+                </CardContent>
+              </Card>
+            </div>
+
             <ProfileCompletionBanner
               data={profileCompletion}
               onGoToTab={(tab) => setActiveTab(tab)}
             />
+
             {/* Dashboard Summary Cards */}
             {dashSummary && (
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6" data-testid="biz-dashboard-summary">
@@ -901,63 +961,6 @@ export default function BusinessDashboardPage() {
               </div>
             )}
 
-            <div className="grid lg:grid-cols-3 gap-6">
-              <Card className="lg:col-span-1">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-base font-heading">{language === 'es' ? 'Calendario' : 'Calendar'}</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <Calendar
-                    mode="single"
-                    selected={selectedDate}
-                    onSelect={(date) => date && setSelectedDate(date)}
-                    locale={language === 'es' ? es : enUS}
-                    className="rounded-md border"
-                  />
-                </CardContent>
-              </Card>
-
-              <Card className="lg:col-span-2">
-                <CardHeader className="pb-2 flex flex-row items-center justify-between">
-                  <CardTitle className="text-base font-heading">
-                    {language === 'es' ? 'Citas del ' : 'Bookings for '}
-                    {format(selectedDate, 'PPP', { locale: language === 'es' ? es : enUS })}
-                  </CardTitle>
-                  <Badge variant="outline">{dayBookings.length}</Badge>
-                </CardHeader>
-                <CardContent>
-                  {/* Leyenda de colores */}
-                  <div className="flex flex-wrap gap-x-4 gap-y-1 mb-4 text-xs text-muted-foreground">
-                    <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-blue-500" />{language === 'es' ? 'Confirmada' : 'Confirmed'}</span>
-                    <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />{language === 'es' ? 'Completada' : 'Completed'}</span>
-                    <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-amber-500" />{language === 'es' ? 'Pendiente de pago' : 'Pending payment'}</span>
-                    <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-red-500" />{language === 'es' ? 'Cancelada' : 'Cancelled'}</span>
-                  </div>
-                  <AgendaTimeline
-                    bookings={dayBookings}
-                    language={language}
-                    hasPermission={hasPermission}
-                    getStatusColor={getStatusColor}
-                    t={t}
-                    onClientClick={async (booking) => {
-                      setBookingDetail(booking);
-                      setClientHistory(null);
-                      if (booking.user_id) {
-                        setHistoryLoading(true);
-                        try {
-                          const res = await businessesAPI.getClientHistory(booking.user_id);
-                          setClientHistory(res.data);
-                        } catch { /* ignore */ }
-                        setHistoryLoading(false);
-                      }
-                    }}
-                    onComplete={(id) => handleBookingAction(id, 'complete')}
-                    onReschedule={openReschedule}
-                    onCancel={(id) => handleBookingAction(id, 'cancel')}
-                  />
-                </CardContent>
-              </Card>
-            </div>
           </TabsContent>
 
           {/* ── Reports Tab ─────────────────────────── */}
