@@ -3143,6 +3143,20 @@ async def admin_list_refunds(
 @router.get("/stripe/webhook-events")
 async def admin_stripe_webhook_events(
     limit: int = 50,
+    token_data: TokenData = Depends(require_admin),
+):
+    """Last N Stripe webhook events received (for idempotency audit)."""
+    # stripe_events uses event.id as _id; we must include it for display.
+    cursor = db.stripe_events.find({}).sort("received_at", -1).limit(max(1, min(limit, 200)))
+    rows = []
+    async for d in cursor:
+        rows.append({
+            "event_id": d.get("_id"),
+            "event_type": d.get("event_type"),
+            "received_at": d.get("received_at"),
+        })
+    return {"count": len(rows), "items": rows}
+
 
 @router.get("/stripe/subscription-config")
 async def get_stripe_subscription_config(
@@ -3182,21 +3196,6 @@ async def get_stripe_subscription_config(
         "trial_days_configured": SUBSCRIPTION_TRIAL_DAYS,
         "configs": enriched,
     }
-
-
-    token_data: TokenData = Depends(require_admin),
-):
-    """Last N Stripe webhook events received (for idempotency audit)."""
-    # stripe_events uses event.id as _id; we must include it for display.
-    cursor = db.stripe_events.find({}).sort("received_at", -1).limit(max(1, min(limit, 200)))
-    rows = []
-    async for d in cursor:
-        rows.append({
-            "event_id": d.get("_id"),
-            "event_type": d.get("event_type"),
-            "received_at": d.get("received_at"),
-        })
-    return {"count": len(rows), "items": rows}
 
 
 # ========================== FASE 12d: MONTHLY P&L EMAIL REPORT ==========================

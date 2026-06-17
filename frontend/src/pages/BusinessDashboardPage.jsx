@@ -714,35 +714,9 @@ export default function BusinessDashboardPage() {
         {biz?.status === 'needs_revision' && (
           <RevisionRequestBanner biz={biz} language={language} onResubmitted={loadDashboard} />
         )}
-        {(biz?.subscription_status === 'past_due' || biz?.subscription_status === 'unpaid') && (
-          <Card className="mb-6 border-red-500/60 bg-red-50 dark:bg-red-900/20" data-testid="subscription-payment-failed-banner">
-            <CardContent className="p-5">
-              <div className="flex items-start gap-3">
-                <AlertTriangle className="h-6 w-6 text-red-600 shrink-0 mt-0.5" />
-                <div className="flex-1">
-                  <p className="font-semibold text-red-900 dark:text-red-100 text-base">
-                    {language === 'es'
-                      ? 'Tu pago mensual no pudo procesarse'
-                      : 'Your monthly payment could not be processed'}
-                  </p>
-                  <p className="text-sm text-red-800 dark:text-red-200 mt-1 leading-snug">
-                    {language === 'es'
-                      ? `Tu tarjeta fue rechazada${biz?.subscription_failed_attempts > 1 ? ` (${biz.subscription_failed_attempts} intentos)` : ''}. Actualiza tu método de pago en los próximos 7 días para no perder tu cuenta. Mientras tanto seguirás recibiendo reservas, pero después tu negocio se suspenderá.`
-                      : `Your card was declined${biz?.subscription_failed_attempts > 1 ? ` (${biz.subscription_failed_attempts} attempts)` : ''}. Update your payment method within 7 days to keep your account active.`}
-                  </p>
-                  <Button
-                    onClick={() => navigate('/business/finance')}
-                    className="mt-3 bg-red-600 hover:bg-red-700 text-white"
-                    size="sm"
-                    data-testid="update-payment-method-btn"
-                  >
-                    {language === 'es' ? 'Actualizar tarjeta' : 'Update card'}
-                  </Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
+
+        {/* Phase D — Subscription past_due / unpaid banner (intentos fallidos + tarjeta) */}
+        <SubscriptionPastDueBanner />
 
         {/* ── Stats Cards ────────────────────────────── */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
@@ -784,9 +758,6 @@ export default function BusinessDashboardPage() {
 
         {/* Stripe Connect required banner - only relevant if business takes deposits */}
         {biz?.requires_deposit && <StripeConnectRequiredBanner />}
-
-        {/* Phase D — Subscription past_due / unpaid banner */}
-        <SubscriptionPastDueBanner />
 
         {/* ── Tabs ────────────────────────────────────── */}
         {(() => {

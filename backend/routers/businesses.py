@@ -2862,7 +2862,13 @@ async def get_subscription_status(session_id: str = None, token_data: TokenData 
         "trial": sub_status == "trialing",
         "current_period_end": None,
         "cancel_at_period_end": False,
-        "country_code": (business.get("country_code") if business else None) or "MX"
+        "country_code": (business.get("country_code") if business else None) or "MX",
+        # Phase D - payment failure context for dashboard banner
+        "failed_attempts": int(business.get("subscription_failed_attempts") or 0) if business else 0,
+        "failed_at": business.get("subscription_failed_at") if business else None,
+        "last_paid_at": business.get("subscription_last_paid_at") if business else None,
+        "card_brand": None,
+        "card_last4": None,
     }
     
     # Fetch live details from Stripe if subscription exists
@@ -2881,6 +2887,22 @@ async def get_subscription_status(session_id: str = None, token_data: TokenData 
                 result["status"] = stripe_status
                 result["subscription_status"] = stripe_status
                 result["trial"] = stripe_status == "trialing"
+            # Surface the last 4 digits of the card on file so the business
+            # knows exactly which card was declined and needs to be replaced.
+            try:
+                pm_id = sub.default_payment_method
+                if pm_id:
+                    pm = stripe_lib.PaymentMethod.retrieve(pm_id)
+                    if pm.card:
+                        result["card_brand"] = pm.card.brand
+                        result["card_last4"] = pm.card.last4
+                elif business.get("stripe_customer_id"):
+                    pms = stripe_lib.PaymentMethod.list(customer=business["stripe_customer_id"], type="card", limit=1)
+                    if pms.data:
+                        result["card_brand"] = pms.data[0].card.brand
+                        result["card_last4"] = pms.data[0].card.last4
+            except Exception as ce:
+                logger.warning(f"Could not fetch payment method for sub {sub_id}: {ce}")
         except Exception as e:
             logger.error(f"Stripe subscription fetch error: {e}")
     
