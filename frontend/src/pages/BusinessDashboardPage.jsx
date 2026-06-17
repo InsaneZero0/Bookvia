@@ -715,6 +715,9 @@ export default function BusinessDashboardPage() {
           <RevisionRequestBanner biz={biz} language={language} onResubmitted={loadDashboard} />
         )}
 
+        {/* Phase D — Subscription past_due / unpaid banner (intentos fallidos + tarjeta) */}
+        <SubscriptionPastDueBanner />
+
         {/* ── Stats Cards ────────────────────────────── */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
           {[
@@ -755,9 +758,6 @@ export default function BusinessDashboardPage() {
 
         {/* Stripe Connect required banner - only relevant if business takes deposits */}
         {biz?.requires_deposit && <StripeConnectRequiredBanner />}
-
-        {/* Phase D — Subscription past_due / unpaid banner */}
-        <SubscriptionPastDueBanner />
 
         {/* ── Tabs ────────────────────────────────────── */}
         {(() => {

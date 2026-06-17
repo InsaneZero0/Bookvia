@@ -194,11 +194,6 @@ export default function LoginPage() {
                   {language === 'es' ? 'Registralo aqui' : 'Register it here'}
                 </Link>
               </p>
-              <div className="border-t border-border pt-3">
-                <Link to="/bv-ctrl/login" className="text-xs text-muted-foreground hover:text-foreground" data-testid="admin-login-link">
-                  {language === 'es' ? 'Acceso administrador' : 'Admin access'}
-                </Link>
-              </div>
             </div>
           </CardContent>
         </Card>

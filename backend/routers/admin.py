@@ -3158,6 +3158,46 @@ async def admin_stripe_webhook_events(
     return {"count": len(rows), "items": rows}
 
 
+@router.get("/stripe/subscription-config")
+async def get_stripe_subscription_config(
+    token_data: TokenData = Depends(require_admin),
+):
+    """Returns the cached Stripe product/price IDs used for business subscriptions.
+    Used by admin to verify that the monthly subscription price is configured in
+    Stripe Live and matches the expected amount.
+    """
+    configs = await db.stripe_config.find({}, {"_id": 0}).to_list(10)
+
+    # Validate each price still exists in Stripe (live mode)
+    import stripe as stripe_lib
+    from core.stripe_config import STRIPE_API_KEY
+    stripe_lib.api_key = STRIPE_API_KEY
+
+    enriched = []
+    for c in configs:
+        item = dict(c)
+        price_id = c.get("price_id")
+        if price_id:
+            try:
+                price = stripe_lib.Price.retrieve(price_id)
+                item["stripe_valid"] = True
+                item["stripe_active"] = price.get("active", False)
+                item["stripe_unit_amount"] = price.get("unit_amount")
+                item["stripe_currency"] = price.get("currency")
+                item["stripe_recurring"] = price.get("recurring", {})
+                item["stripe_product_id"] = price.get("product")
+            except Exception as e:
+                item["stripe_valid"] = False
+                item["stripe_error"] = str(e)[:200]
+        enriched.append(item)
+
+    return {
+        "count": len(enriched),
+        "trial_days_configured": SUBSCRIPTION_TRIAL_DAYS,
+        "configs": enriched,
+    }
+
+
 # ========================== FASE 12d: MONTHLY P&L EMAIL REPORT ==========================
 
 

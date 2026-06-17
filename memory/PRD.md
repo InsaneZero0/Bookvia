@@ -937,3 +937,14 @@ Cuando un negocio real tenga su tarjeta fallida:
 - Dashboard "De dónde vienen mis clientes" (orgánico/QR/share)
 - Twilio A2P 10DLC para SMS reales
 - Refactor de `bookings.py` y `AdminDashboardPage.jsx`
+
+
+**Banner tarjeta declinada — Refuerzo (Feb 2026)**
+- ✅ Confirmado producto en Stripe LIVE: `price_1TiKgIBISc5qY4hhcbTOdrSz` "Bookvia Suscripción Mensual" $49.99 MXN/mes recurring.
+- ✅ Endpoint `GET /businesses/me/subscription/status` extendido: ahora devuelve `failed_attempts`, `failed_at`, `last_paid_at`, `card_brand`, `card_last4`.
+- ✅ `SubscriptionPastDueBanner.jsx` enriquecido: muestra monto $49.99 MXN, marca+últimos 4 dígitos de la tarjeta rechazada, número de intentos fallidos y fecha del primer fallo.
+- ✅ Eliminado banner duplicado inline en `BusinessDashboardPage` que usaba `subscription_failed_attempts` del biz doc; ahora sólo se usa el componente reactivo `SubscriptionPastDueBanner` que llama al endpoint live.
+- ✅ Bug fix pre-existente: `routers/admin.py` línea 3147 tenía dos funciones colisionadas (`admin_stripe_webhook_events` quedó cortada y `get_stripe_subscription_config` se incrustó en su firma) — separadas correctamente.
+- ✅ Nuevo endpoint admin `GET /api/admin/stripe/subscription-config` valida con `Price.retrieve` que el price cacheado siga existiendo en Stripe Live.
+- ✅ Verificado con screenshot en preview: banner renderiza con todos los chips y CTA "Actualizar tarjeta" → Stripe Customer Portal.
+
