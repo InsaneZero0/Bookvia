@@ -64,7 +64,7 @@ function SectionTitle({ children }) {
 /* Inline preview of an uploaded doc (PDF/image). Falls back to a link if
    the URL is missing or the content type cannot be embedded. */
 function DocPreviewCard({ url, label, testid, highlight, t }) {
-  const [renderMode, setRenderMode] = useState('auto'); // 'auto' | 'image' | 'pdf' | 'link'
+  const [renderMode, setRenderMode] = useState('auto'); // 'auto' | 'image' | 'pdf' | 'link' | 'missing'
   const borderCls = highlight ? 'border-indigo-300 ring-1 ring-indigo-200' : 'border-border';
 
   // Detect type. Strip query string and lowercase.
@@ -74,6 +74,23 @@ function DocPreviewCard({ url, label, testid, highlight, t }) {
   // Cloudinary delivery URLs: /image/upload/ or no extension at all → treat as image first
   const isCloudinaryImage = url && (/\/image\/upload\//.test(url) || (!isPdfByExt && !isImageByExt && /cloudinary\.com/.test(url)));
   const isCloudinaryRaw = url && /\/raw\/upload\//.test(url);
+
+  // Probe the file once on mount. If the backend serves it as 404 (e.g. lost
+  // on Railway's ephemeral disk before the Cloudinary migration), surface a
+  // clear "missing" state instead of a broken icon/iframe.
+  useEffect(() => {
+    if (!url) return;
+    let cancelled = false;
+    fetch(url, { method: 'HEAD' })
+      .then((res) => {
+        if (cancelled) return;
+        if (res.status === 404 || res.status === 410) {
+          setRenderMode('missing');
+        }
+      })
+      .catch(() => { /* network errors handled by img/iframe onError */ });
+    return () => { cancelled = true; };
+  }, [url]);
 
   // Decide initial mode
   let mode = renderMode;
@@ -87,7 +104,7 @@ function DocPreviewCard({ url, label, testid, highlight, t }) {
     <div className={`rounded-lg border ${borderCls} p-2 bg-muted/30 flex flex-col`} data-testid={testid}>
       <div className="flex items-center justify-between mb-1">
         <p className="text-xs font-medium truncate">{label}</p>
-        {url && (
+        {url && mode !== 'missing' && (
           <a href={url} target="_blank" rel="noopener noreferrer"
             className="text-[10px] text-blue-600 hover:underline flex items-center gap-0.5 shrink-0"
             data-testid={`${testid}-open`}>
@@ -98,6 +115,15 @@ function DocPreviewCard({ url, label, testid, highlight, t }) {
       {!url ? (
         <div className="h-28 rounded bg-muted/60 flex items-center justify-center text-center text-xs text-muted-foreground italic px-2">
           {t('No subido', 'Not uploaded')}
+        </div>
+      ) : mode === 'missing' ? (
+        <div
+          data-testid={`${testid}-missing`}
+          className="h-28 rounded bg-amber-50 border border-amber-200 flex flex-col items-center justify-center text-center text-[11px] text-amber-900 px-2 leading-tight"
+        >
+          <AlertCircle className="h-4 w-4 mb-1 text-amber-600" />
+          <span className="font-semibold">{t('Archivo no disponible', 'File unavailable')}</span>
+          <span className="text-[10px] mt-0.5">{t('Solicita al negocio que lo vuelva a subir.', 'Ask the business to re-upload it.')}</span>
         </div>
       ) : mode === 'image' ? (
         <a href={url} target="_blank" rel="noopener noreferrer" className="block">
