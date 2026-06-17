@@ -46,7 +46,7 @@ export default function HomePage() {
   // Hero rotating images — diverse professional services across categories
   const heroImages = [
     { src: 'https://images.unsplash.com/photo-1522337660859-02fbefca4702?auto=format&fit=crop&q=80&w=1200', alt: 'Servicio profesional de manicura' },
-    { src: 'https://images.unsplash.com/photo-1503951914875-452162b0f3f1?auto=format&fit=crop&q=80&w=1200', alt: 'Barbero recortando barba con tijeras' },
+    { src: 'https://customer-assets.emergentagent.com/job_63d07d25-f91a-41d9-abd3-14123baf6a9f/artifacts/0ujkka4x_image.png', alt: 'Barbero recortando cabello con tijeras en barberia moderna' },
     { src: 'https://images.unsplash.com/photo-1580618672591-eb180b1a973f?auto=format&fit=crop&q=80&w=1200', alt: 'Estilista profesional secando y peinando cabello' },
     { src: 'https://images.pexels.com/photos/4270095/pexels-photo-4270095.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=900&w=720', alt: 'Dentista mostrando modelo dental a paciente en consulta' },
     { src: 'https://customer-assets.emergentagent.com/job_63d07d25-f91a-41d9-abd3-14123baf6a9f/artifacts/nfemxt0d_image.png', alt: 'Mecánico en overol azul trabajando bajo auto elevado con llave' },
