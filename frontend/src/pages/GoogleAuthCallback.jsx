@@ -27,7 +27,7 @@ export default function GoogleAuthCallback() {
 
         await googleLogin(sessionId);
         toast.success('¡Bienvenido!');
-        navigate('/dashboard', { replace: true });
+        navigate('/search', { replace: true });
       } catch (error) {
         const detail = error.response?.data?.detail || 'Error al iniciar sesión con Google';
         toast.error(detail);

@@ -23,7 +23,7 @@ export default function LoginPage() {
     if (authLoading) return;
     if (isAuthenticated && user) {
       if (user.role === 'business') navigate('/business/dashboard');
-      else navigate('/dashboard');
+      else navigate('/search');
     }
   }, [isAuthenticated, user, navigate, authLoading]);
 
@@ -40,7 +40,7 @@ export default function LoginPage() {
     try {
       await googleLogin(sessionId);
       toast.success(language === 'es' ? 'Sesion iniciada con Google' : 'Logged in with Google');
-      navigate('/dashboard');
+      navigate('/search');
     } catch {
       toast.error(language === 'es' ? 'Error al iniciar con Google' : 'Google login error');
     }
@@ -60,7 +60,7 @@ export default function LoginPage() {
       if (result.account_type === 'business') {
         navigate('/business/dashboard');
       } else {
-        navigate('/dashboard');
+        navigate('/search');
       }
     } catch (error) {
       const detail = error.response?.data?.detail;
