@@ -43,6 +43,12 @@ export function SEOHead({
     updateMeta('og:description', ogDescription || description, true);
     updateMeta('og:image', ogImage, true);
     updateMeta('og:type', 'website', true);
+    if (canonical) {
+      const ogUrl = /^https?:\/\//i.test(canonical)
+        ? canonical
+        : `${window.location.origin}${canonical}`;
+      updateMeta('og:url', ogUrl, true);
+    }
 
     // Twitter Card tags
     updateMeta('twitter:card', 'summary_large_image');
@@ -58,7 +64,11 @@ export function SEOHead({
         link.setAttribute('rel', 'canonical');
         document.head.appendChild(link);
       }
-      link.setAttribute('href', `${window.location.origin}${canonical}`);
+      // Accept both absolute ("https://...") and relative ("/foo") canonicals
+      const href = /^https?:\/\//i.test(canonical)
+        ? canonical
+        : `${window.location.origin}${canonical}`;
+      link.setAttribute('href', href);
     }
 
     // Cleanup on unmount

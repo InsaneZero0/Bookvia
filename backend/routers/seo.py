@@ -37,21 +37,27 @@ seo_router = APIRouter(tags=["SEO"])
 
 
 def get_base_url(request: Request) -> str:
+    """Get base URL for sitemap, robots.txt and canonical URLs.
+
+    Priority:
+      1. PUBLIC_BASE_URL env var — the canonical public domain (e.g. https://www.bookvia.app)
+      2. BASE_URL env var (legacy, used internally for upload URLs)
+      3. Request host (development fallback)
     """
-    Get base URL for sitemap and robots.txt.
-    Priority: BASE_URL env var > request host > config default
-    """
-    # Check for explicit BASE_URL first
+    # Production canonical domain — must always point to the user-facing site,
+    # never to the internal Railway host (otherwise Google indexes the wrong URLs).
+    public = os.environ.get('PUBLIC_BASE_URL')
+    if public:
+        return public.rstrip('/')
+
     env_base_url = os.environ.get('BASE_URL')
     if env_base_url:
         return env_base_url.rstrip('/')
-    
-    # In production, use the request host with HTTPS
+
     if IS_PRODUCTION:
-        host = request.headers.get('host', 'bookvia.com')
+        host = request.headers.get('host', 'www.bookvia.app')
         return f"https://{host}"
-    
-    # Fallback to config or request
+
     return CONFIG_BASE_URL.rstrip('/')
 
 

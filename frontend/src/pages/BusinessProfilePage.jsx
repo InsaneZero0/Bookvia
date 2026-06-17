@@ -6,6 +6,8 @@ import { Badge } from '@/components/ui/badge';
 import { TrustBadge } from '@/components/TrustBadge';
 import BusinessBranchesSection from '@/components/BusinessBranchesSection';
 import SmartImage from '@/components/SmartImage';
+import { SEOHead } from '@/components/SEOHead';
+import { JsonLd, buildLocalBusinessSchema, buildBreadcrumbSchema } from '@/components/JsonLd';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Calendar } from '@/components/ui/calendar';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
@@ -682,8 +684,33 @@ export default function BusinessProfilePage() {
   // ═══════════════════════════════════════════════════
   //  RENDER
   // ═══════════════════════════════════════════════════
+  // SEO meta + JSON-LD payload
+  const seoTitle = `${business.name}${business.city ? ` en ${business.city}` : ''}`;
+  const seoDescription = (business.description?.slice(0, 155))
+    || `Reserva una cita en ${business.name}${business.city ? `, ${business.city}` : ''}. Agenda online, confirmacion al instante, pago seguro.`;
+  const seoImage = business.cover_photo || (business.photos && business.photos[0]) || business.logo_url;
+  const citySlug = (business.city || '').toLowerCase().replace(/\s+/g, '-');
+  const countrySlug = (business.country_code || 'MX').toLowerCase();
+  const seoCanonical = `https://www.bookvia.app/${countrySlug}/${citySlug}/${business.slug || business.id}`;
+  const localBusinessLd = buildLocalBusinessSchema(business, services, reviews);
+  const breadcrumbLd = buildBreadcrumbSchema([
+    { name: 'Inicio', url: 'https://www.bookvia.app/' },
+    ...(business.city ? [{ name: business.city, url: `https://www.bookvia.app/${countrySlug}/${citySlug}` }] : []),
+    { name: business.name, url: seoCanonical },
+  ]);
+
   return (
     <div className="min-h-screen pt-16 bg-background" data-testid="business-profile-page">
+      <SEOHead
+        title={seoTitle}
+        description={seoDescription}
+        canonical={seoCanonical}
+        ogTitle={seoTitle}
+        ogDescription={seoDescription}
+        ogImage={seoImage}
+      />
+      {localBusinessLd && <JsonLd data={localBusinessLd} id="jsonld-localbusiness" />}
+      <JsonLd data={breadcrumbLd} id="jsonld-breadcrumbs" />
 
       {/* ─── Photo Grid ─────────────────────────────── */}
       <div className="container-app mt-2">
