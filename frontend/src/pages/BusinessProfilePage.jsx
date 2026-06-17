@@ -5,6 +5,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { TrustBadge } from '@/components/TrustBadge';
 import BusinessBranchesSection from '@/components/BusinessBranchesSection';
+import SmartImage from '@/components/SmartImage';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Calendar } from '@/components/ui/calendar';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
@@ -694,9 +695,13 @@ export default function BusinessProfilePage() {
         <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
           <div className="space-y-2 flex-1">
             <div className="flex items-start gap-4">
-              {(business.logo_url || business.cover_photo) && (
-                <img src={business.logo_url || business.cover_photo} alt={business.name} className="h-16 w-16 rounded-full object-cover border-2 border-white shadow-sm shrink-0" data-testid="business-logo" />
-              )}
+              <SmartImage
+                src={business.logo_url || business.cover_photo}
+                name={business.name}
+                alt={business.name}
+                className="h-16 w-16 rounded-full object-cover border-2 border-white shadow-sm shrink-0"
+                data-testid="business-logo"
+              />
               <div className="space-y-2">
                 <div className="flex flex-wrap items-center gap-2">
               {business.category_name && (
