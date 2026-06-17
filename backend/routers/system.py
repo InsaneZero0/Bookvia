@@ -927,11 +927,16 @@ async def seed_countries():
 
 @router.post("/upload/public")
 async def upload_public_image(file: UploadFile = File(...)):
-    """Public upload endpoint for registration (no auth needed)."""
+    """Public upload endpoint for registration (no auth needed).
+    
+    Uploads directly to Cloudinary so the returned URL is permanent and
+    served from a CDN (independent of backend disk/container restarts).
+    Falls back to Emergent object storage only if Cloudinary is misconfigured.
+    """
     data = await file.read()
     if len(data) > 5 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="File too large. Maximum 5MB")
-    
+
     ext = file.filename.split(".")[-1].lower() if "." in file.filename else ""
     if ext not in ("jpg", "jpeg", "png", "webp", "jfif", "pdf"):
         raise HTTPException(status_code=400, detail="Only JPG, PNG, WebP or PDF allowed")
@@ -941,12 +946,49 @@ async def upload_public_image(file: UploadFile = File(...)):
         content_type = "image/jpeg"
     elif ext == "pdf":
         content_type = "application/pdf"
-    
+
+    # ── Preferred path: upload to Cloudinary (permanent, CDN, no disk dependency)
+    try:
+        from services import cloudinary_service
+        if cloudinary_service.is_configured():
+            import cloudinary.uploader
+            import uuid as _uuid
+            public_id = f"bookvia/businesses/registration/{_uuid.uuid4().hex[:12]}"
+            if ext == "pdf":
+                # Documents go as raw (no transformation)
+                result = cloudinary.uploader.upload(
+                    data,
+                    public_id=public_id,
+                    overwrite=True,
+                    resource_type="raw",
+                    format="pdf",
+                )
+            else:
+                result = cloudinary.uploader.upload(
+                    data,
+                    public_id=public_id,
+                    overwrite=True,
+                    resource_type="image",
+                    format="webp",
+                    transformation=[{"quality": "auto", "fetch_format": "auto"}],
+                )
+            return {"url": result["secure_url"], "public_id": result.get("public_id")}
+    except Exception as e:
+        logger.error(f"Cloudinary public upload failed, falling back to object storage: {e}")
+
+    # ── Fallback: legacy Emergent object storage (kept for safety)
     path = generate_upload_path("registration", file.filename)
     try:
         result = put_object(path, data, content_type)
         base_url = os.environ.get("BASE_URL", "")
         photo_url = f"{base_url}/api/files/{result['path']}"
+        # Persist the storage path so serve_file can authorise it (otherwise it 404s)
+        await db.business_photos.insert_one({
+            "public_id": result["path"],
+            "content_type": content_type,
+            "is_deleted": False,
+            "source": "public_upload",
+        })
         return {"url": photo_url}
     except Exception as e:
         logger.error(f"Public upload failed: {e}")
