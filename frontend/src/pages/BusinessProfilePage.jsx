@@ -34,7 +34,7 @@ import {
   MapPin, Clock, Phone, Mail, Star, Heart, Share2, CheckCircle2,
   ArrowLeft, Calendar as CalendarIcon, User, ChevronRight, ChevronLeft,
   Globe, Shield, Scissors, ExternalLink, MessageSquare, HelpCircle,
-  Award, Users, Briefcase, Navigation, Link2
+  Award, Users, Briefcase, Navigation, Link2, AlertTriangle
 } from 'lucide-react';
 
 // ─── Day name helper ──────────────────────────────────
@@ -524,7 +524,23 @@ export default function BusinessProfilePage() {
       const dateStr = format(selectedDate, 'yyyy-MM-dd');
       const workerId = selectedWorker?.id;
       const res = await bookingsAPI.getAvailability(business.id, dateStr, selectedService?.id, workerId);
-      const slots = Array.isArray(res.data?.slots) ? res.data.slots : [];
+      let slots = Array.isArray(res.data?.slots) ? res.data.slots : [];
+      // Same-day bookings: only allow slots >= now + MIN_LEAD_HOURS to give the
+      // business enough time to prepare. Server will also enforce, but filtering
+      // here keeps the UI clean.
+      const MIN_LEAD_HOURS = 2;
+      const today = new Date(); today.setHours(0, 0, 0, 0);
+      const picked = new Date(selectedDate); picked.setHours(0, 0, 0, 0);
+      if (picked.getTime() === today.getTime()) {
+        const cutoff = new Date(Date.now() + MIN_LEAD_HOURS * 3600 * 1000);
+        slots = slots.filter((s) => {
+          const t = s.start_time || s.time || s;
+          if (typeof t !== 'string') return true;
+          const [hh, mm] = t.split(':').map(Number);
+          const dt = new Date(); dt.setHours(hh || 0, mm || 0, 0, 0);
+          return dt >= cutoff;
+        });
+      }
       setAvailableSlots(slots);
     } catch {
       setAvailableSlots([]);
@@ -1226,7 +1242,14 @@ export default function BusinessProfilePage() {
                 mode="single"
                 selected={selectedDate}
                 onSelect={(date) => { setSelectedDate(date); setBookingStep(isBizUser ? 2 : stepProfesional); }}
-                disabled={(date) => date < new Date()}
+                disabled={(date) => {
+                  // Allow today; disable any day before today (date-only compare).
+                  const t = new Date();
+                  t.setHours(0, 0, 0, 0);
+                  const d = new Date(date);
+                  d.setHours(0, 0, 0, 0);
+                  return d < t;
+                }}
                 locale={language === 'es' ? es : enUS}
                 className="rounded-md border mx-auto"
               />
@@ -1345,6 +1368,30 @@ export default function BusinessProfilePage() {
                   <ChevronLeft className="h-4 w-4 mr-1" />{language === 'es' ? 'Cambiar' : 'Change'}
                 </Button>
               </div>
+
+              {(() => {
+                // Same-day notice: reservar hoy = probablemente no podras reagendar
+                const today = new Date(); today.setHours(0, 0, 0, 0);
+                const picked = new Date(selectedDate); picked.setHours(0, 0, 0, 0);
+                const isToday = picked.getTime() === today.getTime();
+                if (!isToday) return null;
+                const cutoff = Number(business?.cancellation_hours) || 24;
+                return (
+                  <div className="rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800 p-3 flex items-start gap-2" data-testid="same-day-booking-notice">
+                    <AlertTriangle className="h-4 w-4 text-amber-700 dark:text-amber-300 shrink-0 mt-0.5" />
+                    <div className="text-xs text-amber-900 dark:text-amber-200 leading-relaxed">
+                      <p className="font-semibold mb-1">
+                        {language === 'es' ? 'Reserva el mismo dia' : 'Same-day booking'}
+                      </p>
+                      <p>
+                        {language === 'es'
+                          ? `Podras hacer tu cita pero NO podras reagendarla, ya que excede la ventana de ${cutoff} horas de anticipacion que pide el negocio. Si tienes que cancelar, perderias el anticipo.`
+                          : `You can book but NOT reschedule it later, because it is inside the business's ${cutoff}-hour window. If you cancel, you would lose the deposit.`}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {slotsLoading ? (
                 <div className="grid grid-cols-3 gap-2">
