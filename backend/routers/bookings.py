@@ -2189,14 +2189,14 @@ async def cancellation_preview(booking_id: str, token_data: TokenData = Depends(
             "title_es": f"Esta cancelacion te costara ${penalty:.2f} MXN",
             "title_en": f"This cancellation will cost you ${penalty:.2f} MXN",
             "lines_es": [
-                f"Se le reembolsaran ${client_paid:.2f} MXN al cliente.",
+                "Se le hara el reembolso completo al cliente.",
                 f"Penalty: ${float(BOOKVIA_FEE_MXN):.2f} (tarifa Bookvia) + ${commission_component:.2f} (comision proporcional al anticipo).",
                 f"Se descontaran ${covered:.2f} de tu saldo pendiente." if covered > 0 else "No hay saldo pendiente para cubrir el cargo.",
                 f"Quedan ${debt:.2f} como deuda que se restara de tus proximos pagos." if debt > 0 else "Sin deuda adicional.",
                 "Las cancelaciones frecuentes pueden suspender tu cuenta.",
             ],
             "lines_en": [
-                f"${client_paid:.2f} MXN will be refunded to the client.",
+                "The client will receive a full refund.",
                 f"Penalty: ${float(BOOKVIA_FEE_MXN):.2f} (Bookvia fee) + ${commission_component:.2f} (commission proportional to the deposit).",
                 f"${covered:.2f} will be deducted from your pending balance." if covered > 0 else "No pending balance to cover the charge.",
                 f"${debt:.2f} will remain as debt deducted from future payouts." if debt > 0 else "No outstanding debt.",
