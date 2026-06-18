@@ -426,6 +426,7 @@ export const adminAPI = {
   getArcoEvents: (limit = 50) => api.get('/admin/compliance/arco-events', { params: { limit } }),
   getRefundsAudit: (limit = 50) => api.get('/admin/finance/refunds', { params: { limit } }),
   getRefundsPending: (limit = 100) => api.get('/admin/finance/refunds/pending', { params: { limit } }),
+  issueRefund: (transactionId) => api.post(`/admin/finance/refunds/${transactionId}/issue`),
   retryRefund: (transactionId) => api.post(`/admin/finance/refunds/${transactionId}/retry`),
   getStripeWebhookEvents: (limit = 50) => api.get('/admin/stripe/webhook-events', { params: { limit } }),
   previewPnlReport: () => api.get('/admin/platform/pnl-report/preview'),

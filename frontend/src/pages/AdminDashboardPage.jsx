@@ -874,13 +874,13 @@ export default function AdminDashboardPage() {
   const handleRetryRefund = async (transactionId) => {
     setRetryingRefundId(transactionId);
     try {
-      const res = await adminAPI.retryRefund(transactionId);
-      toast.success(t('Reembolso emitido a Stripe correctamente', 'Refund issued to Stripe successfully'));
-      console.log('Retry success:', res.data);
+      const res = await adminAPI.issueRefund(transactionId);
+      const dest = res.data?.destination === 'card' ? t('a la tarjeta', 'to card') : t('al saldo Bookvia', 'to wallet');
+      toast.success(t(`Reembolso emitido ${dest} correctamente`, `Refund issued ${dest} successfully`));
       await loadRefundsTab();
     } catch (err) {
       const detail = err?.response?.data?.detail || err.message;
-      toast.error(t(`Reintento fallo: ${detail}`, `Retry failed: ${detail}`));
+      toast.error(t(`Error al emitir reembolso: ${detail}`, `Error issuing refund: ${detail}`));
     }
     setRetryingRefundId(null);
   };
@@ -3268,7 +3268,7 @@ export default function AdminDashboardPage() {
               <CardHeader className="flex flex-row items-center justify-between">
                 <CardTitle className="font-heading flex items-center gap-2">
                   <AlertCircle className="h-5 w-5 text-red-500" />
-                  {t('Reembolsos Pendientes', 'Pending Refunds')}
+                  {t('Cola de Reembolsos por Emitir', 'Refunds Awaiting Issue')}
                   {refundsPending && refundsPending.count > 0 && (
                     <Badge className="bg-red-100 text-red-700 ml-2" data-testid="pending-refunds-badge">
                       {refundsPending.count} - {formatCurrency(refundsPending.pending_total_mxn)}
@@ -3283,8 +3283,8 @@ export default function AdminDashboardPage() {
               <CardContent>
                 <p className="text-xs text-muted-foreground mb-3">
                   {t(
-                    'Transacciones donde el reembolso a Stripe fallo o no se pudo emitir. Revisa el motivo y reintenta cuando este resuelto.',
-                    'Transactions where the Stripe refund failed or could not be issued. Review the reason and retry once resolved.'
+                    'Cada cancelacion por negocio o admin queda aqui hasta que tu emitas el reembolso a Stripe. Asi tienes control total de cuanto y a quien estamos devolviendo dinero.',
+                    'Every cancellation by a business or admin lands here until you issue the Stripe refund. Full control over how much money leaves Bookvia and to whom.'
                   )}
                 </p>
                 {refundsTabLoading ? (
@@ -3297,7 +3297,11 @@ export default function AdminDashboardPage() {
                 ) : (
                   <div className="space-y-3">
                     {refundsPending.items.map((it) => (
-                      <div key={it.transaction_id} className="rounded-lg border border-red-200 bg-red-50/40 p-3" data-testid={`refund-pending-${it.transaction_id}`}>
+                      <div
+                        key={it.transaction_id}
+                        className={`rounded-lg border p-3 ${it.refund_failed ? 'border-red-200 bg-red-50/40' : 'border-amber-200 bg-amber-50/40'}`}
+                        data-testid={`refund-pending-${it.transaction_id}`}
+                      >
                         <div className="flex items-start justify-between gap-3 mb-2">
                           <div className="min-w-0 flex-1">
                             <div className="font-semibold text-sm">{it.business_name || '—'}</div>
@@ -3309,10 +3313,13 @@ export default function AdminDashboardPage() {
                               {it.cancelled_by && (
                                 <> · {t('Cancelada por', 'Cancelled by')} <strong>{it.cancelled_by === 'business' ? t('negocio', 'business') : t('cliente', 'client')}</strong></>
                               )}
+                              {it.refund_pending_since && (
+                                <> · {t('en cola desde', 'queued since')} {formatDate(it.refund_pending_since)}</>
+                              )}
                             </div>
                           </div>
                           <div className="text-right shrink-0">
-                            <div className="text-lg font-bold text-red-600">{formatCurrency(it.amount)}</div>
+                            <div className={`text-lg font-bold ${it.refund_failed ? 'text-red-600' : 'text-amber-600'}`}>{formatCurrency(it.amount)}</div>
                             <div className="text-[10px] text-muted-foreground">{it.currency}</div>
                           </div>
                         </div>
@@ -3321,19 +3328,30 @@ export default function AdminDashboardPage() {
                             <strong>{t('Motivo cancelacion:', 'Cancellation reason:')}</strong> {it.reason}
                           </div>
                         )}
-                        <div className="text-[11px] text-red-700 bg-red-100 rounded px-2 py-1 mb-2 font-mono break-all">
-                          <strong>{t('Error Stripe:', 'Stripe error:')}</strong> {it.refund_error || t('Sin payment_intent original', 'No original payment_intent')}
-                        </div>
+                        {it.refund_failed && it.refund_error && (
+                          <div className="text-[11px] text-red-700 bg-red-100 rounded px-2 py-1 mb-2 font-mono break-all">
+                            <strong>{t('Error Stripe anterior:', 'Previous Stripe error:')}</strong> {it.refund_error}
+                          </div>
+                        )}
                         <div className="flex flex-wrap gap-2 items-center">
                           <Button
                             size="sm"
                             className="bg-emerald-600 hover:bg-emerald-700 text-white"
-                            disabled={retryingRefundId === it.transaction_id || !it.stripe_payment_intent_id}
-                            onClick={() => handleRetryRefund(it.transaction_id)}
+                            disabled={retryingRefundId === it.transaction_id}
+                            onClick={() => {
+                              const dest = it.stripe_payment_intent_id ? t('a la tarjeta del cliente', "to the client's card") : t('al saldo Bookvia del cliente', "to the client's Bookvia wallet");
+                              const ok = window.confirm(t(
+                                `Confirmar reembolso de ${formatCurrency(it.amount)} ${dest}?\n\nEsta accion es IRREVERSIBLE.`,
+                                `Confirm refund of ${formatCurrency(it.amount)} ${dest}?\n\nThis action is IRREVERSIBLE.`
+                              ));
+                              if (ok) handleRetryRefund(it.transaction_id);
+                            }}
                             data-testid={`retry-refund-${it.transaction_id}`}
                           >
                             {retryingRefundId === it.transaction_id ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <DollarSign className="h-3.5 w-3.5 mr-1" />}
-                            {t('Reintentar Stripe', 'Retry Stripe')}
+                            {it.refund_failed
+                              ? t('Reintentar reembolso', 'Retry refund')
+                              : t('Emitir reembolso', 'Issue refund')}
                           </Button>
                           {it.stripe_payment_intent_id && (
                             <a
@@ -3343,7 +3361,7 @@ export default function AdminDashboardPage() {
                               className="text-xs text-indigo-600 hover:underline"
                               data-testid={`stripe-link-${it.transaction_id}`}
                             >
-                              {t('Abrir en Stripe', 'Open in Stripe')} →
+                              {t('Ver pago en Stripe', 'View payment in Stripe')} →
                             </a>
                           )}
                           <span className="text-[11px] text-muted-foreground ml-auto font-mono">{it.transaction_id?.slice(0, 12)}…</span>

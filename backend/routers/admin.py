@@ -3344,21 +3344,34 @@ async def admin_list_pending_refunds(
     limit: int = 100,
     token_data: TokenData = Depends(require_admin),
 ):
-    """Transactions where a Stripe refund was attempted but FAILED (or never
-    emitted because the original charge had no PaymentIntent). These need
-    admin intervention to be settled manually.
+    """Refunds awaiting admin action.
+
+    Includes:
+      * `refund_pending=True` — booking was cancelled (by business or admin)
+        and the Stripe refund has not been issued yet. Admin must review
+        and click "Emitir reembolso" to actually return the money.
+      * `refund_failed=True` — a previous attempt to issue the Stripe
+        refund failed (rare, e.g. network error or bad payment_intent).
     """
     cursor = db.transactions.find(
-        {"refund_failed": True, "status": {"$in": ["refund_full", "refund_partial"]}},
+        {
+            "$or": [
+                {"refund_pending": True, "stripe_refund_id": {"$in": [None, ""]}},
+                {"refund_failed": True, "status": {"$in": ["refund_full", "refund_partial"]}},
+            ]
+        },
         {"_id": 0}
-    ).sort("updated_at", -1).limit(max(1, min(limit, 500)))
+    ).sort([("refund_pending_since", -1), ("updated_at", -1)]).limit(max(1, min(limit, 500)))
     rows = await cursor.to_list(limit)
 
     # Enrich each row with booking + business + client info for fast triage
     items = []
     for tx in rows:
         b_id = tx.get("booking_id")
-        booking = await db.bookings.find_one({"id": b_id}, {"_id": 0, "date": 1, "time": 1, "cancellation_reason": 1, "cancelled_by": 1}) if b_id else None
+        booking = await db.bookings.find_one(
+            {"id": b_id},
+            {"_id": 0, "date": 1, "time": 1, "cancellation_reason": 1, "cancelled_by": 1, "cancelled_at": 1}
+        ) if b_id else None
         biz = await db.businesses.find_one({"id": tx.get("business_id")}, {"_id": 0, "name": 1}) if tx.get("business_id") else None
         user = await db.users.find_one({"id": tx.get("user_id")}, {"_id": 0, "email": 1, "full_name": 1}) if tx.get("user_id") else None
         items.append({
@@ -3366,12 +3379,15 @@ async def admin_list_pending_refunds(
             "booking_id": b_id,
             "amount": tx.get("refund_amount") or tx.get("amount_total"),
             "currency": tx.get("currency", "MXN"),
+            "refund_pending": bool(tx.get("refund_pending")),
+            "refund_failed": bool(tx.get("refund_failed")),
             "refund_error": tx.get("refund_error"),
+            "refund_pending_since": tx.get("refund_pending_since") or tx.get("updated_at"),
             "stripe_payment_intent_id": tx.get("stripe_payment_intent_id"),
-            "updated_at": tx.get("updated_at"),
             "booking_date": booking.get("date") if booking else None,
             "booking_time": booking.get("time") if booking else None,
             "cancelled_by": booking.get("cancelled_by") if booking else None,
+            "cancelled_at": booking.get("cancelled_at") if booking else None,
             "reason": booking.get("cancellation_reason") if booking else None,
             "business_name": biz.get("name") if biz else None,
             "client_email": user.get("email") if user else None,
@@ -3381,47 +3397,162 @@ async def admin_list_pending_refunds(
     return {"count": len(items), "pending_total_mxn": round(pending_total, 2), "items": items}
 
 
+@router.post("/finance/refunds/{transaction_id}/issue")
+async def admin_issue_refund(
+    transaction_id: str,
+    token_data: TokenData = Depends(require_admin),
+):
+    """Issue the actual Stripe refund for a pending transaction.
+
+    This is the manual "click to refund" action from the Admin > Reembolsos
+    panel. Triggers `stripe.Refund.create`, updates ledger/funds_state,
+    notifies the client by email and finalises the booking record.
+    """
+    tx = await db.transactions.find_one({"id": transaction_id}, {"_id": 0})
+    if not tx:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    if tx.get("stripe_refund_id"):
+        raise HTTPException(status_code=400, detail="Esta transaccion ya tiene un reembolso emitido")
+    if not (tx.get("refund_pending") or tx.get("refund_failed")):
+        raise HTTPException(status_code=400, detail="Esta transaccion no esta en cola de reembolso")
+
+    amount = float(tx.get("refund_amount") or tx.get("amount_total") or 0)
+    if amount <= 0:
+        raise HTTPException(status_code=400, detail="Monto invalido")
+
+    booking_id = tx.get("booking_id")
+    booking = await db.bookings.find_one({"id": booking_id}, {"_id": 0}) if booking_id else None
+    now = datetime.now(timezone.utc)
+
+    stripe_refund_id = None
+    surplus_to_wallet = 0.0
+    stripe_error = None
+
+    if tx.get("stripe_payment_intent_id"):
+        from services.stripe_refunds import issue_stripe_refund
+        try:
+            res = await issue_stripe_refund(
+                transaction=tx,
+                amount_mxn=amount,
+                reason=f"admin_issue:{tx.get('refund_reason') or 'cancellation'}",
+                metadata={"admin_email": token_data.email, "manual_issue": "true"},
+                actor=f"admin:{token_data.user_id}",
+            )
+            stripe_refund_id = res.get("stripe_refund_id")
+            surplus_to_wallet = float(res.get("surplus_to_wallet") or 0)
+        except Exception as e:
+            stripe_error = str(e)
+            logger.error(f"Admin-issued Stripe refund failed for tx {transaction_id}: {e}")
+            await db.transactions.update_one(
+                {"id": transaction_id},
+                {"$set": {"refund_failed": True, "refund_error": stripe_error, "updated_at": now.isoformat()}},
+            )
+            raise HTTPException(status_code=502, detail=f"Stripe refund failed: {e}")
+    else:
+        # No card payment — credit the wallet instead
+        try:
+            from services.wallet import credit_wallet, CREDIT_CANCELLATION
+            await credit_wallet(
+                user_id=tx.get("user_id"),
+                amount=amount,
+                tx_type=CREDIT_CANCELLATION,
+                booking_id=booking_id,
+                description="Reembolso por cancelacion (saldo Bookvia - emitido por admin)",
+            )
+            surplus_to_wallet = amount
+        except Exception as e:
+            logger.error(f"Wallet credit during admin refund failed: {e}")
+            raise HTTPException(status_code=500, detail=f"Wallet credit failed: {e}")
+
+    # Surplus wallet credit (if part of refund couldn't go on card)
+    if surplus_to_wallet > 0 and tx.get("stripe_payment_intent_id"):
+        try:
+            from services.wallet import credit_wallet, CREDIT_CANCELLATION
+            await credit_wallet(
+                user_id=tx.get("user_id"),
+                amount=surplus_to_wallet,
+                tx_type=CREDIT_CANCELLATION,
+                booking_id=booking_id,
+                description="Reembolso (excedente a saldo)",
+            )
+        except Exception as e:
+            logger.error(f"Surplus wallet credit failed: {e}")
+
+    # Finalise transaction state
+    await db.transactions.update_one(
+        {"id": transaction_id},
+        {"$set": {
+            "status": TransactionStatus.REFUND_FULL,
+            "stripe_refund_id": stripe_refund_id,
+            "refund_pending": False,
+            "refund_failed": False,
+            "refund_error": None,
+            "refund_issued_at": now.isoformat(),
+            "refund_issued_by": token_data.email,
+            "updated_at": now.isoformat(),
+        }},
+    )
+    # Ledger entries
+    try:
+        updated_tx = {**tx, "refund_amount": amount}
+        await create_transaction_ledger_entries(updated_tx, TransactionStatus.REFUND_FULL)
+    except Exception as e:
+        logger.error(f"Ledger update on admin refund failed: {e}")
+    # Funds state -> REFUNDED
+    try:
+        from services.funds_state import mark_refunded
+        await mark_refunded(transaction_id, actor=f"admin:{token_data.email}", reason="Admin issued refund")
+    except Exception as e:
+        logger.error(f"Funds state on admin refund failed: {e}")
+
+    # Email the client a confirmation
+    try:
+        if booking:
+            client = await db.users.find_one({"id": tx.get("user_id")}, {"_id": 0, "email": 1, "full_name": 1, "notify_email": 1})
+            biz = await db.businesses.find_one({"id": tx.get("business_id")}, {"_id": 0, "name": 1})
+            if client and client.get("notify_email", True) and client.get("email"):
+                from services.email import send_email, email_html, NOREPLY_EMAIL
+                dest = "tu tarjeta" if stripe_refund_id else "tu saldo Bookvia"
+                eta = "Lo veras en 5-7 dias habiles." if stripe_refund_id else "El saldo ya esta disponible."
+                subject = "Reembolso emitido"
+                content = (
+                    f"<p style=\"color:#334155;font-size:15px;\">Hola <strong>{client.get('full_name', 'Cliente')}</strong>,</p>"
+                    f"<p style=\"color:#334155;font-size:15px;line-height:1.6;\">"
+                    f"Emitimos el reembolso completo de <strong>${amount:.2f} MXN</strong> a {dest} por la cancelacion de tu cita "
+                    f"en <strong>{(biz or {}).get('name', 'el negocio')}</strong>.<br>{eta}</p>"
+                    f"<p style=\"color:#94a3b8;font-size:12px;\">ID de referencia: {stripe_refund_id or transaction_id[:12]}</p>"
+                )
+                await send_email(
+                    to=client["email"],
+                    subject=subject,
+                    body=f"Hola, emitimos un reembolso de ${amount} MXN a {dest}.",
+                    html=email_html(subject, content),
+                    template="refund_issued",
+                    data={"amount": amount, "destination": dest},
+                    from_email=NOREPLY_EMAIL,
+                )
+    except Exception as e:
+        logger.error(f"Email confirmation on admin refund failed: {e}")
+
+    return {
+        "status": "ok",
+        "transaction_id": transaction_id,
+        "amount": amount,
+        "stripe_refund_id": stripe_refund_id,
+        "destination": "card" if stripe_refund_id else "wallet",
+        "issued_by": token_data.email,
+    }
+
+
 @router.post("/finance/refunds/{transaction_id}/retry")
 async def admin_retry_refund(
     transaction_id: str,
     token_data: TokenData = Depends(require_admin),
 ):
-    """Retry a previously-failed Stripe refund. Uses the same idempotency
-    key as the original attempt so duplicates are impossible.
+    """Alias for /issue - kept for backwards compatibility with the older
+    "retry after failure" UI button.
     """
-    tx = await db.transactions.find_one({"id": transaction_id}, {"_id": 0})
-    if not tx:
-        raise HTTPException(status_code=404, detail="Transaction not found")
-    if not tx.get("refund_failed"):
-        raise HTTPException(status_code=400, detail="This transaction has no pending refund failure")
-    amount = float(tx.get("refund_amount") or tx.get("amount_total") or 0)
-    if amount <= 0:
-        raise HTTPException(status_code=400, detail="Amount must be positive")
-
-    from services.stripe_refunds import issue_stripe_refund
-    try:
-        res = await issue_stripe_refund(
-            transaction=tx,
-            amount_mxn=amount,
-            reason="admin_retry_after_failure",
-            metadata={"admin_email": token_data.email, "retry": "true"},
-            actor=f"admin_retry:{token_data.user_id}",
-        )
-        await db.transactions.update_one(
-            {"id": transaction_id},
-            {"$set": {
-                "refund_failed": False,
-                "refund_error": None,
-                "stripe_refund_id": res.get("stripe_refund_id"),
-            }},
-        )
-        return {"status": "ok", **res}
-    except Exception as e:
-        await db.transactions.update_one(
-            {"id": transaction_id},
-            {"$set": {"refund_error": str(e)}},
-        )
-        raise HTTPException(status_code=502, detail=f"Stripe retry failed: {e}")
+    return await admin_issue_refund(transaction_id, token_data)  # type: ignore[arg-type]
 
 
 # ========================== FASE 11c: STRIPE WEBHOOK EVENTS LOG ==========================

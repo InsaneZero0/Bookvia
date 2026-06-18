@@ -1999,86 +1999,34 @@ async def cancel_booking_by_business(
     })
     
     refund_result = None
-    stripe_refund_id = None
-    stripe_refund_error = None
-    surplus_to_wallet = 0.0
+    # Refund is intentionally NOT executed inline. Admin reviews and issues
+    # the Stripe refund manually from /admin > Reembolsos so that every
+    # money movement is reviewed before it leaves Bookvia's accounts.
 
     if transaction:
-        # Business cancels: Full refund to client, fee charged to business
-        refund_amount = transaction["amount_total"]  # 100% refund
+        # Business cancels: Full refund to client, fee charged to business.
+        # NOTE: We DO NOT emit the Stripe refund here. The admin issues the
+        # refund manually from the Admin > Reembolsos tab. This gives full
+        # visibility & control over money movement and prevents accidents.
+        refund_amount = transaction["amount_total"]  # 100% refund (intent)
         fee_penalty = transaction["fee_amount"]  # 8% fee charged to business
 
-        # 1) Emit REAL Stripe refund FIRST so the client actually gets the
-        #    money back. If Stripe fails we still mark the booking cancelled
-        #    but flag `refund_failed` so admin can intervene.
-        if transaction.get("stripe_payment_intent_id"):
-            try:
-                from services.stripe_refunds import issue_stripe_refund
-                res = await issue_stripe_refund(
-                    transaction=transaction,
-                    amount_mxn=refund_amount,
-                    reason="business_cancellation",
-                    metadata={"cancelled_by": "business", "business_id": booking["business_id"]},
-                    actor=f"business_cancel:{token_data.user_id}",
-                )
-                stripe_refund_id = res.get("stripe_refund_id")
-                surplus_to_wallet = float(res.get("surplus_to_wallet") or 0)
-            except Exception as e:
-                stripe_refund_error = str(e)
-                logger.error(f"Stripe refund failed on business cancel for tx {transaction['id']}: {e}")
-                # Fallback: credit the wallet so the client never loses money
-                try:
-                    from services.wallet import credit_wallet, CREDIT_CANCELLATION
-                    await credit_wallet(
-                        user_id=booking["user_id"],
-                        amount=refund_amount,
-                        tx_type=CREDIT_CANCELLATION,
-                        booking_id=booking_id,
-                        description="Reembolso por cancelacion del negocio (saldo Bookvia - pendiente conciliacion Stripe)",
-                    )
-                except Exception as e2:
-                    logger.error(f"Wallet fallback also failed: {e2}")
-
-        # 2) If part of the refund was paid with wallet (so only part went to
-        #    the card), credit the surplus back to the client wallet.
-        if surplus_to_wallet > 0:
-            try:
-                from services.wallet import credit_wallet, CREDIT_CANCELLATION
-                await credit_wallet(
-                    user_id=booking["user_id"],
-                    amount=surplus_to_wallet,
-                    tx_type=CREDIT_CANCELLATION,
-                    booking_id=booking_id,
-                    description="Reembolso (excedente a saldo porque parte se pago con saldo)",
-                )
-            except Exception as e:
-                logger.error(f"Wallet surplus credit failed: {e}")
-
-        # 3) Update transaction state in DB
+        # Mark the transaction as pending an admin-issued refund.
         await db.transactions.update_one(
             {"id": transaction["id"]},
             {"$set": {
-                "status": TransactionStatus.REFUND_FULL,
                 "refund_amount": refund_amount,
                 "refund_reason": "business_cancelled",
+                "refund_pending": True,
+                "refund_pending_since": now.isoformat(),
                 "cancelled_by": "business",
                 "updated_at": now.isoformat(),
-                "stripe_refund_id": stripe_refund_id,
-                "refund_failed": bool(stripe_refund_error),
-                "refund_error": stripe_refund_error,
             }}
         )
 
-        # Create ledger entries for full refund
-        updated_tx = {**transaction, "refund_amount": refund_amount}
-        await create_transaction_ledger_entries(updated_tx, TransactionStatus.REFUND_FULL)
-
-        # Funds state: REFUNDED (terminal)
-        try:
-            from services.funds_state import mark_refunded
-            await mark_refunded(transaction["id"], actor="business_cancel", reason="Business cancelled the appointment")
-        except Exception as e:
-            logger.error(f"Funds state on business cancel failed: {e}")
+        # Funds state: AVAILABLE/PENDING_HOLD -> PENDING_REFUND.
+        # Money is frozen but not yet returned to the client until admin acts.
+        # (We do not call mark_refunded here; the admin issue endpoint does.)
         
         # Create fee penalty transaction for business
         penalty_tx = {
@@ -2118,15 +2066,13 @@ async def cancel_booking_by_business(
             "refund_amount": refund_amount,
             "fee_penalty": fee_penalty,
             "policy_applied": "business_cancel_full_refund_fee_penalty",
-            "stripe_refund_id": stripe_refund_id,
-            "refund_destination": "card" if stripe_refund_id else "wallet" if not stripe_refund_error else "pending_admin",
-            "refund_failed": bool(stripe_refund_error),
-            "refund_error": stripe_refund_error,
+            "refund_status": "pending_admin_review",
+            "stripe_refund_id": None,
+            "refund_destination": "pending_admin",
         }
 
         logger.info(
-            f"Business cancelled booking {booking_id}: refund ${refund_amount} "
-            f"stripe_id={stripe_refund_id or 'NONE'} failed={bool(stripe_refund_error)} penalty=${fee_penalty}"
+            f"Business cancelled booking {booking_id}: refund ${refund_amount} pending admin issue, penalty ${fee_penalty}"
         )
     
     # Issue progressive strike to the business (Fase 5)
@@ -2188,12 +2134,8 @@ async def cancel_booking_by_business(
         if client_user and business:
             if client_user.get("notify_email", True):
                 from services.email import send_booking_cancelled
-                if refund_result and refund_result.get("stripe_refund_id"):
-                    refund_msg = "Procesamos un reembolso completo a tu tarjeta. Veras el monto reflejado en 5-7 dias habiles."
-                elif refund_result and refund_result.get("refund_failed"):
-                    refund_msg = "Tu reembolso quedo registrado y nuestro equipo lo procesara manualmente en las proximas 24 horas. Si tienes dudas, escribenos a soporte@bookvia.app."
-                elif refund_result:
-                    refund_msg = "El monto se acredito a tu saldo Bookvia para que lo uses en tu proxima reserva."
+                if refund_result:
+                    refund_msg = "Procesaremos el reembolso completo a tu tarjeta en las proximas 24-48 horas. Recibiras una confirmacion en cuanto el pago se libere desde Stripe."
                 else:
                     refund_msg = None
                 await send_booking_cancelled(
@@ -2226,25 +2168,24 @@ async def cancel_booking_by_business(
         {"client_name": booking.get("client_name", ""), "service_name": booking.get("service_name", ""), "date": booking.get("date", ""), "time": booking.get("time", ""), "reason": cancel_req.reason}
     )
 
-    # Alert all admins if the Stripe refund failed so they can intervene
-    if refund_result and refund_result.get("refund_failed"):
+    # Alert all admins of a new pending refund that needs their review
+    if refund_result and transaction:
         try:
             admins = await db.users.find({"role": "admin"}, {"id": 1, "_id": 0}).to_list(50)
             for adm in admins:
                 await create_notification(
                     adm["id"],
-                    "Reembolso pendiente de revision manual",
-                    f"El negocio cancelo la reserva {booking_id} pero el reembolso a Stripe fallo. Revisa en Admin > Reembolsos.",
+                    "Reembolso pendiente de revision",
+                    f"El negocio cancelo la reserva {booking_id}. Revisa y emite el reembolso desde Admin > Reembolsos.",
                     "admin_alert",
                     {
                         "booking_id": booking_id,
-                        "transaction_id": transaction["id"] if transaction else None,
+                        "transaction_id": transaction["id"],
                         "amount": refund_result.get("refund_amount"),
-                        "error": refund_result.get("refund_error"),
                     },
                 )
         except Exception as e:
-            logger.error(f"Failed to alert admins of refund failure: {e}")
+            logger.error(f"Failed to alert admins of pending refund: {e}")
 
     return {
         "message": "Booking cancelled by business",
