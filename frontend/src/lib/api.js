@@ -286,6 +286,7 @@ export const bookingsAPI = {
   getCancellationPreview: (id) => api.get(`/bookings/${id}/cancellation-preview`),
   raiseDispute: (id, reason) => api.post(`/bookings/${id}/dispute`, { reason }),
   confirmOk: (id) => api.post(`/bookings/${id}/confirm-ok`),
+  refundChoice: (id, destination) => api.post(`/bookings/${id}/refund-choice`, { destination }),
   reportNoShow: (id, description, photoUrl) => api.post(`/bookings/${id}/no-show-business`, { description, photo_url: photoUrl }),
   respondNoShow: (id, description, evidenceUrl) => api.post(`/bookings/${id}/no-show-response`, { description, evidence_url: evidenceUrl }),
   reschedule: (id, newDate, newTime) => 
@@ -427,6 +428,8 @@ export const adminAPI = {
   getArcoEvents: (limit = 50) => api.get('/admin/compliance/arco-events', { params: { limit } }),
   getRefundsAudit: (limit = 50) => api.get('/admin/finance/refunds', { params: { limit } }),
   getRefundsPending: (limit = 100) => api.get('/admin/finance/refunds/pending', { params: { limit } }),
+  getRefundsAwaitingChoice: (limit = 100) => api.get('/admin/finance/refunds/awaiting-choice', { params: { limit } }),
+  getRefundsWalletHistory: (limit = 200) => api.get('/admin/finance/refunds/wallet-refunded', { params: { limit } }),
   issueRefund: (transactionId) => api.post(`/admin/finance/refunds/${transactionId}/issue`),
   issueAllRefunds: () => api.post('/admin/finance/refunds/issue-all'),
   retryRefund: (transactionId) => api.post(`/admin/finance/refunds/${transactionId}/retry`),

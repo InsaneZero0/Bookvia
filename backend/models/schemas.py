@@ -528,6 +528,10 @@ class BookingResponse(BaseModel):
     # Set when the client explicitly confirms post-cita "todo bien"
     client_confirmed_ok_at: Optional[str] = None
     has_dispute: Optional[bool] = None
+    # Refund flow (when business cancelled)
+    refund_pending: Optional[bool] = None
+    refund_destination_choice: Optional[str] = None  # pending|wallet|card
+    refund_amount: Optional[float] = None
 
 class ReviewCreate(BaseModel):
     business_id: str
