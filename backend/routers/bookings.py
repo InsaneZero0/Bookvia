@@ -2233,12 +2233,10 @@ async def cancellation_preview(booking_id: str, token_data: TokenData = Depends(
                 "lines_es": [
                     f"Faltan menos de {cutoff} horas para tu cita y la politica del negocio retiene el anticipo.",
                     f"Si cancelas ahora, perderas los ${client_paid:.2f} MXN que pagaste.",
-                    "Tip: contacta al negocio directamente; quiza pueda reagendarte sin penalty.",
                 ],
                 "lines_en": [
                     f"Less than {cutoff} hours remain and the business retains the deposit.",
                     f"If you cancel now, you will lose the ${client_paid:.2f} MXN you paid.",
-                    "Tip: contact the business directly — they may reschedule without penalty.",
                 ],
             }
     return response
