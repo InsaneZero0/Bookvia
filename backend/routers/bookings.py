@@ -2009,7 +2009,22 @@ async def cancel_booking_by_business(
         # refund manually from the Admin > Reembolsos tab. This gives full
         # visibility & control over money movement and prevents accidents.
         refund_amount = transaction["amount_total"]  # 100% refund (intent)
-        fee_penalty = transaction["fee_amount"]  # 8% fee charged to business
+
+        # Business penalty = Bookvia fee lost ($8 fixed) + commission % of
+        # the deposit (8.5% with $8.50 floor). Proportional to the booking
+        # size so a $200 deposit cancellation costs more than a $100 one.
+        #
+        # Examples:
+        #   deposit $100 -> $8.00 + max($8.50, $8.50) = $16.50
+        #   deposit $200 -> $8.00 + max($17.00, $8.50) = $25.00
+        #   deposit $500 -> $8.00 + max($42.50, $8.50) = $50.50
+        from models.enums import BOOKVIA_FEE_MXN, STRIPE_FEE_PERCENT_ESTIMATED, MIN_BUSINESS_COMMISSION_MXN
+        deposit_for_penalty = float(transaction.get("deposit_amount") or transaction.get("payout_amount") or 0)
+        if not deposit_for_penalty and transaction.get("amount_total"):
+            # client_paid = deposit + bookvia_fee; back out the deposit
+            deposit_for_penalty = max(0.0, float(transaction["amount_total"]) - float(BOOKVIA_FEE_MXN))
+        commission_component = max(deposit_for_penalty * STRIPE_FEE_PERCENT_ESTIMATED, MIN_BUSINESS_COMMISSION_MXN) if deposit_for_penalty > 0 else 0.0
+        fee_penalty = round(float(BOOKVIA_FEE_MXN) + commission_component, 2)
 
         # Mark the transaction as pending an admin-issued refund.
         await db.transactions.update_one(
@@ -2053,26 +2068,48 @@ async def cancel_booking_by_business(
         # Create ledger entries for penalty
         await create_transaction_ledger_entries(penalty_tx, TransactionStatus.BUSINESS_CANCEL_FEE)
         
-        # Update business balance (deduct pending and add penalty)
-        await db.businesses.update_one(
-            {"id": booking["business_id"]},
-            {"$inc": {
-                "pending_balance": -transaction["payout_amount"],
-                "penalty_balance": fee_penalty
-            }}
+        # Update business balance:
+        #   1) Reverse the future payout this booking would have generated.
+        #   2) Apply the penalty against pending_balance first; any uncovered
+        #      portion becomes outstanding penalty debt (penalty_balance)
+        #      that will be deducted from future payouts.
+        biz_doc = await db.businesses.find_one({"id": booking["business_id"]}, {"_id": 0, "pending_balance": 1})
+        current_pending = float((biz_doc or {}).get("pending_balance") or 0.0)
+        # Reverse the payout this cancelled booking would have produced
+        current_pending -= float(transaction.get("payout_amount") or 0.0)
+        # Now apply the penalty against whatever is left in pending
+        covered_from_pending = min(max(current_pending, 0.0), fee_penalty)
+        penalty_debt = round(fee_penalty - covered_from_pending, 2)
+        pending_delta = -float(transaction.get("payout_amount") or 0.0) - covered_from_pending
+
+        update_doc = {"$inc": {"pending_balance": pending_delta}}
+        if penalty_debt > 0:
+            update_doc["$inc"]["penalty_balance"] = penalty_debt
+        await db.businesses.update_one({"id": booking["business_id"]}, update_doc)
+
+        logger.info(
+            f"Business cancel penalty for {booking['business_id']}: total=${fee_penalty} "
+            f"covered_from_pending=${covered_from_pending} debt=${penalty_debt}"
         )
         
         refund_result = {
             "refund_amount": refund_amount,
             "fee_penalty": fee_penalty,
-            "policy_applied": "business_cancel_full_refund_fee_penalty",
+            "penalty_breakdown": {
+                "bookvia_fee_component": round(float(BOOKVIA_FEE_MXN), 2),
+                "commission_component": round(commission_component, 2),
+                "covered_from_pending": round(covered_from_pending, 2),
+                "outstanding_debt": penalty_debt,
+            },
+            "policy_applied": "business_cancel_full_refund_proportional_penalty",
             "refund_status": "pending_admin_review",
             "stripe_refund_id": None,
             "refund_destination": "pending_admin",
         }
 
         logger.info(
-            f"Business cancelled booking {booking_id}: refund ${refund_amount} pending admin issue, penalty ${fee_penalty}"
+            f"Business cancelled booking {booking_id}: refund ${refund_amount} pending admin issue, "
+            f"penalty ${fee_penalty} (${BOOKVIA_FEE_MXN} fee + ${commission_component:.2f} commission)"
         )
     
     # Issue progressive strike to the business (Fase 5)
