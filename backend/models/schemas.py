@@ -2,7 +2,7 @@
 All Pydantic models (schemas) for the application.
 This is the single source of truth for request/response models.
 """
-from pydantic import BaseModel, ConfigDict, EmailStr
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from typing import Optional, List, Dict, Any
 
 
@@ -111,6 +111,7 @@ class BusinessCreate(BaseModel):
     requires_deposit: bool = False
     deposit_amount: float = 100.0
     cancellation_days: int = 1
+    cancellation_hours: Optional[int] = Field(default=24, ge=1, le=72)  # Phase O: prefer hours, 1h–72h cap
     payout_schedule: Optional[str] = "monthly_cutoff_20"  # fixed cadence: corte día 20, depósito día 1° del mes siguiente
     min_time_between_appointments: int = 0
     service_radius_km: Optional[float] = None
@@ -156,6 +157,7 @@ class BusinessResponse(BaseModel):
     requires_deposit: bool = False
     deposit_amount: float = 100.0
     cancellation_days: int = 1
+    cancellation_hours: Optional[int] = 24
     payout_schedule: Optional[str] = "monthly_cutoff_20"
     min_time_between_appointments: int = 0
     photos: List[str] = []
@@ -257,6 +259,7 @@ class BusinessUpdate(BaseModel):
     requires_deposit: Optional[bool] = None
     deposit_amount: Optional[float] = None
     cancellation_days: Optional[int] = None
+    cancellation_hours: Optional[int] = Field(default=None, ge=1, le=72)
     payout_schedule: Optional[str] = None
     min_time_between_appointments: Optional[int] = None
     service_radius_km: Optional[float] = None

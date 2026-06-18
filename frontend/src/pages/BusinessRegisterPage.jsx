@@ -112,6 +112,7 @@ export default function BusinessRegisterPage() {
     requires_deposit: false,
     deposit_amount: 100,
     cancellation_days: 1,
+    cancellation_hours: 24,
     payout_schedule: 'monthly_cutoff_20',
     commission_terms_accepted: false,
     commission_terms_version: null,
@@ -465,7 +466,8 @@ export default function BusinessRegisterPage() {
         proof_of_address_url: proofUrl, clabe: formData.requires_deposit ? formData.clabe : '',
         requires_deposit: formData.requires_deposit,
         deposit_amount: formData.requires_deposit ? Number(formData.deposit_amount) : 100,
-        cancellation_days: Number(formData.cancellation_days) || 1,
+        cancellation_days: Math.max(1, Math.ceil((Number(formData.cancellation_hours) || 24) / 24)),
+        cancellation_hours: Math.min(72, Math.max(1, Number(formData.cancellation_hours) || 24)),
         payout_schedule: formData.requires_deposit ? 'monthly_cutoff_20' : null,
         commission_terms_accepted: formData.requires_deposit ? !!effectiveTermsAccepted : false,
         commission_terms_version: formData.requires_deposit && effectiveTermsAccepted ? effectiveTermsVersion : null,
@@ -1497,9 +1499,9 @@ export default function BusinessRegisterPage() {
                           {/* Margen de cancelación con anticipo */}
                           <div className="space-y-1.5">
                             <div className="flex items-center gap-1.5">
-                              <Label htmlFor="cancellation_days_deposit" className="text-sm">
+                              <Label htmlFor="cancellation_hours_deposit" className="text-sm">
                                 <CalendarX className="inline h-3.5 w-3.5 mr-1 text-muted-foreground" />
-                                {language === 'es' ? 'Margen de cancelación (días)' : 'Cancellation margin (days)'}
+                                {language === 'es' ? 'Margen de cancelación' : 'Cancellation window'}
                               </Label>
                               <Popover>
                                 <PopoverTrigger asChild>
@@ -1511,27 +1513,30 @@ export default function BusinessRegisterPage() {
                                   <p className="font-medium mb-1">{language === 'es' ? 'Margen de cancelación y devolución' : 'Cancellation and refund margin'}</p>
                                   <p className="text-muted-foreground text-xs leading-relaxed">
                                     {language === 'es'
-                                      ? 'Define cuántos días antes de la cita un cliente puede cancelar su reserva y recibir la devolución del anticipo.\n\nEjemplo: Si defines 1 día de margen, el cliente deberá cancelar al menos 24 horas antes de la cita para que se le devuelva el anticipo.\n\nSi cancela después de ese tiempo, la cancelación se marca como tardía y el anticipo no se reembolsa.'
-                                      : 'Defines how many days before the appointment a customer can cancel and receive a deposit refund.\n\nExample: If you set 1 day margin, the customer must cancel at least 24 hours before for a refund.\n\nLate cancellations will not receive a refund.'}
+                                      ? 'Hasta cuantas horas antes de la cita el cliente puede cancelar y recibir devolucion del anticipo.\n\nMinimo: 1 hora. Maximo: 72 horas (3 dias).\n\nEste limite protege a tus clientes y evita disputas.'
+                                      : 'How many hours before the appointment a client may cancel and get the deposit refunded.\n\nMinimum 1 hour, maximum 72 hours (3 days). This cap protects your clients and prevents disputes.'}
                                   </p>
                                 </PopoverContent>
                               </Popover>
                             </div>
-                            <Input
-                              id="cancellation_days_deposit"
-                              name="cancellation_days"
-                              type="number"
-                              min="0"
-                              max="30"
-                              value={formData.cancellation_days}
+                            <select
+                              id="cancellation_hours_deposit"
+                              name="cancellation_hours"
+                              value={formData.cancellation_hours || 24}
                               onChange={handleChange}
-                              className="h-10 w-36"
-                              data-testid="cancellation-days-deposit-input"
-                            />
+                              className="h-10 w-40 rounded-md border border-input bg-background px-3 text-sm"
+                              data-testid="cancellation-hours-deposit-input"
+                            >
+                              {[1, 2, 4, 6, 12, 24, 48, 72].map((h) => (
+                                <option key={h} value={h}>
+                                  {h} {language === 'es' ? (h === 1 ? 'hora' : 'horas') : (h === 1 ? 'hour' : 'hours')}
+                                </option>
+                              ))}
+                            </select>
                             <p className="text-xs text-muted-foreground">
                               {language === 'es'
-                                ? `El cliente puede cancelar hasta ${formData.cancellation_days} día(s) antes y recibir el reembolso`
-                                : `Customer can cancel up to ${formData.cancellation_days} day(s) before for a refund`}
+                                ? `El cliente puede cancelar hasta ${formData.cancellation_hours || 24} hora(s) antes y recibir el reembolso`
+                                : `Customer can cancel up to ${formData.cancellation_hours || 24} hour(s) before for a refund`}
                             </p>
                           </div>
 
@@ -1630,9 +1635,9 @@ export default function BusinessRegisterPage() {
                           {/* Margen de cancelación sin anticipo */}
                           <div className="space-y-1.5">
                             <div className="flex items-center gap-1.5">
-                              <Label htmlFor="cancellation_days_no_deposit" className="text-sm">
+                              <Label htmlFor="cancellation_hours_no_deposit" className="text-sm">
                                 <CalendarX className="inline h-3.5 w-3.5 mr-1 text-muted-foreground" />
-                                {language === 'es' ? 'Margen de cancelación (días)' : 'Cancellation margin (days)'}
+                                {language === 'es' ? 'Margen de cancelación' : 'Cancellation window'}
                               </Label>
                               <Popover>
                                 <PopoverTrigger asChild>
@@ -1644,27 +1649,30 @@ export default function BusinessRegisterPage() {
                                   <p className="font-medium mb-1">{language === 'es' ? 'Margen de cancelación' : 'Cancellation margin'}</p>
                                   <p className="text-muted-foreground text-xs leading-relaxed">
                                     {language === 'es'
-                                      ? 'Define cuántos días antes de la cita un cliente puede cancelar su reserva.\n\nEjemplo: Si defines 1 día de margen, el cliente deberá cancelar al menos 24 horas antes de la cita.\n\nSi cancela después de ese tiempo, la cancelación puede marcarse como tardía o como no-show.'
-                                      : 'Defines how many days before the appointment a customer can cancel.\n\nExample: If you set 1 day margin, the customer must cancel at least 24 hours before.\n\nLate cancellations may be marked as no-show.'}
+                                      ? 'Cuantas horas antes de la cita el cliente puede cancelar sin penalizacion.\n\nMinimo 1 hora, maximo 72 horas (3 dias).\n\nSi cancela despues de ese tiempo, la cancelacion se marca como tardia o no-show.'
+                                      : 'How many hours before the appointment a client can cancel without penalty.\n\nMin 1 hour, max 72 hours (3 days). Late cancellations may be flagged as no-show.'}
                                   </p>
                                 </PopoverContent>
                               </Popover>
                             </div>
-                            <Input
-                              id="cancellation_days_no_deposit"
-                              name="cancellation_days"
-                              type="number"
-                              min="0"
-                              max="30"
-                              value={formData.cancellation_days}
+                            <select
+                              id="cancellation_hours_no_deposit"
+                              name="cancellation_hours"
+                              value={formData.cancellation_hours || 24}
                               onChange={handleChange}
-                              className="h-10 w-36"
-                              data-testid="cancellation-days-no-deposit-input"
-                            />
+                              className="h-10 w-40 rounded-md border border-input bg-background px-3 text-sm"
+                              data-testid="cancellation-hours-no-deposit-input"
+                            >
+                              {[1, 2, 4, 6, 12, 24, 48, 72].map((h) => (
+                                <option key={h} value={h}>
+                                  {h} {language === 'es' ? (h === 1 ? 'hora' : 'horas') : (h === 1 ? 'hour' : 'hours')}
+                                </option>
+                              ))}
+                            </select>
                             <p className="text-xs text-muted-foreground">
                               {language === 'es'
-                                ? `El cliente puede cancelar hasta ${formData.cancellation_days} día(s) antes sin penalización`
-                                : `Customer can cancel up to ${formData.cancellation_days} day(s) before without penalty`}
+                                ? `El cliente puede cancelar hasta ${formData.cancellation_hours || 24} hora(s) antes sin penalizacion`
+                                : `Customer can cancel up to ${formData.cancellation_hours || 24} hour(s) before without penalty`}
                             </p>
                           </div>
                         </div>
