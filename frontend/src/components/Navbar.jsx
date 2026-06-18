@@ -276,8 +276,8 @@ export function Navbar() {
               >
                 {language === 'es' ? 'Beneficios' : 'Benefits'}
               </Link>
-              {/* Hide "Haz crecer tu negocio" when a regular client is logged in */}
-              {!(isAuthenticated && !isBusiness && !isAdmin) && (
+              {/* Hide "Haz crecer tu negocio" for logged-in users (clients & businesses). Admins still see it. */}
+              {(!isAuthenticated || isAdmin) && (
                 <Link 
                   to="/for-business" 
                   className={`text-sm font-medium transition-colors hover:text-[#F05D5E] ${
@@ -544,7 +544,7 @@ export function Navbar() {
               >
                 {language === 'es' ? 'Beneficios' : 'Benefits'}
               </Link>
-              {!(isAuthenticated && !isBusiness && !isAdmin) && (
+              {(!isAuthenticated || isAdmin) && (
                 <Link
                   to="/for-business"
                   className="px-4 py-2 text-sm font-medium hover:bg-muted rounded-lg"
