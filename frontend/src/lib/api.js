@@ -188,6 +188,15 @@ export const businessesAPI = {
       headers: { 'Content-Type': 'multipart/form-data' },
     });
   },
+  deleteLogo: () => api.delete('/businesses/me/logo'),
+  uploadCover: (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api.post('/businesses/me/cover', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
+  deleteCover: () => api.delete('/businesses/me/cover'),
   // Closures (closed days)
   getMyClosures: () => api.get('/businesses/me/closures'),
   addClosure: (date, reason) => api.post('/businesses/me/closures', { date, reason }),

@@ -24,6 +24,7 @@ import { toast } from 'sonner';
 import ReportsTab from '@/components/ReportsTab';
 import AgendaTimeline from '@/components/AgendaTimeline';
 import { ProfileCompletionBanner } from '@/components/ProfileCompletionBanner';
+import BusinessBrandingSection from '@/components/BusinessBrandingSection';
 import StripeConnectRequiredBanner from '@/components/StripeConnectRequiredBanner';
 import BranchesTab from '@/components/BranchesTab';
 import BranchSelector from '@/components/BranchSelector';
@@ -848,7 +849,14 @@ export default function BusinessDashboardPage() {
 
             <ProfileCompletionBanner
               data={profileCompletion}
-              onGoToTab={(tab) => setActiveTab(tab)}
+              onGoToTab={(target) => {
+                if (typeof target === 'string' && target.startsWith('settings:')) {
+                  const tabId = target.split(':')[1] || 'info';
+                  navigate(`/business/settings?tab=${encodeURIComponent(tabId)}`);
+                } else {
+                  setActiveTab(target);
+                }
+              }}
             />
 
             {/* Dashboard Summary Cards */}
@@ -1241,11 +1249,20 @@ export default function BusinessDashboardPage() {
 
           {/* ── Photos Tab ───────────────────────────── */}
           <TabsContent value="photos" className="mt-6">
-            <Card>
+            {/* Section 1 + 2: Logo and Cover branding editors */}
+            <BusinessBrandingSection
+              business={biz}
+              t={(es, en) => language === 'es' ? es : en}
+              language={language}
+              onChange={loadDashboard}
+            />
+
+            {/* Section 3: General gallery */}
+            <Card data-testid="photos-gallery-card">
               <CardHeader className="flex flex-row items-center justify-between pb-3">
                 <div>
-                  <CardTitle className="text-base font-heading">{language === 'es' ? 'Galería de fotos' : 'Photo gallery'}</CardTitle>
-                  <p className="text-xs text-muted-foreground mt-1">{language === 'es' ? 'Las fotos aparecerán en tu perfil público' : 'Photos will appear on your public profile'}</p>
+                  <CardTitle className="text-base font-heading">{language === 'es' ? 'Galería del lugar' : 'Gallery'}</CardTitle>
+                  <p className="text-xs text-muted-foreground mt-1">{language === 'es' ? 'Fotos generales del lugar, equipo y trabajos. Aparecen en tu perfil publico.' : 'General photos of the place, team and work. Shown on your public profile.'}</p>
                 </div>
                 <label className={`inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg cursor-pointer transition-colors ${uploading || photos.length >= 10 ? 'bg-muted text-muted-foreground cursor-not-allowed' : 'btn-coral text-white'}`}>
                   <Upload className="h-4 w-4" />

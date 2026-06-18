@@ -276,15 +276,18 @@ export function Navbar() {
               >
                 {language === 'es' ? 'Beneficios' : 'Benefits'}
               </Link>
-              <Link 
-                to="/for-business" 
-                className={`text-sm font-medium transition-colors hover:text-[#F05D5E] ${
-                  isTransparent ? 'text-white/90' : 'text-foreground'
-                }`}
-                data-testid="nav-for-business"
-              >
-                {t('nav.forBusiness')}
-              </Link>
+              {/* Hide "Haz crecer tu negocio" for logged-in users (clients & businesses). Admins still see it. */}
+              {(!isAuthenticated || isAdmin) && (
+                <Link 
+                  to="/for-business" 
+                  className={`text-sm font-medium transition-colors hover:text-[#F05D5E] ${
+                    isTransparent ? 'text-white/90' : 'text-foreground'
+                  }`}
+                  data-testid="nav-for-business"
+                >
+                  {t('nav.forBusiness')}
+                </Link>
+              )}
             </div>
           </div>
 
@@ -541,13 +544,15 @@ export function Navbar() {
               >
                 {language === 'es' ? 'Beneficios' : 'Benefits'}
               </Link>
-              <Link
-                to="/for-business"
-                className="px-4 py-2 text-sm font-medium hover:bg-muted rounded-lg"
-                onClick={() => setMobileMenuOpen(false)}
-              >
-                {t('nav.forBusiness')}
-              </Link>
+              {(!isAuthenticated || isAdmin) && (
+                <Link
+                  to="/for-business"
+                  className="px-4 py-2 text-sm font-medium hover:bg-muted rounded-lg"
+                  onClick={() => setMobileMenuOpen(false)}
+                >
+                  {t('nav.forBusiness')}
+                </Link>
+              )}
               
               <div className="border-t border-border/50 my-2" />
               
