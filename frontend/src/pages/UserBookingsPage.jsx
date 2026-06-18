@@ -518,8 +518,11 @@ export default function UserBookingsPage() {
                     if (booking.status !== 'confirmed') return null;
                     const reschedulesUsed = Number(booking.reschedule_count || 0);
                     const reschedulesLeft = Math.max(0, 2 - reschedulesUsed);
-                    const canReschedule = booking.hours_until_appointment > 2 && reschedulesLeft > 0;
-                    
+                    // Matches the business's cancellation window (1-72h).
+                    // Fallback to 2h if the backend hasn't sent it.
+                    const cutoff = Number(booking.reschedule_cutoff_hours) || 2;
+                    const canReschedule = booking.hours_until_appointment > cutoff && reschedulesLeft > 0;
+
                     return (
                       <>
                         <Button
@@ -529,8 +532,10 @@ export default function UserBookingsPage() {
                           className="text-blue-600 hover:bg-blue-50"
                           disabled={!canReschedule}
                           title={
-                            booking.hours_until_appointment <= 2
-                              ? (language === 'es' ? 'Solo puedes reagendar con mas de 2 horas de anticipacion' : 'You can only reschedule more than 2 hours in advance')
+                            booking.hours_until_appointment <= cutoff
+                              ? (language === 'es'
+                                  ? `Solo puedes reagendar con mas de ${cutoff} hora${cutoff === 1 ? '' : 's'} de anticipacion`
+                                  : `You can only reschedule more than ${cutoff} hour${cutoff === 1 ? '' : 's'} in advance`)
                               : reschedulesLeft === 0
                               ? (language === 'es' ? 'Ya alcanzaste el limite de 2 reagendamientos' : 'You reached the 2-reschedule limit')
                               : ''
@@ -1085,19 +1090,20 @@ export default function UserBookingsPage() {
             {(() => {
               const used = Number(rescheduleModal.booking?.reschedule_count || 0);
               const left = Math.max(0, 2 - used);
+              const cutoff = Number(rescheduleModal.booking?.reschedule_cutoff_hours) || 2;
               return (
                 <div className="flex items-start gap-2 p-3 bg-blue-50 text-blue-800 rounded-lg text-xs leading-relaxed" data-testid="reschedule-policy-notice">
                   <RefreshCw className="h-4 w-4 shrink-0 mt-0.5" />
                   <div>
                     <p className="font-semibold">
-                      {language === 'es' 
+                      {language === 'es'
                         ? `Te quedan ${left} reagendamiento${left === 1 ? '' : 's'} para esta cita`
                         : `You have ${left} reschedule${left === 1 ? '' : 's'} left for this booking`}
                     </p>
                     <p>
-                      {language === 'es' 
-                        ? 'Politica: maximo 2 reagendamientos sin costo. Debes hacerlo con al menos 2 horas de anticipacion. Tu anticipo se mantiene.'
-                        : 'Policy: up to 2 free reschedules. Must be at least 2 hours in advance. Your deposit is preserved.'}
+                      {language === 'es'
+                        ? `Politica: maximo 2 reagendamientos sin costo. Debes hacerlo con al menos ${cutoff} hora${cutoff === 1 ? '' : 's'} de anticipacion. Tu anticipo se mantiene.`
+                        : `Policy: up to 2 free reschedules. Must be at least ${cutoff} hour${cutoff === 1 ? '' : 's'} in advance. Your deposit is preserved.`}
                     </p>
                   </div>
                 </div>

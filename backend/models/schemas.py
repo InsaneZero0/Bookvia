@@ -522,6 +522,12 @@ class BookingResponse(BaseModel):
     reminder_sent: bool = False
     business_slug: Optional[str] = None
     booked_by: Optional[str] = None
+    # Hours before the appointment that the client must reschedule by.
+    # Matches the business's cancellation_hours (1-72h).
+    reschedule_cutoff_hours: Optional[int] = None
+    # Set when the client explicitly confirms post-cita "todo bien"
+    client_confirmed_ok_at: Optional[str] = None
+    has_dispute: Optional[bool] = None
 
 class ReviewCreate(BaseModel):
     business_id: str

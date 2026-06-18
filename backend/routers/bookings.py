@@ -821,6 +821,19 @@ async def get_my_bookings(
         b["business_slug"] = business.get("slug") if business else None
         b["service_name"] = service["name"] if service else None
         b["worker_name"] = worker["name"] if worker else None
+
+        # Reschedule cutoff matches the business's cancellation window (1-72h).
+        # Falls back to legacy days*24, or to the global default if not set.
+        cutoff = None
+        if business:
+            ch = business.get("cancellation_hours")
+            if isinstance(ch, (int, float)) and ch > 0:
+                cutoff = int(ch)
+            elif business.get("cancellation_days"):
+                cutoff = int(business["cancellation_days"]) * 24
+        if not cutoff:
+            cutoff = RESCHEDULE_CUTOFF_HOURS
+        b["reschedule_cutoff_hours"] = max(1, min(72, cutoff))
         
         # Check if already reviewed
         existing_review = await db.reviews.find_one({"booking_id": b["id"]})
@@ -931,23 +944,42 @@ async def reschedule_booking(
             detail=f"Has alcanzado el limite de {MAX_RESCHEDULES_PER_BOOKING} reagendamientos para esta cita. Si necesitas cambiarla de nuevo, debes cancelarla."
         )
     
-    # Enforce minimum cutoff (must be > 2h before appointment)
+    # Enforce minimum cutoff: must be at least `cancellation_hours` before
+    # the appointment. This mirrors the cancellation window the business
+    # configured (1-72h), so clients can reschedule with the same lead time
+    # they would need to cancel. Fallback to the global RESCHEDULE_CUTOFF_HOURS
+    # if the business hasn't set anything.
+    business_doc = await db.businesses.find_one(
+        {"id": booking.get("business_id")},
+        {"_id": 0, "cancellation_hours": 1, "cancellation_days": 1}
+    ) or {}
+    cutoff_hours = None
+    ch = business_doc.get("cancellation_hours")
+    if isinstance(ch, (int, float)) and ch > 0:
+        cutoff_hours = int(ch)
+    elif business_doc.get("cancellation_days"):
+        cutoff_hours = int(business_doc["cancellation_days"]) * 24
+    if not cutoff_hours:
+        cutoff_hours = RESCHEDULE_CUTOFF_HOURS
+    # Clamp to the same 1-72h band we enforce on cancellation_hours
+    cutoff_hours = max(1, min(72, cutoff_hours))
+
     booking_datetime = datetime.strptime(f"{booking['date']} {booking['time']}", "%Y-%m-%d %H:%M")
     booking_datetime = booking_datetime.replace(tzinfo=timezone.utc)
     hours_until = (booking_datetime - datetime.now(timezone.utc)).total_seconds() / 3600
-    
-    if hours_until <= RESCHEDULE_CUTOFF_HOURS:
+
+    if hours_until <= cutoff_hours:
         raise HTTPException(
             status_code=400,
-            detail=f"No puedes reagendar con menos de {RESCHEDULE_CUTOFF_HOURS} horas de anticipacion. Solo puedes cancelar."
+            detail=f"No puedes reagendar con menos de {cutoff_hours} horas de anticipacion. Solo puedes cancelar."
         )
-    
-    # Validate new datetime is in the future and at least RESCHEDULE_CUTOFF_HOURS away
+
+    # Validate new datetime is in the future and at least cutoff_hours away
     try:
         new_datetime = datetime.strptime(f"{new_date} {new_time}", "%Y-%m-%d %H:%M").replace(tzinfo=timezone.utc)
     except ValueError:
         raise HTTPException(status_code=400, detail="Formato de fecha u hora invalido")
-    
+
     if new_datetime <= datetime.now(timezone.utc) + timedelta(hours=1):
         raise HTTPException(status_code=400, detail="La nueva fecha debe ser al menos 1 hora en el futuro")
     
