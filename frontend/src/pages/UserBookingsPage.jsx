@@ -878,51 +878,82 @@ export default function UserBookingsPage() {
         )}
 
         <Tabs defaultValue="upcoming" className="w-full">
-          <TabsList className="grid grid-cols-2 w-full max-w-md">
-            <TabsTrigger value="upcoming" data-testid="upcoming-tab">
-              {language === 'es' ? 'Próximas' : 'Upcoming'} ({upcomingBookings.length})
-            </TabsTrigger>
-            <TabsTrigger value="past" data-testid="past-tab">
-              {language === 'es' ? 'Pasadas' : 'Past'} ({pastBookings.length})
-            </TabsTrigger>
-          </TabsList>
+          {(() => {
+            // Split: cancelled bookings get their own tab.
+            const isCancelled = (b) => b.status === 'cancelled';
+            const upcomingActive = upcomingBookings.filter(b => !isCancelled(b));
+            const pastActive = pastBookings.filter(b => !isCancelled(b));
+            const cancelledAll = [...upcomingBookings, ...pastBookings]
+              .filter(isCancelled)
+              .sort((a, b) => `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`));
+            return (
+              <>
+                <TabsList className="grid grid-cols-3 w-full max-w-xl">
+                  <TabsTrigger value="upcoming" data-testid="upcoming-tab">
+                    {language === 'es' ? 'Próximas' : 'Upcoming'} ({upcomingActive.length})
+                  </TabsTrigger>
+                  <TabsTrigger value="past" data-testid="past-tab">
+                    {language === 'es' ? 'Pasadas' : 'Past'} ({pastActive.length})
+                  </TabsTrigger>
+                  <TabsTrigger value="cancelled" data-testid="cancelled-tab">
+                    {language === 'es' ? 'Canceladas' : 'Cancelled'} ({cancelledAll.length})
+                  </TabsTrigger>
+                </TabsList>
 
-          <TabsContent value="upcoming" className="mt-6 space-y-4">
-            {upcomingBookings.length > 0 ? (
-              upcomingBookings.map(booking => (
-                <BookingCard key={booking.id} booking={booking} />
-              ))
-            ) : (
-              <Card className="p-12 text-center">
-                <Calendar className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
-                <h3 className="font-heading font-bold text-xl mb-2">
-                  {language === 'es' ? 'Sin citas próximas' : 'No upcoming appointments'}
-                </h3>
-                <p className="text-muted-foreground mb-6">
-                  {language === 'es' 
-                    ? '¿Listo para reservar tu próxima cita?'
-                    : 'Ready to book your next appointment?'}
-                </p>
-                <Button className="btn-coral" onClick={() => navigate('/search')}>
-                  {language === 'es' ? 'Explorar negocios' : 'Explore businesses'}
-                </Button>
-              </Card>
-            )}
-          </TabsContent>
+                <TabsContent value="upcoming" className="mt-6 space-y-4">
+                  {upcomingActive.length > 0 ? (
+                    upcomingActive.map(booking => (
+                      <BookingCard key={booking.id} booking={booking} />
+                    ))
+                  ) : (
+                    <Card className="p-12 text-center">
+                      <Calendar className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
+                      <h3 className="font-heading font-bold text-xl mb-2">
+                        {language === 'es' ? 'Sin citas próximas' : 'No upcoming appointments'}
+                      </h3>
+                      <p className="text-muted-foreground mb-6">
+                        {language === 'es'
+                          ? '¿Listo para reservar tu próxima cita?'
+                          : 'Ready to book your next appointment?'}
+                      </p>
+                      <Button className="btn-coral" onClick={() => navigate('/search')}>
+                        {language === 'es' ? 'Explorar negocios' : 'Explore businesses'}
+                      </Button>
+                    </Card>
+                  )}
+                </TabsContent>
 
-          <TabsContent value="past" className="mt-6 space-y-4">
-            {pastBookings.length > 0 ? (
-              pastBookings.map(booking => (
-                <BookingCard key={booking.id} booking={booking} showActions={false} />
-              ))
-            ) : (
-              <Card className="p-12 text-center">
-                <p className="text-muted-foreground">
-                  {language === 'es' ? 'No tienes citas pasadas' : 'No past appointments'}
-                </p>
-              </Card>
-            )}
-          </TabsContent>
+                <TabsContent value="past" className="mt-6 space-y-4">
+                  {pastActive.length > 0 ? (
+                    pastActive.map(booking => (
+                      <BookingCard key={booking.id} booking={booking} showActions={false} />
+                    ))
+                  ) : (
+                    <Card className="p-12 text-center">
+                      <p className="text-muted-foreground">
+                        {language === 'es' ? 'No tienes citas pasadas' : 'No past appointments'}
+                      </p>
+                    </Card>
+                  )}
+                </TabsContent>
+
+                <TabsContent value="cancelled" className="mt-6 space-y-4" data-testid="cancelled-tab-content">
+                  {cancelledAll.length > 0 ? (
+                    cancelledAll.map(booking => (
+                      <BookingCard key={booking.id} booking={booking} showActions={false} />
+                    ))
+                  ) : (
+                    <Card className="p-12 text-center">
+                      <XCircle className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
+                      <p className="text-muted-foreground">
+                        {language === 'es' ? 'No tienes citas canceladas' : 'No cancelled appointments'}
+                      </p>
+                    </Card>
+                  )}
+                </TabsContent>
+              </>
+            );
+          })()}
         </Tabs>
 
         {/* Cancel Dialog with Refund Choice */}
