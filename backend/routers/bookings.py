@@ -1189,6 +1189,25 @@ async def complete_booking(booking_id: str, token_data: TokenData = Depends(requ
         "review",
         {"booking_id": booking_id, "business_id": booking["business_id"], "grace_period_hours": 24}
     )
+
+    # Email client asking for explicit OK (accelerates payout for the business if confirmed)
+    try:
+        client = await db.users.find_one({"id": booking["user_id"]}, {"_id": 0, "email": 1, "full_name": 1, "notify_email": 1})
+        if client and client.get("email") and client.get("notify_email", True):
+            biz = await db.businesses.find_one({"id": booking["business_id"]}, {"_id": 0, "name": 1})
+            service = await db.services.find_one({"id": booking.get("service_id")}, {"_id": 0, "name": 1}) if booking.get("service_id") else None
+            from services.email import send_post_appointment_confirmation
+            await send_post_appointment_confirmation(
+                user_email=client["email"],
+                user_name=client.get("full_name", "Cliente"),
+                business_name=(biz or {}).get("name", "el negocio"),
+                booking_id=booking_id,
+                service_name=(service or {}).get("name", ""),
+                date=booking.get("date", ""),
+                time=booking.get("time", ""),
+            )
+    except Exception as e:
+        logger.warning(f"Could not send post-appointment confirmation email: {e}")
     
     # Log activity
     await create_business_activity(
@@ -1197,6 +1216,86 @@ async def complete_booking(booking_id: str, token_data: TokenData = Depends(requ
     )
     
     return {"message": "Booking completed"}
+
+
+
+@router.post("/{booking_id}/confirm-ok")
+async def confirm_booking_ok(booking_id: str, token_data: TokenData = Depends(require_auth)):
+    """Client confirms everything went well - immediately clears the funds.
+
+    Skips the 24h grace window. Only allowed when:
+      * Caller is the booking's client (owner).
+      * Booking is in `completed` status.
+      * Associated transaction is currently `funds_state=available`
+        (i.e. business already marked the cita completed, grace not yet over).
+
+    Side effects:
+      * funds_state: available -> cleared (eligible for next day-20 settlement)
+      * Booking gets `client_confirmed_ok_at` + `client_confirmation_method`
+      * Notifies the business that the client confirmed satisfaction
+    """
+    booking = await db.bookings.find_one({"id": booking_id})
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    if booking.get("user_id") != token_data.user_id:
+        raise HTTPException(status_code=403, detail="Not your booking")
+    if booking.get("status") != AppointmentStatus.COMPLETED:
+        raise HTTPException(status_code=400, detail="Solo puedes confirmar citas completadas")
+    if booking.get("client_confirmed_ok_at"):
+        return {"message": "Already confirmed", "already_confirmed": True}
+    if booking.get("has_dispute"):
+        raise HTTPException(status_code=400, detail="No puedes confirmar una cita con reporte abierto")
+
+    # Find the paid transaction for this booking
+    tx = await db.transactions.find_one(
+        {"booking_id": booking_id, "status": TransactionStatus.PAID},
+        {"_id": 0}
+    )
+    if not tx:
+        raise HTTPException(status_code=400, detail="No hay pago asociado a esta cita")
+
+    current_state = tx.get("funds_state")
+    if current_state == "cleared":
+        # Already cleared (e.g. grace already expired). Still record consent.
+        pass
+    elif current_state == "available":
+        from services.funds_state import clear_now
+        try:
+            await clear_now(tx["id"], actor="client_confirm", reason="Client confirmed everything went well")
+        except Exception as e:
+            logger.error(f"Funds clear-now failed for tx {tx['id']}: {e}")
+            raise HTTPException(status_code=500, detail="No se pudo liberar el pago en este momento")
+    else:
+        raise HTTPException(status_code=400, detail=f"Estado de fondos no permite confirmacion: {current_state}")
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    await db.bookings.update_one(
+        {"id": booking_id},
+        {"$set": {
+            "client_confirmed_ok_at": now_iso,
+            "client_confirmation_method": "explicit",
+        }}
+    )
+
+    # Notify business that the client gave the OK
+    try:
+        business = await db.businesses.find_one({"id": booking["business_id"]}, {"_id": 0, "user_id": 1, "name": 1})
+        if business and business.get("user_id"):
+            await create_notification(
+                business["user_id"],
+                "Cliente confirmo: todo bien",
+                f"El cliente confirmo que la cita estuvo perfecta. Tu pago entrara en la proxima liquidacion del dia 20.",
+                "client_confirmed_ok",
+                {"booking_id": booking_id, "transaction_id": tx["id"]}
+            )
+    except Exception as e:
+        logger.warning(f"Could not notify business of client confirmation: {e}")
+
+    return {
+        "message": "Confirmacion registrada. Tu negocio recibira el pago en la proxima liquidacion del dia 20.",
+        "funds_state": "cleared",
+        "confirmed_at": now_iso,
+    }
 
 
 

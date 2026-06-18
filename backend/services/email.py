@@ -328,6 +328,88 @@ async def send_welcome_business(email: str, business_name: str) -> str:
         html=email_html(subject, content), template="welcome_business", data={"business_name": business_name}
     )
 
+
+async def send_post_appointment_confirmation(
+    user_email: str,
+    user_name: str,
+    business_name: str,
+    booking_id: str,
+    service_name: str = "",
+    date: str = "",
+    time: str = "",
+) -> str:
+    """Email the client right after their cita is marked completed.
+
+    Asks: "Todo bien?" with two CTAs:
+      * "Si, todo bien" -> deeplink that auto-clears funds for the business
+      * "Reportar problema" -> deeplink that opens the dispute dialog
+
+    If the client doesn't act, the 24h grace already in place auto-clears
+    the funds anyway, so this email is pure cashflow acceleration.
+    """
+    base_url = "https://www.bookvia.app"
+    confirm_url = f"{base_url}/bookings?confirm={booking_id}"
+    dispute_url = f"{base_url}/bookings?dispute={booking_id}"
+    subject = f"Como estuvo tu cita en {business_name}?"
+
+    appt_line = ""
+    if service_name or date or time:
+        bits = []
+        if service_name:
+            bits.append(service_name)
+        if date and time:
+            bits.append(f"{date} a las {time}")
+        elif date:
+            bits.append(date)
+        appt_line = (
+            f'<p style="color:#475569;font-size:13px;margin:4px 0 16px;">'
+            f'<strong>{business_name}</strong> &middot; {" &middot; ".join(bits)}</p>'
+        )
+    else:
+        appt_line = (
+            f'<p style="color:#475569;font-size:13px;margin:4px 0 16px;"><strong>{business_name}</strong></p>'
+        )
+
+    content = (
+        f'<p style="color:#334155;font-size:15px;line-height:1.6;">Hola <strong>{user_name}</strong>,</p>'
+        f'<p style="color:#334155;font-size:15px;line-height:1.6;">'
+        f'Esperamos que la hayas pasado increible. Tu cita ya fue marcada como completada por el negocio.</p>'
+        f'{appt_line}'
+        f'<div style="margin-top:8px;padding:18px 20px;background:#f0fdf4;border-left:4px solid #16a34a;border-radius:6px;">'
+        f'<p style="margin:0 0 8px;color:#14532d;font-size:14px;font-weight:bold;">Todo estuvo bien?</p>'
+        f'<p style="margin:0;color:#166534;font-size:13px;line-height:1.5;">'
+        f'Si confirmas que todo estuvo bien, el negocio recibira su pago de inmediato. '
+        f'Si no respondes, el pago se libera automaticamente en 24 horas.</p>'
+        f'</div>'
+        f'<table cellpadding="0" cellspacing="0" style="margin:24px 0 12px;"><tr>'
+        f'<td style="background:#16a34a;border-radius:8px;padding:14px 28px;">'
+        f'<a href="{confirm_url}" style="color:#ffffff;text-decoration:none;font-weight:bold;font-size:15px;">'
+        f'Si, todo bien</a>'
+        f'</td></tr></table>'
+        f'<table cellpadding="0" cellspacing="0" style="margin:0 0 24px;"><tr>'
+        f'<td style="background:#ffffff;border:1.5px solid #e2e8f0;border-radius:8px;padding:12px 24px;">'
+        f'<a href="{dispute_url}" style="color:#dc2626;text-decoration:none;font-weight:600;font-size:14px;">'
+        f'Reportar un problema</a>'
+        f'</td></tr></table>'
+        f'<p style="color:#94a3b8;font-size:12px;margin-top:16px;">'
+        f'Si los botones no funcionan, copia y pega este enlace en tu navegador:<br>'
+        f'<a href="{confirm_url}" style="color:#F05D5E;font-size:12px;word-break:break-all;">{confirm_url}</a></p>'
+    )
+
+    return await send_email(
+        to=user_email,
+        subject=subject,
+        body=(
+            f"Hola {user_name}, esperamos que la hayas pasado increible en {business_name}. "
+            f"Confirma que todo estuvo bien: {confirm_url} - o reporta un problema: {dispute_url}"
+        ),
+        html=email_html(subject, content),
+        template="post_appointment_confirmation",
+        data={"user_name": user_name, "business_name": business_name, "booking_id": booking_id},
+        from_email=NOREPLY_EMAIL,
+    )
+
+
 DOC_LABELS_ES = {
     "ine": "INE / Identificación oficial",
     "rfc": "RFC",

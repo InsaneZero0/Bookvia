@@ -284,6 +284,7 @@ export const bookingsAPI = {
   cancelByUser: (id, reason, refundTo = "card") => api.put(`/bookings/${id}/cancel/user`, { reason, refund_to: refundTo }),
   cancelByBusiness: (id, reason) => api.put(`/bookings/${id}/cancel/business`, { reason }),
   raiseDispute: (id, reason) => api.post(`/bookings/${id}/dispute`, { reason }),
+  confirmOk: (id) => api.post(`/bookings/${id}/confirm-ok`),
   reportNoShow: (id, description, photoUrl) => api.post(`/bookings/${id}/no-show-business`, { description, photo_url: photoUrl }),
   respondNoShow: (id, description, evidenceUrl) => api.post(`/bookings/${id}/no-show-response`, { description, evidence_url: evidenceUrl }),
   reschedule: (id, newDate, newTime) => 
