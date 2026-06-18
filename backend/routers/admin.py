@@ -3544,6 +3544,43 @@ async def admin_issue_refund(
     }
 
 
+@router.post("/finance/refunds/issue-all")
+async def admin_issue_all_refunds(
+    token_data: TokenData = Depends(require_admin),
+):
+    """Bulk-issue every pending refund in the queue.
+
+    Iterates `admin_issue_refund` for each transaction with
+    `refund_pending=True OR refund_failed=True`. Returns a summary
+    with successes and failures so the UI can show "12 ok, 1 failed".
+    """
+    cursor = db.transactions.find(
+        {
+            "$or": [
+                {"refund_pending": True, "stripe_refund_id": {"$in": [None, ""]}},
+                {"refund_failed": True, "status": {"$in": ["refund_full", "refund_partial"]}},
+            ]
+        },
+        {"_id": 0, "id": 1}
+    ).limit(500)
+    rows = await cursor.to_list(500)
+
+    results = {"ok": [], "failed": [], "total": len(rows)}
+    for row in rows:
+        tx_id = row["id"]
+        try:
+            r = await admin_issue_refund(tx_id, token_data)  # type: ignore[arg-type]
+            results["ok"].append({"transaction_id": tx_id, "stripe_refund_id": r.get("stripe_refund_id"), "destination": r.get("destination"), "amount": r.get("amount")})
+        except HTTPException as e:
+            results["failed"].append({"transaction_id": tx_id, "error": str(e.detail)})
+        except Exception as e:
+            results["failed"].append({"transaction_id": tx_id, "error": str(e)})
+
+    results["ok_count"] = len(results["ok"])
+    results["failed_count"] = len(results["failed"])
+    return results
+
+
 @router.post("/finance/refunds/{transaction_id}/retry")
 async def admin_retry_refund(
     transaction_id: str,

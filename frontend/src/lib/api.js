@@ -427,6 +427,7 @@ export const adminAPI = {
   getRefundsAudit: (limit = 50) => api.get('/admin/finance/refunds', { params: { limit } }),
   getRefundsPending: (limit = 100) => api.get('/admin/finance/refunds/pending', { params: { limit } }),
   issueRefund: (transactionId) => api.post(`/admin/finance/refunds/${transactionId}/issue`),
+  issueAllRefunds: () => api.post('/admin/finance/refunds/issue-all'),
   retryRefund: (transactionId) => api.post(`/admin/finance/refunds/${transactionId}/retry`),
   getStripeWebhookEvents: (limit = 50) => api.get('/admin/stripe/webhook-events', { params: { limit } }),
   previewPnlReport: () => api.get('/admin/platform/pnl-report/preview'),
