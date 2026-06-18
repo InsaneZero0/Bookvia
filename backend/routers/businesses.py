@@ -3267,5 +3267,85 @@ async def upload_business_logo(file: UploadFile = File(...), token_data: TokenDa
     return {"secure_url": logo_url, "public_id": public_id}
 
 
+@router.post("/me/cover")
+async def upload_business_cover(file: UploadFile = File(...), token_data: TokenData = Depends(require_business)):
+    """Upload or replace the business cover photo (banner shown at top of public profile)."""
+    user = await db.users.find_one({"id": token_data.user_id})
+    if not user or not user.get("business_id"):
+        raise HTTPException(status_code=404, detail="Business not found")
+
+    data = await file.read()
+    ok, err = validate_image(file.filename, file.content_type, len(data))
+    if not ok:
+        raise HTTPException(status_code=400, detail=err)
+
+    business_id = user["business_id"]
+    business = await db.businesses.find_one({"id": business_id})
+
+    if cloudinary_configured():
+        old_public_id = business.get("cover_photo_public_id") if business else None
+        if old_public_id:
+            cloudinary_delete(old_public_id)
+        try:
+            result = upload_image(data, "business_gallery", f"{business_id}_cover")
+            cover_url = result["secure_url"]
+            public_id = result["public_id"]
+        except Exception as e:
+            logger.error(f"Cover upload failed: {e}")
+            raise HTTPException(status_code=500, detail="Failed to upload cover")
+    else:
+        path = generate_upload_path(business_id, f"cover_{file.filename}")
+        content_type = "image/jpeg" if file.filename.lower().endswith(("jfif", "jpg", "jpeg")) else file.content_type
+        try:
+            result = put_object(path, data, content_type)
+            base_url = os.environ.get("BASE_URL", "")
+            cover_url = f"{base_url}/api/files/{result['path']}"
+            public_id = path
+        except Exception as e:
+            logger.error(f"Cover upload failed: {e}")
+            raise HTTPException(status_code=500, detail="Failed to upload cover")
+
+    await db.businesses.update_one(
+        {"id": business_id},
+        {"$set": {"cover_photo": cover_url, "cover_photo_public_id": public_id}}
+    )
+
+    return {"secure_url": cover_url, "public_id": public_id}
+
+
+@router.delete("/me/cover")
+async def delete_business_cover(token_data: TokenData = Depends(require_business)):
+    """Remove the business cover photo. The card will fall back to the first gallery photo."""
+    user = await db.users.find_one({"id": token_data.user_id})
+    if not user or not user.get("business_id"):
+        raise HTTPException(status_code=404, detail="Business not found")
+    business_id = user["business_id"]
+    business = await db.businesses.find_one({"id": business_id})
+    if business and business.get("cover_photo_public_id") and cloudinary_configured():
+        cloudinary_delete(business["cover_photo_public_id"])
+    await db.businesses.update_one(
+        {"id": business_id},
+        {"$unset": {"cover_photo": "", "cover_photo_public_id": ""}}
+    )
+    return {"message": "Cover removed"}
+
+
+@router.delete("/me/logo")
+async def delete_business_logo(token_data: TokenData = Depends(require_business)):
+    """Remove the business logo. The card will fall back to an avatar with the business initial."""
+    user = await db.users.find_one({"id": token_data.user_id})
+    if not user or not user.get("business_id"):
+        raise HTTPException(status_code=404, detail="Business not found")
+    business_id = user["business_id"]
+    business = await db.businesses.find_one({"id": business_id})
+    if business and business.get("logo_public_id") and cloudinary_configured():
+        cloudinary_delete(business["logo_public_id"])
+    await db.businesses.update_one(
+        {"id": business_id},
+        {"$unset": {"logo_url": "", "logo_public_id": ""}}
+    )
+    return {"message": "Logo removed"}
+
+
 
 
