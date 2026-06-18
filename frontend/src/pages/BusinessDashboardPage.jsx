@@ -1718,6 +1718,22 @@ export default function BusinessDashboardPage() {
                       : 'When you cancel, the client receives a full refund and an email notification. Frequent cancellations can hurt your reputation.'}
                   </div>
                 )}
+                {/* Reschedule recommendation: ask the client to reschedule instead */}
+                <div className="rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-300 dark:border-blue-800 p-3.5" data-testid="cancel-reschedule-recommendation">
+                  <div className="flex items-start gap-2">
+                    <RefreshCw className="h-4 w-4 text-blue-700 dark:text-blue-300 shrink-0 mt-0.5" />
+                    <div className="space-y-1.5">
+                      <p className="text-sm font-bold text-blue-900 dark:text-blue-100 leading-snug">
+                        {language === 'es' ? '¿Ya hablaste con el cliente?' : 'Have you contacted the client?'}
+                      </p>
+                      <p className="text-xs text-blue-800 dark:text-blue-200 leading-relaxed">
+                        {language === 'es'
+                          ? 'Antes de cancelar, te recomendamos contactar al cliente y proponerle reagendar. Solo el cliente puede reagendar la cita, asi que avisale para que entre a Bookvia y elija nueva fecha. Esto evita la penalty y conserva la confianza.'
+                          : 'Before cancelling, we recommend contacting the client to suggest a reschedule. Only the client can reschedule, so let them know to enter Bookvia and pick a new date. This avoids the penalty and preserves trust.'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
                 <DialogFooter className="gap-2 sm:gap-2">
                   <Button
                     variant="outline"
