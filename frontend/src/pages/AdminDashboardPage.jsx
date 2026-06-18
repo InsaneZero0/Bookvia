@@ -3371,7 +3371,14 @@ export default function AdminDashboardPage() {
                           <div className="truncate font-medium">{it.client_name || '—'}</div>
                           <div className="truncate text-[11px] text-muted-foreground">{it.client_email || '—'}</div>
                         </div>
-                        <div className="col-span-3 min-w-0 truncate">{it.business_name || '—'}</div>
+                        <div className="col-span-3 min-w-0 truncate">
+                          <span>{it.business_name || '—'}</span>
+                          {it.business_public_code && (
+                            <span className="ml-1.5 inline-block font-mono text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 align-middle">
+                              {it.business_public_code}
+                            </span>
+                          )}
+                        </div>
                         <div className="col-span-2 min-w-0 text-xs">
                           <div>{it.booking_date}</div>
                           <div className="text-muted-foreground">{it.booking_time}</div>
@@ -3433,7 +3440,14 @@ export default function AdminDashboardPage() {
                       <div key={it.transaction_id} className="grid grid-cols-12 gap-2 px-3 py-2.5 border-t text-sm" data-testid={`refund-awaiting-${it.transaction_id}`}>
                         <div className="col-span-4 min-w-0">
                           <div className="truncate font-medium">{it.client_name || '—'}</div>
-                          <div className="truncate text-[11px] text-muted-foreground">{it.business_name || '—'}</div>
+                          <div className="truncate text-[11px] text-muted-foreground">
+                            {it.business_name || '—'}
+                            {it.business_public_code && (
+                              <span className="ml-1.5 inline-block font-mono text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 align-middle">
+                                {it.business_public_code}
+                              </span>
+                            )}
+                          </div>
                         </div>
                         <div className="col-span-3 text-xs">
                           <div>{it.booking_date}</div>
@@ -3484,7 +3498,14 @@ export default function AdminDashboardPage() {
                       <div key={it.transaction_id} className="grid grid-cols-12 gap-2 px-3 py-2.5 border-t text-sm" data-testid={`refund-wallet-${it.transaction_id}`}>
                         <div className="col-span-4 min-w-0">
                           <div className="truncate font-medium">{it.client_name || '—'}</div>
-                          <div className="truncate text-[11px] text-muted-foreground">{it.business_name || '—'}</div>
+                          <div className="truncate text-[11px] text-muted-foreground">
+                            {it.business_name || '—'}
+                            {it.business_public_code && (
+                              <span className="ml-1.5 inline-block font-mono text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 align-middle">
+                                {it.business_public_code}
+                              </span>
+                            )}
+                          </div>
                         </div>
                         <div className="col-span-3 text-xs">
                           <div>{it.booking_date}</div>
@@ -3524,6 +3545,14 @@ export default function AdminDashboardPage() {
                     {refundsAudit.items.slice(0, 30).map((r, i) => (
                       <div key={r.id || i} className="flex items-center justify-between p-3 rounded-lg bg-muted/40 text-sm" data-testid={`refund-audit-row-${i}`}>
                         <div className="min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-medium text-foreground truncate max-w-[200px]">{r.business_name || '—'}</span>
+                            {r.business_public_code && (
+                              <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">
+                                {r.business_public_code}
+                              </span>
+                            )}
+                          </div>
                           <div className="font-mono text-xs text-muted-foreground truncate">{r.stripe_refund_id || '-'}</div>
                           <div className="text-xs text-muted-foreground">
                             {r.reason} · {t('por', 'by')} {r.actor} · {formatDate(r.created_at)}
@@ -3572,6 +3601,20 @@ export default function AdminDashboardPage() {
                     <div>
                       <p className="text-[11px] uppercase text-muted-foreground font-semibold mb-1">{t('Negocio', 'Business')}</p>
                       <p className="font-medium">{refundDetailModal.item.business_name || '—'}</p>
+                      {refundDetailModal.item.business_public_code && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(refundDetailModal.item.business_public_code);
+                            toast.success(t('Codigo copiado', 'Code copied'));
+                          }}
+                          className="inline-flex items-center gap-1 mt-1 text-[11px] font-mono px-2 py-0.5 rounded bg-slate-100 text-slate-700 hover:bg-slate-200 transition"
+                          data-testid="refund-detail-business-code"
+                          title={t('Click para copiar', 'Click to copy')}
+                        >
+                          {refundDetailModal.item.business_public_code}
+                        </button>
+                      )}
                     </div>
 
                     <div>

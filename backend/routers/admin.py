@@ -3335,6 +3335,16 @@ async def admin_list_refunds(
     """Recent Stripe refunds issued by Bookvia (from `refund_events`)."""
     cursor = db.refund_events.find({}, {"_id": 0}).sort("created_at", -1).limit(max(1, min(limit, 500)))
     rows = await cursor.to_list(limit)
+    # Enrich with business name + public_code so the admin can identify it fast
+    biz_cache: dict = {}
+    for r in rows:
+        bid = r.get("business_id")
+        if not bid:
+            continue
+        if bid not in biz_cache:
+            biz_cache[bid] = await db.businesses.find_one({"id": bid}, {"_id": 0, "name": 1, "public_code": 1}) or {}
+        r["business_name"] = biz_cache[bid].get("name")
+        r["business_public_code"] = biz_cache[bid].get("public_code")
     total = sum(float(r.get("amount_mxn") or 0) for r in rows)
     return {"count": len(rows), "total_refunded_mxn": round(total, 2), "items": rows}
 
@@ -3376,7 +3386,7 @@ async def admin_list_pending_refunds(
             {"id": b_id},
             {"_id": 0, "date": 1, "time": 1, "cancellation_reason": 1, "cancelled_by": 1, "cancelled_at": 1}
         ) if b_id else None
-        biz = await db.businesses.find_one({"id": tx.get("business_id")}, {"_id": 0, "name": 1}) if tx.get("business_id") else None
+        biz = await db.businesses.find_one({"id": tx.get("business_id")}, {"_id": 0, "name": 1, "public_code": 1}) if tx.get("business_id") else None
         user = await db.users.find_one({"id": tx.get("user_id")}, {"_id": 0, "email": 1, "full_name": 1}) if tx.get("user_id") else None
         items.append({
             "transaction_id": tx.get("id"),
@@ -3394,6 +3404,7 @@ async def admin_list_pending_refunds(
             "cancelled_at": booking.get("cancelled_at") if booking else None,
             "reason": booking.get("cancellation_reason") if booking else None,
             "business_name": biz.get("name") if biz else None,
+            "business_public_code": biz.get("public_code") if biz else None,
             "client_email": user.get("email") if user else None,
             "client_name": user.get("full_name") if user else None,
         })
@@ -3567,7 +3578,7 @@ async def admin_list_awaiting_client_choice(
         booking = await db.bookings.find_one(
             {"id": b_id}, {"_id": 0, "date": 1, "time": 1, "cancellation_reason": 1, "cancelled_by": 1, "cancelled_at": 1}
         ) if b_id else None
-        biz = await db.businesses.find_one({"id": tx.get("business_id")}, {"_id": 0, "name": 1}) if tx.get("business_id") else None
+        biz = await db.businesses.find_one({"id": tx.get("business_id")}, {"_id": 0, "name": 1, "public_code": 1}) if tx.get("business_id") else None
         user = await db.users.find_one({"id": tx.get("user_id")}, {"_id": 0, "email": 1, "full_name": 1}) if tx.get("user_id") else None
         items.append({
             "transaction_id": tx.get("id"),
@@ -3581,6 +3592,7 @@ async def admin_list_awaiting_client_choice(
             "cancelled_at": booking.get("cancelled_at") if booking else None,
             "reason": booking.get("cancellation_reason") if booking else None,
             "business_name": biz.get("name") if biz else None,
+            "business_public_code": biz.get("public_code") if biz else None,
             "client_email": user.get("email") if user else None,
             "client_name": user.get("full_name") if user else None,
         })
@@ -3607,7 +3619,7 @@ async def admin_list_wallet_refunded(
         booking = await db.bookings.find_one(
             {"id": b_id}, {"_id": 0, "date": 1, "time": 1, "cancellation_reason": 1, "cancelled_by": 1, "cancelled_at": 1}
         ) if b_id else None
-        biz = await db.businesses.find_one({"id": tx.get("business_id")}, {"_id": 0, "name": 1}) if tx.get("business_id") else None
+        biz = await db.businesses.find_one({"id": tx.get("business_id")}, {"_id": 0, "name": 1, "public_code": 1}) if tx.get("business_id") else None
         user = await db.users.find_one({"id": tx.get("user_id")}, {"_id": 0, "email": 1, "full_name": 1}) if tx.get("user_id") else None
         items.append({
             "transaction_id": tx.get("id"),
@@ -3621,6 +3633,7 @@ async def admin_list_wallet_refunded(
             "cancelled_at": booking.get("cancelled_at") if booking else None,
             "reason": booking.get("cancellation_reason") if booking else None,
             "business_name": biz.get("name") if biz else None,
+            "business_public_code": biz.get("public_code") if biz else None,
             "client_email": user.get("email") if user else None,
             "client_name": user.get("full_name") if user else None,
         })
