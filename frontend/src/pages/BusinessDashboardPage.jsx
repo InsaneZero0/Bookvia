@@ -78,6 +78,7 @@ export default function BusinessDashboardPage() {
   const [statsDateFrom, setStatsDateFrom] = useState('');
   const [statsDateTo, setStatsDateTo] = useState('');
   const [rescheduleModal, setRescheduleModal] = useState({ open: false, booking: null });
+  const [cancelDialog, setCancelDialog] = useState({ open: false, booking: null, step: 'confirm', reason: '', submitting: false });
   const [rescheduleDate, setRescheduleDate] = useState(null);
   const [rescheduleSlots, setRescheduleSlots] = useState([]);
   const [rescheduleTime, setRescheduleTime] = useState('');
@@ -273,12 +274,18 @@ export default function BusinessDashboardPage() {
   };
 
   const handleBookingAction = async (bookingId, action) => {
+    // Cancellation now goes through a confirmation dialog with reason.
+    // Use openCancelDialog(booking) instead of action='cancel'.
+    if (action === 'cancel') {
+      const bk = dayBookings.find(b => b.id === bookingId);
+      if (bk) openCancelDialog(bk);
+      return;
+    }
     try {
       switch (action) {
         case 'confirm': await bookingsAPI.confirm(bookingId); break;
         case 'complete': await bookingsAPI.complete(bookingId); break;
         case 'no-show': await bookingsAPI.markNoShow(bookingId); break;
-        case 'cancel': await bookingsAPI.cancelByBusiness(bookingId, 'Cancelada por el negocio'); break;
         default: break;
       }
       toast.success(language === 'es' ? 'Actualizado' : 'Updated');
@@ -287,6 +294,32 @@ export default function BusinessDashboardPage() {
     } catch (error) {
       const detail = error?.response?.data?.detail || '';
       toast.error(language === 'es' ? `Error al actualizar: ${detail}` : `Error updating: ${detail}`);
+    }
+  };
+
+  const openCancelDialog = (booking) => {
+    setCancelDialog({ open: true, booking, step: 'confirm', reason: '', submitting: false });
+  };
+
+  const submitBusinessCancellation = async () => {
+    const bk = cancelDialog.booking;
+    const reason = (cancelDialog.reason || '').trim();
+    if (!bk) return;
+    if (reason.length < 5) {
+      toast.error(language === 'es' ? 'Por favor explica el motivo (minimo 5 caracteres)' : 'Please explain the reason (minimum 5 characters)');
+      return;
+    }
+    setCancelDialog((s) => ({ ...s, submitting: true }));
+    try {
+      await bookingsAPI.cancelByBusiness(bk.id, reason);
+      toast.success(language === 'es' ? 'Cita cancelada. El cliente fue notificado.' : 'Booking cancelled. The client was notified.');
+      setCancelDialog({ open: false, booking: null, step: 'confirm', reason: '', submitting: false });
+      loadDayBookings();
+      loadDashboard();
+    } catch (error) {
+      const detail = error?.response?.data?.detail || '';
+      toast.error(language === 'es' ? `Error al cancelar: ${detail}` : `Error cancelling: ${detail}`);
+      setCancelDialog((s) => ({ ...s, submitting: false }));
     }
   };
 
@@ -1623,6 +1656,121 @@ export default function BusinessDashboardPage() {
                 </div>
               )}
             </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Business Cancellation Confirmation Modal — Step 1: confirm, Step 2: reason */}
+        <Dialog
+          open={cancelDialog.open}
+          onOpenChange={(open) => !open && !cancelDialog.submitting && setCancelDialog({ open: false, booking: null, step: 'confirm', reason: '', submitting: false })}
+        >
+          <DialogContent className="max-w-md" data-testid="business-cancel-modal">
+            {cancelDialog.step === 'confirm' && (
+              <>
+                <DialogHeader>
+                  <DialogTitle className="flex items-center gap-2">
+                    <AlertTriangle className="h-5 w-5 text-amber-600" />
+                    {language === 'es' ? '¿Cancelar esta cita?' : 'Cancel this booking?'}
+                  </DialogTitle>
+                  <DialogDescription>
+                    {cancelDialog.booking && (
+                      <span className="block text-foreground/80 text-sm leading-relaxed">
+                        <strong>{cancelDialog.booking.user_name || cancelDialog.booking.client_name}</strong>
+                        {' — '}
+                        {cancelDialog.booking.service_name}
+                        <br />
+                        <span className="text-muted-foreground">
+                          {cancelDialog.booking.date} {cancelDialog.booking.time}
+                        </span>
+                      </span>
+                    )}
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 p-3 text-xs text-amber-900 dark:text-amber-200 leading-relaxed">
+                  {language === 'es'
+                    ? 'Al cancelar, el cliente recibira un reembolso completo y se le notificara por correo. Las cancelaciones frecuentes pueden afectar tu reputacion.'
+                    : 'When you cancel, the client receives a full refund and an email notification. Frequent cancellations can hurt your reputation.'}
+                </div>
+                <DialogFooter className="gap-2 sm:gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => setCancelDialog({ open: false, booking: null, step: 'confirm', reason: '', submitting: false })}
+                    data-testid="business-cancel-no-btn"
+                  >
+                    {language === 'es' ? 'No, mantener' : 'No, keep it'}
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    onClick={() => setCancelDialog((s) => ({ ...s, step: 'reason' }))}
+                    data-testid="business-cancel-yes-btn"
+                  >
+                    {language === 'es' ? 'Si, cancelar' : 'Yes, cancel'}
+                  </Button>
+                </DialogFooter>
+              </>
+            )}
+            {cancelDialog.step === 'reason' && (
+              <>
+                <DialogHeader>
+                  <DialogTitle>{language === 'es' ? 'Motivo de la cancelacion' : 'Cancellation reason'}</DialogTitle>
+                  <DialogDescription>
+                    {language === 'es'
+                      ? 'Cuentale al cliente por que tienes que cancelar. Este texto se incluira en su correo de cancelacion.'
+                      : 'Tell the client why you have to cancel. This text will be included in their cancellation email.'}
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-2">
+                  <div className="flex flex-wrap gap-2">
+                    {(language === 'es'
+                      ? ['Emergencia personal', 'Enfermedad del colaborador', 'Problema tecnico', 'Cambio de horario imprevisto']
+                      : ['Personal emergency', 'Worker illness', 'Technical issue', 'Unexpected schedule change']
+                    ).map((preset) => (
+                      <Button
+                        key={preset}
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-7 text-[11px] px-2"
+                        onClick={() => setCancelDialog((s) => ({ ...s, reason: preset }))}
+                        data-testid={`cancel-reason-preset-${preset.toLowerCase().replace(/\s+/g, '-')}`}
+                      >
+                        {preset}
+                      </Button>
+                    ))}
+                  </div>
+                  <Textarea
+                    value={cancelDialog.reason}
+                    onChange={(e) => setCancelDialog((s) => ({ ...s, reason: e.target.value }))}
+                    placeholder={language === 'es' ? 'Ej: Tuvimos una emergencia familiar y no podremos atenderte hoy. Disculpa las molestias.' : 'Eg: We had a family emergency and cannot serve you today. Sorry for the inconvenience.'}
+                    rows={4}
+                    maxLength={400}
+                    autoFocus
+                    data-testid="cancel-reason-textarea"
+                  />
+                  <p className="text-[11px] text-muted-foreground text-right">{(cancelDialog.reason || '').length}/400</p>
+                </div>
+                <DialogFooter className="gap-2 sm:gap-2">
+                  <Button
+                    variant="outline"
+                    onClick={() => setCancelDialog((s) => ({ ...s, step: 'confirm' }))}
+                    disabled={cancelDialog.submitting}
+                    data-testid="cancel-reason-back-btn"
+                  >
+                    {language === 'es' ? 'Atras' : 'Back'}
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    onClick={submitBusinessCancellation}
+                    disabled={cancelDialog.submitting || (cancelDialog.reason || '').trim().length < 5}
+                    data-testid="cancel-reason-submit-btn"
+                  >
+                    {cancelDialog.submitting
+                      ? (language === 'es' ? 'Cancelando...' : 'Cancelling...')
+                      : (language === 'es' ? 'Confirmar cancelacion' : 'Confirm cancellation')}
+                  </Button>
+                </DialogFooter>
+              </>
+            )}
           </DialogContent>
         </Dialog>
 
