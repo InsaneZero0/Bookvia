@@ -679,6 +679,10 @@ export default function AdminDashboardPage() {
   const [reconIssues, setReconIssues] = useState([]);
   const [reconRunning, setReconRunning] = useState(false);
   const [refundsAudit, setRefundsAudit] = useState(null);
+  // Refunds tab (Phase A: pending Stripe refund failures)
+  const [refundsPending, setRefundsPending] = useState(null);
+  const [refundsTabLoading, setRefundsTabLoading] = useState(false);
+  const [retryingRefundId, setRetryingRefundId] = useState(null);
 
   // Compliance tab (security + T&C + ARCO + webhooks)
   const [complianceLoading, setComplianceLoading] = useState(false);
@@ -850,6 +854,35 @@ export default function AdminDashboardPage() {
     } catch { /* silent */ }
     setFinanceLoading(false);
     setPnlLoading(false);
+  };
+
+  const loadRefundsTab = async () => {
+    setRefundsTabLoading(true);
+    try {
+      const [auditRes, pendingRes] = await Promise.all([
+        adminAPI.getRefundsAudit(50),
+        adminAPI.getRefundsPending(100),
+      ]);
+      setRefundsAudit(auditRes.data);
+      setRefundsPending(pendingRes.data);
+    } catch (err) {
+      toast.error(t('Error cargando reembolsos', 'Error loading refunds'));
+    }
+    setRefundsTabLoading(false);
+  };
+
+  const handleRetryRefund = async (transactionId) => {
+    setRetryingRefundId(transactionId);
+    try {
+      const res = await adminAPI.retryRefund(transactionId);
+      toast.success(t('Reembolso emitido a Stripe correctamente', 'Refund issued to Stripe successfully'));
+      console.log('Retry success:', res.data);
+      await loadRefundsTab();
+    } catch (err) {
+      const detail = err?.response?.data?.detail || err.message;
+      toast.error(t(`Reintento fallo: ${detail}`, `Retry failed: ${detail}`));
+    }
+    setRetryingRefundId(null);
   };
 
   const loadCompliance = async () => {
@@ -1068,6 +1101,7 @@ export default function AdminDashboardPage() {
     if (activeTab === 'businesses') loadBusinesses(1);
     if (activeTab === 'users') loadUsers(1);
     if (activeTab === 'finance') loadFinance();
+    if (activeTab === 'refunds') loadRefundsTab();
     if (activeTab === 'compliance') loadCompliance();
     if (activeTab === 'reviews') loadReviews(1);
     if (activeTab === 'subscriptions') loadSubscriptions();
@@ -1379,6 +1413,7 @@ export default function AdminDashboardPage() {
     { id: 'reports', label: t('Reportes', 'Reports'), icon: FileBarChart },
     { id: 'subscriptions', label: t('Suscripciones', 'Subscriptions'), icon: CreditCard },
     { id: 'finance', label: t('Finanzas', 'Finance'), icon: Wallet },
+    { id: 'refunds', label: t('Reembolsos', 'Refunds'), icon: DollarSign },
     { id: 'compliance', label: t('Cumplimiento', 'Compliance'), icon: Shield },
     { id: 'winback', label: t('Reactivacion', 'Winback'), icon: Mail },
     { id: 'qrcodes', label: t('Códigos QR', 'QR Codes'), icon: QrCode },
@@ -3218,6 +3253,139 @@ export default function AdminDashboardPage() {
                   <div className="text-center py-12">
                     <Wallet className="h-12 w-12 text-muted-foreground/30 mx-auto mb-3" />
                     <p className="text-muted-foreground">{t('No hay liquidaciones. Genera una para el periodo seleccionado.', 'No settlements. Generate one for the selected period.')}</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* ============ REFUNDS TAB (Phase A) ============ */}
+        {activeTab === 'refunds' && (
+          <div className="space-y-6" data-testid="refunds-tab">
+            {/* Pending refunds (Stripe call failed → need admin action) */}
+            <Card data-testid="refunds-pending-card">
+              <CardHeader className="flex flex-row items-center justify-between">
+                <CardTitle className="font-heading flex items-center gap-2">
+                  <AlertCircle className="h-5 w-5 text-red-500" />
+                  {t('Reembolsos Pendientes', 'Pending Refunds')}
+                  {refundsPending && refundsPending.count > 0 && (
+                    <Badge className="bg-red-100 text-red-700 ml-2" data-testid="pending-refunds-badge">
+                      {refundsPending.count} - {formatCurrency(refundsPending.pending_total_mxn)}
+                    </Badge>
+                  )}
+                </CardTitle>
+                <Button size="sm" variant="outline" onClick={loadRefundsTab} disabled={refundsTabLoading} data-testid="refunds-refresh-btn">
+                  {refundsTabLoading ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
+                  {t('Actualizar', 'Refresh')}
+                </Button>
+              </CardHeader>
+              <CardContent>
+                <p className="text-xs text-muted-foreground mb-3">
+                  {t(
+                    'Transacciones donde el reembolso a Stripe fallo o no se pudo emitir. Revisa el motivo y reintenta cuando este resuelto.',
+                    'Transactions where the Stripe refund failed or could not be issued. Review the reason and retry once resolved.'
+                  )}
+                </p>
+                {refundsTabLoading ? (
+                  <div className="space-y-2">{[1, 2, 3].map((i) => <Skeleton key={i} className="h-24 w-full" />)}</div>
+                ) : !refundsPending || refundsPending.items.length === 0 ? (
+                  <div className="text-center py-8 text-sm text-muted-foreground">
+                    <CheckCircle2 className="h-10 w-10 text-green-500 mx-auto mb-2" />
+                    {t('No hay reembolsos pendientes. Todo cuadrado.', 'No pending refunds. All settled.')}
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {refundsPending.items.map((it) => (
+                      <div key={it.transaction_id} className="rounded-lg border border-red-200 bg-red-50/40 p-3" data-testid={`refund-pending-${it.transaction_id}`}>
+                        <div className="flex items-start justify-between gap-3 mb-2">
+                          <div className="min-w-0 flex-1">
+                            <div className="font-semibold text-sm">{it.business_name || '—'}</div>
+                            <div className="text-xs text-muted-foreground">
+                              {it.client_name || '—'} ({it.client_email || '—'})
+                            </div>
+                            <div className="text-xs text-muted-foreground mt-1">
+                              {t('Cita:', 'Booking:')} {it.booking_date} {it.booking_time}
+                              {it.cancelled_by && (
+                                <> · {t('Cancelada por', 'Cancelled by')} <strong>{it.cancelled_by === 'business' ? t('negocio', 'business') : t('cliente', 'client')}</strong></>
+                              )}
+                            </div>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <div className="text-lg font-bold text-red-600">{formatCurrency(it.amount)}</div>
+                            <div className="text-[10px] text-muted-foreground">{it.currency}</div>
+                          </div>
+                        </div>
+                        {it.reason && (
+                          <div className="text-[11px] text-muted-foreground mb-1.5">
+                            <strong>{t('Motivo cancelacion:', 'Cancellation reason:')}</strong> {it.reason}
+                          </div>
+                        )}
+                        <div className="text-[11px] text-red-700 bg-red-100 rounded px-2 py-1 mb-2 font-mono break-all">
+                          <strong>{t('Error Stripe:', 'Stripe error:')}</strong> {it.refund_error || t('Sin payment_intent original', 'No original payment_intent')}
+                        </div>
+                        <div className="flex flex-wrap gap-2 items-center">
+                          <Button
+                            size="sm"
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                            disabled={retryingRefundId === it.transaction_id || !it.stripe_payment_intent_id}
+                            onClick={() => handleRetryRefund(it.transaction_id)}
+                            data-testid={`retry-refund-${it.transaction_id}`}
+                          >
+                            {retryingRefundId === it.transaction_id ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <DollarSign className="h-3.5 w-3.5 mr-1" />}
+                            {t('Reintentar Stripe', 'Retry Stripe')}
+                          </Button>
+                          {it.stripe_payment_intent_id && (
+                            <a
+                              href={`https://dashboard.stripe.com/payments/${it.stripe_payment_intent_id}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-xs text-indigo-600 hover:underline"
+                              data-testid={`stripe-link-${it.transaction_id}`}
+                            >
+                              {t('Abrir en Stripe', 'Open in Stripe')} →
+                            </a>
+                          )}
+                          <span className="text-[11px] text-muted-foreground ml-auto font-mono">{it.transaction_id?.slice(0, 12)}…</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Recent refunds (audit trail) */}
+            <Card data-testid="refunds-audit-tab-card">
+              <CardHeader>
+                <CardTitle className="font-heading flex items-center gap-2">
+                  <DollarSign className="h-5 w-5 text-orange-500" />
+                  {t('Reembolsos Recientes', 'Recent Refunds')}
+                  {refundsAudit && (
+                    <Badge className="bg-orange-100 text-orange-700 ml-2">
+                      {formatCurrency(refundsAudit.total_refunded_mxn)}
+                    </Badge>
+                  )}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {refundsTabLoading ? (
+                  <div className="space-y-2">{[1, 2, 3].map((i) => <Skeleton key={i} className="h-16 w-full" />)}</div>
+                ) : !refundsAudit || refundsAudit.items.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-6">{t('Sin reembolsos recientes.', 'No recent refunds.')}</p>
+                ) : (
+                  <div className="space-y-2">
+                    {refundsAudit.items.slice(0, 30).map((r, i) => (
+                      <div key={r.id || i} className="flex items-center justify-between p-3 rounded-lg bg-muted/40 text-sm" data-testid={`refund-audit-row-${i}`}>
+                        <div className="min-w-0">
+                          <div className="font-mono text-xs text-muted-foreground truncate">{r.stripe_refund_id || '-'}</div>
+                          <div className="text-xs text-muted-foreground">
+                            {r.reason} · {t('por', 'by')} {r.actor} · {formatDate(r.created_at)}
+                          </div>
+                        </div>
+                        <div className="font-bold text-orange-600 ml-3">{formatCurrency(r.amount_mxn)}</div>
+                      </div>
+                    ))}
                   </div>
                 )}
               </CardContent>

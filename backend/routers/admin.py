@@ -3339,6 +3339,91 @@ async def admin_list_refunds(
     return {"count": len(rows), "total_refunded_mxn": round(total, 2), "items": rows}
 
 
+@router.get("/finance/refunds/pending")
+async def admin_list_pending_refunds(
+    limit: int = 100,
+    token_data: TokenData = Depends(require_admin),
+):
+    """Transactions where a Stripe refund was attempted but FAILED (or never
+    emitted because the original charge had no PaymentIntent). These need
+    admin intervention to be settled manually.
+    """
+    cursor = db.transactions.find(
+        {"refund_failed": True, "status": {"$in": ["refund_full", "refund_partial"]}},
+        {"_id": 0}
+    ).sort("updated_at", -1).limit(max(1, min(limit, 500)))
+    rows = await cursor.to_list(limit)
+
+    # Enrich each row with booking + business + client info for fast triage
+    items = []
+    for tx in rows:
+        b_id = tx.get("booking_id")
+        booking = await db.bookings.find_one({"id": b_id}, {"_id": 0, "date": 1, "time": 1, "cancellation_reason": 1, "cancelled_by": 1}) if b_id else None
+        biz = await db.businesses.find_one({"id": tx.get("business_id")}, {"_id": 0, "name": 1}) if tx.get("business_id") else None
+        user = await db.users.find_one({"id": tx.get("user_id")}, {"_id": 0, "email": 1, "full_name": 1}) if tx.get("user_id") else None
+        items.append({
+            "transaction_id": tx.get("id"),
+            "booking_id": b_id,
+            "amount": tx.get("refund_amount") or tx.get("amount_total"),
+            "currency": tx.get("currency", "MXN"),
+            "refund_error": tx.get("refund_error"),
+            "stripe_payment_intent_id": tx.get("stripe_payment_intent_id"),
+            "updated_at": tx.get("updated_at"),
+            "booking_date": booking.get("date") if booking else None,
+            "booking_time": booking.get("time") if booking else None,
+            "cancelled_by": booking.get("cancelled_by") if booking else None,
+            "reason": booking.get("cancellation_reason") if booking else None,
+            "business_name": biz.get("name") if biz else None,
+            "client_email": user.get("email") if user else None,
+            "client_name": user.get("full_name") if user else None,
+        })
+    pending_total = sum(float(it["amount"] or 0) for it in items)
+    return {"count": len(items), "pending_total_mxn": round(pending_total, 2), "items": items}
+
+
+@router.post("/finance/refunds/{transaction_id}/retry")
+async def admin_retry_refund(
+    transaction_id: str,
+    token_data: TokenData = Depends(require_admin),
+):
+    """Retry a previously-failed Stripe refund. Uses the same idempotency
+    key as the original attempt so duplicates are impossible.
+    """
+    tx = await db.transactions.find_one({"id": transaction_id}, {"_id": 0})
+    if not tx:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    if not tx.get("refund_failed"):
+        raise HTTPException(status_code=400, detail="This transaction has no pending refund failure")
+    amount = float(tx.get("refund_amount") or tx.get("amount_total") or 0)
+    if amount <= 0:
+        raise HTTPException(status_code=400, detail="Amount must be positive")
+
+    from services.stripe_refunds import issue_stripe_refund
+    try:
+        res = await issue_stripe_refund(
+            transaction=tx,
+            amount_mxn=amount,
+            reason="admin_retry_after_failure",
+            metadata={"admin_email": token_data.email, "retry": "true"},
+            actor=f"admin_retry:{token_data.user_id}",
+        )
+        await db.transactions.update_one(
+            {"id": transaction_id},
+            {"$set": {
+                "refund_failed": False,
+                "refund_error": None,
+                "stripe_refund_id": res.get("stripe_refund_id"),
+            }},
+        )
+        return {"status": "ok", **res}
+    except Exception as e:
+        await db.transactions.update_one(
+            {"id": transaction_id},
+            {"$set": {"refund_error": str(e)}},
+        )
+        raise HTTPException(status_code=502, detail=f"Stripe retry failed: {e}")
+
+
 # ========================== FASE 11c: STRIPE WEBHOOK EVENTS LOG ==========================
 
 
