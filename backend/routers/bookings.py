@@ -1619,23 +1619,38 @@ async def cancel_booking_by_user(
         refund_to = "card"
     
     if transaction:
-        # Apply cancellation policy
-        if hours_until > 24:
-            # >24h: Refund the deposit minus the 8.5% processing fee
-            # business_amount is what the business would have received (deposit * 0.915)
+        # Apply business-defined cancellation policy (Phase O).
+        # Each business sets cancellation_hours (1-72). Falls back to
+        # cancellation_days * 24 for legacy records, or 24h as global default.
+        biz_doc = await db.businesses.find_one({"id": booking["business_id"]}, {"cancellation_hours": 1, "cancellation_days": 1})
+        cancel_window = None
+        if biz_doc:
+            ch = biz_doc.get("cancellation_hours")
+            if isinstance(ch, (int, float)) and ch:
+                cancel_window = int(ch)
+            elif biz_doc.get("cancellation_days"):
+                cancel_window = int(biz_doc["cancellation_days"]) * 24
+        if not cancel_window:
+            cancel_window = 24
+        # Clamp to the same 1-72 hour range used in registration
+        cancel_window = max(1, min(72, cancel_window))
+
+        if hours_until > cancel_window:
+            # Within the business's cancellation window: refund the deposit
+            # minus the 8.5% processing fee.
             refund_amount = float(transaction.get("business_amount") or transaction.get("payout_amount") or 0)
             refund_status = TransactionStatus.REFUND_PARTIAL
-            refund_reason = f"client_cancel_gt_24h_{refund_to}"
-            
-            logger.info(f"Partial refund (${refund_amount}) for booking {booking_id} -> {refund_to}")
+            refund_reason = f"client_cancel_gt_window_{cancel_window}h_{refund_to}"
+
+            logger.info(f"Partial refund (${refund_amount}) for booking {booking_id} -> {refund_to} (window {cancel_window}h)")
         else:
-            # <24h: No refund (business keeps the deposit)
+            # Past the cancellation window: no refund (business keeps the deposit)
             refund_amount = 0
             refund_status = TransactionStatus.REFUND_PARTIAL
-            refund_reason = "client_cancel_lt_24h"
+            refund_reason = f"client_cancel_lt_window_{cancel_window}h"
             refund_to = "card"  # Force card so we don't credit wallet for $0
-            
-            logger.info(f"No refund (<24h): booking {booking_id}")
+
+            logger.info(f"No refund (<{cancel_window}h): booking {booking_id}")
         
         # If client chose wallet refund and we have an amount > 0:
         # do NOT issue a Stripe refund (saves the unrecoverable Stripe fee).
@@ -1728,25 +1743,26 @@ async def cancel_booking_by_user(
             if refund_amount > 0:
                 await mark_refunded(transaction["id"], actor="user_cancel", reason=refund_reason)
             else:
-                # Treat <24h cancellation as effectively a no-show/completed for the business
+                # Past the cancellation window: treat as no-show/completed for the business
                 if transaction.get("funds_state") == "pending_hold":
                     await mark_appointment_completed(
-                        transaction["id"], actor="user_cancel_lt_24h",
-                        reason="Late cancellation - business retains deposit"
+                        transaction["id"], actor=f"user_cancel_lt_{cancel_window}h",
+                        reason=f"Late cancellation past {cancel_window}h window - business retains deposit"
                     )
         except Exception as e:
             logger.error(f"Funds state on user cancel failed: {e}")
         
-        # Create ledger entries for refund (if >24h)
-        if hours_until > 24 and refund_amount > 0:
+        # Create ledger entries for refund (if within cancellation window)
+        if hours_until > cancel_window and refund_amount > 0:
             updated_tx = {**transaction, "refund_amount": refund_amount, "refund_to": refund_to}
             await create_transaction_ledger_entries(updated_tx, TransactionStatus.REFUND_PARTIAL)
-        
+
         refund_result = {
             "refund_amount": refund_amount,
             "refund_to": refund_to,
             "wallet_credited": wallet_credited,
-            "policy_applied": ">24h partial refund" if hours_until > 24 else "<24h no refund"
+            "cancellation_window_hours": cancel_window,
+            "policy_applied": f">{cancel_window}h partial refund" if hours_until > cancel_window else f"<={cancel_window}h no refund"
         }
     
     # Update booking
