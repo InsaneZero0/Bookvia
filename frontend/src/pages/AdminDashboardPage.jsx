@@ -1844,6 +1844,44 @@ export default function AdminDashboardPage() {
                               {t('Dueno', 'Owner')}: {biz.owner_name || biz.owner_email}
                             </p>
                           )}
+                          {(() => {
+                            // Surface suspension info: either manual status=suspended
+                            // or strike-based suspended_until in the future.
+                            const isStatusSuspended = biz.status === 'suspended';
+                            const strikeUntil = biz.suspended_until;
+                            const strikeActive = strikeUntil && strikeUntil !== 'permanent' && new Date(strikeUntil) > new Date();
+                            const isPermanent = strikeUntil === 'permanent' || biz.banned;
+                            if (!isStatusSuspended && !strikeActive && !isPermanent) return null;
+                            const reason = biz.suspension_reason || biz.suspended_reason || t('No especificado', 'Not specified');
+                            return (
+                              <div
+                                className="mt-2 rounded-md border border-red-200 bg-red-50 dark:bg-red-900/20 dark:border-red-800 px-3 py-2 text-xs"
+                                data-testid={`biz-suspension-info-${biz.id}`}
+                              >
+                                <div className="flex items-center gap-1.5 font-semibold text-red-700 dark:text-red-300">
+                                  <Ban className="h-3.5 w-3.5" />
+                                  {isPermanent
+                                    ? t('Suspension permanente', 'Permanent suspension')
+                                    : isStatusSuspended
+                                      ? t('Suspendido por admin', 'Suspended by admin')
+                                      : t('Suspension por strikes', 'Strike-based suspension')}
+                                </div>
+                                <p className="mt-1 text-red-800 dark:text-red-200">
+                                  <strong>{t('Motivo', 'Reason')}:</strong> {reason}
+                                </p>
+                                {strikeActive && (
+                                  <p className="mt-0.5 text-red-700 dark:text-red-300">
+                                    {t('Hasta', 'Until')}: {formatDate(strikeUntil)}
+                                  </p>
+                                )}
+                                {(biz.strike_count_30d > 0 || biz.strike_count_90d > 0) && (
+                                  <p className="mt-0.5 text-red-700 dark:text-red-300">
+                                    {t('Strikes', 'Strikes')}: {biz.strike_count_30d || 0} ({t('ultimos 30 dias', 'last 30 days')}) · {biz.strike_count_90d || 0} ({t('ultimos 90 dias', 'last 90 days')})
+                                  </p>
+                                )}
+                              </div>
+                            );
+                          })()}
                         </div>
                         <div className="flex gap-2 shrink-0">
                           <Button size="sm" variant="outline" onClick={() => openDetail(biz.id)} data-testid={`view-biz-${biz.id}`}>
@@ -1890,6 +1928,39 @@ export default function AdminDashboardPage() {
                               <CheckCircle2 className="h-4 w-4 mr-1" />{t('Reactivar', 'Reactivate')}
                             </Button>
                           )}
+                          {(() => {
+                            const isStatusSuspended = biz.status === 'suspended';
+                            const strikeUntil = biz.suspended_until;
+                            const strikeActive = strikeUntil && strikeUntil !== 'permanent' && new Date(strikeUntil) > new Date();
+                            const isPermanent = strikeUntil === 'permanent' || biz.banned;
+                            if (!isStatusSuspended && !strikeActive && !isPermanent) return null;
+                            return (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="text-emerald-600 hover:bg-emerald-50 border-emerald-200"
+                                onClick={async () => {
+                                  const ok = window.confirm(
+                                    t(
+                                      `¿Quitar la suspension de "${biz.name}"? Volvera a aparecer en busquedas y podra recibir citas.`,
+                                      `Lift suspension for "${biz.name}"? It will reappear in search and accept bookings again.`
+                                    )
+                                  );
+                                  if (!ok) return;
+                                  try {
+                                    await api.post(`/admin/businesses/${biz.id}/reactivate`);
+                                    toast.success(t('Suspension quitada. Negocio activo.', 'Suspension lifted. Business active.'));
+                                    loadBusinesses(bizPage);
+                                  } catch (e) {
+                                    toast.error(e?.response?.data?.detail || t('Error al quitar suspension', 'Failed to lift suspension'));
+                                  }
+                                }}
+                                data-testid={`unsuspend-business-${biz.id}`}
+                              >
+                                <CheckCircle2 className="h-4 w-4 mr-1" />{t('Quitar suspension', 'Unsuspend')}
+                              </Button>
+                            );
+                          })()}
                         </div>
                       </div>
                     </CardContent>

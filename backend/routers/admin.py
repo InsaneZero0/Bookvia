@@ -723,7 +723,19 @@ async def get_all_businesses(
     """List all businesses with search and filters."""
     query = {}
     if status:
-        query["status"] = status
+        if status == "suspended":
+            # Treat "suspendidos" as both:
+            #  - admin-issued full suspension (status == "suspended")
+            #  - strike-based temporal suspension (suspended_until > now), even
+            #    if the business is still status=APPROVED in the catalogue.
+            from datetime import datetime as _dt, timezone as _tz
+            _now = _dt.now(_tz.utc).isoformat()
+            query["$or"] = [
+                {"status": "suspended"},
+                {"suspended_until": {"$gt": _now}},
+            ]
+        else:
+            query["status"] = status
     if city:
         query["city"] = {"$regex": city, "$options": "i"}
     if search:
@@ -1301,19 +1313,34 @@ async def decommission_business(
 async def reactivate_business(business_id: str, request: Request, token_data: TokenData = Depends(require_admin)):
     """Reactivate a decommissioned or suspended business (status -> APPROVED).
 
+    Also clears strike-based temporal suspension (`suspended_until`) so the
+    business comes back to search and can take bookings normally.
     Use this within the 30-day grace period (or any time) when a business
     asks to come back.
     """
     business = await db.businesses.find_one({"id": business_id})
     if not business:
         raise HTTPException(status_code=404, detail="Business not found")
-    if business.get("status") == BusinessStatus.APPROVED:
+    is_strike_suspended = bool(business.get("suspended_until")) and business.get("suspended_until") != "permanent"
+    if business.get("status") == BusinessStatus.APPROVED and not is_strike_suspended:
         return {"message": "Business already active"}
     await db.businesses.update_one(
         {"id": business_id},
         {
-            "$set": {"status": BusinessStatus.APPROVED, "reactivated_at": datetime.now(timezone.utc).isoformat()},
-            "$unset": {"decommissioned_at": "", "decommission_reason": "", "decommission_note": ""},
+            "$set": {
+                "status": BusinessStatus.APPROVED,
+                "reactivated_at": datetime.now(timezone.utc).isoformat(),
+                # Lift strike-based time suspension as well.
+                "suspended_until": None,
+                "suspended_reason": None,
+                "banned": False,
+            },
+            "$unset": {
+                "decommissioned_at": "",
+                "decommission_reason": "",
+                "decommission_note": "",
+                "suspension_reason": "",
+            },
         },
     )
     await create_audit_log(
@@ -1322,7 +1349,7 @@ async def reactivate_business(business_id: str, request: Request, token_data: To
         action=AuditAction.BUSINESS_APPROVE,
         target_type="business",
         target_id=business_id,
-        details={"business_name": business.get("name"), "reactivation": True},
+        details={"business_name": business.get("name"), "reactivation": True, "lifted_strike_suspension": is_strike_suspended},
         request=request,
     )
     if business.get("user_id"):
