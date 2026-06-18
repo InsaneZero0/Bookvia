@@ -1,26 +1,45 @@
 # Bookvia Robots.txt
-# Dynamic version: /api/seo/robots.txt
+# Dynamic version: /sitemap.xml (proxied to backend)
 
 User-agent: *
 Allow: /
 
 # Sitemap
-Sitemap: /api/seo/sitemap.xml
+Sitemap: https://www.bookvia.app/sitemap.xml
 
 # Disallow admin and private sections
 Disallow: /admin
+Disallow: /bv-ctrl
 Disallow: /api/
 Disallow: /dashboard
 Disallow: /business/dashboard
 Disallow: /business/finance
 Disallow: /business/team
+Disallow: /business/settings
 
 # Disallow auth pages
 Disallow: /login
 Disallow: /register
 Disallow: /business/register
+Disallow: /forgot-password
 
-# Allow SEO pages
-Allow: /mx/
-Allow: /us/
-Allow: /es/
+# Disallow user account pages
+Disallow: /profile
+Disallow: /bookings
+Disallow: /notifications
+
+# Block AI training crawlers (preserve content for monetization)
+User-agent: GPTBot
+Disallow: /
+
+User-agent: ChatGPT-User
+Disallow: /
+
+User-agent: anthropic-ai
+Disallow: /
+
+User-agent: Google-Extended
+Disallow: /
+
+User-agent: CCBot
+Disallow: /

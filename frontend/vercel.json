@@ -7,6 +7,10 @@
     {
       "source": "/api/:path*",
       "destination": "https://bookvia-production.up.railway.app/api/:path*"
+    },
+    {
+      "source": "/sitemap.xml",
+      "destination": "https://bookvia-production.up.railway.app/api/seo/sitemap.xml"
     }
   ]
 }
