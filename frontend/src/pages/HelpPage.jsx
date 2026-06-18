@@ -50,6 +50,26 @@ const FAQ_DATA = [
   { id: 'b5', audience: 'business', q_es: '¿Cómo agrego personal a mi negocio?', q_en: 'How do I add staff members?',
     a_es: 'En tu panel ve a la pestaña "Equipo" y haz click en "Agregar". Cada miembro recibe un acceso con permisos limitados que tú controlas.',
     a_en: 'In your dashboard go to the "Team" tab and click "Add". Each member gets limited access with permissions you control.' },
+  { id: 'b6', audience: 'business', q_es: '¿Que pasa si un cliente no llega a su cita (no-show)?', q_en: 'What if a client does not show up (no-show)?',
+    a_es: 'Si el cliente pagó anticipo y no llega, el anticipo se queda contigo como compensacion. Marca la cita como "No-show" desde tu agenda. Si fue cobro en local, no hay perdida monetaria pero puedes reportarlo para que su historial lo refleje.',
+    a_en: 'If the client paid a deposit and did not show, the deposit stays with you as compensation. Mark the booking as "No-show" from your agenda. For pay-at-location there is no monetary loss but you can report it for their history.' },
+  { id: 'b7', audience: 'business', q_es: '¿Como cambio mis horarios o precios?', q_en: 'How do I change my hours or prices?',
+    a_es: 'Horarios: Configuracion > Horarios. Precios: pestaña "Servicios" del dashboard, edita cada servicio individualmente. Los cambios aplican inmediatamente para las nuevas reservas.',
+    a_en: 'Hours: Settings > Hours. Prices: "Services" tab in dashboard, edit each service individually. Changes apply immediately to new bookings.' },
+  { id: 'b8', audience: 'business', q_es: '¿Como recupero acceso si olvide mi contrasena?', q_en: 'How do I recover access if I forgot my password?',
+    a_es: 'En la pagina de inicio de sesion, haz click en "Olvide mi contrasena". Te llegara un correo con un enlace para restablecerla. Si no lo recibes en 5 minutos revisa la carpeta de spam.',
+    a_en: 'On the login page, click "Forgot password". You will get an email with a reset link. If you do not see it in 5 minutes, check spam.' },
+
+  // Pagos y reembolsos
+  { id: 'c5', audience: 'client', q_es: '¿Bookvia me cobra alguna comision extra?', q_en: 'Does Bookvia charge me extra fees?',
+    a_es: 'Si pagas anticipo en linea hay una comision fija de $8 MXN por transaccion (la cobra Bookvia para procesar el pago y enviarte el comprobante). El precio del servicio en si lo define el negocio.',
+    a_en: 'If you pay a deposit online, there is a flat $8 MXN fee per transaction (charged by Bookvia to process the payment and send your receipt). The service price itself is set by the business.' },
+  { id: 'c6', audience: 'client', q_es: '¿Mi tarjeta esta segura en Bookvia?', q_en: 'Is my card safe with Bookvia?',
+    a_es: 'Si. Nunca guardamos tu numero de tarjeta. Todos los pagos los procesa Stripe, plataforma con certificacion PCI nivel 1 (el mas alto del mercado). Bookvia solo guarda los ultimos 4 digitos para que reconozcas tu tarjeta.',
+    a_en: 'Yes. We never store your card number. All payments are processed by Stripe, PCI Level 1 certified (highest market standard). Bookvia only stores the last 4 digits so you can identify your card.' },
+  { id: 'c7', audience: 'client', q_es: '¿Que pasa si el negocio cancela mi cita?', q_en: 'What if the business cancels my booking?',
+    a_es: 'Si el negocio cancela tu cita por cualquier motivo, te devolvemos el 100% del anticipo automaticamente (sin la comision de $8). El reembolso llega en 5-7 dias habiles a tu tarjeta original.',
+    a_en: 'If the business cancels for any reason, we automatically refund 100% of your deposit (minus the $8 fee). The refund arrives in 5-7 business days to your original card.' },
 ];
 
 export default function HelpPage() {
@@ -57,9 +77,15 @@ export default function HelpPage() {
   const { user, isAuthenticated } = useAuth();
   const t = (es, en) => (language === 'es' ? es : en);
   const isBusiness = user?.role === 'business';
+  const isAdmin = user?.role === 'admin';
+  // Only businesses (and admins for support) see business-side FAQs.
+  // Clients and anonymous visitors only see client questions.
+  const canSeeBusinessFaqs = isBusiness || isAdmin;
 
   const [search, setSearch] = useState('');
-  const [audienceFilter, setAudienceFilter] = useState(isBusiness ? 'business' : 'all');
+  const [audienceFilter, setAudienceFilter] = useState(
+    isBusiness ? 'business' : (canSeeBusinessFaqs ? 'all' : 'client')
+  );
   const [expandedFaq, setExpandedFaq] = useState(null);
 
   const [formData, setFormData] = useState({
@@ -75,12 +101,14 @@ export default function HelpPage() {
   const filteredFaqs = useMemo(() => {
     const lowerSearch = search.trim().toLowerCase();
     return FAQ_DATA.filter(f => {
+      // Hide business-side FAQs from clients and anonymous visitors entirely.
+      if (!canSeeBusinessFaqs && f.audience === 'business') return false;
       if (audienceFilter !== 'all' && f.audience !== audienceFilter) return false;
       if (!lowerSearch) return true;
       const haystack = `${f.q_es} ${f.q_en} ${f.a_es} ${f.a_en}`.toLowerCase();
       return haystack.includes(lowerSearch);
     });
-  }, [search, audienceFilter]);
+  }, [search, audienceFilter, canSeeBusinessFaqs]);
 
   const submitTicket = async () => {
     if (!formData.name.trim() || !formData.email.trim() || !formData.subject.trim() || !formData.message.trim()) {
@@ -215,8 +243,10 @@ export default function HelpPage() {
               {[
                 { v: 'all', l: t('Todo', 'All') },
                 { v: 'client', l: t('Clientes', 'Clients'), icon: User },
-                { v: 'business', l: t('Negocios', 'Businesses'), icon: Building2 },
-              ].map(opt => {
+                { v: 'business', l: t('Negocios', 'Businesses'), icon: Building2, requiresBusiness: true },
+              ]
+              .filter(opt => !opt.requiresBusiness || canSeeBusinessFaqs)
+              .map(opt => {
                 const active = audienceFilter === opt.v;
                 return (
                   <button

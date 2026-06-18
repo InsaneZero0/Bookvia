@@ -64,6 +64,11 @@ export function Footer() {
                 </Link>
               </li>
               <li>
+                <Link to="/como-funciona" className="text-slate-300 hover:text-[#F05D5E] text-sm transition-colors" data-testid="footer-how-it-works-link">
+                  {language === 'es' ? 'Como funciona' : 'How it works'}
+                </Link>
+              </li>
+              <li>
                 <Link to="/beneficios" className="text-slate-300 hover:text-[#F05D5E] text-sm transition-colors">
                   {language === 'es' ? 'Beneficios' : 'Benefits'}
                 </Link>
@@ -95,6 +100,11 @@ export function Footer() {
               <li>
                 <Link to="/privacidad" className="text-slate-300 hover:text-[#F05D5E] text-sm transition-colors">
                   {t('footer.privacy')}
+                </Link>
+              </li>
+              <li>
+                <Link to="/refund-policy" className="text-slate-300 hover:text-[#F05D5E] text-sm transition-colors" data-testid="footer-refund-policy-link">
+                  {language === 'es' ? 'Cancelaciones y reembolsos' : 'Cancellation & refunds'}
                 </Link>
               </li>
               <li>

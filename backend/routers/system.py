@@ -559,8 +559,11 @@ async def stripe_webhook(request: Request):
                         except Exception as e:
                             logger.warning(f"Could not revert wallet on checkout.session.expired: {e}")
 
-        elif event.type == "invoice.payment_succeeded":
+        elif event.type in ("invoice.payment_succeeded", "invoice.paid"):
             # Phase D — Subscription paid successfully (re-activate if was past_due/unpaid)
+            # Stripe sends both `invoice.payment_succeeded` and `invoice.paid`;
+            # we handle them identically. Idempotency is guaranteed by the
+            # `stripe_events` collection above.
             inv = event.data.object
             subscription_id = inv.get("subscription") if isinstance(inv, dict) else getattr(inv, "subscription", None)
             if subscription_id:
@@ -662,6 +665,34 @@ async def stripe_webhook(request: Request):
                         update_doc["stripe_connect_onboarded_at"] = datetime.now(timezone.utc).isoformat()
                     await db.businesses.update_one({"id": biz["id"]}, {"$set": update_doc})
                     logger.info(f"account.updated synced biz={biz['id']} acct={account_id} charges={charges_enabled} payouts={payouts_enabled}")
+
+        elif event.type == "payment_intent.succeeded":
+            # Defensive fallback: if a PaymentIntent succeeds but our DB hasn't
+            # been updated yet (e.g. checkout.session.completed not yet processed),
+            # mark the transaction as paid. This guards against rare ordering
+            # issues between Stripe events. checkout.session.completed remains
+            # the SOURCE OF TRUTH for booking confirmation logic; here we only
+            # fill the safety net (status + stripe_charge_id).
+            pi = event.data.object
+            pi_id = pi.id if hasattr(pi, "id") else pi.get("id")
+            if pi_id:
+                tx = await db.transactions.find_one({"stripe_payment_intent_id": pi_id})
+                if tx and tx.get("status") not in (TransactionStatus.PAID, "refund_full", "refund_partial"):
+                    logger.info(f"payment_intent.succeeded safety-net update for tx={tx['id']}")
+                    await db.transactions.update_one(
+                        {"id": tx["id"]},
+                        {"$set": {
+                            "status": TransactionStatus.PAID,
+                            "paid_at": datetime.now(timezone.utc).isoformat(),
+                            "updated_at": datetime.now(timezone.utc).isoformat(),
+                        }},
+                    )
+
+        else:
+            # Defensive: log any event we received (subscribed to) but don't
+            # explicitly handle. Helps spot newly-enabled events in the
+            # Stripe Dashboard that are silently being ignored.
+            logger.info(f"Stripe event received but not handled: {event.type} (id={event.id})")
 
         return {"status": "success"}
         

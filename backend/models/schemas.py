@@ -2,7 +2,7 @@
 All Pydantic models (schemas) for the application.
 This is the single source of truth for request/response models.
 """
-from pydantic import BaseModel, ConfigDict, EmailStr
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from typing import Optional, List, Dict, Any
 
 
@@ -37,6 +37,10 @@ class UserResponse(BaseModel):
     photo_url: Optional[str] = None
     role: str = "user"
     business_id: Optional[str] = None
+    # Phase O — surface business identity in the auth/me response so the
+    # navbar can render a distinct avatar for business owners.
+    business_name: Optional[str] = None
+    business_logo_url: Optional[str] = None
     active_appointments_count: int = 0
     cancellation_count: int = 0
     suspended_until: Optional[str] = None
@@ -107,6 +111,7 @@ class BusinessCreate(BaseModel):
     requires_deposit: bool = False
     deposit_amount: float = 100.0
     cancellation_days: int = 1
+    cancellation_hours: Optional[int] = Field(default=24, ge=1, le=72)  # Phase O: prefer hours, 1h–72h cap
     payout_schedule: Optional[str] = "monthly_cutoff_20"  # fixed cadence: corte día 20, depósito día 1° del mes siguiente
     min_time_between_appointments: int = 0
     service_radius_km: Optional[float] = None
@@ -152,6 +157,7 @@ class BusinessResponse(BaseModel):
     requires_deposit: bool = False
     deposit_amount: float = 100.0
     cancellation_days: int = 1
+    cancellation_hours: Optional[int] = 24
     payout_schedule: Optional[str] = "monthly_cutoff_20"
     min_time_between_appointments: int = 0
     photos: List[str] = []
@@ -253,6 +259,7 @@ class BusinessUpdate(BaseModel):
     requires_deposit: Optional[bool] = None
     deposit_amount: Optional[float] = None
     cancellation_days: Optional[int] = None
+    cancellation_hours: Optional[int] = Field(default=None, ge=1, le=72)
     payout_schedule: Optional[str] = None
     min_time_between_appointments: Optional[int] = None
     service_radius_km: Optional[float] = None
@@ -515,6 +522,12 @@ class BookingResponse(BaseModel):
     reminder_sent: bool = False
     business_slug: Optional[str] = None
     booked_by: Optional[str] = None
+    # Hours before the appointment that the client must reschedule by.
+    # Matches the business's cancellation_hours (1-72h).
+    reschedule_cutoff_hours: Optional[int] = None
+    # Set when the client explicitly confirms post-cita "todo bien"
+    client_confirmed_ok_at: Optional[str] = None
+    has_dispute: Optional[bool] = None
 
 class ReviewCreate(BaseModel):
     business_id: str

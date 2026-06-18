@@ -109,10 +109,10 @@ async def register_user(user: UserCreate, request: Request):
     
     await db.users.insert_one(user_doc)
     
-    # Send verification email (non-blocking)
+    # Send verification email (non-blocking) - includes welcome + thank you for clients
     try:
         from services.email import send_verification_email
-        await send_verification_email(user.email, user.full_name, user_doc["email_verification_token"])
+        await send_verification_email(user.email, user.full_name, user_doc["email_verification_token"], role="client")
     except Exception as e:
         logger.warning(f"Failed to send verification email: {e}")
     
@@ -238,7 +238,9 @@ async def resend_verification_email(data: dict):
     
     try:
         from services.email import send_verification_email
-        await send_verification_email(email, user.get("full_name", ""), new_token)
+        # Detect role from user document to send appropriate welcome copy
+        role = "business" if user.get("role") == "business" or user.get("business_id") else "client"
+        await send_verification_email(email, user.get("full_name", ""), new_token, role=role)
     except Exception as e:
         logger.warning(f"Failed to resend verification email: {e}")
     
@@ -462,6 +464,15 @@ async def get_current_user_profile(token_data: TokenData = Depends(require_auth)
     user = await db.users.find_one({"id": token_data.user_id}, {"_id": 0, "password_hash": 0})
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+    # Enrich with business identity so the navbar can render the right avatar
+    if user.get("role") == "business" and user.get("business_id"):
+        biz = await db.businesses.find_one(
+            {"id": user["business_id"]},
+            {"_id": 0, "name": 1, "logo_url": 1},
+        )
+        if biz:
+            user["business_name"] = biz.get("name")
+            user["business_logo_url"] = biz.get("logo_url")
     return UserResponse(**user)
 
 
@@ -729,7 +740,7 @@ async def verify_registration_subscription(data: dict):
         if user and user.get("email_verification_token"):
             try:
                 from services.email import send_verification_email
-                await send_verification_email(business["email"], business["name"], user["email_verification_token"])
+                await send_verification_email(business["email"], business["name"], user["email_verification_token"], role="business")
             except Exception as e:
                 logger.warning(f"Failed to send verification email after subscription: {e}")
         

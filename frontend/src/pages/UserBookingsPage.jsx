@@ -90,10 +90,35 @@ export default function UserBookingsPage() {
   }, [isAuthenticated, authLoading]);
 
   // Deep-link from smart reminder email: ?action=cancel|reschedule&id=<booking_id>
+  // Also: ?confirm=<booking_id> (post-appointment "todo bien")
+  // Also: ?dispute=<booking_id> (post-appointment "reportar problema")
   useEffect(() => {
     if (loading) return;
     const action = searchParams.get('action');
     const id = searchParams.get('id');
+    const confirmId = searchParams.get('confirm');
+    const disputeId = searchParams.get('dispute');
+
+    // Handle post-appointment confirm from email link
+    if (confirmId) {
+      const target = [...upcomingBookings, ...pastBookings].find(b => b.id === confirmId);
+      if (target && target.status === 'completed' && !target.client_confirmed_ok_at && !target.has_dispute) {
+        handleConfirmOk(target);
+      } else if (target?.client_confirmed_ok_at) {
+        toast.info(language === 'es' ? 'Ya confirmaste esta cita' : 'You already confirmed this booking');
+      }
+      setSearchParams({}, { replace: true });
+      return;
+    }
+    if (disputeId) {
+      const target = [...upcomingBookings, ...pastBookings].find(b => b.id === disputeId);
+      if (target && target.status === 'completed' && !target.has_dispute) {
+        setDisputeDialog({ open: true, booking: target });
+      }
+      setSearchParams({}, { replace: true });
+      return;
+    }
+
     if (!action || !id) return;
     const target = upcomingBookings.find(b => b.id === id);
     if (!target) {
@@ -111,7 +136,27 @@ export default function UserBookingsPage() {
     }
     setSearchParams({}, { replace: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, upcomingBookings, searchParams]);
+  }, [loading, upcomingBookings, pastBookings, searchParams]);
+
+  const [confirmingOk, setConfirmingOk] = useState(null);
+  const handleConfirmOk = async (booking) => {
+    if (!booking || confirmingOk === booking.id) return;
+    setConfirmingOk(booking.id);
+    try {
+      await bookingsAPI.confirmOk(booking.id);
+      toast.success(
+        language === 'es'
+          ? 'Gracias por confirmar! El negocio recibira su pago en la proxima liquidacion.'
+          : 'Thanks for confirming! The business will receive payment in the next settlement.'
+      );
+      await loadBookings();
+    } catch (err) {
+      const msg = err.response?.data?.detail || (language === 'es' ? 'No se pudo confirmar' : 'Could not confirm');
+      toast.error(msg);
+    } finally {
+      setConfirmingOk(null);
+    }
+  };
 
   const loadBookings = async () => {
     try {
@@ -473,8 +518,11 @@ export default function UserBookingsPage() {
                     if (booking.status !== 'confirmed') return null;
                     const reschedulesUsed = Number(booking.reschedule_count || 0);
                     const reschedulesLeft = Math.max(0, 2 - reschedulesUsed);
-                    const canReschedule = booking.hours_until_appointment > 2 && reschedulesLeft > 0;
-                    
+                    // Matches the business's cancellation window (1-72h).
+                    // Fallback to 2h if the backend hasn't sent it.
+                    const cutoff = Number(booking.reschedule_cutoff_hours) || 2;
+                    const canReschedule = booking.hours_until_appointment > cutoff && reschedulesLeft > 0;
+
                     return (
                       <>
                         <Button
@@ -484,8 +532,10 @@ export default function UserBookingsPage() {
                           className="text-blue-600 hover:bg-blue-50"
                           disabled={!canReschedule}
                           title={
-                            booking.hours_until_appointment <= 2
-                              ? (language === 'es' ? 'Solo puedes reagendar con mas de 2 horas de anticipacion' : 'You can only reschedule more than 2 hours in advance')
+                            booking.hours_until_appointment <= cutoff
+                              ? (language === 'es'
+                                  ? `Solo puedes reagendar con mas de ${cutoff} hora${cutoff === 1 ? '' : 's'} de anticipacion`
+                                  : `You can only reschedule more than ${cutoff} hour${cutoff === 1 ? '' : 's'} in advance`)
                               : reschedulesLeft === 0
                               ? (language === 'es' ? 'Ya alcanzaste el limite de 2 reagendamientos' : 'You reached the 2-reschedule limit')
                               : ''
@@ -574,24 +624,63 @@ export default function UserBookingsPage() {
                 </div>
               )}
 
-              {/* Dispute button (only completed bookings within 24h grace, no existing dispute) */}
-              {booking.status === 'completed' && booking.completed_at && !booking.has_dispute && (() => {
+              {/* Post-appointment confirmation card (only completed bookings within 24h grace, no existing dispute, not yet confirmed) */}
+              {booking.status === 'completed' && booking.completed_at && !booking.has_dispute && !booking.client_confirmed_ok_at && (() => {
                 const completedAt = new Date(booking.completed_at);
                 const hoursSince = (Date.now() - completedAt.getTime()) / (1000 * 60 * 60);
                 if (hoursSince > 24) return null;
+                const hoursLeft = Math.max(0, 24 - hoursSince);
+                const hoursLeftLabel = hoursLeft >= 1
+                  ? `${Math.ceil(hoursLeft)} ${language === 'es' ? 'horas' : 'hours'}`
+                  : `${Math.ceil(hoursLeft * 60)} ${language === 'es' ? 'min' : 'min'}`;
                 return (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="mt-3 text-rose-600 hover:bg-rose-50 px-2"
-                    onClick={() => setDisputeDialog({ open: true, booking })}
-                    data-testid={`dispute-booking-${booking.id}`}
-                  >
-                    <AlertTriangle className="h-3.5 w-3.5 mr-1" />
-                    {language === 'es' ? 'Reportar problema' : 'Report problem'}
-                  </Button>
+                  <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50/60 dark:bg-emerald-900/10 dark:border-emerald-800 p-3.5">
+                    <div className="flex items-start gap-2 mb-2.5">
+                      <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
+                      <div className="flex-1">
+                        <p className="text-sm font-semibold text-emerald-900 dark:text-emerald-200">
+                          {language === 'es' ? '¿Que tal estuvo tu cita?' : 'How was your appointment?'}
+                        </p>
+                        <p className="text-xs text-emerald-700 dark:text-emerald-300 mt-0.5 leading-relaxed">
+                          {language === 'es'
+                            ? `Si confirmas que todo bien, el negocio recibe su pago al instante. Si no, se libera en ${hoursLeftLabel}.`
+                            : `If you confirm all went well, the business is paid right away. Otherwise it auto-releases in ${hoursLeftLabel}.`}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        size="sm"
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white h-8 px-3 text-xs"
+                        disabled={confirmingOk === booking.id}
+                        onClick={() => handleConfirmOk(booking)}
+                        data-testid={`confirm-ok-booking-${booking.id}`}
+                      >
+                        {confirmingOk === booking.id
+                          ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          : <CheckCircle2 className="h-3.5 w-3.5 mr-1" />}
+                        {language === 'es' ? 'Si, todo bien' : 'Yes, all good'}
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="border-rose-300 text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-900/20 h-8 px-3 text-xs"
+                        onClick={() => setDisputeDialog({ open: true, booking })}
+                        data-testid={`dispute-booking-${booking.id}`}
+                      >
+                        <AlertTriangle className="h-3.5 w-3.5 mr-1" />
+                        {language === 'es' ? 'Reportar problema' : 'Report a problem'}
+                      </Button>
+                    </div>
+                  </div>
                 );
               })()}
+              {booking.status === 'completed' && booking.client_confirmed_ok_at && (
+                <div className="mt-3 flex items-center gap-1.5 text-xs text-emerald-700 bg-emerald-50 dark:bg-emerald-900/20 dark:text-emerald-300 px-2.5 py-1.5 rounded">
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  {language === 'es' ? 'Confirmaste que todo estuvo bien. Gracias!' : 'You confirmed all went well. Thank you!'}
+                </div>
+              )}
               {booking.has_dispute && (
                 <div className="mt-3 flex items-center gap-1 text-xs text-rose-600 bg-rose-50 px-2 py-1 rounded">
                   <AlertTriangle className="h-3.5 w-3.5" />
@@ -1001,19 +1090,20 @@ export default function UserBookingsPage() {
             {(() => {
               const used = Number(rescheduleModal.booking?.reschedule_count || 0);
               const left = Math.max(0, 2 - used);
+              const cutoff = Number(rescheduleModal.booking?.reschedule_cutoff_hours) || 2;
               return (
                 <div className="flex items-start gap-2 p-3 bg-blue-50 text-blue-800 rounded-lg text-xs leading-relaxed" data-testid="reschedule-policy-notice">
                   <RefreshCw className="h-4 w-4 shrink-0 mt-0.5" />
                   <div>
                     <p className="font-semibold">
-                      {language === 'es' 
+                      {language === 'es'
                         ? `Te quedan ${left} reagendamiento${left === 1 ? '' : 's'} para esta cita`
                         : `You have ${left} reschedule${left === 1 ? '' : 's'} left for this booking`}
                     </p>
                     <p>
-                      {language === 'es' 
-                        ? 'Politica: maximo 2 reagendamientos sin costo. Debes hacerlo con al menos 2 horas de anticipacion. Tu anticipo se mantiene.'
-                        : 'Policy: up to 2 free reschedules. Must be at least 2 hours in advance. Your deposit is preserved.'}
+                      {language === 'es'
+                        ? `Politica: maximo 2 reagendamientos sin costo. Debes hacerlo con al menos ${cutoff} hora${cutoff === 1 ? '' : 's'} de anticipacion. Tu anticipo se mantiene.`
+                        : `Policy: up to 2 free reschedules. Must be at least ${cutoff} hour${cutoff === 1 ? '' : 's'} in advance. Your deposit is preserved.`}
                     </p>
                   </div>
                 </div>

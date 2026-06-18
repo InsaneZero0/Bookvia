@@ -179,7 +179,7 @@ def email_html(title: str, content: str) -> str:
 </td></tr>
 <tr><td style="background:#f8fafc;padding:20px 32px;text-align:center;border-top:1px solid #e2e8f0;">
 <p style="margin:0;color:#94a3b8;font-size:12px;">Este es un correo automatico de Bookvia. No responder a este mensaje.</p>
-<p style="margin:4px 0 0;color:#94a3b8;font-size:12px;">bookvia.vercel.app</p>
+<p style="margin:4px 0 0;color:#94a3b8;font-size:12px;">bookvia.app</p>
 </td></tr>
 </table>
 </td></tr>
@@ -195,7 +195,7 @@ async def send_welcome_email(user_email: str, user_name: str) -> str:
     content = f"""<p style="color:#334155;font-size:15px;line-height:1.6;">Hola <strong>{user_name}</strong>,</p>
 <p style="color:#334155;font-size:15px;line-height:1.6;">Tu cuenta ha sido creada exitosamente. Ya puedes explorar negocios, reservar citas y gestionar tus servicios favoritos.</p>
 <table cellpadding="0" cellspacing="0" style="margin:24px 0;"><tr><td style="background:#F05D5E;border-radius:8px;padding:12px 28px;">
-<a href="https://bookvia.vercel.app" style="color:#ffffff;text-decoration:none;font-weight:bold;font-size:15px;">Explorar servicios</a>
+<a href="https://www.bookvia.app" style="color:#ffffff;text-decoration:none;font-weight:bold;font-size:15px;">Explorar servicios</a>
 </td></tr></table>
 <p style="color:#64748b;font-size:14px;">Gracias por unirte a Bookvia.</p>"""
     
@@ -208,28 +208,95 @@ async def send_welcome_email(user_email: str, user_name: str) -> str:
 NOREPLY_EMAIL = "Bookvia <noreply@bookvia.app>"
 
 
-async def send_verification_email(user_email: str, user_name: str, token: str) -> str:
-    """Send email verification link to new user"""
-    verify_url = f"https://bookvia.vercel.app/verify-email?token={token}"
-    subject = "Verifica tu cuenta en Bookvia"
-    content = f"""<p style="color:#334155;font-size:15px;line-height:1.6;">Hola <strong>{user_name}</strong>,</p>
-<p style="color:#334155;font-size:15px;line-height:1.6;">Gracias por registrarte en Bookvia. Para completar tu registro y activar tu cuenta, haz clic en el siguiente boton:</p>
-<table cellpadding="0" cellspacing="0" style="margin:24px 0;"><tr><td style="background:#F05D5E;border-radius:8px;padding:14px 32px;">
-<a href="{verify_url}" style="color:#ffffff;text-decoration:none;font-weight:bold;font-size:15px;">Verificar mi cuenta</a>
-</td></tr></table>
-<p style="color:#64748b;font-size:13px;">Si no creaste esta cuenta, puedes ignorar este correo.</p>
-<p style="color:#94a3b8;font-size:12px;margin-top:16px;">Si el boton no funciona, copia y pega este enlace en tu navegador:<br><a href="{verify_url}" style="color:#F05D5E;font-size:12px;word-break:break-all;">{verify_url}</a></p>"""
-    
+async def send_verification_email(
+    user_email: str,
+    user_name: str,
+    token: str,
+    role: str = "client",
+) -> str:
+    """Send email verification + welcome + thank-you in a single message.
+
+    `role` switches the copy between "client" (booking customer) and
+    "business" (a registered business owner). This avoids sending a
+    separate welcome email later (saves cost on Resend).
+    """
+    verify_url = f"https://www.bookvia.app/verify-email?token={token}"
+    is_business = (role or "").lower() == "business"
+
+    if is_business:
+        subject = f"Bienvenido a Bookvia, {user_name} - verifica tu cuenta"
+        intro = (
+            f"<p style=\"color:#334155;font-size:15px;line-height:1.6;\">"
+            f"Hola <strong>{user_name}</strong>,</p>"
+            f"<p style=\"color:#334155;font-size:15px;line-height:1.6;\">"
+            f"¡Gracias por elegir <strong>Bookvia</strong> para hacer crecer tu negocio! "
+            f"Estamos emocionados de tenerte con nosotros. "
+            f"Para activar tu cuenta y empezar a recibir reservas, confirma tu correo:</p>"
+        )
+        next_steps = (
+            "<div style=\"margin-top:24px;padding:16px 20px;background:#f8fafc;border-left:4px solid #F05D5E;border-radius:6px;\">"
+            "<p style=\"margin:0 0 8px;color:#1e293b;font-size:14px;font-weight:bold;\">Despues de verificar, podras:</p>"
+            "<ul style=\"margin:0;padding-left:20px;color:#475569;font-size:14px;line-height:1.8;\">"
+            "<li>Subir tu logo, portada y galeria</li>"
+            "<li>Configurar tus servicios y horarios</li>"
+            "<li>Recibir reservas y pagos en linea</li>"
+            "<li>Compartir tu perfil con tus clientes</li>"
+            "</ul></div>"
+        )
+        button_label = "Verificar y empezar"
+    else:
+        subject = f"Bienvenido a Bookvia, {user_name} - verifica tu cuenta"
+        intro = (
+            f"<p style=\"color:#334155;font-size:15px;line-height:1.6;\">"
+            f"Hola <strong>{user_name}</strong>,</p>"
+            f"<p style=\"color:#334155;font-size:15px;line-height:1.6;\">"
+            f"¡Gracias por unirte a <strong>Bookvia</strong>! "
+            f"Reservar tus citas favoritas nunca habia sido tan facil. "
+            f"Para activar tu cuenta y empezar a reservar, confirma tu correo:</p>"
+        )
+        next_steps = (
+            "<div style=\"margin-top:24px;padding:16px 20px;background:#f8fafc;border-left:4px solid #F05D5E;border-radius:6px;\">"
+            "<p style=\"margin:0 0 8px;color:#1e293b;font-size:14px;font-weight:bold;\">Despues de verificar, podras:</p>"
+            "<ul style=\"margin:0;padding-left:20px;color:#475569;font-size:14px;line-height:1.8;\">"
+            "<li>Explorar negocios cerca de ti</li>"
+            "<li>Reservar citas en segundos</li>"
+            "<li>Recibir recordatorios automaticos</li>"
+            "<li>Guardar tus favoritos</li>"
+            "</ul></div>"
+        )
+        button_label = "Verificar mi cuenta"
+
+    content = (
+        f"{intro}"
+        f"<table cellpadding=\"0\" cellspacing=\"0\" style=\"margin:24px 0;\"><tr><td "
+        f"style=\"background:#F05D5E;border-radius:8px;padding:14px 32px;\">"
+        f"<a href=\"{verify_url}\" style=\"color:#ffffff;text-decoration:none;font-weight:bold;font-size:15px;\">"
+        f"{button_label}</a></td></tr></table>"
+        f"{next_steps}"
+        f"<p style=\"color:#64748b;font-size:13px;margin-top:24px;\">"
+        f"Si no creaste esta cuenta, puedes ignorar este correo.</p>"
+        f"<p style=\"color:#94a3b8;font-size:12px;margin-top:16px;\">"
+        f"Si el boton no funciona, copia y pega este enlace:<br>"
+        f"<a href=\"{verify_url}\" style=\"color:#F05D5E;font-size:12px;word-break:break-all;\">{verify_url}</a></p>"
+    )
+
     return await send_email(
-        to=user_email, subject=subject, body=f"Hola {user_name}, verifica tu cuenta en Bookvia: {verify_url}",
-        html=email_html(subject, content), template="verification", data={"user_name": user_name},
-        from_email=NOREPLY_EMAIL
+        to=user_email,
+        subject=subject,
+        body=(
+            f"Hola {user_name}, bienvenido a Bookvia. "
+            f"Gracias por registrarte. Verifica tu cuenta aqui: {verify_url}"
+        ),
+        html=email_html(subject, content),
+        template="verification_welcome",
+        data={"user_name": user_name, "role": role},
+        from_email=NOREPLY_EMAIL,
     )
 
 
 async def send_password_reset_email(user_email: str, user_name: str, token: str) -> str:
     """Send password reset link"""
-    reset_url = f"https://bookvia.vercel.app/reset-password?token={token}"
+    reset_url = f"https://www.bookvia.app/reset-password?token={token}"
     subject = "Restablecer contraseña - Bookvia"
     content = f"""<p style="color:#334155;font-size:15px;line-height:1.6;">Hola <strong>{user_name}</strong>,</p>
 <p style="color:#334155;font-size:15px;line-height:1.6;">Recibimos una solicitud para restablecer la contraseña de tu cuenta en Bookvia. Haz clic en el siguiente boton para crear una nueva contraseña:</p>
@@ -252,7 +319,7 @@ async def send_welcome_business(email: str, business_name: str) -> str:
     content = f"""<p style="color:#334155;font-size:15px;line-height:1.6;">Hola <strong>{business_name}</strong>,</p>
 <p style="color:#334155;font-size:15px;line-height:1.6;">Tu negocio ha sido registrado exitosamente. Para comenzar a recibir reservas, activa tu suscripcion y completa tu perfil.</p>
 <table cellpadding="0" cellspacing="0" style="margin:24px 0;"><tr><td style="background:#F05D5E;border-radius:8px;padding:12px 28px;">
-<a href="https://bookvia.vercel.app/business/login" style="color:#ffffff;text-decoration:none;font-weight:bold;font-size:15px;">Comenzar ahora</a>
+<a href="https://www.bookvia.app/business/login" style="color:#ffffff;text-decoration:none;font-weight:bold;font-size:15px;">Comenzar ahora</a>
 </td></tr></table>
 <p style="color:#64748b;font-size:14px;">Estamos aqui para ayudarte a crecer.</p>"""
     
@@ -260,6 +327,88 @@ async def send_welcome_business(email: str, business_name: str) -> str:
         to=email, subject=subject, body=f"Bienvenido a Bookvia, {business_name}.",
         html=email_html(subject, content), template="welcome_business", data={"business_name": business_name}
     )
+
+
+async def send_post_appointment_confirmation(
+    user_email: str,
+    user_name: str,
+    business_name: str,
+    booking_id: str,
+    service_name: str = "",
+    date: str = "",
+    time: str = "",
+) -> str:
+    """Email the client right after their cita is marked completed.
+
+    Asks: "Todo bien?" with two CTAs:
+      * "Si, todo bien" -> deeplink that auto-clears funds for the business
+      * "Reportar problema" -> deeplink that opens the dispute dialog
+
+    If the client doesn't act, the 24h grace already in place auto-clears
+    the funds anyway, so this email is pure cashflow acceleration.
+    """
+    base_url = "https://www.bookvia.app"
+    confirm_url = f"{base_url}/bookings?confirm={booking_id}"
+    dispute_url = f"{base_url}/bookings?dispute={booking_id}"
+    subject = f"Como estuvo tu cita en {business_name}?"
+
+    appt_line = ""
+    if service_name or date or time:
+        bits = []
+        if service_name:
+            bits.append(service_name)
+        if date and time:
+            bits.append(f"{date} a las {time}")
+        elif date:
+            bits.append(date)
+        appt_line = (
+            f'<p style="color:#475569;font-size:13px;margin:4px 0 16px;">'
+            f'<strong>{business_name}</strong> &middot; {" &middot; ".join(bits)}</p>'
+        )
+    else:
+        appt_line = (
+            f'<p style="color:#475569;font-size:13px;margin:4px 0 16px;"><strong>{business_name}</strong></p>'
+        )
+
+    content = (
+        f'<p style="color:#334155;font-size:15px;line-height:1.6;">Hola <strong>{user_name}</strong>,</p>'
+        f'<p style="color:#334155;font-size:15px;line-height:1.6;">'
+        f'Esperamos que la hayas pasado increible. Tu cita ya fue marcada como completada por el negocio.</p>'
+        f'{appt_line}'
+        f'<div style="margin-top:8px;padding:18px 20px;background:#f0fdf4;border-left:4px solid #16a34a;border-radius:6px;">'
+        f'<p style="margin:0 0 8px;color:#14532d;font-size:14px;font-weight:bold;">Todo estuvo bien?</p>'
+        f'<p style="margin:0;color:#166534;font-size:13px;line-height:1.5;">'
+        f'Si confirmas que todo estuvo bien, el negocio recibira su pago de inmediato. '
+        f'Si no respondes, el pago se libera automaticamente en 24 horas.</p>'
+        f'</div>'
+        f'<table cellpadding="0" cellspacing="0" style="margin:24px 0 12px;"><tr>'
+        f'<td style="background:#16a34a;border-radius:8px;padding:14px 28px;">'
+        f'<a href="{confirm_url}" style="color:#ffffff;text-decoration:none;font-weight:bold;font-size:15px;">'
+        f'Si, todo bien</a>'
+        f'</td></tr></table>'
+        f'<table cellpadding="0" cellspacing="0" style="margin:0 0 24px;"><tr>'
+        f'<td style="background:#ffffff;border:1.5px solid #e2e8f0;border-radius:8px;padding:12px 24px;">'
+        f'<a href="{dispute_url}" style="color:#dc2626;text-decoration:none;font-weight:600;font-size:14px;">'
+        f'Reportar un problema</a>'
+        f'</td></tr></table>'
+        f'<p style="color:#94a3b8;font-size:12px;margin-top:16px;">'
+        f'Si los botones no funcionan, copia y pega este enlace en tu navegador:<br>'
+        f'<a href="{confirm_url}" style="color:#F05D5E;font-size:12px;word-break:break-all;">{confirm_url}</a></p>'
+    )
+
+    return await send_email(
+        to=user_email,
+        subject=subject,
+        body=(
+            f"Hola {user_name}, esperamos que la hayas pasado increible en {business_name}. "
+            f"Confirma que todo estuvo bien: {confirm_url} - o reporta un problema: {dispute_url}"
+        ),
+        html=email_html(subject, content),
+        template="post_appointment_confirmation",
+        data={"user_name": user_name, "business_name": business_name, "booking_id": booking_id},
+        from_email=NOREPLY_EMAIL,
+    )
+
 
 DOC_LABELS_ES = {
     "ine": "INE / Identificación oficial",
@@ -432,7 +581,7 @@ async def send_appointment_reminder(
         if business_address else ""
     )
 
-    base_url = "https://bookvia.vercel.app"
+    base_url = "https://www.bookvia.app"
     bid = booking_id or ""
     cancel_url = f"{base_url}/bookings?action=cancel&id={bid}" if bid else f"{base_url}/bookings"
     reschedule_url = f"{base_url}/bookings?action=reschedule&id={bid}" if bid else f"{base_url}/bookings"
@@ -559,7 +708,7 @@ async def send_booking_cancelled(
 {reason_row}
 </table>
 {refund_text}
-<p style="color:#64748b;font-size:14px;">Puedes reservar otra cita en cualquier momento en bookvia.vercel.app</p>"""
+<p style="color:#64748b;font-size:14px;">Puedes reservar otra cita en cualquier momento en bookvia.app</p>"""
 
     return await send_email(
         to=user_email, subject=subject,
@@ -617,8 +766,8 @@ async def send_settlement_notification(
     """
     subject = f"Liquidacion Bookvia lista: ${amount_mxn:,.2f} MXN - {period_key}"
 
-    dashboard_url = "https://bookvia.vercel.app/business/finance"
-    statement_url = f"https://bookvia.vercel.app/business/finance?statement={settlement_id}"
+    dashboard_url = "https://www.bookvia.app/business/finance"
+    statement_url = f"https://www.bookvia.app/business/finance?statement={settlement_id}"
 
     content = f"""<p style="color:#334155;font-size:15px;line-height:1.6;">Hola <strong>{business_name}</strong>,</p>
 <p style="color:#334155;font-size:15px;line-height:1.6;">Tu liquidacion mensual de Bookvia ya esta preparada. Aqui estan los detalles:</p>

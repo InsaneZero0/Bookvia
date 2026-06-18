@@ -391,6 +391,63 @@ export default function BusinessSettingsPage() {
               </Card>
             )}
 
+            {/* ─── Cancellation Policy Card ─── Phase O */}
+            <Card data-testid="settings-cancellation-card">
+              <CardHeader>
+                <CardTitle className="text-base font-heading">
+                  {t('Politica de cancelacion', 'Cancellation policy')}
+                </CardTitle>
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  {t(
+                    'Define cuantas horas antes de la cita un cliente puede cancelar y recibir reembolso del anticipo. Entre 1 y 72 horas (3 dias maximo, por proteccion al consumidor).',
+                    'Set how many hours before the appointment a client can cancel and get the deposit refund. Between 1 and 72 hours (3-day cap, for consumer protection).'
+                  )}
+                </p>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="flex flex-wrap items-center gap-3">
+                  <label htmlFor="cancellation-hours-select" className="text-sm font-medium shrink-0">
+                    {t('Hasta cuantas horas antes:', 'Up to how many hours before:')}
+                  </label>
+                  <select
+                    id="cancellation-hours-select"
+                    data-testid="settings-cancellation-hours-select"
+                    value={privateInfo.cancellation_hours || (privateInfo.cancellation_days ? privateInfo.cancellation_days * 24 : 24)}
+                    onChange={async (e) => {
+                      const hours = Math.min(72, Math.max(1, Number(e.target.value) || 24));
+                      try {
+                        await businessesAPI.updateBusiness({
+                          cancellation_hours: hours,
+                          cancellation_days: Math.max(1, Math.ceil(hours / 24)),
+                        });
+                        setPrivateInfo(prev => ({
+                          ...prev,
+                          cancellation_hours: hours,
+                          cancellation_days: Math.max(1, Math.ceil(hours / 24)),
+                        }));
+                        toast.success(t('Politica actualizada', 'Policy updated'));
+                      } catch {
+                        toast.error(t('Error al guardar', 'Error saving'));
+                      }
+                    }}
+                    className="h-10 rounded-md border border-input bg-background px-3 text-sm min-w-[140px]"
+                  >
+                    {[1, 2, 4, 6, 12, 24, 48, 72].map((h) => (
+                      <option key={h} value={h}>
+                        {h} {h === 1 ? t('hora', 'hour') : t('horas', 'hours')}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <p className="text-xs text-muted-foreground bg-muted/40 rounded-md p-3 leading-relaxed">
+                  {t(
+                    'Si el cliente cancela despues de este margen, el anticipo se queda contigo y se reporta como cancelacion tardia. Antes del margen, se le devuelve el anticipo.',
+                    'If a client cancels past this window, the deposit stays with you and is logged as late cancellation. Before the window, the deposit is refunded.'
+                  )}
+                </p>
+              </CardContent>
+            </Card>
+
             <Card data-testid="info-section">
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle className="text-base font-heading flex items-center gap-2">
