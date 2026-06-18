@@ -109,10 +109,10 @@ async def register_user(user: UserCreate, request: Request):
     
     await db.users.insert_one(user_doc)
     
-    # Send verification email (non-blocking)
+    # Send verification email (non-blocking) - includes welcome + thank you for clients
     try:
         from services.email import send_verification_email
-        await send_verification_email(user.email, user.full_name, user_doc["email_verification_token"])
+        await send_verification_email(user.email, user.full_name, user_doc["email_verification_token"], role="client")
     except Exception as e:
         logger.warning(f"Failed to send verification email: {e}")
     
@@ -238,7 +238,9 @@ async def resend_verification_email(data: dict):
     
     try:
         from services.email import send_verification_email
-        await send_verification_email(email, user.get("full_name", ""), new_token)
+        # Detect role from user document to send appropriate welcome copy
+        role = "business" if user.get("role") == "business" or user.get("business_id") else "client"
+        await send_verification_email(email, user.get("full_name", ""), new_token, role=role)
     except Exception as e:
         logger.warning(f"Failed to resend verification email: {e}")
     
@@ -738,7 +740,7 @@ async def verify_registration_subscription(data: dict):
         if user and user.get("email_verification_token"):
             try:
                 from services.email import send_verification_email
-                await send_verification_email(business["email"], business["name"], user["email_verification_token"])
+                await send_verification_email(business["email"], business["name"], user["email_verification_token"], role="business")
             except Exception as e:
                 logger.warning(f"Failed to send verification email after subscription: {e}")
         
