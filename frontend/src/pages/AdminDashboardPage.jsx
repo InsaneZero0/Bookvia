@@ -682,6 +682,8 @@ export default function AdminDashboardPage() {
   const [refundsAudit, setRefundsAudit] = useState(null);
   // Refunds tab (Phase A: pending Stripe refund failures)
   const [refundsPending, setRefundsPending] = useState(null);
+  const [refundsAwaiting, setRefundsAwaiting] = useState(null);
+  const [refundsWalletHistory, setRefundsWalletHistory] = useState(null);
   const [refundsTabLoading, setRefundsTabLoading] = useState(false);
   const [retryingRefundId, setRetryingRefundId] = useState(null);
   const [refundDetailModal, setRefundDetailModal] = useState({ open: false, item: null });
@@ -862,12 +864,16 @@ export default function AdminDashboardPage() {
   const loadRefundsTab = async () => {
     setRefundsTabLoading(true);
     try {
-      const [auditRes, pendingRes] = await Promise.all([
+      const [auditRes, pendingRes, awaitingRes, walletRes] = await Promise.all([
         adminAPI.getRefundsAudit(50),
         adminAPI.getRefundsPending(100),
+        adminAPI.getRefundsAwaitingChoice(100),
+        adminAPI.getRefundsWalletHistory(100),
       ]);
       setRefundsAudit(auditRes.data);
       setRefundsPending(pendingRes.data);
+      setRefundsAwaiting(awaitingRes.data);
+      setRefundsWalletHistory(walletRes.data);
     } catch (err) {
       toast.error(t('Error cargando reembolsos', 'Error loading refunds'));
     }
@@ -3387,6 +3393,108 @@ export default function AdminDashboardPage() {
                           <div className="text-[10px] text-muted-foreground">{t('Ver detalle →', 'View detail →')}</div>
                         </div>
                       </button>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Awaiting client choice (read-only) */}
+            <Card data-testid="refunds-awaiting-card">
+              <CardHeader>
+                <CardTitle className="font-heading flex items-center gap-2">
+                  <Clock className="h-5 w-5 text-slate-500" />
+                  {t('Esperando eleccion del cliente', 'Awaiting client choice')}
+                  {refundsAwaiting && refundsAwaiting.count > 0 && (
+                    <Badge className="bg-slate-100 text-slate-700 ml-2">
+                      {refundsAwaiting.count} · {formatCurrency(refundsAwaiting.awaiting_total_mxn)}
+                    </Badge>
+                  )}
+                </CardTitle>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {t(
+                    'Cancelaciones por negocio donde el cliente todavia no decidio si quiere tarjeta o saldo Bookvia.',
+                    'Business cancellations where the client has not yet picked card vs Bookvia wallet.'
+                  )}
+                </p>
+              </CardHeader>
+              <CardContent>
+                {!refundsAwaiting || refundsAwaiting.items.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-4">{t('Nada por aqui.', 'Nothing here.')}</p>
+                ) : (
+                  <div className="rounded-lg border overflow-hidden">
+                    <div className="grid grid-cols-12 gap-2 px-3 py-2 bg-muted/50 text-[11px] uppercase tracking-wide text-muted-foreground font-semibold">
+                      <div className="col-span-4">{t('Cliente / Negocio', 'Client / Business')}</div>
+                      <div className="col-span-3">{t('Cita', 'Booking')}</div>
+                      <div className="col-span-3">{t('Cancelada hace', 'Cancelled')}</div>
+                      <div className="col-span-2 text-right">{t('Monto', 'Amount')}</div>
+                    </div>
+                    {refundsAwaiting.items.map((it) => (
+                      <div key={it.transaction_id} className="grid grid-cols-12 gap-2 px-3 py-2.5 border-t text-sm" data-testid={`refund-awaiting-${it.transaction_id}`}>
+                        <div className="col-span-4 min-w-0">
+                          <div className="truncate font-medium">{it.client_name || '—'}</div>
+                          <div className="truncate text-[11px] text-muted-foreground">{it.business_name || '—'}</div>
+                        </div>
+                        <div className="col-span-3 text-xs">
+                          <div>{it.booking_date}</div>
+                          <div className="text-muted-foreground">{it.booking_time}</div>
+                        </div>
+                        <div className="col-span-3 text-xs text-muted-foreground">
+                          {it.cancelled_at ? formatDate(it.cancelled_at) : '—'}
+                        </div>
+                        <div className="col-span-2 text-right font-bold text-slate-600">{formatCurrency(it.amount)}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Wallet-refunded history */}
+            <Card data-testid="refunds-wallet-history-card">
+              <CardHeader>
+                <CardTitle className="font-heading flex items-center gap-2">
+                  <Wallet className="h-5 w-5 text-blue-500" />
+                  {t('Procesadas a saldo Bookvia', 'Refunded to Bookvia wallet')}
+                  {refundsWalletHistory && refundsWalletHistory.count > 0 && (
+                    <Badge className="bg-blue-100 text-blue-700 ml-2">
+                      {refundsWalletHistory.count} · {formatCurrency(refundsWalletHistory.wallet_total_mxn)}
+                    </Badge>
+                  )}
+                </CardTitle>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {t(
+                    'El cliente eligio recibir el reembolso en saldo Bookvia (instantaneo). Solo informativo, no requiere accion.',
+                    'Client chose Bookvia wallet (instant). Read-only audit.'
+                  )}
+                </p>
+              </CardHeader>
+              <CardContent>
+                {!refundsWalletHistory || refundsWalletHistory.items.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-4">{t('Sin movimientos a saldo.', 'No wallet refunds yet.')}</p>
+                ) : (
+                  <div className="rounded-lg border overflow-hidden">
+                    <div className="grid grid-cols-12 gap-2 px-3 py-2 bg-muted/50 text-[11px] uppercase tracking-wide text-muted-foreground font-semibold">
+                      <div className="col-span-4">{t('Cliente / Negocio', 'Client / Business')}</div>
+                      <div className="col-span-3">{t('Cita', 'Booking')}</div>
+                      <div className="col-span-3">{t('Procesado', 'Issued')}</div>
+                      <div className="col-span-2 text-right">{t('Monto', 'Amount')}</div>
+                    </div>
+                    {refundsWalletHistory.items.map((it) => (
+                      <div key={it.transaction_id} className="grid grid-cols-12 gap-2 px-3 py-2.5 border-t text-sm" data-testid={`refund-wallet-${it.transaction_id}`}>
+                        <div className="col-span-4 min-w-0">
+                          <div className="truncate font-medium">{it.client_name || '—'}</div>
+                          <div className="truncate text-[11px] text-muted-foreground">{it.business_name || '—'}</div>
+                        </div>
+                        <div className="col-span-3 text-xs">
+                          <div>{it.booking_date}</div>
+                          <div className="text-muted-foreground">{it.booking_time}</div>
+                        </div>
+                        <div className="col-span-3 text-xs text-muted-foreground">
+                          {it.refund_issued_at ? formatDate(it.refund_issued_at) : '—'}
+                        </div>
+                        <div className="col-span-2 text-right font-bold text-blue-600">{formatCurrency(it.amount)}</div>
+                      </div>
                     ))}
                   </div>
                 )}

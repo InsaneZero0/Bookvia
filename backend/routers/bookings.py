@@ -41,7 +41,8 @@ from models.enums import (
     PLATFORM_FEE_PERCENT, HOLD_EXPIRATION_MINUTES, MIN_DEPOSIT_AMOUNT,
     SUBSCRIPTION_PRICE_MXN, SUBSCRIPTION_TRIAL_DAYS,
     MAX_RESCHEDULES_PER_BOOKING, RESCHEDULE_CUTOFF_HOURS,
-    VISIBLE_BUSINESS_FILTER, DEFAULT_MANAGER_PERMISSIONS
+    VISIBLE_BUSINESS_FILTER, DEFAULT_MANAGER_PERMISSIONS,
+    BOOKVIA_FEE_MXN, STRIPE_FEE_PERCENT_ESTIMATED, MIN_BUSINESS_COMMISSION_MXN,
 )
 from models.schemas import *
 from schemas.booking import SlotStatus
@@ -838,6 +839,17 @@ async def get_my_bookings(
         # Check if already reviewed
         existing_review = await db.reviews.find_one({"booking_id": b["id"]})
         b["has_review"] = existing_review is not None
+
+        # Attach refund-flow state (when business cancelled)
+        if b.get("status") == AppointmentStatus.CANCELLED and b.get("cancelled_by") == "business":
+            tx_for_refund = await db.transactions.find_one(
+                {"booking_id": b["id"], "refund_amount": {"$gt": 0}},
+                {"_id": 0, "refund_pending": 1, "refund_destination_choice": 1, "refund_amount": 1, "status": 1}
+            )
+            if tx_for_refund:
+                b["refund_pending"] = bool(tx_for_refund.get("refund_pending"))
+                b["refund_destination_choice"] = tx_for_refund.get("refund_destination_choice")
+                b["refund_amount"] = float(tx_for_refund.get("refund_amount") or 0)
         
         # Calculate hours until appointment
         try:
@@ -1971,6 +1983,267 @@ async def cancel_booking_by_user(
 
 
 
+@router.post("/{booking_id}/refund-choice")
+async def refund_choice(
+    booking_id: str,
+    payload: dict,
+    token_data: TokenData = Depends(require_auth),
+):
+    """Client picks where to receive the refund when the business cancelled.
+
+    Body: { "destination": "wallet" | "card" }
+
+      * wallet -> credits the user's Bookvia wallet immediately and marks
+        the transaction as refunded (NO admin action needed). Money lands
+        in the wallet within seconds.
+      * card   -> stays in the admin queue. Admin issues the Stripe refund
+        from /admin > Reembolsos (5-10 business days for the bank to push
+        the money back to the card).
+    """
+    destination = (payload or {}).get("destination")
+    if destination not in ("wallet", "card"):
+        raise HTTPException(status_code=400, detail="destination must be 'wallet' or 'card'")
+
+    booking = await db.bookings.find_one({"id": booking_id}, {"_id": 0})
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    if booking.get("user_id") != token_data.user_id:
+        raise HTTPException(status_code=403, detail="Not your booking")
+    if booking.get("cancelled_by") != "business":
+        raise HTTPException(status_code=400, detail="Esta opcion solo aplica cuando el negocio cancelo la reserva")
+
+    tx = await db.transactions.find_one(
+        {"booking_id": booking_id, "refund_pending": True, "refund_destination_choice": "pending"},
+        {"_id": 0}
+    )
+    if not tx:
+        raise HTTPException(status_code=400, detail="No hay reembolso pendiente para esta reserva o ya elegiste")
+
+    amount = float(tx.get("refund_amount") or tx.get("amount_total") or 0)
+    if amount <= 0:
+        raise HTTPException(status_code=400, detail="Monto invalido")
+    now = datetime.now(timezone.utc)
+
+    if destination == "wallet":
+        # Credit wallet immediately + mark refunded (no admin action)
+        from services.wallet import credit_wallet, CREDIT_CANCELLATION
+        await credit_wallet(
+            user_id=token_data.user_id,
+            amount=amount,
+            tx_type=CREDIT_CANCELLATION,
+            booking_id=booking_id,
+            description="Reembolso por cancelacion del negocio (saldo Bookvia - eleccion del cliente)",
+        )
+        await db.transactions.update_one(
+            {"id": tx["id"]},
+            {"$set": {
+                "status": TransactionStatus.REFUND_FULL,
+                "refund_destination_choice": "wallet",
+                "refund_destination": "wallet",
+                "refund_pending": False,
+                "refund_issued_at": now.isoformat(),
+                "refund_issued_by": f"client_wallet_choice:{token_data.user_id}",
+                "updated_at": now.isoformat(),
+            }},
+        )
+        try:
+            updated_tx = {**tx, "refund_amount": amount}
+            await create_transaction_ledger_entries(updated_tx, TransactionStatus.REFUND_FULL)
+        except Exception as e:
+            logger.error(f"Ledger on wallet refund failed: {e}")
+        try:
+            from services.funds_state import mark_refunded
+            await mark_refunded(tx["id"], actor="client_wallet_choice", reason="Client chose wallet refund after business cancellation")
+        except Exception as e:
+            logger.error(f"Funds state on wallet refund failed: {e}")
+        return {
+            "status": "ok",
+            "destination": "wallet",
+            "amount": amount,
+            "message": "Saldo acreditado a tu wallet Bookvia",
+        }
+
+    # destination == "card" -> moves to admin queue
+    await db.transactions.update_one(
+        {"id": tx["id"]},
+        {"$set": {
+            "refund_destination_choice": "card",
+            "refund_destination": "card",
+            "updated_at": now.isoformat(),
+        }},
+    )
+    # Alert admins now that the queue has a new card-refund to process
+    try:
+        admins = await db.users.find({"role": "admin"}, {"id": 1, "_id": 0}).to_list(50)
+        for adm in admins:
+            await create_notification(
+                adm["id"],
+                "Reembolso a tarjeta pendiente",
+                f"El cliente eligio recibir reembolso en tarjeta para la reserva {booking_id}. Emitelo desde Admin > Reembolsos.",
+                "admin_alert",
+                {"booking_id": booking_id, "transaction_id": tx["id"], "amount": amount},
+            )
+    except Exception as e:
+        logger.error(f"Failed to alert admins of card refund choice: {e}")
+
+    return {
+        "status": "ok",
+        "destination": "card",
+        "amount": amount,
+        "message": "Solicitud enviada al admin. El reembolso aparecera en tu tarjeta en 5-10 dias habiles.",
+    }
+
+
+@router.get("/{booking_id}/cancellation-preview")
+async def cancellation_preview(booking_id: str, token_data: TokenData = Depends(require_auth)):
+    """Return what will happen if this booking is cancelled NOW.
+
+    Both the client and the business can call this to display an upfront
+    summary in the confirmation dialog before they actually trigger the
+    cancellation. The exact numbers shown here must match what the real
+    cancellation endpoints will apply.
+    """
+    booking = await db.bookings.find_one({"id": booking_id}, {"_id": 0})
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+
+    user = await db.users.find_one({"id": token_data.user_id}, {"_id": 0, "business_id": 1, "role": 1})
+    is_owner_client = booking.get("user_id") == token_data.user_id
+    is_owner_business = bool(user and user.get("business_id") == booking.get("business_id"))
+    if not (is_owner_client or is_owner_business):
+        raise HTTPException(status_code=403, detail="Not your booking")
+
+    role = "business" if is_owner_business else "client"
+    if booking.get("status") not in [AppointmentStatus.HOLD, AppointmentStatus.CONFIRMED]:
+        raise HTTPException(status_code=400, detail=f"No se puede cancelar (estado actual: {booking.get('status')})")
+
+    tx = await db.transactions.find_one(
+        {"booking_id": booking_id, "status": TransactionStatus.PAID},
+        {"_id": 0}
+    )
+
+    # Hours until appointment (used by client policy)
+    try:
+        appt_dt = datetime.strptime(f"{booking['date']} {booking['time']}", "%Y-%m-%d %H:%M").replace(tzinfo=timezone.utc)
+        hours_until = max(0.0, (appt_dt - datetime.now(timezone.utc)).total_seconds() / 3600)
+    except Exception:
+        hours_until = None
+
+    # Business cancellation window (1-72h) — same as cancellation_hours
+    biz = await db.businesses.find_one({"id": booking["business_id"]}, {"_id": 0, "cancellation_hours": 1, "cancellation_days": 1, "pending_balance": 1}) or {}
+    cutoff = None
+    ch = biz.get("cancellation_hours")
+    if isinstance(ch, (int, float)) and ch > 0:
+        cutoff = int(ch)
+    elif biz.get("cancellation_days"):
+        cutoff = int(biz["cancellation_days"]) * 24
+    cutoff = max(1, min(72, cutoff or 24))
+
+    response = {
+        "booking_id": booking_id,
+        "role": role,
+        "has_paid_transaction": bool(tx),
+        "hours_until_appointment": round(hours_until, 2) if hours_until is not None else None,
+        "cutoff_hours": cutoff,
+    }
+
+    if not tx:
+        # Free booking — no money involved
+        response["summary"] = {
+            "title_es": "Esta reserva no tiene pago asociado",
+            "title_en": "This booking has no payment attached",
+            "lines_es": ["No hay reembolso porque no hubo cobro."],
+            "lines_en": ["No refund since there was no charge."],
+        }
+        return response
+
+    client_paid = float(tx.get("amount_total") or 0)
+    deposit = float(tx.get("deposit_amount") or 0)
+    if not deposit:
+        deposit = max(0.0, client_paid - float(BOOKVIA_FEE_MXN))
+    business_payout = float(tx.get("payout_amount") or 0)
+
+    if role == "business":
+        # Build penalty same way as the cancellation endpoint
+        commission_component = max(deposit * STRIPE_FEE_PERCENT_ESTIMATED, MIN_BUSINESS_COMMISSION_MXN) if deposit > 0 else 0.0
+        penalty = round(float(BOOKVIA_FEE_MXN) + commission_component, 2)
+        current_pending = float(biz.get("pending_balance") or 0.0) - business_payout
+        covered = min(max(current_pending, 0.0), penalty)
+        debt = round(penalty - covered, 2)
+
+        response["business_impact"] = {
+            "client_refund": round(client_paid, 2),
+            "penalty_total": penalty,
+            "penalty_bookvia_fee": round(float(BOOKVIA_FEE_MXN), 2),
+            "penalty_commission": round(commission_component, 2),
+            "covered_from_pending": round(covered, 2),
+            "outstanding_debt": debt,
+        }
+        response["summary"] = {
+            "title_es": f"Esta cancelacion te costara ${penalty:.2f} MXN",
+            "title_en": f"This cancellation will cost you ${penalty:.2f} MXN",
+            "lines_es": [
+                f"El cliente recibira ${client_paid:.2f} MXN de regreso completos.",
+                f"Penalty: ${float(BOOKVIA_FEE_MXN):.2f} (tarifa Bookvia) + ${commission_component:.2f} (comision proporcional al anticipo).",
+                f"Se descontaran ${covered:.2f} de tu saldo pendiente." if covered > 0 else "No hay saldo pendiente para cubrir el cargo.",
+                f"Quedan ${debt:.2f} como deuda que se restara de tus proximos pagos." if debt > 0 else "Sin deuda adicional.",
+                "Las cancelaciones frecuentes pueden suspender tu cuenta.",
+            ],
+            "lines_en": [
+                f"The client will receive ${client_paid:.2f} MXN back in full.",
+                f"Penalty: ${float(BOOKVIA_FEE_MXN):.2f} (Bookvia fee) + ${commission_component:.2f} (commission proportional to the deposit).",
+                f"${covered:.2f} will be deducted from your pending balance." if covered > 0 else "No pending balance to cover the charge.",
+                f"${debt:.2f} will remain as debt deducted from future payouts." if debt > 0 else "No outstanding debt.",
+                "Frequent cancellations may suspend your account.",
+            ],
+        }
+    else:
+        # Client preview — uses the policy already implemented in cancel_booking
+        # Phase O cancellation: within cutoff_hours -> full refund to wallet/card;
+        # past the cutoff -> deposit is forfeited (negocio se queda con el dinero).
+        within_window = hours_until is None or hours_until >= cutoff
+        if within_window:
+            refund_amount = round(client_paid, 2)
+            response["client_impact"] = {
+                "refund_amount": refund_amount,
+                "refund_destination_options": ["wallet", "card"],
+                "policy": "free_cancellation",
+            }
+            response["summary"] = {
+                "title_es": f"Recibiras ${refund_amount:.2f} MXN de reembolso",
+                "title_en": f"You will get ${refund_amount:.2f} MXN refunded",
+                "lines_es": [
+                    f"Como cancelas con mas de {cutoff} horas de anticipacion, recibes el reembolso completo.",
+                    "Puedes elegir si lo quieres en tu tarjeta (5-7 dias habiles) o en tu saldo Bookvia (instantaneo).",
+                ],
+                "lines_en": [
+                    f"Since you cancel more than {cutoff} hours in advance, you get a full refund.",
+                    "You can choose card (5-7 business days) or Bookvia wallet (instant).",
+                ],
+            }
+        else:
+            response["client_impact"] = {
+                "refund_amount": 0.0,
+                "refund_destination_options": [],
+                "policy": "late_cancellation_no_refund",
+            }
+            response["summary"] = {
+                "title_es": "Cancelacion tardia — no hay reembolso",
+                "title_en": "Late cancellation — no refund",
+                "lines_es": [
+                    f"Faltan menos de {cutoff} horas para tu cita y la politica del negocio retiene el anticipo.",
+                    f"Si cancelas ahora, perderas los ${client_paid:.2f} MXN que pagaste.",
+                    "Tip: contacta al negocio directamente; quiza pueda reagendarte sin penalty.",
+                ],
+                "lines_en": [
+                    f"Less than {cutoff} hours remain and the business retains the deposit.",
+                    f"If you cancel now, you will lose the ${client_paid:.2f} MXN you paid.",
+                    "Tip: contact the business directly — they may reschedule without penalty.",
+                ],
+            }
+    return response
+
+
 @router.put("/{booking_id}/cancel/business")
 async def cancel_booking_by_business(
     booking_id: str,
@@ -2009,15 +2282,33 @@ async def cancel_booking_by_business(
         # refund manually from the Admin > Reembolsos tab. This gives full
         # visibility & control over money movement and prevents accidents.
         refund_amount = transaction["amount_total"]  # 100% refund (intent)
-        fee_penalty = transaction["fee_amount"]  # 8% fee charged to business
+
+        # Business penalty = Bookvia fee lost ($8 fixed) + commission % of
+        # the deposit (8.5% with $8.50 floor). Proportional to the booking
+        # size so a $200 deposit cancellation costs more than a $100 one.
+        #
+        # Examples:
+        #   deposit $100 -> $8.00 + max($8.50, $8.50) = $16.50
+        #   deposit $200 -> $8.00 + max($17.00, $8.50) = $25.00
+        #   deposit $500 -> $8.00 + max($42.50, $8.50) = $50.50
+        from models.enums import BOOKVIA_FEE_MXN, STRIPE_FEE_PERCENT_ESTIMATED, MIN_BUSINESS_COMMISSION_MXN
+        deposit_for_penalty = float(transaction.get("deposit_amount") or transaction.get("payout_amount") or 0)
+        if not deposit_for_penalty and transaction.get("amount_total"):
+            # client_paid = deposit + bookvia_fee; back out the deposit
+            deposit_for_penalty = max(0.0, float(transaction["amount_total"]) - float(BOOKVIA_FEE_MXN))
+        commission_component = max(deposit_for_penalty * STRIPE_FEE_PERCENT_ESTIMATED, MIN_BUSINESS_COMMISSION_MXN) if deposit_for_penalty > 0 else 0.0
+        fee_penalty = round(float(BOOKVIA_FEE_MXN) + commission_component, 2)
 
         # Mark the transaction as pending an admin-issued refund.
+        # `refund_destination_choice` tracks the client's pick: pending|card|wallet.
+        # While 'pending' it stays out of the admin queue (client hasn't decided).
         await db.transactions.update_one(
             {"id": transaction["id"]},
             {"$set": {
                 "refund_amount": refund_amount,
                 "refund_reason": "business_cancelled",
                 "refund_pending": True,
+                "refund_destination_choice": "pending",
                 "refund_pending_since": now.isoformat(),
                 "cancelled_by": "business",
                 "updated_at": now.isoformat(),
@@ -2053,26 +2344,48 @@ async def cancel_booking_by_business(
         # Create ledger entries for penalty
         await create_transaction_ledger_entries(penalty_tx, TransactionStatus.BUSINESS_CANCEL_FEE)
         
-        # Update business balance (deduct pending and add penalty)
-        await db.businesses.update_one(
-            {"id": booking["business_id"]},
-            {"$inc": {
-                "pending_balance": -transaction["payout_amount"],
-                "penalty_balance": fee_penalty
-            }}
+        # Update business balance:
+        #   1) Reverse the future payout this booking would have generated.
+        #   2) Apply the penalty against pending_balance first; any uncovered
+        #      portion becomes outstanding penalty debt (penalty_balance)
+        #      that will be deducted from future payouts.
+        biz_doc = await db.businesses.find_one({"id": booking["business_id"]}, {"_id": 0, "pending_balance": 1})
+        current_pending = float((biz_doc or {}).get("pending_balance") or 0.0)
+        # Reverse the payout this cancelled booking would have produced
+        current_pending -= float(transaction.get("payout_amount") or 0.0)
+        # Now apply the penalty against whatever is left in pending
+        covered_from_pending = min(max(current_pending, 0.0), fee_penalty)
+        penalty_debt = round(fee_penalty - covered_from_pending, 2)
+        pending_delta = -float(transaction.get("payout_amount") or 0.0) - covered_from_pending
+
+        update_doc = {"$inc": {"pending_balance": pending_delta}}
+        if penalty_debt > 0:
+            update_doc["$inc"]["penalty_balance"] = penalty_debt
+        await db.businesses.update_one({"id": booking["business_id"]}, update_doc)
+
+        logger.info(
+            f"Business cancel penalty for {booking['business_id']}: total=${fee_penalty} "
+            f"covered_from_pending=${covered_from_pending} debt=${penalty_debt}"
         )
         
         refund_result = {
             "refund_amount": refund_amount,
             "fee_penalty": fee_penalty,
-            "policy_applied": "business_cancel_full_refund_fee_penalty",
+            "penalty_breakdown": {
+                "bookvia_fee_component": round(float(BOOKVIA_FEE_MXN), 2),
+                "commission_component": round(commission_component, 2),
+                "covered_from_pending": round(covered_from_pending, 2),
+                "outstanding_debt": penalty_debt,
+            },
+            "policy_applied": "business_cancel_full_refund_proportional_penalty",
             "refund_status": "pending_admin_review",
             "stripe_refund_id": None,
             "refund_destination": "pending_admin",
         }
 
         logger.info(
-            f"Business cancelled booking {booking_id}: refund ${refund_amount} pending admin issue, penalty ${fee_penalty}"
+            f"Business cancelled booking {booking_id}: refund ${refund_amount} pending admin issue, "
+            f"penalty ${fee_penalty} (${BOOKVIA_FEE_MXN} fee + ${commission_component:.2f} commission)"
         )
     
     # Issue progressive strike to the business (Fase 5)
@@ -2117,13 +2430,13 @@ async def cancel_booking_by_business(
         {"$inc": {"active_appointments_count": -1}}
     )
     
-    # Notify user
+    # Notify user — explicitly asks them to pick refund destination
     await create_notification(
         booking["user_id"],
         "Reserva Cancelada por el Negocio",
-        f"Tu cita del {booking['date']} a las {booking['time']} fue cancelada. Se procesará un reembolso completo.",
-        "system",
-        {"booking_id": booking_id}
+        f"Tu cita del {booking['date']} a las {booking['time']} fue cancelada. Elige donde quieres recibir tu reembolso de ${(transaction or {}).get('amount_total', 0):.2f} MXN.",
+        "refund_choice_needed",
+        {"booking_id": booking_id, "transaction_id": (transaction or {}).get('id')}
     )
     
     # Send cancellation email to client (respects notify_email pref)
@@ -2135,7 +2448,7 @@ async def cancel_booking_by_business(
             if client_user.get("notify_email", True):
                 from services.email import send_booking_cancelled
                 if refund_result:
-                    refund_msg = "Procesaremos el reembolso completo a tu tarjeta en las proximas 24-48 horas. Recibiras una confirmacion en cuanto el pago se libere desde Stripe."
+                    refund_msg = "Para recibir tu reembolso, abre Bookvia > Mis reservas y elige: 'Saldo Bookvia' (instantaneo) o 'Tarjeta' (5-10 dias habiles). El monto completo se devolvera donde elijas."
                 else:
                     refund_msg = None
                 await send_booking_cancelled(
@@ -2168,24 +2481,8 @@ async def cancel_booking_by_business(
         {"client_name": booking.get("client_name", ""), "service_name": booking.get("service_name", ""), "date": booking.get("date", ""), "time": booking.get("time", ""), "reason": cancel_req.reason}
     )
 
-    # Alert all admins of a new pending refund that needs their review
-    if refund_result and transaction:
-        try:
-            admins = await db.users.find({"role": "admin"}, {"id": 1, "_id": 0}).to_list(50)
-            for adm in admins:
-                await create_notification(
-                    adm["id"],
-                    "Reembolso pendiente de revision",
-                    f"El negocio cancelo la reserva {booking_id}. Revisa y emite el reembolso desde Admin > Reembolsos.",
-                    "admin_alert",
-                    {
-                        "booking_id": booking_id,
-                        "transaction_id": transaction["id"],
-                        "amount": refund_result.get("refund_amount"),
-                    },
-                )
-        except Exception as e:
-            logger.error(f"Failed to alert admins of pending refund: {e}")
+    # NOTE: Admin alert moved to the refund-choice endpoint. We only ping admins
+    # when the client picks "card" so the queue stays clean.
 
     return {
         "message": "Booking cancelled by business",

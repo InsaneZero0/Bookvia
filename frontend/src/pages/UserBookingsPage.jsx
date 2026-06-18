@@ -139,6 +139,21 @@ export default function UserBookingsPage() {
   }, [loading, upcomingBookings, pastBookings, searchParams]);
 
   const [confirmingOk, setConfirmingOk] = useState(null);
+  const [refundChoiceLoading, setRefundChoiceLoading] = useState(null);
+  const handleRefundChoice = async (booking, destination) => {
+    if (!booking || refundChoiceLoading === booking.id) return;
+    setRefundChoiceLoading(booking.id);
+    try {
+      const res = await bookingsAPI.refundChoice(booking.id, destination);
+      toast.success(res.data?.message || (language === 'es' ? 'Eleccion registrada' : 'Choice saved'));
+      await loadBookings();
+    } catch (err) {
+      const msg = err.response?.data?.detail || (language === 'es' ? 'No se pudo procesar' : 'Could not process');
+      toast.error(msg);
+    } finally {
+      setRefundChoiceLoading(null);
+    }
+  };
   const handleConfirmOk = async (booking) => {
     if (!booking || confirmingOk === booking.id) return;
     setConfirmingOk(booking.id);
@@ -218,7 +233,7 @@ export default function UserBookingsPage() {
     }
   };
 
-  const [cancelDialog, setCancelDialog] = useState({ open: false, booking: null, refundTo: 'card' });
+  const [cancelDialog, setCancelDialog] = useState({ open: false, booking: null, refundTo: 'card', preview: null, previewLoading: false });
   const [disputeDialog, setDisputeDialog] = useState({ open: false, booking: null });
   const [disputeReason, setDisputeReason] = useState('');
   const [noShowDialog, setNoShowDialog] = useState({ open: false, booking: null });
@@ -271,7 +286,15 @@ export default function UserBookingsPage() {
   const handleCancelClick = (bookingId) => {
     const booking = upcomingBookings.find(b => b.id === bookingId);
     if (!booking) return;
-    setCancelDialog({ open: true, booking, refundTo: 'card' });
+    setCancelDialog({ open: true, booking, refundTo: 'card', preview: null, previewLoading: true });
+    // Fetch preview (so user sees refund / late-cancel warning BEFORE confirming)
+    bookingsAPI.getCancellationPreview(bookingId)
+      .then((res) => {
+        setCancelDialog((s) => (s.booking?.id === bookingId ? { ...s, preview: res.data, previewLoading: false } : s));
+      })
+      .catch(() => {
+        setCancelDialog((s) => (s.booking?.id === bookingId ? { ...s, preview: null, previewLoading: false } : s));
+      });
   };
 
   const confirmCancel = async () => {
@@ -302,7 +325,7 @@ export default function UserBookingsPage() {
         toast.success(language === 'es' ? 'Cita cancelada' : 'Booking cancelled');
       }
       
-      setCancelDialog({ open: false, booking: null, refundTo: 'card' });
+      setCancelDialog({ open: false, booking: null, refundTo: 'card', preview: null, previewLoading: false });
       loadBookings();
     } catch (error) {
       const message = error.response?.data?.detail || (language === 'es' ? 'Error al cancelar' : 'Error cancelling');
@@ -692,10 +715,91 @@ export default function UserBookingsPage() {
               {booking.status === 'cancelled' && booking.cancelled_by && (
                 <div className="mt-3 text-sm text-muted-foreground">
                   {language === 'es' ? 'Cancelada por: ' : 'Cancelled by: '}
-                  {booking.cancelled_by === 'user' 
-                    ? (language === 'es' ? 'ti' : 'you') 
+                  {booking.cancelled_by === 'user'
+                    ? (language === 'es' ? 'ti' : 'you')
                     : (language === 'es' ? 'el negocio' : 'the business')}
                   {booking.cancellation_reason && ` - ${booking.cancellation_reason}`}
+                </div>
+              )}
+
+              {/* Refund-destination chooser: only when business cancelled and client hasn't picked yet */}
+              {booking.status === 'cancelled'
+                && booking.cancelled_by === 'business'
+                && booking.refund_pending
+                && booking.refund_destination_choice === 'pending'
+                && booking.refund_amount > 0 && (
+                <div className="mt-3 rounded-lg border-2 border-emerald-300 bg-emerald-50/60 dark:bg-emerald-900/10 dark:border-emerald-800 p-4" data-testid={`refund-chooser-${booking.id}`}>
+                  <div className="flex items-start gap-2 mb-3">
+                    <CreditCard className="h-5 w-5 text-emerald-600 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-semibold text-emerald-900 dark:text-emerald-200 text-sm">
+                        {language === 'es' ? `¿Donde quieres recibir tus $${booking.refund_amount?.toFixed(2)} MXN?` : `Where do you want to receive your $${booking.refund_amount?.toFixed(2)} MXN?`}
+                      </p>
+                      <p className="text-xs text-emerald-700 dark:text-emerald-300 mt-1">
+                        {language === 'es'
+                          ? 'El negocio cancelo tu cita. Elige como recibir el reembolso completo.'
+                          : 'The business cancelled your booking. Choose how to receive your full refund.'}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <Button
+                      size="sm"
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white h-auto py-2.5 flex flex-col items-start"
+                      disabled={refundChoiceLoading === booking.id}
+                      onClick={() => handleRefundChoice(booking, 'wallet')}
+                      data-testid={`refund-wallet-${booking.id}`}
+                    >
+                      <span className="font-semibold text-xs">
+                        {language === 'es' ? '⚡ Saldo Bookvia' : '⚡ Bookvia wallet'}
+                      </span>
+                      <span className="text-[10px] opacity-90 font-normal">
+                        {language === 'es' ? 'Instantaneo (segundos)' : 'Instant (seconds)'}
+                      </span>
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="border-emerald-300 text-emerald-800 hover:bg-emerald-100 h-auto py-2.5 flex flex-col items-start"
+                      disabled={refundChoiceLoading === booking.id}
+                      onClick={() => handleRefundChoice(booking, 'card')}
+                      data-testid={`refund-card-${booking.id}`}
+                    >
+                      <span className="font-semibold text-xs">
+                        {language === 'es' ? '💳 Tarjeta' : '💳 Card'}
+                      </span>
+                      <span className="text-[10px] opacity-80 font-normal">
+                        {language === 'es' ? '5-10 dias habiles' : '5-10 business days'}
+                      </span>
+                    </Button>
+                  </div>
+                  {refundChoiceLoading === booking.id && (
+                    <p className="text-[11px] text-emerald-700 mt-2 flex items-center gap-1">
+                      <Loader2 className="h-3 w-3 animate-spin" /> {language === 'es' ? 'Procesando...' : 'Processing...'}
+                    </p>
+                  )}
+                </div>
+              )}
+              {booking.status === 'cancelled'
+                && booking.cancelled_by === 'business'
+                && booking.refund_destination_choice === 'wallet'
+                && booking.refund_amount > 0 && (
+                <div className="mt-3 flex items-center gap-1.5 text-xs text-emerald-700 bg-emerald-50 dark:bg-emerald-900/20 dark:text-emerald-300 px-2.5 py-1.5 rounded">
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  {language === 'es'
+                    ? `Reembolso de $${booking.refund_amount?.toFixed(2)} acreditado a tu saldo Bookvia`
+                    : `$${booking.refund_amount?.toFixed(2)} refunded to your Bookvia wallet`}
+                </div>
+              )}
+              {booking.status === 'cancelled'
+                && booking.cancelled_by === 'business'
+                && booking.refund_destination_choice === 'card'
+                && booking.refund_amount > 0 && (
+                <div className="mt-3 flex items-start gap-1.5 text-xs text-blue-700 bg-blue-50 dark:bg-blue-900/20 dark:text-blue-300 px-2.5 py-1.5 rounded">
+                  <Clock className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                  {language === 'es'
+                    ? `Reembolso de $${booking.refund_amount?.toFixed(2)} en proceso. Aparecera en tu tarjeta en 5-10 dias habiles.`
+                    : `Refund of $${booking.refund_amount?.toFixed(2)} in process. Will appear in your card in 5-10 business days.`}
                 </div>
               )}
             </div>
@@ -822,7 +926,7 @@ export default function UserBookingsPage() {
         </Tabs>
 
         {/* Cancel Dialog with Refund Choice */}
-        <Dialog open={cancelDialog.open} onOpenChange={(open) => !open && setCancelDialog({ open: false, booking: null, refundTo: 'card' })}>
+        <Dialog open={cancelDialog.open} onOpenChange={(open) => !open && setCancelDialog({ open: false, booking: null, refundTo: 'card', preview: null, previewLoading: false })}>
           <DialogContent className="max-w-md" data-testid="cancel-booking-dialog">
             <DialogHeader>
               <DialogTitle>{language === 'es' ? 'Cancelar cita' : 'Cancel booking'}</DialogTitle>
@@ -832,6 +936,34 @@ export default function UserBookingsPage() {
                 )}
               </DialogDescription>
             </DialogHeader>
+
+            {/* Live cancellation preview from backend (shows refund / late-cancel) */}
+            {cancelDialog.previewLoading ? (
+              <div className="rounded-lg bg-muted/40 p-3 text-xs text-muted-foreground text-center">
+                {language === 'es' ? 'Calculando tu reembolso...' : 'Calculating your refund...'}
+              </div>
+            ) : cancelDialog.preview?.summary && (() => {
+              const isLate = cancelDialog.preview?.client_impact?.policy === 'late_cancellation_no_refund';
+              const palette = isLate
+                ? 'bg-rose-50 dark:bg-rose-900/20 border-rose-300 dark:border-rose-800 text-rose-900 dark:text-rose-100'
+                : 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-300 dark:border-emerald-800 text-emerald-900 dark:text-emerald-100';
+              const Icon = isLate ? AlertTriangle : CheckCircle2;
+              return (
+                <div className={`rounded-lg border p-3.5 space-y-2 ${palette}`} data-testid="cancel-preview-client">
+                  <div className="flex items-start gap-2">
+                    <Icon className="h-4 w-4 shrink-0 mt-0.5" />
+                    <p className="text-sm font-bold leading-snug">
+                      {language === 'es' ? cancelDialog.preview.summary.title_es : cancelDialog.preview.summary.title_en}
+                    </p>
+                  </div>
+                  <ul className="space-y-1 text-xs leading-relaxed pl-6 list-disc opacity-95">
+                    {(language === 'es' ? cancelDialog.preview.summary.lines_es : cancelDialog.preview.summary.lines_en).map((line, i) => (
+                      <li key={i}>{line}</li>
+                    ))}
+                  </ul>
+                </div>
+              );
+            })()}
             
             {(() => {
               const b = cancelDialog.booking;

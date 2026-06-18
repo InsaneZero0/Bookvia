@@ -339,6 +339,11 @@ async def startup_event():
     asyncio.create_task(expire_holds_scheduler())
     asyncio.create_task(stripe_reconciliation_scheduler())
     asyncio.create_task(monthly_pnl_report_scheduler())
+    try:
+        from services.refund_choice_reminder import refund_choice_reminder_scheduler
+        asyncio.create_task(refund_choice_reminder_scheduler())
+    except Exception as _e:
+        logger.warning(f"Refund-choice reminder scheduler not started: {_e}")
     # MongoDB daily backup to Cloudinary
     try:
         from services.mongo_backup import mongo_backup_scheduler

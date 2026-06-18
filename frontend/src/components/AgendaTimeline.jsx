@@ -191,12 +191,7 @@ export default function AgendaTimeline({
                               {language === 'es' ? 'Completar' : 'Complete'}
                             </Button>
                           )}
-                          {hasPermission('reschedule_bookings') && (
-                            <Button size="sm" variant="ghost" className="h-6 text-[10px] px-2 text-blue-600" onClick={() => onReschedule(booking)}>
-                              <RefreshCw className="h-3 w-3 mr-0.5" />
-                              {language === 'es' ? 'Reagendar' : 'Reschedule'}
-                            </Button>
-                          )}
+                          {/* Reschedule button removed by policy: only the client can reschedule. */}
                           {hasPermission('cancel_bookings') && (
                             <Button size="sm" variant="ghost" className="h-6 text-[10px] px-2 text-red-600" onClick={() => onCancel(booking.id)}>
                               {language === 'es' ? 'Cancelar' : 'Cancel'}
@@ -206,11 +201,7 @@ export default function AgendaTimeline({
                       )}
                       {booking.status === 'hold' && (
                         <>
-                          {hasPermission('reschedule_bookings') && (
-                            <Button size="sm" variant="ghost" className="h-6 text-[10px] px-2 text-blue-600" onClick={() => onReschedule(booking)}>
-                              <RefreshCw className="h-3 w-3 mr-0.5" />
-                            </Button>
-                          )}
+                          {/* Reschedule button removed by policy: only the client can reschedule. */}
                           {hasPermission('cancel_bookings') && (
                             <Button size="sm" variant="ghost" className="h-6 text-[10px] px-2 text-red-600" onClick={() => onCancel(booking.id)}>
                               {language === 'es' ? 'Cancelar' : 'Cancel'}
