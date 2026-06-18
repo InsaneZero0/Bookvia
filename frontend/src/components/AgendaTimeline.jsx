@@ -10,6 +10,47 @@ function timeToMinutes(t) {
   return h * 60 + (m || 0);
 }
 
+// Assign side-by-side columns to overlapping bookings so two citas
+// at the same time are both visible (Google-Calendar style swimlanes).
+function assignColumns(bookings) {
+  const sorted = [...bookings].sort((a, b) => {
+    const diff = timeToMinutes(a.time) - timeToMinutes(b.time);
+    if (diff !== 0) return diff;
+    return timeToMinutes(a.end_time || a.time) - timeToMinutes(b.end_time || b.time);
+  });
+  // cols[i] = end-minute of the last event placed in column i
+  const cols = [];
+  const placed = sorted.map((b) => {
+    const start = timeToMinutes(b.time);
+    const end = timeToMinutes(b.end_time || b.time);
+    let assigned = -1;
+    for (let i = 0; i < cols.length; i++) {
+      if (cols[i] <= start) {
+        assigned = i;
+        cols[i] = end;
+        break;
+      }
+    }
+    if (assigned === -1) {
+      cols.push(end);
+      assigned = cols.length - 1;
+    }
+    return { booking: b, _col: assigned, _start: start, _end: end };
+  });
+  // For each booking, compute the max columns occupied by any overlapping
+  // event in its "group". That becomes the divisor for its width.
+  return placed.map((p) => {
+    let total = p._col + 1;
+    for (const other of placed) {
+      if (other === p) continue;
+      if (other._start < p._end && other._end > p._start) {
+        total = Math.max(total, other._col + 1);
+      }
+    }
+    return { ...p.booking, _col: p._col, _total: total };
+  });
+}
+
 export default function AgendaTimeline({
   bookings, language, hasPermission, getStatusColor, t,
   onClientClick, onComplete, onReschedule, onCancel
@@ -81,20 +122,32 @@ export default function AgendaTimeline({
           </div>
         ))}
 
-        {/* Booking blocks */}
-        {bookings.map((booking) => {
+        {/* Booking blocks - inner area excludes the hour-label gutter on the left */}
+        <div className="absolute left-16 right-1 top-0 bottom-0">
+          {assignColumns(bookings).map((booking) => {
           const top = getTop(booking.time);
           const height = getHeight(booking.time, booking.end_time || booking.time);
           const isCompact = height < 60;
           const now = new Date();
           const endDt = new Date(`${booking.date}T${booking.end_time}:00`);
           const isPast = now >= endDt;
+          const col = booking._col || 0;
+          const total = booking._total || 1;
+          // Side-by-side columns when overlap. 4px gap between columns.
+          const widthPct = 100 / total;
+          const leftPct = col * widthPct;
 
           return (
             <div
               key={booking.id}
-              className={`absolute left-16 right-1 rounded-lg border-l-[3px] px-3 py-1.5 transition-all ${statusColors[booking.status] || statusColors.pending}`}
-              style={{ top: `${top}px`, height: `${height}px`, minHeight: '40px' }}
+              className={`absolute rounded-lg border-l-[3px] px-3 py-1.5 transition-all ${statusColors[booking.status] || statusColors.pending}`}
+              style={{
+                top: `${top}px`,
+                height: `${height}px`,
+                minHeight: '40px',
+                left: `${leftPct}%`,
+                width: `calc(${widthPct}% - 4px)`,
+              }}
               data-testid={`timeline-block-${booking.id}`}
             >
               <div className={`flex ${isCompact ? 'items-center gap-3' : 'flex-col h-full justify-between'}`}>
@@ -172,6 +225,7 @@ export default function AgendaTimeline({
             </div>
           );
         })}
+        </div>
       </div>
     </div>
   );
