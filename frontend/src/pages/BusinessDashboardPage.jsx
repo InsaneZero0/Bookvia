@@ -78,7 +78,7 @@ export default function BusinessDashboardPage() {
   const [statsDateFrom, setStatsDateFrom] = useState('');
   const [statsDateTo, setStatsDateTo] = useState('');
   const [rescheduleModal, setRescheduleModal] = useState({ open: false, booking: null });
-  const [cancelDialog, setCancelDialog] = useState({ open: false, booking: null, step: 'confirm', reason: '', submitting: false });
+  const [cancelDialog, setCancelDialog] = useState({ open: false, booking: null, step: 'confirm', reason: '', submitting: false, preview: null, previewLoading: false });
   const [rescheduleDate, setRescheduleDate] = useState(null);
   const [rescheduleSlots, setRescheduleSlots] = useState([]);
   const [rescheduleTime, setRescheduleTime] = useState('');
@@ -298,7 +298,14 @@ export default function BusinessDashboardPage() {
   };
 
   const openCancelDialog = (booking) => {
-    setCancelDialog({ open: true, booking, step: 'confirm', reason: '', submitting: false });
+    setCancelDialog({ open: true, booking, step: 'confirm', reason: '', submitting: false, preview: null, previewLoading: true });
+    bookingsAPI.getCancellationPreview(booking.id)
+      .then((res) => {
+        setCancelDialog((s) => (s.booking?.id === booking.id ? { ...s, preview: res.data, previewLoading: false } : s));
+      })
+      .catch(() => {
+        setCancelDialog((s) => (s.booking?.id === booking.id ? { ...s, preview: null, previewLoading: false } : s));
+      });
   };
 
   const submitBusinessCancellation = async () => {
@@ -313,7 +320,7 @@ export default function BusinessDashboardPage() {
     try {
       await bookingsAPI.cancelByBusiness(bk.id, reason);
       toast.success(language === 'es' ? 'Cita cancelada. El cliente fue notificado.' : 'Booking cancelled. The client was notified.');
-      setCancelDialog({ open: false, booking: null, step: 'confirm', reason: '', submitting: false });
+      setCancelDialog({ open: false, booking: null, step: 'confirm', reason: '', submitting: false, preview: null, previewLoading: false });
       loadDayBookings();
       loadDashboard();
     } catch (error) {
@@ -1662,7 +1669,7 @@ export default function BusinessDashboardPage() {
         {/* Business Cancellation Confirmation Modal — Step 1: confirm, Step 2: reason */}
         <Dialog
           open={cancelDialog.open}
-          onOpenChange={(open) => !open && !cancelDialog.submitting && setCancelDialog({ open: false, booking: null, step: 'confirm', reason: '', submitting: false })}
+          onOpenChange={(open) => !open && !cancelDialog.submitting && setCancelDialog({ open: false, booking: null, step: 'confirm', reason: '', submitting: false, preview: null, previewLoading: false })}
         >
           <DialogContent className="max-w-md" data-testid="business-cancel-modal">
             {cancelDialog.step === 'confirm' && (
@@ -1686,15 +1693,35 @@ export default function BusinessDashboardPage() {
                     )}
                   </DialogDescription>
                 </DialogHeader>
-                <div className="rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 p-3 text-xs text-amber-900 dark:text-amber-200 leading-relaxed">
-                  {language === 'es'
-                    ? 'Al cancelar, el cliente recibira un reembolso completo y se le notificara por correo. Las cancelaciones frecuentes pueden afectar tu reputacion.'
-                    : 'When you cancel, the client receives a full refund and an email notification. Frequent cancellations can hurt your reputation.'}
-                </div>
+                {cancelDialog.previewLoading ? (
+                  <div className="rounded-lg bg-muted/40 p-3 text-xs text-muted-foreground text-center">
+                    {language === 'es' ? 'Calculando impacto economico...' : 'Calculating economic impact...'}
+                  </div>
+                ) : cancelDialog.preview?.summary ? (
+                  <div className="rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-800 p-3.5 space-y-2" data-testid="cancel-preview-business">
+                    <div className="flex items-start gap-2">
+                      <DollarSign className="h-4 w-4 text-amber-700 dark:text-amber-300 shrink-0 mt-0.5" />
+                      <p className="text-sm font-bold text-amber-900 dark:text-amber-100 leading-snug">
+                        {language === 'es' ? cancelDialog.preview.summary.title_es : cancelDialog.preview.summary.title_en}
+                      </p>
+                    </div>
+                    <ul className="space-y-1 text-xs text-amber-800 dark:text-amber-200 leading-relaxed pl-6 list-disc">
+                      {(language === 'es' ? cancelDialog.preview.summary.lines_es : cancelDialog.preview.summary.lines_en).map((line, i) => (
+                        <li key={i}>{line}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : (
+                  <div className="rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 p-3 text-xs text-amber-900 dark:text-amber-200 leading-relaxed">
+                    {language === 'es'
+                      ? 'Al cancelar, el cliente recibira un reembolso completo y se le notificara por correo. Las cancelaciones frecuentes pueden afectar tu reputacion.'
+                      : 'When you cancel, the client receives a full refund and an email notification. Frequent cancellations can hurt your reputation.'}
+                  </div>
+                )}
                 <DialogFooter className="gap-2 sm:gap-2">
                   <Button
                     variant="outline"
-                    onClick={() => setCancelDialog({ open: false, booking: null, step: 'confirm', reason: '', submitting: false })}
+                    onClick={() => setCancelDialog({ open: false, booking: null, step: 'confirm', reason: '', submitting: false, preview: null, previewLoading: false })}
                     data-testid="business-cancel-no-btn"
                   >
                     {language === 'es' ? 'No, mantener' : 'No, keep it'}

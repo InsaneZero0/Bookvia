@@ -218,7 +218,7 @@ export default function UserBookingsPage() {
     }
   };
 
-  const [cancelDialog, setCancelDialog] = useState({ open: false, booking: null, refundTo: 'card' });
+  const [cancelDialog, setCancelDialog] = useState({ open: false, booking: null, refundTo: 'card', preview: null, previewLoading: false });
   const [disputeDialog, setDisputeDialog] = useState({ open: false, booking: null });
   const [disputeReason, setDisputeReason] = useState('');
   const [noShowDialog, setNoShowDialog] = useState({ open: false, booking: null });
@@ -271,7 +271,15 @@ export default function UserBookingsPage() {
   const handleCancelClick = (bookingId) => {
     const booking = upcomingBookings.find(b => b.id === bookingId);
     if (!booking) return;
-    setCancelDialog({ open: true, booking, refundTo: 'card' });
+    setCancelDialog({ open: true, booking, refundTo: 'card', preview: null, previewLoading: true });
+    // Fetch preview (so user sees refund / late-cancel warning BEFORE confirming)
+    bookingsAPI.getCancellationPreview(bookingId)
+      .then((res) => {
+        setCancelDialog((s) => (s.booking?.id === bookingId ? { ...s, preview: res.data, previewLoading: false } : s));
+      })
+      .catch(() => {
+        setCancelDialog((s) => (s.booking?.id === bookingId ? { ...s, preview: null, previewLoading: false } : s));
+      });
   };
 
   const confirmCancel = async () => {
@@ -302,7 +310,7 @@ export default function UserBookingsPage() {
         toast.success(language === 'es' ? 'Cita cancelada' : 'Booking cancelled');
       }
       
-      setCancelDialog({ open: false, booking: null, refundTo: 'card' });
+      setCancelDialog({ open: false, booking: null, refundTo: 'card', preview: null, previewLoading: false });
       loadBookings();
     } catch (error) {
       const message = error.response?.data?.detail || (language === 'es' ? 'Error al cancelar' : 'Error cancelling');
@@ -822,7 +830,7 @@ export default function UserBookingsPage() {
         </Tabs>
 
         {/* Cancel Dialog with Refund Choice */}
-        <Dialog open={cancelDialog.open} onOpenChange={(open) => !open && setCancelDialog({ open: false, booking: null, refundTo: 'card' })}>
+        <Dialog open={cancelDialog.open} onOpenChange={(open) => !open && setCancelDialog({ open: false, booking: null, refundTo: 'card', preview: null, previewLoading: false })}>
           <DialogContent className="max-w-md" data-testid="cancel-booking-dialog">
             <DialogHeader>
               <DialogTitle>{language === 'es' ? 'Cancelar cita' : 'Cancel booking'}</DialogTitle>
@@ -832,6 +840,34 @@ export default function UserBookingsPage() {
                 )}
               </DialogDescription>
             </DialogHeader>
+
+            {/* Live cancellation preview from backend (shows refund / late-cancel) */}
+            {cancelDialog.previewLoading ? (
+              <div className="rounded-lg bg-muted/40 p-3 text-xs text-muted-foreground text-center">
+                {language === 'es' ? 'Calculando tu reembolso...' : 'Calculating your refund...'}
+              </div>
+            ) : cancelDialog.preview?.summary && (() => {
+              const isLate = cancelDialog.preview?.client_impact?.policy === 'late_cancellation_no_refund';
+              const palette = isLate
+                ? 'bg-rose-50 dark:bg-rose-900/20 border-rose-300 dark:border-rose-800 text-rose-900 dark:text-rose-100'
+                : 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-300 dark:border-emerald-800 text-emerald-900 dark:text-emerald-100';
+              const Icon = isLate ? AlertTriangle : CheckCircle2;
+              return (
+                <div className={`rounded-lg border p-3.5 space-y-2 ${palette}`} data-testid="cancel-preview-client">
+                  <div className="flex items-start gap-2">
+                    <Icon className="h-4 w-4 shrink-0 mt-0.5" />
+                    <p className="text-sm font-bold leading-snug">
+                      {language === 'es' ? cancelDialog.preview.summary.title_es : cancelDialog.preview.summary.title_en}
+                    </p>
+                  </div>
+                  <ul className="space-y-1 text-xs leading-relaxed pl-6 list-disc opacity-95">
+                    {(language === 'es' ? cancelDialog.preview.summary.lines_es : cancelDialog.preview.summary.lines_en).map((line, i) => (
+                      <li key={i}>{line}</li>
+                    ))}
+                  </ul>
+                </div>
+              );
+            })()}
             
             {(() => {
               const b = cancelDialog.booking;

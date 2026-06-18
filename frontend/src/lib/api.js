@@ -283,6 +283,7 @@ export const bookingsAPI = {
   getBusiness: (params) => api.get('/bookings/business', { params }),
   cancelByUser: (id, reason, refundTo = "card") => api.put(`/bookings/${id}/cancel/user`, { reason, refund_to: refundTo }),
   cancelByBusiness: (id, reason) => api.put(`/bookings/${id}/cancel/business`, { reason }),
+  getCancellationPreview: (id) => api.get(`/bookings/${id}/cancellation-preview`),
   raiseDispute: (id, reason) => api.post(`/bookings/${id}/dispute`, { reason }),
   confirmOk: (id) => api.post(`/bookings/${id}/confirm-ok`),
   reportNoShow: (id, description, photoUrl) => api.post(`/bookings/${id}/no-show-business`, { description, photo_url: photoUrl }),

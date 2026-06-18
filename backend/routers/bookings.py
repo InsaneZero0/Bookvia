@@ -41,7 +41,8 @@ from models.enums import (
     PLATFORM_FEE_PERCENT, HOLD_EXPIRATION_MINUTES, MIN_DEPOSIT_AMOUNT,
     SUBSCRIPTION_PRICE_MXN, SUBSCRIPTION_TRIAL_DAYS,
     MAX_RESCHEDULES_PER_BOOKING, RESCHEDULE_CUTOFF_HOURS,
-    VISIBLE_BUSINESS_FILTER, DEFAULT_MANAGER_PERMISSIONS
+    VISIBLE_BUSINESS_FILTER, DEFAULT_MANAGER_PERMISSIONS,
+    BOOKVIA_FEE_MXN, STRIPE_FEE_PERCENT_ESTIMATED, MIN_BUSINESS_COMMISSION_MXN,
 )
 from models.schemas import *
 from schemas.booking import SlotStatus
@@ -1969,6 +1970,156 @@ async def cancel_booking_by_user(
         "refund": refund_result
     }
 
+
+
+@router.get("/{booking_id}/cancellation-preview")
+async def cancellation_preview(booking_id: str, token_data: TokenData = Depends(require_auth)):
+    """Return what will happen if this booking is cancelled NOW.
+
+    Both the client and the business can call this to display an upfront
+    summary in the confirmation dialog before they actually trigger the
+    cancellation. The exact numbers shown here must match what the real
+    cancellation endpoints will apply.
+    """
+    booking = await db.bookings.find_one({"id": booking_id}, {"_id": 0})
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+
+    user = await db.users.find_one({"id": token_data.user_id}, {"_id": 0, "business_id": 1, "role": 1})
+    is_owner_client = booking.get("user_id") == token_data.user_id
+    is_owner_business = bool(user and user.get("business_id") == booking.get("business_id"))
+    if not (is_owner_client or is_owner_business):
+        raise HTTPException(status_code=403, detail="Not your booking")
+
+    role = "business" if is_owner_business else "client"
+    if booking.get("status") not in [AppointmentStatus.HOLD, AppointmentStatus.CONFIRMED]:
+        raise HTTPException(status_code=400, detail=f"No se puede cancelar (estado actual: {booking.get('status')})")
+
+    tx = await db.transactions.find_one(
+        {"booking_id": booking_id, "status": TransactionStatus.PAID},
+        {"_id": 0}
+    )
+
+    # Hours until appointment (used by client policy)
+    try:
+        appt_dt = datetime.strptime(f"{booking['date']} {booking['time']}", "%Y-%m-%d %H:%M").replace(tzinfo=timezone.utc)
+        hours_until = max(0.0, (appt_dt - datetime.now(timezone.utc)).total_seconds() / 3600)
+    except Exception:
+        hours_until = None
+
+    # Business cancellation window (1-72h) — same as cancellation_hours
+    biz = await db.businesses.find_one({"id": booking["business_id"]}, {"_id": 0, "cancellation_hours": 1, "cancellation_days": 1, "pending_balance": 1}) or {}
+    cutoff = None
+    ch = biz.get("cancellation_hours")
+    if isinstance(ch, (int, float)) and ch > 0:
+        cutoff = int(ch)
+    elif biz.get("cancellation_days"):
+        cutoff = int(biz["cancellation_days"]) * 24
+    cutoff = max(1, min(72, cutoff or 24))
+
+    response = {
+        "booking_id": booking_id,
+        "role": role,
+        "has_paid_transaction": bool(tx),
+        "hours_until_appointment": round(hours_until, 2) if hours_until is not None else None,
+        "cutoff_hours": cutoff,
+    }
+
+    if not tx:
+        # Free booking — no money involved
+        response["summary"] = {
+            "title_es": "Esta reserva no tiene pago asociado",
+            "title_en": "This booking has no payment attached",
+            "lines_es": ["No hay reembolso porque no hubo cobro."],
+            "lines_en": ["No refund since there was no charge."],
+        }
+        return response
+
+    client_paid = float(tx.get("amount_total") or 0)
+    deposit = float(tx.get("deposit_amount") or 0)
+    if not deposit:
+        deposit = max(0.0, client_paid - float(BOOKVIA_FEE_MXN))
+    business_payout = float(tx.get("payout_amount") or 0)
+
+    if role == "business":
+        # Build penalty same way as the cancellation endpoint
+        commission_component = max(deposit * STRIPE_FEE_PERCENT_ESTIMATED, MIN_BUSINESS_COMMISSION_MXN) if deposit > 0 else 0.0
+        penalty = round(float(BOOKVIA_FEE_MXN) + commission_component, 2)
+        current_pending = float(biz.get("pending_balance") or 0.0) - business_payout
+        covered = min(max(current_pending, 0.0), penalty)
+        debt = round(penalty - covered, 2)
+
+        response["business_impact"] = {
+            "client_refund": round(client_paid, 2),
+            "penalty_total": penalty,
+            "penalty_bookvia_fee": round(float(BOOKVIA_FEE_MXN), 2),
+            "penalty_commission": round(commission_component, 2),
+            "covered_from_pending": round(covered, 2),
+            "outstanding_debt": debt,
+        }
+        response["summary"] = {
+            "title_es": f"Esta cancelacion te costara ${penalty:.2f} MXN",
+            "title_en": f"This cancellation will cost you ${penalty:.2f} MXN",
+            "lines_es": [
+                f"El cliente recibira ${client_paid:.2f} MXN de regreso completos.",
+                f"Penalty: ${float(BOOKVIA_FEE_MXN):.2f} (tarifa Bookvia) + ${commission_component:.2f} (comision proporcional al anticipo).",
+                f"Se descontaran ${covered:.2f} de tu saldo pendiente." if covered > 0 else "No hay saldo pendiente para cubrir el cargo.",
+                f"Quedan ${debt:.2f} como deuda que se restara de tus proximos pagos." if debt > 0 else "Sin deuda adicional.",
+                "Las cancelaciones frecuentes pueden suspender tu cuenta.",
+            ],
+            "lines_en": [
+                f"The client will receive ${client_paid:.2f} MXN back in full.",
+                f"Penalty: ${float(BOOKVIA_FEE_MXN):.2f} (Bookvia fee) + ${commission_component:.2f} (commission proportional to the deposit).",
+                f"${covered:.2f} will be deducted from your pending balance." if covered > 0 else "No pending balance to cover the charge.",
+                f"${debt:.2f} will remain as debt deducted from future payouts." if debt > 0 else "No outstanding debt.",
+                "Frequent cancellations may suspend your account.",
+            ],
+        }
+    else:
+        # Client preview — uses the policy already implemented in cancel_booking
+        # Phase O cancellation: within cutoff_hours -> full refund to wallet/card;
+        # past the cutoff -> deposit is forfeited (negocio se queda con el dinero).
+        within_window = hours_until is None or hours_until >= cutoff
+        if within_window:
+            refund_amount = round(client_paid, 2)
+            response["client_impact"] = {
+                "refund_amount": refund_amount,
+                "refund_destination_options": ["wallet", "card"],
+                "policy": "free_cancellation",
+            }
+            response["summary"] = {
+                "title_es": f"Recibiras ${refund_amount:.2f} MXN de reembolso",
+                "title_en": f"You will get ${refund_amount:.2f} MXN refunded",
+                "lines_es": [
+                    f"Como cancelas con mas de {cutoff} horas de anticipacion, recibes el reembolso completo.",
+                    "Puedes elegir si lo quieres en tu tarjeta (5-7 dias habiles) o en tu saldo Bookvia (instantaneo).",
+                ],
+                "lines_en": [
+                    f"Since you cancel more than {cutoff} hours in advance, you get a full refund.",
+                    "You can choose card (5-7 business days) or Bookvia wallet (instant).",
+                ],
+            }
+        else:
+            response["client_impact"] = {
+                "refund_amount": 0.0,
+                "refund_destination_options": [],
+                "policy": "late_cancellation_no_refund",
+            }
+            response["summary"] = {
+                "title_es": "Cancelacion tardia — no hay reembolso",
+                "title_en": "Late cancellation — no refund",
+                "lines_es": [
+                    f"Faltan menos de {cutoff} horas para tu cita y la politica del negocio retiene el anticipo.",
+                    f"Si cancelas ahora, perderas los ${client_paid:.2f} MXN que pagaste.",
+                    "Tip: contacta al negocio directamente; quiza pueda reagendarte sin penalty.",
+                ],
+                "lines_en": [
+                    f"Less than {cutoff} hours remain and the business retains the deposit.",
+                    f"If you cancel now, you will lose the ${client_paid:.2f} MXN you paid.",
+                    "Tip: contact the business directly — they may reschedule without penalty.",
+                ],
+            }
+    return response
 
 
 @router.put("/{booking_id}/cancel/business")
