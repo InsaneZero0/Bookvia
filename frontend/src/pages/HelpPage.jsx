@@ -77,9 +77,15 @@ export default function HelpPage() {
   const { user, isAuthenticated } = useAuth();
   const t = (es, en) => (language === 'es' ? es : en);
   const isBusiness = user?.role === 'business';
+  const isAdmin = user?.role === 'admin';
+  // Only businesses (and admins for support) see business-side FAQs.
+  // Clients and anonymous visitors only see client questions.
+  const canSeeBusinessFaqs = isBusiness || isAdmin;
 
   const [search, setSearch] = useState('');
-  const [audienceFilter, setAudienceFilter] = useState(isBusiness ? 'business' : 'all');
+  const [audienceFilter, setAudienceFilter] = useState(
+    isBusiness ? 'business' : (canSeeBusinessFaqs ? 'all' : 'client')
+  );
   const [expandedFaq, setExpandedFaq] = useState(null);
 
   const [formData, setFormData] = useState({
@@ -95,12 +101,14 @@ export default function HelpPage() {
   const filteredFaqs = useMemo(() => {
     const lowerSearch = search.trim().toLowerCase();
     return FAQ_DATA.filter(f => {
+      // Hide business-side FAQs from clients and anonymous visitors entirely.
+      if (!canSeeBusinessFaqs && f.audience === 'business') return false;
       if (audienceFilter !== 'all' && f.audience !== audienceFilter) return false;
       if (!lowerSearch) return true;
       const haystack = `${f.q_es} ${f.q_en} ${f.a_es} ${f.a_en}`.toLowerCase();
       return haystack.includes(lowerSearch);
     });
-  }, [search, audienceFilter]);
+  }, [search, audienceFilter, canSeeBusinessFaqs]);
 
   const submitTicket = async () => {
     if (!formData.name.trim() || !formData.email.trim() || !formData.subject.trim() || !formData.message.trim()) {
@@ -235,8 +243,10 @@ export default function HelpPage() {
               {[
                 { v: 'all', l: t('Todo', 'All') },
                 { v: 'client', l: t('Clientes', 'Clients'), icon: User },
-                { v: 'business', l: t('Negocios', 'Businesses'), icon: Building2 },
-              ].map(opt => {
+                { v: 'business', l: t('Negocios', 'Businesses'), icon: Building2, requiresBusiness: true },
+              ]
+              .filter(opt => !opt.requiresBusiness || canSeeBusinessFaqs)
+              .map(opt => {
                 const active = audienceFilter === opt.v;
                 return (
                   <button
