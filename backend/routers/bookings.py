@@ -2161,6 +2161,12 @@ async def cancellation_preview(booking_id: str, token_data: TokenData = Depends(
     deposit = float(tx.get("deposit_amount") or 0)
     if not deposit:
         deposit = max(0.0, client_paid - float(BOOKVIA_FEE_MXN))
+    # The client's real out-of-pocket is the deposit + Bookvia fee. Some legacy
+    # transactions store `amount_total` as only the deposit, so we recompute
+    # explicitly here to make sure the refund total shown to the user matches
+    # what they really paid (deposit + $8 fee).
+    if deposit > 0 and client_paid < (deposit + float(BOOKVIA_FEE_MXN)) - 0.5:
+        client_paid = round(deposit + float(BOOKVIA_FEE_MXN), 2)
     business_payout = float(tx.get("payout_amount") or 0)
 
     if role == "business":
@@ -2183,14 +2189,14 @@ async def cancellation_preview(booking_id: str, token_data: TokenData = Depends(
             "title_es": f"Esta cancelacion te costara ${penalty:.2f} MXN",
             "title_en": f"This cancellation will cost you ${penalty:.2f} MXN",
             "lines_es": [
-                f"El cliente recibira ${client_paid:.2f} MXN de regreso completos.",
+                f"Se le reembolsaran ${client_paid:.2f} MXN al cliente.",
                 f"Penalty: ${float(BOOKVIA_FEE_MXN):.2f} (tarifa Bookvia) + ${commission_component:.2f} (comision proporcional al anticipo).",
                 f"Se descontaran ${covered:.2f} de tu saldo pendiente." if covered > 0 else "No hay saldo pendiente para cubrir el cargo.",
                 f"Quedan ${debt:.2f} como deuda que se restara de tus proximos pagos." if debt > 0 else "Sin deuda adicional.",
                 "Las cancelaciones frecuentes pueden suspender tu cuenta.",
             ],
             "lines_en": [
-                f"The client will receive ${client_paid:.2f} MXN back in full.",
+                f"${client_paid:.2f} MXN will be refunded to the client.",
                 f"Penalty: ${float(BOOKVIA_FEE_MXN):.2f} (Bookvia fee) + ${commission_component:.2f} (commission proportional to the deposit).",
                 f"${covered:.2f} will be deducted from your pending balance." if covered > 0 else "No pending balance to cover the charge.",
                 f"${debt:.2f} will remain as debt deducted from future payouts." if debt > 0 else "No outstanding debt.",
@@ -2279,7 +2285,12 @@ async def cancel_booking_by_business(
         # NOTE: We DO NOT emit the Stripe refund here. The admin issues the
         # refund manually from the Admin > Reembolsos tab. This gives full
         # visibility & control over money movement and prevents accidents.
-        refund_amount = transaction["amount_total"]  # 100% refund (intent)
+        # The refund amount must match what the client actually paid (deposit
+        # + $8 Bookvia fee). If `amount_total` is missing or stale, recompute.
+        refund_amount = float(transaction.get("amount_total") or 0)
+        _deposit_for_refund = float(transaction.get("deposit_amount") or 0)
+        if _deposit_for_refund and refund_amount < (_deposit_for_refund + float(BOOKVIA_FEE_MXN)) - 0.5:
+            refund_amount = round(_deposit_for_refund + float(BOOKVIA_FEE_MXN), 2)
 
         # Business penalty = Bookvia fee lost ($8 fixed) + commission % of
         # the deposit (8.5% with $8.50 floor). Proportional to the booking
