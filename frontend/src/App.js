@@ -32,6 +32,8 @@ import BusinessSettingsPage from '@/pages/BusinessSettingsPage';
 import PaymentSuccessPage from '@/pages/PaymentSuccessPage';
 import PaymentCancelPage from '@/pages/PaymentCancelPage';
 import HelpPage from '@/pages/HelpPage';
+import HowItWorksPage from '@/pages/HowItWorksPage';
+import RefundPolicyPage from '@/pages/RefundPolicyPage';
 import LegalPage from '@/pages/LegalPage';
 import TermsPage from '@/pages/TermsPage';
 import PrivacyPage from '@/pages/PrivacyPage';
@@ -48,6 +50,7 @@ import PaymentHistoryPage from '@/pages/PaymentHistoryPage';
 import GoogleAuthCallback from '@/pages/GoogleAuthCallback';
 import StatusPage from '@/pages/StatusPage';
 import BottomNav from '@/components/BottomNav';
+import ClientOnboardingTour from '@/components/ClientOnboardingTour';
 
 // SEO Pages
 import CountryPage from '@/pages/seo/CountryPage';
@@ -66,6 +69,7 @@ function Layout({ children, showFooter = true }) {
       {showFooter && <Footer />}
       <WhatsAppFloatingButton />
       <BottomNav />
+      <ClientOnboardingTour />
     </div>
   );
 }
@@ -126,6 +130,10 @@ function App() {
               <Route path="/help" element={<Layout><HelpPage /></Layout>} />
               <Route path="/contacto" element={<Layout><HelpPage /></Layout>} />
               <Route path="/contact" element={<Layout><HelpPage /></Layout>} />
+              <Route path="/como-funciona" element={<Layout><HowItWorksPage /></Layout>} />
+              <Route path="/how-it-works" element={<Layout><HowItWorksPage /></Layout>} />
+              <Route path="/refund-policy" element={<Layout><RefundPolicyPage /></Layout>} />
+              <Route path="/politica-reembolsos" element={<Layout><RefundPolicyPage /></Layout>} />
               
               {/* Legal Pages */}
               <Route path="/legal" element={<Layout><LegalPage /></Layout>} />
