@@ -32,7 +32,17 @@ export default function BusinessSettingsPage() {
   const t = (es, en) => language === 'es' ? es : en;
 
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('info');
+  // Read initial tab from `?tab=...` so deep links from the dashboard land on
+  // the right section (e.g. ?tab=hours from the profile-completion banner).
+  const getInitialTab = () => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const t = params.get('tab');
+      const allowed = ['info', 'hours', 'notifications', 'documents', 'commission', 'subscription', 'location', 'blacklist'];
+      return allowed.includes(t) ? t : 'info';
+    } catch { return 'info'; }
+  };
+  const [activeTab, setActiveTab] = useState(getInitialTab);
 
   // Business info
   const [privateInfo, setPrivateInfo] = useState(null);

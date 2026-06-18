@@ -237,10 +237,19 @@ async def get_profile_completion(token_data: TokenData = Depends(require_busines
         "$or": [{"price": {"$gt": 0}}, {"price_from": {"$gt": 0}}],
     })
     workers_count = await db.workers.count_documents({"business_id": bid, "active": True})
-    hours_set = bool(business.get("business_hours")) and any(
-        (v or {}).get("open") and (v or {}).get("close")
-        for v in (business.get("business_hours") or {}).values() if isinstance(v, dict)
-    )
+    # Hours considered set when at least one open day has a real time range.
+    # Frontend persists hours as {is_open, open_time, close_time}; older
+    # records used {open, close}. Accept both.
+    raw_hours = business.get("business_hours") or {}
+    def _day_has_hours(v):
+        if not isinstance(v, dict):
+            return False
+        if v.get("is_open") and v.get("open_time") and v.get("close_time"):
+            return True
+        if v.get("open") and v.get("close"):
+            return True
+        return False
+    hours_set = bool(raw_hours) and any(_day_has_hours(v) for v in raw_hours.values())
     docs_verified = bool(business.get("documents_verified", False))
     description_set = bool((business.get("description") or "").strip())
 
@@ -248,10 +257,10 @@ async def get_profile_completion(token_data: TokenData = Depends(require_busines
         {"key": "cover",       "done": has_cover,               "label_es": "Foto de portada o logo",             "label_en": "Cover photo or logo",        "action_path": "photos"},
         {"key": "photos",      "done": photos_count >= 3,       "label_es": "Al menos 3 fotos del lugar",         "label_en": "At least 3 gallery photos",  "action_path": "photos"},
         {"key": "services",    "done": services_priced >= 1,    "label_es": "Servicios con precio",               "label_en": "Services with price",        "action_path": "services"},
-        {"key": "description", "done": description_set,         "label_es": "Descripcion del negocio",            "label_en": "Business description",       "action_path": "overview"},
-        {"key": "hours",       "done": hours_set,               "label_es": "Horarios de atencion",               "label_en": "Operating hours",            "action_path": "overview"},
+        {"key": "description", "done": description_set,         "label_es": "Descripcion del negocio",            "label_en": "Business description",       "action_path": "settings:info"},
+        {"key": "hours",       "done": hours_set,               "label_es": "Horarios de atencion",               "label_en": "Operating hours",            "action_path": "settings:hours"},
         {"key": "team",        "done": workers_count >= 1,      "label_es": "Al menos 1 miembro del equipo",      "label_en": "At least 1 team member",     "action_path": "team"},
-        {"key": "kyc",         "done": docs_verified,           "label_es": "Documentos KYC verificados",         "label_en": "KYC documents verified",     "action_path": "subscription"},
+        {"key": "kyc",         "done": docs_verified,           "label_es": "Documentos KYC verificados",         "label_en": "KYC documents verified",     "action_path": "settings:documents"},
     ]
     done_count = sum(1 for i in items if i["done"])
     pct = round((done_count / len(items)) * 100)

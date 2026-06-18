@@ -848,7 +848,14 @@ export default function BusinessDashboardPage() {
 
             <ProfileCompletionBanner
               data={profileCompletion}
-              onGoToTab={(tab) => setActiveTab(tab)}
+              onGoToTab={(target) => {
+                if (typeof target === 'string' && target.startsWith('settings:')) {
+                  const tabId = target.split(':')[1] || 'info';
+                  navigate(`/business/settings?tab=${encodeURIComponent(tabId)}`);
+                } else {
+                  setActiveTab(target);
+                }
+              }}
             />
 
             {/* Dashboard Summary Cards */}
