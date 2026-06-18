@@ -844,12 +844,21 @@ async def get_my_bookings(
         if b.get("status") == AppointmentStatus.CANCELLED and b.get("cancelled_by") == "business":
             tx_for_refund = await db.transactions.find_one(
                 {"booking_id": b["id"], "refund_amount": {"$gt": 0}},
-                {"_id": 0, "refund_pending": 1, "refund_destination_choice": 1, "refund_amount": 1, "status": 1}
+                {"_id": 0, "refund_pending": 1, "refund_destination_choice": 1, "refund_amount": 1, "client_paid": 1, "amount_total": 1, "status": 1}
             )
             if tx_for_refund:
                 b["refund_pending"] = bool(tx_for_refund.get("refund_pending"))
                 b["refund_destination_choice"] = tx_for_refund.get("refund_destination_choice")
-                b["refund_amount"] = float(tx_for_refund.get("refund_amount") or 0)
+                # Legacy fix: some old transactions saved refund_amount as the
+                # deposit only ($100). The real refund must equal client_paid
+                # (deposit + Bookvia fee = $108). Re-derive on serve so the
+                # client always sees the correct amount.
+                _stored_refund = float(tx_for_refund.get("refund_amount") or 0)
+                _client_paid = float(tx_for_refund.get("client_paid") or 0)
+                if not _client_paid:
+                    _amt = float(tx_for_refund.get("amount_total") or 0)
+                    _client_paid = round(_amt + float(BOOKVIA_FEE_MXN), 2) if _amt > 0 else 0.0
+                b["refund_amount"] = max(_stored_refund, _client_paid)
         
         # Calculate hours until appointment
         try:
@@ -2157,16 +2166,14 @@ async def cancellation_preview(booking_id: str, token_data: TokenData = Depends(
         }
         return response
 
-    client_paid = float(tx.get("amount_total") or 0)
-    deposit = float(tx.get("deposit_amount") or 0)
-    if not deposit:
-        deposit = max(0.0, client_paid - float(BOOKVIA_FEE_MXN))
-    # The client's real out-of-pocket is the deposit + Bookvia fee. Some legacy
-    # transactions store `amount_total` as only the deposit, so we recompute
-    # explicitly here to make sure the refund total shown to the user matches
-    # what they really paid (deposit + $8 fee).
-    if deposit > 0 and client_paid < (deposit + float(BOOKVIA_FEE_MXN)) - 0.5:
-        client_paid = round(deposit + float(BOOKVIA_FEE_MXN), 2)
+    # `client_paid` (preferred) = deposit + Bookvia fee, what the client really paid.
+    # `amount_total` is the legacy "deposit only" field. We must NEVER show the
+    # deposit-only amount when computing what to give back to the client.
+    deposit = float(tx.get("amount_total") or 0)
+    client_paid = float(tx.get("client_paid") or 0)
+    if not client_paid:
+        # Legacy transaction without `client_paid` — reconstruct it.
+        client_paid = round(deposit + float(BOOKVIA_FEE_MXN), 2) if deposit > 0 else 0.0
     business_payout = float(tx.get("payout_amount") or 0)
 
     if role == "business":
@@ -2286,11 +2293,12 @@ async def cancel_booking_by_business(
         # refund manually from the Admin > Reembolsos tab. This gives full
         # visibility & control over money movement and prevents accidents.
         # The refund amount must match what the client actually paid (deposit
-        # + $8 Bookvia fee). If `amount_total` is missing or stale, recompute.
-        refund_amount = float(transaction.get("amount_total") or 0)
-        _deposit_for_refund = float(transaction.get("deposit_amount") or 0)
-        if _deposit_for_refund and refund_amount < (_deposit_for_refund + float(BOOKVIA_FEE_MXN)) - 0.5:
-            refund_amount = round(_deposit_for_refund + float(BOOKVIA_FEE_MXN), 2)
+        # + $8 Bookvia fee). `client_paid` is the canonical field; `amount_total`
+        # is the legacy "deposit only" field and must NOT be used directly.
+        refund_amount = float(transaction.get("client_paid") or 0)
+        if not refund_amount:
+            _legacy_deposit = float(transaction.get("amount_total") or 0)
+            refund_amount = round(_legacy_deposit + float(BOOKVIA_FEE_MXN), 2) if _legacy_deposit > 0 else 0.0
 
         # Business penalty = Bookvia fee lost ($8 fixed) + commission % of
         # the deposit (8.5% with $8.50 floor). Proportional to the booking
@@ -2301,10 +2309,12 @@ async def cancel_booking_by_business(
         #   deposit $200 -> $8.00 + max($17.00, $8.50) = $25.00
         #   deposit $500 -> $8.00 + max($42.50, $8.50) = $50.50
         from models.enums import BOOKVIA_FEE_MXN, STRIPE_FEE_PERCENT_ESTIMATED, MIN_BUSINESS_COMMISSION_MXN
-        deposit_for_penalty = float(transaction.get("deposit_amount") or transaction.get("payout_amount") or 0)
-        if not deposit_for_penalty and transaction.get("amount_total"):
-            # client_paid = deposit + bookvia_fee; back out the deposit
-            deposit_for_penalty = max(0.0, float(transaction["amount_total"]) - float(BOOKVIA_FEE_MXN))
+        # `amount_total` is the canonical "deposit only" field. `client_paid`
+        # is deposit + Bookvia fee; back it out if amount_total is missing.
+        deposit_for_penalty = float(transaction.get("amount_total") or 0)
+        if not deposit_for_penalty:
+            _cp = float(transaction.get("client_paid") or 0)
+            deposit_for_penalty = max(0.0, _cp - float(BOOKVIA_FEE_MXN)) if _cp > 0 else 0.0
         commission_component = max(deposit_for_penalty * STRIPE_FEE_PERCENT_ESTIMATED, MIN_BUSINESS_COMMISSION_MXN) if deposit_for_penalty > 0 else 0.0
         fee_penalty = round(float(BOOKVIA_FEE_MXN) + commission_component, 2)
 
