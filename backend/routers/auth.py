@@ -462,6 +462,15 @@ async def get_current_user_profile(token_data: TokenData = Depends(require_auth)
     user = await db.users.find_one({"id": token_data.user_id}, {"_id": 0, "password_hash": 0})
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+    # Enrich with business identity so the navbar can render the right avatar
+    if user.get("role") == "business" and user.get("business_id"):
+        biz = await db.businesses.find_one(
+            {"id": user["business_id"]},
+            {"_id": 0, "name": 1, "logo_url": 1},
+        )
+        if biz:
+            user["business_name"] = biz.get("name")
+            user["business_logo_url"] = biz.get("logo_url")
     return UserResponse(**user)
 
 

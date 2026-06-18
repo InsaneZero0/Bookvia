@@ -389,12 +389,33 @@ export function Navbar() {
                     className={`gap-2 ${isTransparent ? 'text-white hover:bg-white/10' : ''}`}
                     data-testid="user-menu-trigger"
                   >
-                    <Avatar className="h-8 w-8">
-                      <AvatarImage src={user?.photo_url} />
-                      <AvatarFallback className="bg-[#F05D5E] text-white text-xs">
-                        {getInitials(user?.full_name || user?.email)}
-                      </AvatarFallback>
-                    </Avatar>
+                    {isBusiness ? (
+                      /* Business owner: square avatar with coral ring + business logo/initial */
+                      <div
+                        className="relative h-8 w-8 rounded-md overflow-hidden ring-2 ring-[#F05D5E] bg-[#F05D5E] flex items-center justify-center text-white text-[11px] font-semibold shrink-0"
+                        data-testid="user-menu-business-avatar"
+                        title={user?.business_name || 'Mi negocio'}
+                      >
+                        {user?.business_logo_url ? (
+                          <img
+                            src={user.business_logo_url}
+                            alt={user.business_name || 'Negocio'}
+                            className="absolute inset-0 h-full w-full object-cover"
+                            onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                          />
+                        ) : (
+                          getInitials(user?.business_name || user?.full_name || user?.email)
+                        )}
+                      </div>
+                    ) : (
+                      /* Personal account: classic circular avatar */
+                      <Avatar className="h-8 w-8" data-testid="user-menu-personal-avatar">
+                        <AvatarImage src={user?.photo_url} />
+                        <AvatarFallback className="bg-[#F05D5E] text-white text-xs">
+                          {getInitials(user?.full_name || user?.email)}
+                        </AvatarFallback>
+                      </Avatar>
+                    )}
                     <ChevronDown className="h-4 w-4" />
                   </Button>
                 </DropdownMenuTrigger>

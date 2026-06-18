@@ -37,6 +37,10 @@ class UserResponse(BaseModel):
     photo_url: Optional[str] = None
     role: str = "user"
     business_id: Optional[str] = None
+    # Phase O — surface business identity in the auth/me response so the
+    # navbar can render a distinct avatar for business owners.
+    business_name: Optional[str] = None
+    business_logo_url: Optional[str] = None
     active_appointments_count: int = 0
     cancellation_count: int = 0
     suspended_until: Optional[str] = None
