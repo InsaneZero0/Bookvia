@@ -4880,3 +4880,116 @@ async def admin_backfill_stripe_fees(
         "error_count": len(errors),
         "dry_run": dry_run,
     }
+
+
+
+@router.post("/finance/backfill-subscription-payments")
+async def admin_backfill_subscription_payments(
+    months: int = 12,
+    dry_run: bool = False,
+    token_data: TokenData = Depends(require_admin),
+):
+    """Backfill historical subscription payments from Stripe.
+
+    Lists all paid invoices from Stripe in the last N months and records
+    them in `db.subscription_payments` so the P&L aggregates them as
+    Bookvia revenue. Idempotent on `stripe_invoice_id`.
+    """
+    import stripe as stripe_lib
+    from core.stripe_config import STRIPE_API_KEY
+    stripe_lib.api_key = STRIPE_API_KEY
+
+    since_ts = int((datetime.now(timezone.utc) - timedelta(days=30 * max(1, months))).timestamp())
+
+    scanned = 0
+    inserted = 0
+    skipped = 0
+    total_amount = 0.0
+    errors: List[Dict[str, Any]] = []
+
+    # Map subscription_id -> business_id (avoid re-querying per invoice)
+    sub_to_biz: Dict[str, str] = {}
+
+    try:
+        # Auto-pagination via list iterator
+        invoices = stripe_lib.Invoice.list(
+            status="paid",
+            created={"gte": since_ts},
+            limit=100,
+            expand=["data.charge.balance_transaction"],
+        )
+        for inv in invoices.auto_paging_iter():
+            scanned += 1
+            try:
+                invoice_id = inv.id
+                sub_id = inv.subscription
+                if not sub_id:
+                    skipped += 1
+                    continue
+                # Already recorded?
+                existing = await db.subscription_payments.find_one({"stripe_invoice_id": invoice_id}, {"_id": 0, "id": 1})
+                if existing:
+                    skipped += 1
+                    continue
+                # Resolve business
+                if sub_id not in sub_to_biz:
+                    biz_doc = await db.businesses.find_one({"stripe_subscription_id": sub_id}, {"_id": 0, "id": 1})
+                    sub_to_biz[sub_id] = biz_doc["id"] if biz_doc else None
+                business_id = sub_to_biz.get(sub_id)
+                amount_mxn = round(float(inv.amount_paid or 0) / 100.0, 2)
+                if amount_mxn <= 0:
+                    skipped += 1
+                    continue
+                # Fee
+                stripe_fee_mxn = 0.0
+                charge = inv.charge
+                # When expanded, charge is an object; when not, it's a string id
+                if charge and not isinstance(charge, str):
+                    bt = getattr(charge, "balance_transaction", None)
+                    if bt and not isinstance(bt, str) and getattr(bt, "fee", None) is not None:
+                        stripe_fee_mxn = round(float(bt.fee) / 100.0, 2)
+                    charge_id = getattr(charge, "id", None)
+                elif charge:
+                    charge_id = charge
+                    try:
+                        ch = stripe_lib.Charge.retrieve(charge_id, expand=["balance_transaction"])
+                        bt = getattr(ch, "balance_transaction", None)
+                        if bt and getattr(bt, "fee", None) is not None:
+                            stripe_fee_mxn = round(float(bt.fee) / 100.0, 2)
+                    except Exception:
+                        pass
+                else:
+                    charge_id = None
+
+                total_amount += amount_mxn
+                if not dry_run:
+                    paid_at = inv.status_transitions.paid_at if getattr(inv, "status_transitions", None) else None
+                    created_iso = datetime.fromtimestamp(paid_at or inv.created, tz=timezone.utc).isoformat() if (paid_at or inv.created) else datetime.now(timezone.utc).isoformat()
+                    await db.subscription_payments.insert_one({
+                        "id": invoice_id,
+                        "stripe_invoice_id": invoice_id,
+                        "stripe_subscription_id": sub_id,
+                        "stripe_charge_id": charge_id,
+                        "business_id": business_id,
+                        "amount": amount_mxn,
+                        "stripe_fee_amount": stripe_fee_mxn,
+                        "currency": (inv.currency or "mxn").lower(),
+                        "status": "paid",
+                        "created_at": created_iso,
+                    })
+                inserted += 1
+            except Exception as e:
+                errors.append({"invoice_id": getattr(inv, "id", None), "error": str(e)[:200]})
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:300]}
+
+    return {
+        "ok": True,
+        "scanned": scanned,
+        "inserted": inserted,
+        "skipped_already_existed": skipped,
+        "total_amount_mxn": round(total_amount, 2),
+        "error_count": len(errors),
+        "errors": errors[:30],
+        "dry_run": dry_run,
+    }

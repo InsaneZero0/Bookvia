@@ -603,7 +603,11 @@ async def stripe_webhook(request: Request):
             # we handle them identically. Idempotency is guaranteed by the
             # `stripe_events` collection above.
             inv = event.data.object
+            invoice_id = inv.get("id") if isinstance(inv, dict) else getattr(inv, "id", None)
             subscription_id = inv.get("subscription") if isinstance(inv, dict) else getattr(inv, "subscription", None)
+            amount_paid = inv.get("amount_paid") if isinstance(inv, dict) else getattr(inv, "amount_paid", 0)
+            charge_id = inv.get("charge") if isinstance(inv, dict) else getattr(inv, "charge", None)
+            currency = (inv.get("currency") if isinstance(inv, dict) else getattr(inv, "currency", "mxn")) or "mxn"
             if subscription_id:
                 biz = await db.businesses.find_one({"stripe_subscription_id": subscription_id})
                 if biz:
@@ -619,6 +623,41 @@ async def stripe_webhook(request: Request):
                         update["banned_reason"] = None
                     await db.businesses.update_one({"id": biz["id"]}, {"$set": update})
                     logger.info(f"Subscription paid - reactivated business {biz['id']}")
+
+                    # Persist the subscription payment so the P&L can read it.
+                    # Idempotent: keyed by `stripe_invoice_id`.
+                    if invoice_id and amount_paid:
+                        amount_mxn = round(float(amount_paid) / 100.0, 2)
+                        # Fetch Stripe fee from balance_transaction (best-effort)
+                        stripe_fee_mxn = 0.0
+                        try:
+                            if charge_id:
+                                ch = stripe_lib.Charge.retrieve(charge_id, expand=["balance_transaction"])
+                                bt = getattr(ch, "balance_transaction", None)
+                                if bt and getattr(bt, "fee", None) is not None:
+                                    stripe_fee_mxn = round(float(bt.fee) / 100.0, 2)
+                        except Exception as _e:
+                            logger.warning(f"Could not fetch BT for subscription invoice {invoice_id}: {_e}")
+                        try:
+                            await db.subscription_payments.update_one(
+                                {"stripe_invoice_id": invoice_id},
+                                {"$setOnInsert": {
+                                    "id": invoice_id,
+                                    "stripe_invoice_id": invoice_id,
+                                    "stripe_subscription_id": subscription_id,
+                                    "stripe_charge_id": charge_id,
+                                    "business_id": biz["id"],
+                                    "amount": amount_mxn,
+                                    "stripe_fee_amount": stripe_fee_mxn,
+                                    "currency": currency.lower(),
+                                    "status": "paid",
+                                    "created_at": datetime.now(timezone.utc).isoformat(),
+                                }},
+                                upsert=True,
+                            )
+                            logger.info(f"Subscription payment recorded: invoice={invoice_id} biz={biz['id']} amount=${amount_mxn} fee=${stripe_fee_mxn}")
+                        except Exception as _e:
+                            logger.error(f"Failed to record subscription payment {invoice_id}: {_e}")
 
         elif event.type == "invoice.payment_failed":
             # Phase D — Track failed payment attempts. Cron escalates suspension.
