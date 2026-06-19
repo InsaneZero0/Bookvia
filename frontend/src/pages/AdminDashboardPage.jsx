@@ -22,6 +22,7 @@ import AdminQRCodesTab from '@/components/AdminQRCodesTab';
 import AdminFinanceDashboardTab from '@/components/AdminFinanceDashboardTab';
 import AdminSettlementsTab from '@/components/AdminSettlementsTab';
 import AdminBackupsTab from '@/components/AdminBackupsTab';
+import AdminBookingsHistoryTab from '@/components/admin/AdminBookingsHistoryTab';
 import DecommissionDialog from '@/components/DecommissionDialog';
 import BrokenDocsBulkRequestCard from '@/components/BrokenDocsBulkRequestCard';
 import {
@@ -1441,6 +1442,7 @@ export default function AdminDashboardPage() {
   const allTabs = [
     { id: 'overview', label: t('Resumen', 'Overview'), icon: BarChart3 },
     { id: 'businesses', label: t('Negocios', 'Businesses'), icon: Building2 },
+    { id: 'bookings_history', label: t('Citas', 'Bookings'), icon: Calendar },
     { id: 'users', label: t('Usuarios', 'Users'), icon: Users },
     { id: 'reviews', label: t('Resenas', 'Reviews'), icon: MessageSquare },
     { id: 'categories', label: t('Categorias', 'Categories'), icon: Tags },
@@ -3778,6 +3780,7 @@ export default function AdminDashboardPage() {
         {activeTab === 'settlements_v2' && <AdminSettlementsTab />}
 
         {activeTab === 'backups' && <AdminBackupsTab />}
+        {activeTab === 'bookings_history' && <AdminBookingsHistoryTab language={language} />}
 
         {/* ============ COMPLIANCE TAB ============ */}
         {activeTab === 'compliance' && (

@@ -445,6 +445,9 @@ export const adminAPI = {
   // Phase I — Business QR codes
   getQrBusinesses: (params = {}) => api.get('/admin/qr/businesses', { params }),
   getQrScansSummary: (days = 30) => api.get('/admin/qr/scans/summary', { params: { days } }),
+  // Bookings history
+  listBookings: (params = {}) => api.get('/admin/bookings', { params }),
+  getBookingDetail: (id) => api.get(`/admin/bookings/${id}`),
 };
 
 // Utility API
