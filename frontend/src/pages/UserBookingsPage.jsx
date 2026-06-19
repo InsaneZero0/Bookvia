@@ -879,18 +879,46 @@ export default function UserBookingsPage() {
 
         <Tabs defaultValue="upcoming" className="w-full">
           {(() => {
-            // Split: cancelled bookings get their own tab.
             const isCancelled = (b) => b.status === 'cancelled';
-            const upcomingActive = upcomingBookings.filter(b => !isCancelled(b));
-            const pastActive = pastBookings.filter(b => !isCancelled(b));
+            const isCompleted = (b) => b.status === 'completed';
+            const upcomingActive = upcomingBookings.filter(b => !isCancelled(b) && !isCompleted(b));
+            const pastActive = pastBookings.filter(b => !isCancelled(b) && !isCompleted(b));
+            // Pending action = appointment completed but client hasn't confirmed OK
+            // and hasn't disputed and grace period not yet over (so they can still
+            // tap "Todo bien" to release funds early or rate the service).
+            const needsAction = (b) => {
+              if (!b.client_confirmed_ok_at && !b.has_dispute) return true;
+              if (!b.has_review) return true;
+              return false;
+            };
+            const completedAll = [...upcomingBookings, ...pastBookings]
+              .filter(isCompleted)
+              .sort((a, b) => {
+                const aPending = needsAction(a) ? 0 : 1;
+                const bPending = needsAction(b) ? 0 : 1;
+                if (aPending !== bPending) return aPending - bPending;
+                return `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`);
+              });
+            const pendingActionCount = completedAll.filter(needsAction).length;
             const cancelledAll = [...upcomingBookings, ...pastBookings]
               .filter(isCancelled)
               .sort((a, b) => `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`));
             return (
               <>
-                <TabsList className="grid grid-cols-3 w-full max-w-xl">
+                <TabsList className="grid grid-cols-4 w-full max-w-2xl">
                   <TabsTrigger value="upcoming" data-testid="upcoming-tab">
                     {language === 'es' ? 'Próximas' : 'Upcoming'} ({upcomingActive.length})
+                  </TabsTrigger>
+                  <TabsTrigger value="completed" data-testid="completed-tab" className="relative">
+                    {language === 'es' ? 'Completadas' : 'Completed'} ({completedAll.length})
+                    {pendingActionCount > 0 && (
+                      <span
+                        className="ml-1 inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-coral text-white text-[10px] font-bold px-1"
+                        data-testid="completed-pending-badge"
+                      >
+                        {pendingActionCount}
+                      </span>
+                    )}
                   </TabsTrigger>
                   <TabsTrigger value="past" data-testid="past-tab">
                     {language === 'es' ? 'Pasadas' : 'Past'} ({pastActive.length})
@@ -919,6 +947,35 @@ export default function UserBookingsPage() {
                       <Button className="btn-coral" onClick={() => navigate('/search')}>
                         {language === 'es' ? 'Explorar negocios' : 'Explore businesses'}
                       </Button>
+                    </Card>
+                  )}
+                </TabsContent>
+
+                <TabsContent value="completed" className="mt-6 space-y-4" data-testid="completed-tab-content">
+                  {pendingActionCount > 0 && (
+                    <div className="rounded-lg border border-coral/40 bg-coral/5 px-4 py-3 text-sm">
+                      <p className="font-semibold text-coral-700">
+                        {language === 'es'
+                          ? `Tienes ${pendingActionCount} cita${pendingActionCount > 1 ? 's' : ''} pendiente${pendingActionCount > 1 ? 's' : ''} por evaluar`
+                          : `You have ${pendingActionCount} appointment${pendingActionCount > 1 ? 's' : ''} pending review`}
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {language === 'es'
+                          ? 'Confirma que todo estuvo bien para liberar el pago al negocio o califica el servicio.'
+                          : 'Confirm everything was OK to release payment, or rate the service.'}
+                      </p>
+                    </div>
+                  )}
+                  {completedAll.length > 0 ? (
+                    completedAll.map(booking => (
+                      <BookingCard key={booking.id} booking={booking} showActions={false} />
+                    ))
+                  ) : (
+                    <Card className="p-12 text-center">
+                      <CheckCircle2 className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
+                      <p className="text-muted-foreground">
+                        {language === 'es' ? 'Aún no tienes citas completadas' : 'No completed appointments yet'}
+                      </p>
                     </Card>
                   )}
                 </TabsContent>
