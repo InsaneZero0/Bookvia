@@ -161,8 +161,8 @@ export default function UserBookingsPage() {
       await bookingsAPI.confirmOk(booking.id);
       toast.success(
         language === 'es'
-          ? 'Gracias por confirmar! El negocio recibira su pago en la proxima liquidacion.'
-          : 'Thanks for confirming! The business will receive payment in the next settlement.'
+          ? 'Gracias por tu confirmacion. ¡Esperamos verte pronto en Bookvia!'
+          : 'Thanks for confirming! We hope to see you again on Bookvia.'
       );
       await loadBookings();
     } catch (err) {
