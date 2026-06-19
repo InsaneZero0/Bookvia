@@ -4620,3 +4620,183 @@ async def restore_archived_bookings(
     }
 
 
+
+
+# ============================================================================
+# Bookings History (Admin)
+# ============================================================================
+
+@router.get("/bookings")
+async def admin_list_bookings(
+    status: Optional[str] = None,
+    business_id: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    q: Optional[str] = None,
+    page: int = 1,
+    page_size: int = 50,
+    token_data: TokenData = Depends(require_admin),
+):
+    """Paginated bookings history with filters for admin audit.
+
+    Filters:
+      * status: confirmed | completed | cancelled | no_show | disputed | all
+      * business_id: exact match
+      * date_from / date_to: YYYY-MM-DD (booking date)
+      * q: free-text search across business name / public_code / client name / email
+    """
+    page = max(1, page)
+    page_size = max(1, min(page_size, 200))
+    skip = (page - 1) * page_size
+
+    query: Dict[str, Any] = {}
+    if status and status != "all":
+        query["status"] = status
+    if business_id:
+        query["business_id"] = business_id
+    if date_from or date_to:
+        date_q: Dict[str, str] = {}
+        if date_from:
+            date_q["$gte"] = date_from
+        if date_to:
+            date_q["$lte"] = date_to
+        query["date"] = date_q
+
+    # Free-text search: resolve to business_ids / user_ids first then OR them
+    if q and q.strip():
+        s = q.strip()
+        rx = {"$regex": s, "$options": "i"}
+        biz_ids = [b["id"] async for b in db.businesses.find(
+            {"$or": [{"name": rx}, {"public_code": s.upper()}, {"public_code": rx}]},
+            {"_id": 0, "id": 1}
+        )]
+        user_ids = [u["id"] async for u in db.users.find(
+            {"$or": [{"full_name": rx}, {"email": rx}]},
+            {"_id": 0, "id": 1}
+        )]
+        or_clauses: List[Dict[str, Any]] = []
+        if biz_ids:
+            or_clauses.append({"business_id": {"$in": biz_ids}})
+        if user_ids:
+            or_clauses.append({"user_id": {"$in": user_ids}})
+        if or_clauses:
+            query["$or"] = or_clauses
+        else:
+            # Nothing matched -> return empty
+            return {"page": page, "page_size": page_size, "total": 0, "items": [], "summary": {"total_count": 0, "total_revenue_mxn": 0.0}}
+
+    total = await db.bookings.count_documents(query)
+    cursor = (
+        db.bookings.find(query, {"_id": 0})
+        .sort([("date", -1), ("time", -1)])
+        .skip(skip)
+        .limit(page_size)
+    )
+    rows = await cursor.to_list(page_size)
+
+    # Collect referenced ids for batched lookups
+    biz_id_set = {r.get("business_id") for r in rows if r.get("business_id")}
+    user_id_set = {r.get("user_id") for r in rows if r.get("user_id")}
+    service_id_set = {r.get("service_id") for r in rows if r.get("service_id")}
+    booking_id_set = [r.get("id") for r in rows if r.get("id")]
+
+    biz_map = {b["id"]: b async for b in db.businesses.find(
+        {"id": {"$in": list(biz_id_set)}}, {"_id": 0, "id": 1, "name": 1, "public_code": 1}
+    )}
+    user_map = {u["id"]: u async for u in db.users.find(
+        {"id": {"$in": list(user_id_set)}}, {"_id": 0, "id": 1, "full_name": 1, "email": 1, "phone": 1}
+    )}
+    svc_map = {s["id"]: s async for s in db.services.find(
+        {"id": {"$in": list(service_id_set)}}, {"_id": 0, "id": 1, "name": 1, "price": 1}
+    )}
+    tx_map: Dict[str, Dict[str, Any]] = {}
+    if booking_id_set:
+        async for tx in db.transactions.find(
+            {"booking_id": {"$in": booking_id_set}},
+            {"_id": 0, "booking_id": 1, "amount_total": 1, "client_paid": 1, "refund_amount": 1, "refund_pending": 1, "refund_destination_choice": 1, "wallet_amount_used": 1, "funds_state": 1, "status": 1, "stripe_payment_intent_id": 1}
+        ):
+            tx_map[tx["booking_id"]] = tx
+
+    items: List[Dict[str, Any]] = []
+    total_revenue = 0.0
+    for r in rows:
+        biz = biz_map.get(r.get("business_id")) or {}
+        user = user_map.get(r.get("user_id")) or {}
+        svc = svc_map.get(r.get("service_id")) or {}
+        tx = tx_map.get(r.get("id")) or {}
+        client_paid = float(tx.get("client_paid") or 0)
+        if client_paid:
+            total_revenue += client_paid
+        items.append({
+            "id": r.get("id"),
+            "date": r.get("date"),
+            "time": r.get("time"),
+            "status": r.get("status"),
+            "cancelled_by": r.get("cancelled_by"),
+            "cancellation_reason": r.get("cancellation_reason"),
+            "completed_at": r.get("completed_at"),
+            "client_confirmed_ok_at": r.get("client_confirmed_ok_at"),
+            "has_dispute": bool(r.get("has_dispute")),
+            "created_at": r.get("created_at"),
+            "business_id": r.get("business_id"),
+            "business_name": biz.get("name"),
+            "business_public_code": biz.get("public_code"),
+            "client_id": r.get("user_id"),
+            "client_name": user.get("full_name"),
+            "client_email": user.get("email"),
+            "client_phone": user.get("phone"),
+            "service_name": svc.get("name") or r.get("service_name"),
+            "service_price": float(svc.get("price") or 0),
+            "deposit": float(tx.get("amount_total") or 0),
+            "client_paid": client_paid,
+            "wallet_used": float(tx.get("wallet_amount_used") or 0),
+            "refund_amount": float(tx.get("refund_amount") or 0),
+            "refund_pending": bool(tx.get("refund_pending")),
+            "refund_destination_choice": tx.get("refund_destination_choice"),
+            "funds_state": tx.get("funds_state"),
+            "payment_status": tx.get("status"),
+            "stripe_payment_intent_id": tx.get("stripe_payment_intent_id"),
+        })
+
+    return {
+        "page": page,
+        "page_size": page_size,
+        "total": total,
+        "items": items,
+        "summary": {
+            "total_count": total,
+            "total_revenue_mxn": round(total_revenue, 2),
+        },
+    }
+
+
+@router.get("/bookings/{booking_id}")
+async def admin_get_booking_detail(
+    booking_id: str,
+    token_data: TokenData = Depends(require_admin),
+):
+    """Full detail of a single booking for admin audit (includes refunds, strikes, ledger)."""
+    b = await db.bookings.find_one({"id": booking_id}, {"_id": 0})
+    if not b:
+        raise HTTPException(status_code=404, detail="Booking not found")
+    biz = await db.businesses.find_one({"id": b.get("business_id")}, {"_id": 0, "name": 1, "public_code": 1, "email": 1, "phone": 1}) or {}
+    user = await db.users.find_one({"id": b.get("user_id")}, {"_id": 0, "full_name": 1, "email": 1, "phone": 1}) or {}
+    svc = await db.services.find_one({"id": b.get("service_id")}, {"_id": 0, "name": 1, "price": 1, "duration_minutes": 1}) or {}
+    worker = await db.workers.find_one({"id": b.get("worker_id")}, {"_id": 0, "name": 1}) or {}
+    tx = await db.transactions.find_one({"booking_id": booking_id}, {"_id": 0}) or {}
+
+    refund_events = await db.refund_events.find({"booking_id": booking_id}, {"_id": 0}).sort("created_at", -1).to_list(20)
+    strikes = await db.strikes.find({"booking_id": booking_id}, {"_id": 0}).sort("created_at", -1).to_list(20)
+    review = await db.reviews.find_one({"booking_id": booking_id}, {"_id": 0})
+
+    return {
+        "booking": b,
+        "business": {**biz, "id": b.get("business_id")},
+        "client": {**user, "id": b.get("user_id")},
+        "service": svc,
+        "worker": worker,
+        "transaction": tx,
+        "refund_events": refund_events,
+        "strikes": strikes,
+        "review": review,
+    }
