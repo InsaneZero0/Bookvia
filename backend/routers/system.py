@@ -504,6 +504,44 @@ async def stripe_webhook(request: Request):
                 # Admin must manually re-enable payouts after reviewing.
                 logger.info(f"Dispute closed tx={tx['id']} status={status}")
 
+        elif event.type in ("charge.succeeded", "charge.updated"):
+            # Capture the ACTUAL Stripe fee for this charge so we can show
+            # exact net margin in the admin P&L instead of estimates.
+            # Stripe gives us `balance_transaction.fee` only after the charge
+            # settles, which is usually a few seconds after checkout but can
+            # take longer for async flows — that's why we listen here.
+            charge = event.data.object
+            charge_id = getattr(charge, "id", None)
+            pi_id = getattr(charge, "payment_intent", None)
+            tx = None
+            if pi_id:
+                tx = await db.transactions.find_one({"stripe_payment_intent_id": pi_id})
+            if not tx and charge_id:
+                tx = await db.transactions.find_one({"stripe_charge_id": charge_id})
+            if tx and not tx.get("stripe_fee_actual"):
+                fee_mxn = None
+                bt_id = getattr(charge, "balance_transaction", None)
+                # `balance_transaction` may be a string (id) or an expanded object
+                try:
+                    if isinstance(bt_id, str) and bt_id:
+                        bt = stripe_lib.BalanceTransaction.retrieve(bt_id)
+                        if getattr(bt, "fee", None) is not None:
+                            fee_mxn = round(bt.fee / 100.0, 2)
+                    elif bt_id is not None and getattr(bt_id, "fee", None) is not None:
+                        fee_mxn = round(bt_id.fee / 100.0, 2)
+                except Exception as e:
+                    logger.warning(f"Could not fetch balance_transaction {bt_id} for tx {tx['id']}: {e}")
+                update_set = {"updated_at": datetime.now(timezone.utc).isoformat()}
+                if charge_id and not tx.get("stripe_charge_id"):
+                    update_set["stripe_charge_id"] = charge_id
+                if fee_mxn is not None:
+                    update_set["stripe_fee_actual"] = fee_mxn
+                    update_set["stripe_fee_captured_at"] = datetime.now(timezone.utc).isoformat()
+                if len(update_set) > 1:  # only write if we have new info
+                    await db.transactions.update_one({"id": tx["id"]}, {"$set": update_set})
+                    if fee_mxn is not None:
+                        logger.info(f"Captured Stripe fee ${fee_mxn} for tx {tx['id']}")
+
         elif event.type == "payment_intent.payment_failed":
             pi = event.data.object
             tx = await db.transactions.find_one({"stripe_payment_intent_id": pi.id})

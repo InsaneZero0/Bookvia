@@ -4800,3 +4800,83 @@ async def admin_get_booking_detail(
         "strikes": strikes,
         "review": review,
     }
+
+
+
+# ============================================================================
+# Stripe Fee Backfill — populate `stripe_fee_actual` for past transactions
+# ============================================================================
+
+@router.post("/finance/backfill-stripe-fees")
+async def admin_backfill_stripe_fees(
+    limit: int = 200,
+    dry_run: bool = False,
+    token_data: TokenData = Depends(require_admin),
+):
+    """Backfill `stripe_fee_actual` for paid transactions missing it.
+
+    Calls Stripe `BalanceTransaction.retrieve` for each charge to get the
+    exact fee Stripe took. Use this once after enabling the webhook handler
+    so the historical P&L shows real numbers.
+
+    * limit: max transactions to process per call (default 200)
+    * dry_run: if true, only report what WOULD be updated
+    """
+    import stripe as stripe_lib  # local import to avoid top-of-file dependency
+    from core.stripe_config import STRIPE_API_KEY
+    stripe_lib.api_key = STRIPE_API_KEY
+
+    cursor = db.transactions.find(
+        {
+            "status": {"$in": ["paid", "refund_full", "refund_partial"]},
+            "stripe_fee_actual": {"$in": [None, 0]},
+        },
+        {"_id": 0, "id": 1, "stripe_payment_intent_id": 1, "stripe_charge_id": 1},
+    ).limit(max(1, min(limit, 1000)))
+    rows = await cursor.to_list(limit)
+
+    scanned = 0
+    updated = 0
+    total_fee = 0.0
+    errors: List[Dict[str, Any]] = []
+    for tx in rows:
+        scanned += 1
+        pi_id = tx.get("stripe_payment_intent_id")
+        ch_id = tx.get("stripe_charge_id")
+        try:
+            charge = None
+            if ch_id:
+                charge = stripe_lib.Charge.retrieve(ch_id, expand=["balance_transaction"])
+            elif pi_id:
+                pi = stripe_lib.PaymentIntent.retrieve(pi_id, expand=["latest_charge.balance_transaction"])
+                charge = getattr(pi, "latest_charge", None)
+            if not charge:
+                errors.append({"tx_id": tx["id"], "error": "charge_not_found"})
+                continue
+            bt = getattr(charge, "balance_transaction", None)
+            fee_cents = getattr(bt, "fee", None) if bt else None
+            if fee_cents is None:
+                errors.append({"tx_id": tx["id"], "error": "fee_unavailable"})
+                continue
+            fee_mxn = round(float(fee_cents) / 100.0, 2)
+            total_fee += fee_mxn
+            if not dry_run:
+                set_doc = {
+                    "stripe_fee_actual": fee_mxn,
+                    "stripe_fee_captured_at": datetime.now(timezone.utc).isoformat(),
+                }
+                if not tx.get("stripe_charge_id") and getattr(charge, "id", None):
+                    set_doc["stripe_charge_id"] = charge.id
+                await db.transactions.update_one({"id": tx["id"]}, {"$set": set_doc})
+            updated += 1
+        except Exception as e:
+            errors.append({"tx_id": tx["id"], "error": str(e)[:200]})
+
+    return {
+        "scanned": scanned,
+        "updated": updated,
+        "total_fee_recovered_mxn": round(total_fee, 2),
+        "errors": errors[:30],
+        "error_count": len(errors),
+        "dry_run": dry_run,
+    }
