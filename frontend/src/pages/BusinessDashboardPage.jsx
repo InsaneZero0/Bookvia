@@ -808,7 +808,9 @@ export default function BusinessDashboardPage() {
             { value: 'clients', show: hasPermission('view_reports') || !isManager, icon: ClipboardList, label: language === 'es' ? 'Clientes' : 'Clients' },
             { value: 'services', show: hasPermission('edit_services'), icon: Briefcase, label: language === 'es' ? 'Servicios' : 'Services' },
             { value: 'team', show: hasPermission('view_team'), icon: Users, label: language === 'es' ? 'Equipo' : 'Team' },
-            { value: 'branches', show: !isManager, icon: Building2, label: language === 'es' ? 'Sucursales' : 'Branches' },
+            // 'branches' tab hidden — multi-branch requires per-branch ownership KYC.
+            // Backend endpoints stay live so existing data isn't lost.
+            { value: 'branches', show: false, icon: Building2, label: language === 'es' ? 'Sucursales' : 'Branches' },
             { value: 'closures', show: !isManager, icon: CalendarOff, label: language === 'es' ? 'Cierres' : 'Closures' },
             { value: 'photos', show: hasPermission('edit_photos'), icon: Image, label: language === 'es' ? 'Fotos' : 'Photos' },
             { value: 'subscription', show: !isManager, icon: CreditCard, label: language === 'es' ? 'Suscripcion' : 'Subscription' },
