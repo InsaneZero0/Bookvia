@@ -5070,37 +5070,60 @@ async def admin_force_clear_available(
     skip_grace: bool = True,
     token_data: TokenData = Depends(require_admin),
 ):
-    """Move every transaction from AVAILABLE -> CLEARED so settlements can run.
+    """Universal sweep: bring EVERY paid transaction whose booking is
+    completed (or whose booking does not exist) to `funds_state=cleared`.
 
-    By default IGNORES the 24h grace period (skip_grace=True). If you want to
-    respect the grace window, pass `skip_grace=false` and only those past
-    their `funds_clears_at` will move.
+    Covers all stuck states: `uninitialized`, `pending_hold`, `available`.
+    Skips already cleared or paid_out. By default ignores the 24h grace
+    window (skip_grace=True) so the day-20 corte can include them now.
     """
-    from services.funds_state import clear_now, FundsState
-    query: Dict[str, Any] = {"funds_state": FundsState.AVAILABLE.value, "status": "paid"}
+    from services.funds_state import FundsState
+    # 1. Find completed bookings
+    completed_booking_ids: List[str] = []
+    async for b in db.bookings.find({"status": "completed"}, {"_id": 0, "id": 1}):
+        completed_booking_ids.append(b["id"])
+    # 2. Find paid transactions linked to those bookings whose funds_state
+    #    is NOT yet cleared or paid_out
+    valid_states = [None, "", FundsState.PENDING_HOLD.value, FundsState.AVAILABLE.value]
+    query: Dict[str, Any] = {
+        "status": "paid",
+        "booking_id": {"$in": completed_booking_ids},
+        "$or": [{"funds_state": {"$in": valid_states}}, {"funds_state": {"$exists": False}}],
+    }
     if not skip_grace:
         now_iso = datetime.now(timezone.utc).isoformat()
+        query["funds_state"] = FundsState.AVAILABLE.value
         query["funds_clears_at"] = {"$ne": None, "$lte": now_iso}
-    total = await db.transactions.count_documents(query)
+    candidates = await db.transactions.find(query, {"_id": 0, "id": 1, "funds_state": 1}).to_list(2000)
     if dry_run:
-        return {"dry_run": True, "would_clear": total}
+        return {"dry_run": True, "would_clear": len(candidates)}
 
+    # 3. Direct write to bypass the strict state machine since some tx are
+    #    `uninitialized` (no state at all) and cannot use the transition() helper.
     cleared = 0
     errors: List[Dict[str, Any]] = []
-    async for tx in db.transactions.find(query, {"_id": 0, "id": 1}):
+    for tx in candidates:
         try:
-            await clear_now(tx["id"], actor="admin_manual", reason="Admin forced clear before settlement run")
+            await db.transactions.update_one(
+                {"id": tx["id"]},
+                {"$set": {
+                    "funds_state": FundsState.CLEARED.value,
+                    "funds_cleared_at": datetime.now(timezone.utc).isoformat(),
+                    "funds_clears_at": datetime.now(timezone.utc).isoformat(),
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
+                }},
+            )
             cleared += 1
         except Exception as e:
-            errors.append({"tx_id": tx.get("id"), "error": str(e)[:200]})
+            errors.append({"tx_id": tx["id"], "error": str(e)[:200]})
 
     await create_audit_log(
         admin_id=token_data.user_id, admin_email=token_data.email,
         action=AuditAction.PAYMENT_RELEASE, target_type="transactions", target_id="bulk",
-        details={"action": "force_clear_available", "cleared": cleared, "skip_grace": skip_grace},
+        details={"action": "force_clear_universal", "cleared": cleared, "skip_grace": skip_grace},
     )
     return {
-        "scanned": total,
+        "scanned": len(candidates),
         "cleared": cleared,
         "error_count": len(errors),
         "errors": errors[:30],
