@@ -2698,14 +2698,15 @@ async def admin_user_terms_history(user_id: str, token_data: TokenData = Depends
 # ========================== FASE 9: DAY-20 SETTLEMENTS ==========================
 
 async def _build_day20_period_key(run_date: datetime) -> str:
-    """Period key for day-20 settlements: YYYY-MM-D20 of the month being paid.
+    """Period key for day-20 settlements in `YYYY-MM-20` format.
 
-    The day-20 settlement pays out all CLEARED transactions that were not
-    settled previously. We key the period by the month on which the run
-    happens (e.g. 2026-05-D20) so repeated runs on the same month are
-    idempotent.
+    Matches the format the admin UI uses (date input `<input type="date">`),
+    so periods round-trip cleanly between frontend and backend without
+    transformations. The day-20 settlement pays out all CLEARED transactions
+    not previously settled; we key by the month being paid (e.g. 2026-06-20)
+    so repeated runs on the same month are idempotent.
     """
-    return f"{run_date.year}-{str(run_date.month).zfill(2)}-D20"
+    return f"{run_date.year}-{str(run_date.month).zfill(2)}-20"
 
 
 async def generate_settlements_day20(
