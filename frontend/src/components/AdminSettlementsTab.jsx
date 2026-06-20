@@ -204,250 +204,222 @@ export default function AdminSettlementsTab() {
             Primero genera el corte, después ejecuta las transferencias Stripe en lote o caso por caso
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={generateDay20} disabled={busy} data-testid="generate-day20-btn">
-            <Calendar className="h-4 w-4 mr-2" />
-            Generar liquidaciones del periodo
-          </Button>
+        <CardContent className="space-y-3">
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={generateDay20} disabled={busy} data-testid="generate-day20-btn">
+              <Calendar className="h-4 w-4 mr-2" />
+              Generar liquidaciones del periodo
+            </Button>
 
-          <Button variant="outline" disabled={busy} data-testid="diagnose-funds-btn"
-            onClick={async () => {
-              setBusy(true);
-              try {
-                const res = await api.get('/admin/finance/funds-state-summary');
-                const s = res.data.summary || {};
-                const pending = res.data.pending_completion_count || 0;
-                const lines = [];
-                Object.entries(s).forEach(([state, info]) => {
-                  lines.push(`${state}: ${info.count} tx ($${info.total_payout_mxn})`);
-                });
-                if (pending > 0) lines.push(`${pending} citas confirmadas con fecha pasada (esperando completar)`);
-                toast(lines.join(' · ') || 'Sin transacciones', { duration: 12000 });
-              } catch (e) {
-                toast.error(e?.response?.data?.detail || 'Error al diagnosticar');
-              } finally {
-                setBusy(false);
-              }
-            }}>
-            <AlertTriangle className="h-4 w-4 mr-2" />
-            Diagnosticar fondos
-          </Button>
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button onClick={previewBatch} disabled={busy || !items.length}
+                        className="bg-[#F05D5E] hover:bg-[#d94e4f] text-white"
+                        data-testid="execute-batch-btn">
+                  <Zap className="h-4 w-4 mr-2" />
+                  Ejecutar transferencias Stripe (lote)
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Confirmar ejecución del lote</AlertDialogTitle>
+                  <AlertDialogDescription asChild>
+                    <div className="space-y-2">
+                      {previewResult ? (
+                        <>
+                          <p>Se procesarán <strong>{previewResult.total}</strong> liquidaciones pendientes en <strong>{period}</strong>:</p>
+                          <ul className="text-sm space-y-1 ml-4 list-disc">
+                            <li>Listas para Stripe (Connect activo): {previewResult.counts?.succeeded}</li>
+                            <li>Sin Connect (requerirán SPEI): {previewResult.counts?.no_connect}</li>
+                            <li>Ya pagadas (se saltarán): {previewResult.counts?.skipped}</li>
+                          </ul>
+                          <p className="text-xs text-amber-700 mt-3">
+                            ⚠️ Esto moverá dinero REAL de Bookvia Stripe → cuentas Stripe de cada negocio. No se puede deshacer.
+                          </p>
+                        </>
+                      ) : <p>Calculando preview...</p>}
+                    </div>
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel onClick={() => setPreviewResult(null)}>Cancelar</AlertDialogCancel>
+                  <AlertDialogAction onClick={executeBatch} className="bg-[#F05D5E] hover:bg-[#d94e4f]">
+                    Ejecutar transferencias
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
 
-          <Button variant="outline" disabled={busy} data-testid="debug-cleared-btn"
-            onClick={async () => {
-              setBusy(true);
-              try {
-                const res = await api.get('/admin/finance/cleared-transactions-debug');
-                const txs = res.data.items || [];
-                if (txs.length === 0) {
-                  toast('No hay transacciones CLEARED', { duration: 8000 });
-                  return;
-                }
-                const groups = {};
-                txs.forEach(tx => {
-                  const k = tx.would_skip ? (tx.skip_reasons[0] || 'unknown') : 'OK';
-                  if (!groups[k]) groups[k] = { count: 0, amount: 0 };
-                  groups[k].count += 1;
-                  groups[k].amount += tx.business_amount || tx.payout_amount || 0;
-                });
-                const lines = Object.entries(groups).map(([reason, info]) =>
-                  `${reason}: ${info.count} tx ($${info.amount.toFixed(2)})`
-                );
-                toast(lines.join(' | '), { duration: 20000 });
-                console.log('Cleared transactions debug:', txs);
-              } catch (e) {
-                toast.error(e?.response?.data?.detail || 'Error');
-              } finally {
-                setBusy(false);
-              }
-            }}>
-            <AlertTriangle className="h-4 w-4 mr-2" />
-            Por qué no liquidan
-          </Button>
+            <Button variant="outline" onClick={() => exportSpei('bbva')} disabled={!items.length} data-testid="export-spei-bbva">
+              <FileDown className="h-4 w-4 mr-2" /> CSV SPEI (BBVA)
+            </Button>
+            <Button variant="outline" onClick={() => exportSpei('banorte')} disabled={!items.length}>
+              <FileDown className="h-4 w-4 mr-2" /> CSV SPEI (Banorte)
+            </Button>
+            <Button variant="outline" onClick={() => exportSpei('generic')} disabled={!items.length}>
+              <FileDown className="h-4 w-4 mr-2" /> CSV genérico
+            </Button>
+          </div>
 
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button variant="outline" disabled={busy} data-testid="repair-uninit-btn" className="border-blue-300 text-blue-800 hover:bg-blue-50">
-                <RefreshCcw className="h-4 w-4 mr-2" />
-                Inicializar fondos
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Reparar transacciones sin funds_state</AlertDialogTitle>
-                <AlertDialogDescription>
-                  Las transacciones pagadas que NO tienen funds_state asignado se quedan atoradas y nunca llegan a CLEARED.
-                  Este botón las inicializa en PENDING_HOLD. Después usa Auto-completar y Forzar liberación para llevarlas a CLEARED.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                <AlertDialogAction onClick={async () => {
+          {/* Advanced tools (collapsed by default) */}
+          <details className="border rounded-md group" data-testid="advanced-tools-details">
+            <summary className="cursor-pointer select-none px-3 py-2 text-sm text-muted-foreground hover:bg-muted/30 transition-colors flex items-center gap-2">
+              <AlertTriangle className="h-3.5 w-3.5" />
+              <span className="font-medium">Herramientas avanzadas</span>
+              <span className="text-xs">(diagnóstico y reparación)</span>
+            </summary>
+            <div className="p-3 border-t bg-muted/10 flex flex-wrap gap-2">
+              <Button variant="outline" size="sm" disabled={busy} data-testid="diagnose-funds-btn"
+                onClick={async () => {
                   setBusy(true);
                   try {
-                    const res = await api.post('/admin/finance/repair-uninitialized-transactions');
-                    toast.success(`${res.data.initialized} transacciones inicializadas (de ${res.data.scanned})`);
-                    await load();
+                    const res = await api.get('/admin/finance/funds-state-summary');
+                    const s = res.data.summary || {};
+                    const pending = res.data.pending_completion_count || 0;
+                    const lines = [];
+                    Object.entries(s).forEach(([state, info]) => lines.push(`${state}: ${info.count} tx ($${info.total_payout_mxn})`));
+                    if (pending > 0) lines.push(`${pending} citas pendientes de completar`);
+                    toast(lines.join(' · ') || 'Sin transacciones', { duration: 12000 });
                   } catch (e) {
                     toast.error(e?.response?.data?.detail || 'Error');
-                  } finally {
-                    setBusy(false);
-                  }
-                }}>Confirmar</AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button variant="outline" disabled={busy} data-testid="release-orphan-btn" className="border-purple-300 text-purple-800 hover:bg-purple-50">
-                <RefreshCcw className="h-4 w-4 mr-2" />
-                Liberar huérfanas
+                  } finally { setBusy(false); }
+                }}>
+                Diagnóstico
               </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Liberar transacciones con settlement_id huérfano</AlertDialogTitle>
-                <AlertDialogDescription>
-                  Encuentra transacciones CLEARED cuyo settlement_id apunta a una liquidación que YA NO EXISTE
-                  (porque fue borrada/archivada). Les quita el settlement_id para que el próximo corte las tome.
-                  Úsalo cuando "Por qué no liquidan" muestra "already settled in XXX" pero esos IDs no aparecen en ningún periodo.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                <AlertDialogAction onClick={async () => {
+
+              <Button variant="outline" size="sm" disabled={busy} data-testid="debug-cleared-btn"
+                onClick={async () => {
                   setBusy(true);
                   try {
-                    const res = await api.post('/admin/finance/release-orphan-settled-transactions');
-                    toast.success(`${res.data.released} transacciones liberadas · $${res.data.total_amount_now_settleable} disponibles para nuevo corte`);
-                    await load();
+                    const res = await api.get('/admin/finance/cleared-transactions-debug');
+                    const txs = res.data.items || [];
+                    if (txs.length === 0) { toast('No hay transacciones CLEARED'); return; }
+                    const groups = {};
+                    txs.forEach(tx => {
+                      const k = tx.would_skip ? (tx.skip_reasons[0] || 'unknown') : 'OK';
+                      if (!groups[k]) groups[k] = { count: 0, amount: 0 };
+                      groups[k].count += 1;
+                      groups[k].amount += tx.business_amount || tx.payout_amount || 0;
+                    });
+                    const lines = Object.entries(groups).map(([reason, info]) => `${reason}: ${info.count} tx ($${info.amount.toFixed(2)})`);
+                    toast(lines.join(' | '), { duration: 20000 });
+                    console.log('Cleared transactions debug:', txs);
                   } catch (e) {
                     toast.error(e?.response?.data?.detail || 'Error');
-                  } finally {
-                    setBusy(false);
-                  }
-                }}>Confirmar</AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button variant="outline" disabled={busy} data-testid="auto-complete-btn" className="border-amber-300 text-amber-800 hover:bg-amber-50">
-                <CheckCircle2 className="h-4 w-4 mr-2" />
-                Auto-completar citas pasadas
+                  } finally { setBusy(false); }
+                }}>
+                ¿Por qué no liquidan?
               </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Auto-completar citas vencidas</AlertDialogTitle>
-                <AlertDialogDescription>
-                  Marcará como "completed" todas las citas confirmadas cuya fecha+hora ya pasó (más de 24h).
-                  Esto mueve sus fondos de PENDING_HOLD → AVAILABLE para que puedan liquidarse.
-                  No se puede deshacer.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                <AlertDialogAction onClick={async () => {
-                  setBusy(true);
-                  try {
-                    const res = await api.post('/admin/finance/auto-complete-past-bookings?hours=24');
-                    toast.success(`${res.data.completed} citas marcadas como completadas (de ${res.data.scanned})`);
-                    await load();
-                  } catch (e) {
-                    toast.error(e?.response?.data?.detail || 'Error');
-                  } finally {
-                    setBusy(false);
-                  }
-                }}>Confirmar</AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
 
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button variant="outline" disabled={busy} data-testid="force-clear-btn" className="border-amber-300 text-amber-800 hover:bg-amber-50">
-                <RefreshCcw className="h-4 w-4 mr-2" />
-                Forzar liberación (skip 24h grace)
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Forzar liberación de fondos AVAILABLE → CLEARED</AlertDialogTitle>
-                <AlertDialogDescription>
-                  Saltará la ventana de gracia de 24h y moverá todas las transacciones en estado
-                  AVAILABLE a CLEARED para que se incluyan en la liquidación de este periodo.
-                  Úsalo solo si necesitas liquidar HOY. No se puede deshacer.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                <AlertDialogAction onClick={async () => {
-                  setBusy(true);
-                  try {
-                    const res = await api.post('/admin/finance/force-clear-available?skip_grace=true');
-                    toast.success(`${res.data.cleared} transacciones liberadas (de ${res.data.scanned})`);
-                    await load();
-                  } catch (e) {
-                    toast.error(e?.response?.data?.detail || 'Error');
-                  } finally {
-                    setBusy(false);
-                  }
-                }}>Confirmar</AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="outline" size="sm" disabled={busy} data-testid="repair-uninit-btn">
+                    Inicializar fondos
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Inicializar transacciones sin funds_state</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Pone en PENDING_HOLD las transacciones pagadas sin funds_state. Luego corre Auto-completar y Forzar liberación.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                    <AlertDialogAction onClick={async () => {
+                      setBusy(true);
+                      try {
+                        const res = await api.post('/admin/finance/repair-uninitialized-transactions');
+                        toast.success(`${res.data.initialized} de ${res.data.scanned} inicializadas`);
+                        await load();
+                      } catch (e) { toast.error(e?.response?.data?.detail || 'Error'); } finally { setBusy(false); }
+                    }}>Confirmar</AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
 
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button onClick={previewBatch} disabled={busy || !items.length}
-                      className="bg-[#F05D5E] hover:bg-[#d94e4f] text-white"
-                      data-testid="execute-batch-btn">
-                <Zap className="h-4 w-4 mr-2" />
-                Ejecutar transferencias Stripe (lote)
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Confirmar ejecución del lote</AlertDialogTitle>
-                <AlertDialogDescription asChild>
-                  <div className="space-y-2">
-                    {previewResult ? (
-                      <>
-                        <p>Se procesarán <strong>{previewResult.total}</strong> liquidaciones pendientes en <strong>{period}</strong>:</p>
-                        <ul className="text-sm space-y-1 ml-4 list-disc">
-                          <li>Listas para Stripe (Connect activo): {previewResult.counts?.succeeded}</li>
-                          <li>Sin Connect (requerirán SPEI): {previewResult.counts?.no_connect}</li>
-                          <li>Ya pagadas (se saltarán): {previewResult.counts?.skipped}</li>
-                        </ul>
-                        <p className="text-xs text-amber-700 mt-3">
-                          ⚠️ Esto moverá dinero REAL de Bookvia Stripe → cuentas Stripe de cada negocio. No se puede deshacer.
-                        </p>
-                      </>
-                    ) : <p>Calculando preview...</p>}
-                  </div>
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel onClick={() => setPreviewResult(null)}>Cancelar</AlertDialogCancel>
-                <AlertDialogAction onClick={executeBatch} className="bg-[#F05D5E] hover:bg-[#d94e4f]">
-                  Ejecutar transferencias
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="outline" size="sm" disabled={busy} data-testid="release-orphan-btn">
+                    Liberar huérfanas
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Liberar settlement_id huérfano</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Encuentra transacciones cuyo settlement_id apunta a un registro inexistente y lo limpia.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                    <AlertDialogAction onClick={async () => {
+                      setBusy(true);
+                      try {
+                        const res = await api.post('/admin/finance/release-orphan-settled-transactions');
+                        toast.success(`${res.data.released} tx liberadas · $${res.data.total_amount_now_settleable}`);
+                        await load();
+                      } catch (e) { toast.error(e?.response?.data?.detail || 'Error'); } finally { setBusy(false); }
+                    }}>Confirmar</AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
 
-          <Button variant="outline" onClick={() => exportSpei('bbva')} disabled={!items.length} data-testid="export-spei-bbva">
-            <FileDown className="h-4 w-4 mr-2" /> CSV SPEI (BBVA)
-          </Button>
-          <Button variant="outline" onClick={() => exportSpei('banorte')} disabled={!items.length}>
-            <FileDown className="h-4 w-4 mr-2" /> CSV SPEI (Banorte)
-          </Button>
-          <Button variant="outline" onClick={() => exportSpei('generic')} disabled={!items.length}>
-            <FileDown className="h-4 w-4 mr-2" /> CSV genérico
-          </Button>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="outline" size="sm" disabled={busy} data-testid="auto-complete-btn">
+                    Auto-completar citas pasadas
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Auto-completar citas vencidas</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Marca como completed las citas confirmadas con +24h de antigüedad y mueve fondos a AVAILABLE.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                    <AlertDialogAction onClick={async () => {
+                      setBusy(true);
+                      try {
+                        const res = await api.post('/admin/finance/auto-complete-past-bookings?hours=24');
+                        toast.success(`${res.data.completed} de ${res.data.scanned} completadas`);
+                        await load();
+                      } catch (e) { toast.error(e?.response?.data?.detail || 'Error'); } finally { setBusy(false); }
+                    }}>Confirmar</AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="outline" size="sm" disabled={busy} data-testid="force-clear-btn">
+                    Forzar liberación (skip 24h)
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Forzar AVAILABLE → CLEARED</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Salta la ventana de 24h para incluir esos fondos en el corte de HOY.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                    <AlertDialogAction onClick={async () => {
+                      setBusy(true);
+                      try {
+                        const res = await api.post('/admin/finance/force-clear-available?skip_grace=true');
+                        toast.success(`${res.data.cleared} de ${res.data.scanned} liberadas`);
+                        await load();
+                      } catch (e) { toast.error(e?.response?.data?.detail || 'Error'); } finally { setBusy(false); }
+                    }}>Confirmar</AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </div>
+          </details>
         </CardContent>
       </Card>
 

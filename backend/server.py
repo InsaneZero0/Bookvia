@@ -173,6 +173,34 @@ async def startup_event():
             await db.businesses.update_one({"id": b["id"]}, {"$set": {"public_code": code}})
         if missing_biz:
             logger.info(f"Backfilled BV public_code for {len(missing_biz)} businesses")
+    except Exception as e:
+        logger.warning(f"Public code backfill failed: {e}")
+
+    # Migrate legacy settlement period_key format: YYYY-MM-D20 -> YYYY-MM-20
+    # The frontend always uses YYYY-MM-DD format; old docs with `-D20` were
+    # invisible to the UI. Idempotent: only matches the legacy pattern.
+    try:
+        from core.database import db
+        import re
+        legacy_cursor = db.settlements.find({"period_key": {"$regex": "^[0-9]{4}-[0-9]{2}-D20$"}}, {"_id": 0, "id": 1, "period_key": 1})
+        migrated = 0
+        async for s in legacy_cursor:
+            new_key = re.sub(r"-D20$", "-20", s["period_key"])
+            await db.settlements.update_one({"id": s["id"]}, {"$set": {"period_key": new_key}})
+            migrated += 1
+        if migrated:
+            logger.info(f"Migrated {migrated} settlements from legacy -D20 period_key to YYYY-MM-DD")
+        # Also migrate the period field in transactions if it exists
+        await db.transactions.update_many(
+            {"settlement_period": {"$regex": "^[0-9]{4}-[0-9]{2}-D20$"}},
+            [{"$set": {"settlement_period": {"$replaceOne": {"input": "$settlement_period", "find": "-D20", "replacement": "-20"}}}}],
+        )
+    except Exception as e:
+        logger.warning(f"Settlement period_key migration failed: {e}")
+
+    try:
+        from core.database import db
+        from services.public_code import generate_unique_user_code
         # Backfill users (any role except admin)
         missing_users = await db.users.find(
             {"role": {"$ne": "admin"},
