@@ -233,6 +233,71 @@ export default function AdminSettlementsTab() {
             Diagnosticar fondos
           </Button>
 
+          <Button variant="outline" disabled={busy} data-testid="debug-cleared-btn"
+            onClick={async () => {
+              setBusy(true);
+              try {
+                const res = await api.get('/admin/finance/cleared-transactions-debug');
+                const txs = res.data.items || [];
+                if (txs.length === 0) {
+                  toast('No hay transacciones CLEARED', { duration: 8000 });
+                  return;
+                }
+                const groups = {};
+                txs.forEach(tx => {
+                  const k = tx.would_skip ? (tx.skip_reasons[0] || 'unknown') : 'OK';
+                  if (!groups[k]) groups[k] = { count: 0, amount: 0 };
+                  groups[k].count += 1;
+                  groups[k].amount += tx.business_amount || tx.payout_amount || 0;
+                });
+                const lines = Object.entries(groups).map(([reason, info]) =>
+                  `${reason}: ${info.count} tx ($${info.amount.toFixed(2)})`
+                );
+                toast(lines.join(' | '), { duration: 20000 });
+                console.log('Cleared transactions debug:', txs);
+              } catch (e) {
+                toast.error(e?.response?.data?.detail || 'Error');
+              } finally {
+                setBusy(false);
+              }
+            }}>
+            <AlertTriangle className="h-4 w-4 mr-2" />
+            Por qué no liquidan
+          </Button>
+
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="outline" disabled={busy} data-testid="repair-uninit-btn" className="border-blue-300 text-blue-800 hover:bg-blue-50">
+                <RefreshCcw className="h-4 w-4 mr-2" />
+                Inicializar fondos
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Reparar transacciones sin funds_state</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Las transacciones pagadas que NO tienen funds_state asignado se quedan atoradas y nunca llegan a CLEARED.
+                  Este botón las inicializa en PENDING_HOLD. Después usa Auto-completar y Forzar liberación para llevarlas a CLEARED.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                <AlertDialogAction onClick={async () => {
+                  setBusy(true);
+                  try {
+                    const res = await api.post('/admin/finance/repair-uninitialized-transactions');
+                    toast.success(`${res.data.initialized} transacciones inicializadas (de ${res.data.scanned})`);
+                    await load();
+                  } catch (e) {
+                    toast.error(e?.response?.data?.detail || 'Error');
+                  } finally {
+                    setBusy(false);
+                  }
+                }}>Confirmar</AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+
           <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button variant="outline" disabled={busy} data-testid="auto-complete-btn" className="border-amber-300 text-amber-800 hover:bg-amber-50">
