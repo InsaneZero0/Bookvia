@@ -143,7 +143,16 @@ async def transition(
 
 
 async def initialize(transaction_id: str, actor: str = "system") -> dict:
-    """Set initial funds_state to PENDING_HOLD if not already set."""
+    """Set initial funds_state to PENDING_HOLD if not already set.
+
+    Idempotent: if the transaction already has any non-null funds_state we
+    skip silently. This protects us from race conditions when the same
+    Stripe webhook (or a retry) arrives twice and both try to initialize.
+    """
+    tx = await db.transactions.find_one({"id": transaction_id}, {"_id": 0, "funds_state": 1})
+    if tx and tx.get("funds_state"):
+        # Already initialized (or further along) — nothing to do.
+        return tx
     return await transition(transaction_id, FundsState.PENDING_HOLD.value, actor=actor, reason="Payment received")
 
 

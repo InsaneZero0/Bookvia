@@ -1647,9 +1647,19 @@ async def get_my_private_info(token_data: TokenData = Depends(require_business))
     if business.get("stripe_subscription_id"):
         try:
             sub = stripe_lib.Subscription.retrieve(business["stripe_subscription_id"])
+            # Stripe API 2025+ moved `current_period_end` to items.
+            _cpe_ts = None
+            try:
+                _items = getattr(sub, "items", None)
+                if _items and getattr(_items, "data", None):
+                    _cpe_ts = getattr(_items.data[0], "current_period_end", None)
+            except Exception:
+                _cpe_ts = None
+            if _cpe_ts is None:
+                _cpe_ts = getattr(sub, "current_period_end", None)
             subscription_info = {
                 "status": sub.status,
-                "current_period_end": datetime.fromtimestamp(sub.current_period_end, tz=timezone.utc).isoformat() if sub.current_period_end else None,
+                "current_period_end": datetime.fromtimestamp(_cpe_ts, tz=timezone.utc).isoformat() if _cpe_ts else None,
                 "cancel_at_period_end": sub.cancel_at_period_end,
                 "trial_end": datetime.fromtimestamp(sub.trial_end, tz=timezone.utc).isoformat() if sub.trial_end else None,
             }
@@ -2884,7 +2894,19 @@ async def get_subscription_status(session_id: str = None, token_data: TokenData 
     if sub_id:
         try:
             sub = stripe_lib.Subscription.retrieve(sub_id)
-            result["current_period_end"] = datetime.fromtimestamp(sub.current_period_end, tz=timezone.utc).isoformat() if sub.current_period_end else None
+            # Stripe API 2025+ moved `current_period_end` from the Subscription
+            # root to each item. Read from items first; fall back to legacy field
+            # so older API versions still work.
+            cpe_ts = None
+            try:
+                items_data = getattr(sub, "items", None)
+                if items_data and getattr(items_data, "data", None):
+                    cpe_ts = getattr(items_data.data[0], "current_period_end", None)
+            except Exception:
+                cpe_ts = None
+            if cpe_ts is None:
+                cpe_ts = getattr(sub, "current_period_end", None)
+            result["current_period_end"] = datetime.fromtimestamp(cpe_ts, tz=timezone.utc).isoformat() if cpe_ts else None
             result["cancel_at_period_end"] = sub.cancel_at_period_end
             # Sync status from Stripe
             stripe_status = sub.status  # trialing, active, past_due, canceled, unpaid
