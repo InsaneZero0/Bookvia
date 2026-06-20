@@ -5229,3 +5229,62 @@ async def admin_repair_uninitialized(
         "error_count": len(errors),
         "errors": errors[:30],
     }
+
+
+
+@router.post("/finance/release-orphan-settled-transactions")
+async def admin_release_orphan_settled(
+    dry_run: bool = False,
+    token_data: TokenData = Depends(require_admin),
+):
+    """Find CLEARED transactions whose `settlement_id` points to a settlement
+    that no longer exists (orphan reference) and clear the settlement_id so
+    the next `generate_settlements_day20` picks them up.
+
+    This happens when test settlements get deleted but their transactions
+    keep the dangling pointer.
+    """
+    # Get all settlement IDs that currently exist
+    existing_settlement_ids = set()
+    async for s in db.settlements.find({}, {"_id": 0, "id": 1}):
+        if s.get("id"):
+            existing_settlement_ids.add(s["id"])
+
+    # Find CLEARED txs with non-empty settlement_id
+    query = {
+        "funds_state": "cleared",
+        "settlement_id": {"$exists": True, "$nin": [None, ""]},
+    }
+    orphans: List[Dict[str, Any]] = []
+    async for tx in db.transactions.find(query, {"_id": 0, "id": 1, "settlement_id": 1, "business_amount": 1, "payout_amount": 1, "business_id": 1}):
+        sid = tx.get("settlement_id")
+        if sid not in existing_settlement_ids:
+            orphans.append(tx)
+
+    if dry_run:
+        return {
+            "dry_run": True,
+            "orphan_count": len(orphans),
+            "total_amount": round(sum(float(t.get("business_amount") or t.get("payout_amount") or 0) for t in orphans), 2),
+            "sample": orphans[:10],
+        }
+
+    released = 0
+    if orphans:
+        tx_ids = [t["id"] for t in orphans]
+        result = await db.transactions.update_many(
+            {"id": {"$in": tx_ids}},
+            {"$unset": {"settlement_id": "", "settlement_period": ""}},
+        )
+        released = result.modified_count
+
+    await create_audit_log(
+        admin_id=token_data.user_id, admin_email=token_data.email,
+        action=AuditAction.PAYMENT_RELEASE, target_type="transactions", target_id="bulk",
+        details={"action": "release_orphan_settled", "released": released},
+    )
+    return {
+        "scanned_orphans": len(orphans),
+        "released": released,
+        "total_amount_now_settleable": round(sum(float(t.get("business_amount") or t.get("payout_amount") or 0) for t in orphans), 2),
+    }
