@@ -300,6 +300,40 @@ export default function AdminSettlementsTab() {
 
           <AlertDialog>
             <AlertDialogTrigger asChild>
+              <Button variant="outline" disabled={busy} data-testid="release-orphan-btn" className="border-purple-300 text-purple-800 hover:bg-purple-50">
+                <RefreshCcw className="h-4 w-4 mr-2" />
+                Liberar huérfanas
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Liberar transacciones con settlement_id huérfano</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Encuentra transacciones CLEARED cuyo settlement_id apunta a una liquidación que YA NO EXISTE
+                  (porque fue borrada/archivada). Les quita el settlement_id para que el próximo corte las tome.
+                  Úsalo cuando "Por qué no liquidan" muestra "already settled in XXX" pero esos IDs no aparecen en ningún periodo.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                <AlertDialogAction onClick={async () => {
+                  setBusy(true);
+                  try {
+                    const res = await api.post('/admin/finance/release-orphan-settled-transactions');
+                    toast.success(`${res.data.released} transacciones liberadas · $${res.data.total_amount_now_settleable} disponibles para nuevo corte`);
+                    await load();
+                  } catch (e) {
+                    toast.error(e?.response?.data?.detail || 'Error');
+                  } finally {
+                    setBusy(false);
+                  }
+                }}>Confirmar</AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
               <Button variant="outline" disabled={busy} data-testid="auto-complete-btn" className="border-amber-300 text-amber-800 hover:bg-amber-50">
                 <CheckCircle2 className="h-4 w-4 mr-2" />
                 Auto-completar citas pasadas
