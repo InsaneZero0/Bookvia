@@ -206,18 +206,26 @@ async def auto_clear_after_grace() -> int:
 
 async def auto_complete_appointments() -> int:
     """
-    Cron task: any booking past its scheduled end time by AUTO_COMPLETE_HOURS that
-    has NOT been marked completed/cancelled gets auto-completed AND its transaction
-    moves PENDING_HOLD -> AVAILABLE.
+    Cron task: any booking whose date+time is older than AUTO_COMPLETE_HOURS
+    and has NOT been marked completed/cancelled gets auto-completed AND its
+    transaction moves PENDING_HOLD -> AVAILABLE.
     """
-    cutoff = (datetime.now(timezone.utc) - timedelta(hours=AUTO_COMPLETE_HOURS)).isoformat()
-    
-    # Find confirmed bookings whose appointment_date is older than AUTO_COMPLETE_HOURS
+    # Bookings store `date` (YYYY-MM-DD) and `time` (HH:MM) separately. Build
+    # an ISO datetime string for cutoff comparison.
+    cutoff_dt = datetime.now(timezone.utc) - timedelta(hours=AUTO_COMPLETE_HOURS)
+    cutoff_date = cutoff_dt.strftime("%Y-%m-%d")
+    cutoff_time = cutoff_dt.strftime("%H:%M")
+
+    # Find CONFIRMED bookings that already passed the auto-complete window.
+    # `date` strictly less than cutoff_date OR same date with time <= cutoff_time.
     candidates = await db.bookings.find(
         {
             "status": AppointmentStatus.CONFIRMED,
-            "appointment_date": {"$lt": cutoff},
             "deposit_paid": True,
+            "$or": [
+                {"date": {"$lt": cutoff_date}},
+                {"date": cutoff_date, "time": {"$lte": cutoff_time}},
+            ],
         },
         {"_id": 0}
     ).to_list(1000)

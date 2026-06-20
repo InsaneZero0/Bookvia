@@ -210,6 +210,97 @@ export default function AdminSettlementsTab() {
             Generar liquidaciones del periodo
           </Button>
 
+          <Button variant="outline" disabled={busy} data-testid="diagnose-funds-btn"
+            onClick={async () => {
+              setBusy(true);
+              try {
+                const res = await api.get('/admin/finance/funds-state-summary');
+                const s = res.data.summary || {};
+                const pending = res.data.pending_completion_count || 0;
+                const lines = [];
+                Object.entries(s).forEach(([state, info]) => {
+                  lines.push(`${state}: ${info.count} tx ($${info.total_payout_mxn})`);
+                });
+                if (pending > 0) lines.push(`${pending} citas confirmadas con fecha pasada (esperando completar)`);
+                toast(lines.join(' · ') || 'Sin transacciones', { duration: 12000 });
+              } catch (e) {
+                toast.error(e?.response?.data?.detail || 'Error al diagnosticar');
+              } finally {
+                setBusy(false);
+              }
+            }}>
+            <AlertTriangle className="h-4 w-4 mr-2" />
+            Diagnosticar fondos
+          </Button>
+
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="outline" disabled={busy} data-testid="auto-complete-btn" className="border-amber-300 text-amber-800 hover:bg-amber-50">
+                <CheckCircle2 className="h-4 w-4 mr-2" />
+                Auto-completar citas pasadas
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Auto-completar citas vencidas</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Marcará como "completed" todas las citas confirmadas cuya fecha+hora ya pasó (más de 24h).
+                  Esto mueve sus fondos de PENDING_HOLD → AVAILABLE para que puedan liquidarse.
+                  No se puede deshacer.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                <AlertDialogAction onClick={async () => {
+                  setBusy(true);
+                  try {
+                    const res = await api.post('/admin/finance/auto-complete-past-bookings?hours=24');
+                    toast.success(`${res.data.completed} citas marcadas como completadas (de ${res.data.scanned})`);
+                    await load();
+                  } catch (e) {
+                    toast.error(e?.response?.data?.detail || 'Error');
+                  } finally {
+                    setBusy(false);
+                  }
+                }}>Confirmar</AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="outline" disabled={busy} data-testid="force-clear-btn" className="border-amber-300 text-amber-800 hover:bg-amber-50">
+                <RefreshCcw className="h-4 w-4 mr-2" />
+                Forzar liberación (skip 24h grace)
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Forzar liberación de fondos AVAILABLE → CLEARED</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Saltará la ventana de gracia de 24h y moverá todas las transacciones en estado
+                  AVAILABLE a CLEARED para que se incluyan en la liquidación de este periodo.
+                  Úsalo solo si necesitas liquidar HOY. No se puede deshacer.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                <AlertDialogAction onClick={async () => {
+                  setBusy(true);
+                  try {
+                    const res = await api.post('/admin/finance/force-clear-available?skip_grace=true');
+                    toast.success(`${res.data.cleared} transacciones liberadas (de ${res.data.scanned})`);
+                    await load();
+                  } catch (e) {
+                    toast.error(e?.response?.data?.detail || 'Error');
+                  } finally {
+                    setBusy(false);
+                  }
+                }}>Confirmar</AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+
           <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button onClick={previewBatch} disabled={busy || !items.length}

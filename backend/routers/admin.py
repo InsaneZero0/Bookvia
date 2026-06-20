@@ -4993,3 +4993,157 @@ async def admin_backfill_subscription_payments(
         "errors": errors[:30],
         "dry_run": dry_run,
     }
+
+
+
+# ============================================================================
+# Funds State manual triggers (settlement day-20 helpers)
+# ============================================================================
+
+@router.post("/finance/auto-complete-past-bookings")
+async def admin_auto_complete_past_bookings(
+    hours: int = 24,
+    dry_run: bool = False,
+    token_data: TokenData = Depends(require_admin),
+):
+    """Mark CONFIRMED bookings past their date+time as completed.
+
+    Used when the cron has not fired or you want to settle today. Each
+    auto-completed booking moves its transaction from PENDING_HOLD -> AVAILABLE.
+    Then a 24h grace window applies before CLEARED (use
+    /finance/force-clear-available to skip the wait).
+    """
+    cutoff_dt = datetime.now(timezone.utc) - timedelta(hours=max(0, hours))
+    cutoff_date = cutoff_dt.strftime("%Y-%m-%d")
+    cutoff_time = cutoff_dt.strftime("%H:%M")
+    query = {
+        "status": "confirmed",
+        "deposit_paid": True,
+        "$or": [
+            {"date": {"$lt": cutoff_date}},
+            {"date": cutoff_date, "time": {"$lte": cutoff_time}},
+        ],
+    }
+    total_candidates = await db.bookings.count_documents(query)
+    if dry_run:
+        return {"dry_run": True, "would_complete": total_candidates}
+
+    from services.funds_state import mark_appointment_completed, FundsState
+    completed = 0
+    errors: List[Dict[str, Any]] = []
+    async for b in db.bookings.find(query, {"_id": 0}):
+        try:
+            now = datetime.now(timezone.utc).isoformat()
+            await db.bookings.update_one(
+                {"id": b["id"]},
+                {"$set": {
+                    "status": "completed",
+                    "completed_at": now,
+                    "completed_by": "admin_manual",
+                    "updated_at": now,
+                }},
+            )
+            tx = await db.transactions.find_one({"booking_id": b["id"], "status": "paid"}, {"_id": 0, "id": 1, "funds_state": 1})
+            if tx and tx.get("funds_state") == FundsState.PENDING_HOLD.value:
+                await mark_appointment_completed(tx["id"], actor="admin_manual", reason="Bulk auto-complete by admin")
+            completed += 1
+        except Exception as e:
+            errors.append({"booking_id": b.get("id"), "error": str(e)[:200]})
+
+    await create_audit_log(
+        admin_id=token_data.user_id, admin_email=token_data.email,
+        action=AuditAction.SETTLEMENT_GENERATE, target_type="bookings", target_id="bulk",
+        details={"action": "auto_complete_past_bookings", "completed": completed, "errors": len(errors)},
+    )
+    return {
+        "scanned": total_candidates,
+        "completed": completed,
+        "error_count": len(errors),
+        "errors": errors[:30],
+    }
+
+
+@router.post("/finance/force-clear-available")
+async def admin_force_clear_available(
+    dry_run: bool = False,
+    skip_grace: bool = True,
+    token_data: TokenData = Depends(require_admin),
+):
+    """Move every transaction from AVAILABLE -> CLEARED so settlements can run.
+
+    By default IGNORES the 24h grace period (skip_grace=True). If you want to
+    respect the grace window, pass `skip_grace=false` and only those past
+    their `funds_clears_at` will move.
+    """
+    from services.funds_state import clear_now, FundsState
+    query: Dict[str, Any] = {"funds_state": FundsState.AVAILABLE.value, "status": "paid"}
+    if not skip_grace:
+        now_iso = datetime.now(timezone.utc).isoformat()
+        query["funds_clears_at"] = {"$ne": None, "$lte": now_iso}
+    total = await db.transactions.count_documents(query)
+    if dry_run:
+        return {"dry_run": True, "would_clear": total}
+
+    cleared = 0
+    errors: List[Dict[str, Any]] = []
+    async for tx in db.transactions.find(query, {"_id": 0, "id": 1}):
+        try:
+            await clear_now(tx["id"], actor="admin_manual", reason="Admin forced clear before settlement run")
+            cleared += 1
+        except Exception as e:
+            errors.append({"tx_id": tx.get("id"), "error": str(e)[:200]})
+
+    await create_audit_log(
+        admin_id=token_data.user_id, admin_email=token_data.email,
+        action=AuditAction.PAYMENT_RELEASE, target_type="transactions", target_id="bulk",
+        details={"action": "force_clear_available", "cleared": cleared, "skip_grace": skip_grace},
+    )
+    return {
+        "scanned": total,
+        "cleared": cleared,
+        "error_count": len(errors),
+        "errors": errors[:30],
+        "skip_grace": skip_grace,
+    }
+
+
+@router.get("/finance/funds-state-summary")
+async def admin_funds_state_summary(token_data: TokenData = Depends(require_admin)):
+    """Snapshot of how many transactions are in each funds_state. Used by the
+    settlement page to show 'why is the total $0?' diagnostics.
+    """
+    pipeline = [
+        {"$match": {"status": "paid"}},
+        {"$group": {
+            "_id": "$funds_state",
+            "count": {"$sum": 1},
+            "total_payout": {"$sum": "$payout_amount"},
+        }},
+    ]
+    rows = await db.transactions.aggregate(pipeline).to_list(20)
+    summary: Dict[str, Dict[str, Any]] = {}
+    for r in rows:
+        summary[r["_id"] or "uninitialized"] = {
+            "count": r["count"],
+            "total_payout_mxn": round(float(r.get("total_payout") or 0), 2),
+        }
+
+    # Also count confirmed bookings whose date+time has already passed (those
+    # are the ones waiting for the business to mark "completed").
+    now_dt = datetime.now(timezone.utc)
+    today_str = now_dt.strftime("%Y-%m-%d")
+    now_time_str = now_dt.strftime("%H:%M")
+    pending_completion = await db.bookings.count_documents({
+        "status": "confirmed",
+        "deposit_paid": True,
+        "$or": [
+            {"date": {"$lt": today_str}},
+            {"date": today_str, "time": {"$lte": now_time_str}},
+        ],
+    })
+
+    return {
+        "summary": summary,
+        "pending_completion_count": pending_completion,
+        "as_of": now_dt.isoformat(),
+    }
