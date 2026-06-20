@@ -504,6 +504,44 @@ async def stripe_webhook(request: Request):
                 # Admin must manually re-enable payouts after reviewing.
                 logger.info(f"Dispute closed tx={tx['id']} status={status}")
 
+        elif event.type in ("charge.succeeded", "charge.updated"):
+            # Capture the ACTUAL Stripe fee for this charge so we can show
+            # exact net margin in the admin P&L instead of estimates.
+            # Stripe gives us `balance_transaction.fee` only after the charge
+            # settles, which is usually a few seconds after checkout but can
+            # take longer for async flows — that's why we listen here.
+            charge = event.data.object
+            charge_id = getattr(charge, "id", None)
+            pi_id = getattr(charge, "payment_intent", None)
+            tx = None
+            if pi_id:
+                tx = await db.transactions.find_one({"stripe_payment_intent_id": pi_id})
+            if not tx and charge_id:
+                tx = await db.transactions.find_one({"stripe_charge_id": charge_id})
+            if tx and not tx.get("stripe_fee_actual"):
+                fee_mxn = None
+                bt_id = getattr(charge, "balance_transaction", None)
+                # `balance_transaction` may be a string (id) or an expanded object
+                try:
+                    if isinstance(bt_id, str) and bt_id:
+                        bt = stripe_lib.BalanceTransaction.retrieve(bt_id)
+                        if getattr(bt, "fee", None) is not None:
+                            fee_mxn = round(bt.fee / 100.0, 2)
+                    elif bt_id is not None and getattr(bt_id, "fee", None) is not None:
+                        fee_mxn = round(bt_id.fee / 100.0, 2)
+                except Exception as e:
+                    logger.warning(f"Could not fetch balance_transaction {bt_id} for tx {tx['id']}: {e}")
+                update_set = {"updated_at": datetime.now(timezone.utc).isoformat()}
+                if charge_id and not tx.get("stripe_charge_id"):
+                    update_set["stripe_charge_id"] = charge_id
+                if fee_mxn is not None:
+                    update_set["stripe_fee_actual"] = fee_mxn
+                    update_set["stripe_fee_captured_at"] = datetime.now(timezone.utc).isoformat()
+                if len(update_set) > 1:  # only write if we have new info
+                    await db.transactions.update_one({"id": tx["id"]}, {"$set": update_set})
+                    if fee_mxn is not None:
+                        logger.info(f"Captured Stripe fee ${fee_mxn} for tx {tx['id']}")
+
         elif event.type == "payment_intent.payment_failed":
             pi = event.data.object
             tx = await db.transactions.find_one({"stripe_payment_intent_id": pi.id})
@@ -565,7 +603,11 @@ async def stripe_webhook(request: Request):
             # we handle them identically. Idempotency is guaranteed by the
             # `stripe_events` collection above.
             inv = event.data.object
+            invoice_id = inv.get("id") if isinstance(inv, dict) else getattr(inv, "id", None)
             subscription_id = inv.get("subscription") if isinstance(inv, dict) else getattr(inv, "subscription", None)
+            amount_paid = inv.get("amount_paid") if isinstance(inv, dict) else getattr(inv, "amount_paid", 0)
+            charge_id = inv.get("charge") if isinstance(inv, dict) else getattr(inv, "charge", None)
+            currency = (inv.get("currency") if isinstance(inv, dict) else getattr(inv, "currency", "mxn")) or "mxn"
             if subscription_id:
                 biz = await db.businesses.find_one({"stripe_subscription_id": subscription_id})
                 if biz:
@@ -581,6 +623,41 @@ async def stripe_webhook(request: Request):
                         update["banned_reason"] = None
                     await db.businesses.update_one({"id": biz["id"]}, {"$set": update})
                     logger.info(f"Subscription paid - reactivated business {biz['id']}")
+
+                    # Persist the subscription payment so the P&L can read it.
+                    # Idempotent: keyed by `stripe_invoice_id`.
+                    if invoice_id and amount_paid:
+                        amount_mxn = round(float(amount_paid) / 100.0, 2)
+                        # Fetch Stripe fee from balance_transaction (best-effort)
+                        stripe_fee_mxn = 0.0
+                        try:
+                            if charge_id:
+                                ch = stripe_lib.Charge.retrieve(charge_id, expand=["balance_transaction"])
+                                bt = getattr(ch, "balance_transaction", None)
+                                if bt and getattr(bt, "fee", None) is not None:
+                                    stripe_fee_mxn = round(float(bt.fee) / 100.0, 2)
+                        except Exception as _e:
+                            logger.warning(f"Could not fetch BT for subscription invoice {invoice_id}: {_e}")
+                        try:
+                            await db.subscription_payments.update_one(
+                                {"stripe_invoice_id": invoice_id},
+                                {"$setOnInsert": {
+                                    "id": invoice_id,
+                                    "stripe_invoice_id": invoice_id,
+                                    "stripe_subscription_id": subscription_id,
+                                    "stripe_charge_id": charge_id,
+                                    "business_id": biz["id"],
+                                    "amount": amount_mxn,
+                                    "stripe_fee_amount": stripe_fee_mxn,
+                                    "currency": currency.lower(),
+                                    "status": "paid",
+                                    "created_at": datetime.now(timezone.utc).isoformat(),
+                                }},
+                                upsert=True,
+                            )
+                            logger.info(f"Subscription payment recorded: invoice={invoice_id} biz={biz['id']} amount=${amount_mxn} fee=${stripe_fee_mxn}")
+                        except Exception as _e:
+                            logger.error(f"Failed to record subscription payment {invoice_id}: {_e}")
 
         elif event.type == "invoice.payment_failed":
             # Phase D — Track failed payment attempts. Cron escalates suspension.

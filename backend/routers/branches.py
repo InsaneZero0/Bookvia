@@ -109,44 +109,17 @@ async def list_my_branches(token_data: TokenData = Depends(require_auth)):
 
 @router.post("/businesses/me/branches", response_model=BranchResponse)
 async def create_branch(body: BranchCreate, token_data: TokenData = Depends(require_business)):
-    """Create a new branch for the authenticated business."""
-    if token_data.is_manager:
-        raise HTTPException(status_code=403, detail="Solo el dueño puede crear sucursales")
-    user = await db.users.find_one({"id": token_data.user_id})
-    business_id = (user or {}).get("business_id")
-    if not business_id:
-        raise HTTPException(status_code=404, detail="Business not found")
-    business = await db.businesses.find_one({"id": business_id})
-    if not business:
-        raise HTTPException(status_code=404, detail="Business not found")
+    """Create a new branch for the authenticated business.
 
-    # Ensure primary exists first so new branches are not accidentally primary
-    await _ensure_primary_branch(business)
-
-    now_iso = datetime.now(timezone.utc).isoformat()
-    branch = {
-        "id": generate_id(),
-        "business_id": business_id,
-        "name": body.name.strip()[:120],
-        "address": body.address.strip()[:300],
-        "city": body.city.strip()[:80],
-        "state": body.state.strip()[:80],
-        "zip_code": (body.zip_code or "").strip()[:20],
-        "country": (body.country or "MX")[:5],
-        "latitude": body.latitude,
-        "longitude": body.longitude,
-        "phone": (body.phone or "").strip()[:30] or None,
-        "timezone": body.timezone or "America/Mexico_City",
-        "business_hours": body.business_hours,
-        "photos": body.photos or [],
-        "cover_photo": body.cover_photo,
-        "is_active": True,
-        "is_primary": False,
-        "created_at": now_iso,
-        "updated_at": now_iso,
-    }
-    await db.branches.insert_one(branch)
-    return await _serialize_branch(branch, include_metrics=True)
+    DISABLED: multi-branch is gated until per-branch KYC is implemented.
+    Businesses with multiple physical locations must register a separate
+    account for each. The endpoint stays mounted so existing data remains
+    accessible but new branches cannot be created.
+    """
+    raise HTTPException(
+        status_code=403,
+        detail="Por ahora solo se permite una ubicacion por cuenta. Si tienes otra sucursal, registra una cuenta separada.",
+    )
 
 
 @router.get("/businesses/me/branches/{branch_id}", response_model=BranchResponse)

@@ -4800,3 +4800,350 @@ async def admin_get_booking_detail(
         "strikes": strikes,
         "review": review,
     }
+
+
+
+# ============================================================================
+# Stripe Fee Backfill — populate `stripe_fee_actual` for past transactions
+# ============================================================================
+
+@router.post("/finance/backfill-stripe-fees")
+async def admin_backfill_stripe_fees(
+    limit: int = 200,
+    dry_run: bool = False,
+    token_data: TokenData = Depends(require_admin),
+):
+    """Backfill `stripe_fee_actual` for paid transactions missing it.
+
+    Calls Stripe `BalanceTransaction.retrieve` for each charge to get the
+    exact fee Stripe took. Use this once after enabling the webhook handler
+    so the historical P&L shows real numbers.
+
+    * limit: max transactions to process per call (default 200)
+    * dry_run: if true, only report what WOULD be updated
+    """
+    import stripe as stripe_lib  # local import to avoid top-of-file dependency
+    from core.stripe_config import STRIPE_API_KEY
+    stripe_lib.api_key = STRIPE_API_KEY
+
+    cursor = db.transactions.find(
+        {
+            "status": {"$in": ["paid", "refund_full", "refund_partial"]},
+            "stripe_fee_actual": {"$in": [None, 0]},
+        },
+        {"_id": 0, "id": 1, "stripe_payment_intent_id": 1, "stripe_charge_id": 1},
+    ).limit(max(1, min(limit, 1000)))
+    rows = await cursor.to_list(limit)
+
+    scanned = 0
+    updated = 0
+    total_fee = 0.0
+    errors: List[Dict[str, Any]] = []
+    for tx in rows:
+        scanned += 1
+        pi_id = tx.get("stripe_payment_intent_id")
+        ch_id = tx.get("stripe_charge_id")
+        try:
+            charge = None
+            if ch_id:
+                charge = stripe_lib.Charge.retrieve(ch_id, expand=["balance_transaction"])
+            elif pi_id:
+                pi = stripe_lib.PaymentIntent.retrieve(pi_id, expand=["latest_charge.balance_transaction"])
+                charge = getattr(pi, "latest_charge", None)
+            if not charge:
+                errors.append({"tx_id": tx["id"], "error": "charge_not_found"})
+                continue
+            bt = getattr(charge, "balance_transaction", None)
+            fee_cents = getattr(bt, "fee", None) if bt else None
+            if fee_cents is None:
+                errors.append({"tx_id": tx["id"], "error": "fee_unavailable"})
+                continue
+            fee_mxn = round(float(fee_cents) / 100.0, 2)
+            total_fee += fee_mxn
+            if not dry_run:
+                set_doc = {
+                    "stripe_fee_actual": fee_mxn,
+                    "stripe_fee_captured_at": datetime.now(timezone.utc).isoformat(),
+                }
+                if not tx.get("stripe_charge_id") and getattr(charge, "id", None):
+                    set_doc["stripe_charge_id"] = charge.id
+                await db.transactions.update_one({"id": tx["id"]}, {"$set": set_doc})
+            updated += 1
+        except Exception as e:
+            errors.append({"tx_id": tx["id"], "error": str(e)[:200]})
+
+    return {
+        "scanned": scanned,
+        "updated": updated,
+        "total_fee_recovered_mxn": round(total_fee, 2),
+        "errors": errors[:30],
+        "error_count": len(errors),
+        "dry_run": dry_run,
+    }
+
+
+
+@router.post("/finance/backfill-subscription-payments")
+async def admin_backfill_subscription_payments(
+    months: int = 12,
+    dry_run: bool = False,
+    token_data: TokenData = Depends(require_admin),
+):
+    """Backfill historical subscription payments from Stripe.
+
+    Lists all paid invoices from Stripe in the last N months and records
+    them in `db.subscription_payments` so the P&L aggregates them as
+    Bookvia revenue. Idempotent on `stripe_invoice_id`.
+    """
+    import stripe as stripe_lib
+    from core.stripe_config import STRIPE_API_KEY
+    stripe_lib.api_key = STRIPE_API_KEY
+
+    since_ts = int((datetime.now(timezone.utc) - timedelta(days=30 * max(1, months))).timestamp())
+
+    scanned = 0
+    inserted = 0
+    skipped = 0
+    total_amount = 0.0
+    errors: List[Dict[str, Any]] = []
+
+    # Map subscription_id -> business_id (avoid re-querying per invoice)
+    sub_to_biz: Dict[str, str] = {}
+
+    try:
+        # Auto-pagination via list iterator
+        invoices = stripe_lib.Invoice.list(
+            status="paid",
+            created={"gte": since_ts},
+            limit=100,
+            expand=["data.charge.balance_transaction"],
+        )
+        for inv in invoices.auto_paging_iter():
+            scanned += 1
+            try:
+                invoice_id = inv.id
+                sub_id = inv.subscription
+                if not sub_id:
+                    skipped += 1
+                    continue
+                # Already recorded?
+                existing = await db.subscription_payments.find_one({"stripe_invoice_id": invoice_id}, {"_id": 0, "id": 1})
+                if existing:
+                    skipped += 1
+                    continue
+                # Resolve business
+                if sub_id not in sub_to_biz:
+                    biz_doc = await db.businesses.find_one({"stripe_subscription_id": sub_id}, {"_id": 0, "id": 1})
+                    sub_to_biz[sub_id] = biz_doc["id"] if biz_doc else None
+                business_id = sub_to_biz.get(sub_id)
+                amount_mxn = round(float(inv.amount_paid or 0) / 100.0, 2)
+                if amount_mxn <= 0:
+                    skipped += 1
+                    continue
+                # Fee
+                stripe_fee_mxn = 0.0
+                charge = inv.charge
+                # When expanded, charge is an object; when not, it's a string id
+                if charge and not isinstance(charge, str):
+                    bt = getattr(charge, "balance_transaction", None)
+                    if bt and not isinstance(bt, str) and getattr(bt, "fee", None) is not None:
+                        stripe_fee_mxn = round(float(bt.fee) / 100.0, 2)
+                    charge_id = getattr(charge, "id", None)
+                elif charge:
+                    charge_id = charge
+                    try:
+                        ch = stripe_lib.Charge.retrieve(charge_id, expand=["balance_transaction"])
+                        bt = getattr(ch, "balance_transaction", None)
+                        if bt and getattr(bt, "fee", None) is not None:
+                            stripe_fee_mxn = round(float(bt.fee) / 100.0, 2)
+                    except Exception:
+                        pass
+                else:
+                    charge_id = None
+
+                total_amount += amount_mxn
+                if not dry_run:
+                    paid_at = inv.status_transitions.paid_at if getattr(inv, "status_transitions", None) else None
+                    created_iso = datetime.fromtimestamp(paid_at or inv.created, tz=timezone.utc).isoformat() if (paid_at or inv.created) else datetime.now(timezone.utc).isoformat()
+                    await db.subscription_payments.insert_one({
+                        "id": invoice_id,
+                        "stripe_invoice_id": invoice_id,
+                        "stripe_subscription_id": sub_id,
+                        "stripe_charge_id": charge_id,
+                        "business_id": business_id,
+                        "amount": amount_mxn,
+                        "stripe_fee_amount": stripe_fee_mxn,
+                        "currency": (inv.currency or "mxn").lower(),
+                        "status": "paid",
+                        "created_at": created_iso,
+                    })
+                inserted += 1
+            except Exception as e:
+                errors.append({"invoice_id": getattr(inv, "id", None), "error": str(e)[:200]})
+    except Exception as e:
+        return {"ok": False, "error": str(e)[:300]}
+
+    return {
+        "ok": True,
+        "scanned": scanned,
+        "inserted": inserted,
+        "skipped_already_existed": skipped,
+        "total_amount_mxn": round(total_amount, 2),
+        "error_count": len(errors),
+        "errors": errors[:30],
+        "dry_run": dry_run,
+    }
+
+
+
+# ============================================================================
+# Funds State manual triggers (settlement day-20 helpers)
+# ============================================================================
+
+@router.post("/finance/auto-complete-past-bookings")
+async def admin_auto_complete_past_bookings(
+    hours: int = 24,
+    dry_run: bool = False,
+    token_data: TokenData = Depends(require_admin),
+):
+    """Mark CONFIRMED bookings past their date+time as completed.
+
+    Used when the cron has not fired or you want to settle today. Each
+    auto-completed booking moves its transaction from PENDING_HOLD -> AVAILABLE.
+    Then a 24h grace window applies before CLEARED (use
+    /finance/force-clear-available to skip the wait).
+    """
+    cutoff_dt = datetime.now(timezone.utc) - timedelta(hours=max(0, hours))
+    cutoff_date = cutoff_dt.strftime("%Y-%m-%d")
+    cutoff_time = cutoff_dt.strftime("%H:%M")
+    query = {
+        "status": "confirmed",
+        "deposit_paid": True,
+        "$or": [
+            {"date": {"$lt": cutoff_date}},
+            {"date": cutoff_date, "time": {"$lte": cutoff_time}},
+        ],
+    }
+    total_candidates = await db.bookings.count_documents(query)
+    if dry_run:
+        return {"dry_run": True, "would_complete": total_candidates}
+
+    from services.funds_state import mark_appointment_completed, FundsState
+    completed = 0
+    errors: List[Dict[str, Any]] = []
+    async for b in db.bookings.find(query, {"_id": 0}):
+        try:
+            now = datetime.now(timezone.utc).isoformat()
+            await db.bookings.update_one(
+                {"id": b["id"]},
+                {"$set": {
+                    "status": "completed",
+                    "completed_at": now,
+                    "completed_by": "admin_manual",
+                    "updated_at": now,
+                }},
+            )
+            tx = await db.transactions.find_one({"booking_id": b["id"], "status": "paid"}, {"_id": 0, "id": 1, "funds_state": 1})
+            if tx and tx.get("funds_state") == FundsState.PENDING_HOLD.value:
+                await mark_appointment_completed(tx["id"], actor="admin_manual", reason="Bulk auto-complete by admin")
+            completed += 1
+        except Exception as e:
+            errors.append({"booking_id": b.get("id"), "error": str(e)[:200]})
+
+    await create_audit_log(
+        admin_id=token_data.user_id, admin_email=token_data.email,
+        action=AuditAction.SETTLEMENT_GENERATE, target_type="bookings", target_id="bulk",
+        details={"action": "auto_complete_past_bookings", "completed": completed, "errors": len(errors)},
+    )
+    return {
+        "scanned": total_candidates,
+        "completed": completed,
+        "error_count": len(errors),
+        "errors": errors[:30],
+    }
+
+
+@router.post("/finance/force-clear-available")
+async def admin_force_clear_available(
+    dry_run: bool = False,
+    skip_grace: bool = True,
+    token_data: TokenData = Depends(require_admin),
+):
+    """Move every transaction from AVAILABLE -> CLEARED so settlements can run.
+
+    By default IGNORES the 24h grace period (skip_grace=True). If you want to
+    respect the grace window, pass `skip_grace=false` and only those past
+    their `funds_clears_at` will move.
+    """
+    from services.funds_state import clear_now, FundsState
+    query: Dict[str, Any] = {"funds_state": FundsState.AVAILABLE.value, "status": "paid"}
+    if not skip_grace:
+        now_iso = datetime.now(timezone.utc).isoformat()
+        query["funds_clears_at"] = {"$ne": None, "$lte": now_iso}
+    total = await db.transactions.count_documents(query)
+    if dry_run:
+        return {"dry_run": True, "would_clear": total}
+
+    cleared = 0
+    errors: List[Dict[str, Any]] = []
+    async for tx in db.transactions.find(query, {"_id": 0, "id": 1}):
+        try:
+            await clear_now(tx["id"], actor="admin_manual", reason="Admin forced clear before settlement run")
+            cleared += 1
+        except Exception as e:
+            errors.append({"tx_id": tx.get("id"), "error": str(e)[:200]})
+
+    await create_audit_log(
+        admin_id=token_data.user_id, admin_email=token_data.email,
+        action=AuditAction.PAYMENT_RELEASE, target_type="transactions", target_id="bulk",
+        details={"action": "force_clear_available", "cleared": cleared, "skip_grace": skip_grace},
+    )
+    return {
+        "scanned": total,
+        "cleared": cleared,
+        "error_count": len(errors),
+        "errors": errors[:30],
+        "skip_grace": skip_grace,
+    }
+
+
+@router.get("/finance/funds-state-summary")
+async def admin_funds_state_summary(token_data: TokenData = Depends(require_admin)):
+    """Snapshot of how many transactions are in each funds_state. Used by the
+    settlement page to show 'why is the total $0?' diagnostics.
+    """
+    pipeline = [
+        {"$match": {"status": "paid"}},
+        {"$group": {
+            "_id": "$funds_state",
+            "count": {"$sum": 1},
+            "total_payout": {"$sum": "$payout_amount"},
+        }},
+    ]
+    rows = await db.transactions.aggregate(pipeline).to_list(20)
+    summary: Dict[str, Dict[str, Any]] = {}
+    for r in rows:
+        summary[r["_id"] or "uninitialized"] = {
+            "count": r["count"],
+            "total_payout_mxn": round(float(r.get("total_payout") or 0), 2),
+        }
+
+    # Also count confirmed bookings whose date+time has already passed (those
+    # are the ones waiting for the business to mark "completed").
+    now_dt = datetime.now(timezone.utc)
+    today_str = now_dt.strftime("%Y-%m-%d")
+    now_time_str = now_dt.strftime("%H:%M")
+    pending_completion = await db.bookings.count_documents({
+        "status": "confirmed",
+        "deposit_paid": True,
+        "$or": [
+            {"date": {"$lt": today_str}},
+            {"date": today_str, "time": {"$lte": now_time_str}},
+        ],
+    })
+
+    return {
+        "summary": summary,
+        "pending_completion_count": pending_completion,
+        "as_of": now_dt.isoformat(),
+    }

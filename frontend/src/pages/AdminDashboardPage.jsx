@@ -34,7 +34,7 @@ import {
   Eye, Star, Wallet, BarChart3, Loader2, MapPin, Phone, Mail, Globe,
   CreditCard, Briefcase, MessageSquare, Trash2, ExternalLink, TrendingUp,
   Tags, Settings, LifeBuoy, Plus, Pencil, Send, X, AlertCircle,
-  Trophy, Bell, Map, ToggleLeft, ToggleRight, FileBarChart, UserPlus, Key, Flag, QrCode, Banknote, Database
+  Trophy, Bell, Map, ToggleLeft, ToggleRight, FileBarChart, UserPlus, Key, Flag, QrCode, Banknote, Database, RefreshCw
 } from 'lucide-react';
 
 const STATUS_COLORS = {
@@ -3159,6 +3159,74 @@ export default function AdminDashboardPage() {
                       <div><span className="text-muted-foreground">{t('Fee real Stripe', 'Stripe fee actual')}:</span> <b>{formatCurrency(pnl.stripe_fee_actual_total)}</b></div>
                       <div><span className="text-muted-foreground">{t('Cobertura fee real', 'Actual fee coverage')}:</span> <b>{pnl.coverage_pct}%</b></div>
                     </div>
+                    {(pnl.coverage_pct || 0) < 80 && (
+                      <div className="rounded-lg bg-amber-50 border border-amber-200 p-3 text-sm flex items-start justify-between gap-3 flex-wrap">
+                        <div className="text-amber-800 flex-1 min-w-[220px]">
+                          <strong>{t('Datos historicos faltantes.', 'Historical data missing.')}</strong>{' '}
+                          {t('Sincroniza para ver el margen y suscripciones exactas.', 'Sync to see exact margin and subscription revenue.')}
+                        </div>
+                        <div className="flex gap-2 shrink-0">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="border-amber-300 hover:bg-amber-100 text-amber-800"
+                            onClick={async () => {
+                              const ok = window.confirm(
+                                t(
+                                  'Esto consulta a Stripe el fee real de cada cobro pasado (hasta 200). Continuar?',
+                                  'This queries Stripe for the actual fee of each past charge (up to 200). Continue?'
+                                )
+                              );
+                              if (!ok) return;
+                              try {
+                                const res = await api.post('/admin/finance/backfill-stripe-fees?limit=200');
+                                toast.success(
+                                  t(
+                                    `Fees actualizados: ${res.data.updated}/${res.data.scanned}. Recuperado: $${res.data.total_fee_recovered_mxn}`,
+                                    `Fees updated: ${res.data.updated}/${res.data.scanned}. Recovered: $${res.data.total_fee_recovered_mxn}`
+                                  )
+                                );
+                                loadFinance();
+                              } catch (e) {
+                                toast.error(e?.response?.data?.detail || t('Error', 'Error'));
+                              }
+                            }}
+                            data-testid="backfill-stripe-fees-btn"
+                          >
+                            <RefreshCw className="h-3.5 w-3.5 mr-1" />{t('Sincronizar fees', 'Sync fees')}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="border-amber-300 hover:bg-amber-100 text-amber-800"
+                            onClick={async () => {
+                              const ok = window.confirm(
+                                t(
+                                  'Esto descarga las facturas de suscripciones pagadas en los ultimos 12 meses y las registra. Continuar?',
+                                  'Downloads paid subscription invoices from the last 12 months. Continue?'
+                                )
+                              );
+                              if (!ok) return;
+                              try {
+                                const res = await api.post('/admin/finance/backfill-subscription-payments?months=12');
+                                toast.success(
+                                  t(
+                                    `Suscripciones registradas: ${res.data.inserted}/${res.data.scanned}. Monto: $${res.data.total_amount_mxn}`,
+                                    `Subscriptions recorded: ${res.data.inserted}/${res.data.scanned}. Total: $${res.data.total_amount_mxn}`
+                                  )
+                                );
+                                loadFinance();
+                              } catch (e) {
+                                toast.error(e?.response?.data?.detail || t('Error', 'Error'));
+                              }
+                            }}
+                            data-testid="backfill-subscriptions-btn"
+                          >
+                            <RefreshCw className="h-3.5 w-3.5 mr-1" />{t('Sincronizar suscripciones', 'Sync subscriptions')}
+                          </Button>
+                        </div>
+                      </div>
+                    )}
                     {pnl.transactions_margin_negative > 0 && (
                       <div className="rounded-lg bg-red-50 border border-red-200 p-3 text-sm text-red-700">
                         <AlertCircle className="h-4 w-4 inline mr-1" />

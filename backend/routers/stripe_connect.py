@@ -162,6 +162,31 @@ async def connect_status(current=Depends(require_business)):
             "requirements_due": snapshot["stripe_connect_requirements_due"],
             "disabled_reason": snapshot["stripe_connect_disabled_reason"],
         }
+    except stripe_lib.error.PermissionError as e:
+        # The account ID stored in our DB no longer belongs to this Stripe
+        # platform (deleted, transferred, or platform key rotated). Wipe the
+        # broken pointer so the business can reconnect from scratch.
+        logger.warning(f"Orphaned Connect account {account_id} for biz {business['id']}: {e}. Clearing reference.")
+        await db.businesses.update_one(
+            {"id": business["id"]},
+            {"$set": {
+                "stripe_connect_account_id": None,
+                "stripe_connect_charges_enabled": False,
+                "stripe_connect_payouts_enabled": False,
+                "stripe_connect_details_submitted": False,
+                "stripe_connect_disabled_reason": "account_unlinked",
+            }},
+        )
+        return {
+            "connected": False,
+            "account_id": None,
+            "charges_enabled": False,
+            "payouts_enabled": False,
+            "details_submitted": False,
+            "requirements_due": [],
+            "disabled_reason": "account_unlinked",
+            "needs_reconnect": True,
+        }
     except stripe_lib.error.StripeError as e:
         logger.error(f"Stripe error in connect_status for biz {business['id']}: {e}")
         raise HTTPException(status_code=400, detail=f"Stripe error: {str(e)}")

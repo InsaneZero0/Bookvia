@@ -143,7 +143,16 @@ async def transition(
 
 
 async def initialize(transaction_id: str, actor: str = "system") -> dict:
-    """Set initial funds_state to PENDING_HOLD if not already set."""
+    """Set initial funds_state to PENDING_HOLD if not already set.
+
+    Idempotent: if the transaction already has any non-null funds_state we
+    skip silently. This protects us from race conditions when the same
+    Stripe webhook (or a retry) arrives twice and both try to initialize.
+    """
+    tx = await db.transactions.find_one({"id": transaction_id}, {"_id": 0, "funds_state": 1})
+    if tx and tx.get("funds_state"):
+        # Already initialized (or further along) — nothing to do.
+        return tx
     return await transition(transaction_id, FundsState.PENDING_HOLD.value, actor=actor, reason="Payment received")
 
 
@@ -197,18 +206,26 @@ async def auto_clear_after_grace() -> int:
 
 async def auto_complete_appointments() -> int:
     """
-    Cron task: any booking past its scheduled end time by AUTO_COMPLETE_HOURS that
-    has NOT been marked completed/cancelled gets auto-completed AND its transaction
-    moves PENDING_HOLD -> AVAILABLE.
+    Cron task: any booking whose date+time is older than AUTO_COMPLETE_HOURS
+    and has NOT been marked completed/cancelled gets auto-completed AND its
+    transaction moves PENDING_HOLD -> AVAILABLE.
     """
-    cutoff = (datetime.now(timezone.utc) - timedelta(hours=AUTO_COMPLETE_HOURS)).isoformat()
-    
-    # Find confirmed bookings whose appointment_date is older than AUTO_COMPLETE_HOURS
+    # Bookings store `date` (YYYY-MM-DD) and `time` (HH:MM) separately. Build
+    # an ISO datetime string for cutoff comparison.
+    cutoff_dt = datetime.now(timezone.utc) - timedelta(hours=AUTO_COMPLETE_HOURS)
+    cutoff_date = cutoff_dt.strftime("%Y-%m-%d")
+    cutoff_time = cutoff_dt.strftime("%H:%M")
+
+    # Find CONFIRMED bookings that already passed the auto-complete window.
+    # `date` strictly less than cutoff_date OR same date with time <= cutoff_time.
     candidates = await db.bookings.find(
         {
             "status": AppointmentStatus.CONFIRMED,
-            "appointment_date": {"$lt": cutoff},
             "deposit_paid": True,
+            "$or": [
+                {"date": {"$lt": cutoff_date}},
+                {"date": cutoff_date, "time": {"$lte": cutoff_time}},
+            ],
         },
         {"_id": 0}
     ).to_list(1000)
