@@ -5147,3 +5147,85 @@ async def admin_funds_state_summary(token_data: TokenData = Depends(require_admi
         "pending_completion_count": pending_completion,
         "as_of": now_dt.isoformat(),
     }
+
+
+
+@router.get("/finance/cleared-transactions-debug")
+async def admin_cleared_tx_debug(token_data: TokenData = Depends(require_admin)):
+    """Reveal every CLEARED transaction so we can see WHY the settlement
+    generator is skipping them (missing business_amount, business_id, already
+    has settlement_id, business has payout_hold, etc.)."""
+    rows = await db.transactions.find(
+        {"funds_state": "cleared"}, {"_id": 0}
+    ).to_list(500)
+    items: List[Dict[str, Any]] = []
+    biz_cache: Dict[str, Any] = {}
+    for tx in rows:
+        bid = tx.get("business_id")
+        biz_info = None
+        if bid and bid not in biz_cache:
+            biz_cache[bid] = await db.businesses.find_one(
+                {"id": bid}, {"_id": 0, "name": 1, "payout_hold": 1, "stripe_connect_account_id": 1}
+            )
+        biz_info = biz_cache.get(bid)
+        # Why is this tx excluded from settlement?
+        reasons: List[str] = []
+        if not bid:
+            reasons.append("missing business_id")
+        if not biz_info:
+            reasons.append("business not found")
+        elif biz_info.get("payout_hold"):
+            reasons.append("business has payout_hold")
+        ba = float(tx.get("business_amount") or 0)
+        pa = float(tx.get("payout_amount") or 0)
+        amount = ba if ba > 0 else pa
+        if amount <= 0:
+            reasons.append(f"business_amount={ba}, payout_amount={pa} (both zero)")
+        if tx.get("settlement_id"):
+            reasons.append(f"already settled in {tx['settlement_id']}")
+        items.append({
+            "tx_id": tx.get("id"),
+            "booking_id": tx.get("booking_id"),
+            "business_id": bid,
+            "business_name": (biz_info or {}).get("name"),
+            "business_amount": ba,
+            "payout_amount": pa,
+            "settlement_id": tx.get("settlement_id"),
+            "funds_state": tx.get("funds_state"),
+            "status": tx.get("status"),
+            "created_at": tx.get("created_at"),
+            "would_skip": len(reasons) > 0,
+            "skip_reasons": reasons,
+        })
+    return {"count": len(items), "items": items}
+
+
+@router.post("/finance/repair-uninitialized-transactions")
+async def admin_repair_uninitialized(
+    dry_run: bool = False,
+    token_data: TokenData = Depends(require_admin),
+):
+    """Initialize `funds_state = pending_hold` on transactions that have a
+    paid status but never got funds_state assigned (the 12 uninitialized
+    ones from the diagnostic). After this, run auto-complete + force-clear
+    + generate to push them through the full settlement pipeline.
+    """
+    from services.funds_state import initialize as init_funds
+    query = {"status": "paid", "funds_state": {"$in": [None]}}
+    total = await db.transactions.count_documents(query)
+    if dry_run:
+        return {"dry_run": True, "would_initialize": total}
+    initialized = 0
+    errors: List[Dict[str, Any]] = []
+    async for tx in db.transactions.find(query, {"_id": 0, "id": 1}):
+        try:
+            await init_funds(tx["id"], actor="admin_repair")
+            initialized += 1
+        except Exception as e:
+            errors.append({"tx_id": tx.get("id"), "error": str(e)[:200]})
+    return {
+        "scanned": total,
+        "initialized": initialized,
+        "error_count": len(errors),
+        "errors": errors[:30],
+    }
