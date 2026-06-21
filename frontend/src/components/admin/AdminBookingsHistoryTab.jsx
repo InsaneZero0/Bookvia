@@ -17,6 +17,15 @@ const STATUS_COLORS = {
   pending: 'bg-slate-100 text-slate-700 border-slate-200',
 };
 
+// Sub-status by who cancelled (only when status === 'cancelled')
+const CANCEL_BY_VARIANT = {
+  user: { label: 'Cancelo cliente', cn: 'bg-amber-100 text-amber-800 border-amber-300' },
+  client: { label: 'Cancelo cliente', cn: 'bg-amber-100 text-amber-800 border-amber-300' },
+  business: { label: 'Cancelo negocio', cn: 'bg-rose-100 text-rose-800 border-rose-400' },
+  admin: { label: 'Cancelo admin', cn: 'bg-slate-100 text-slate-700 border-slate-300' },
+  system: { label: 'Cancelo sistema', cn: 'bg-violet-100 text-violet-800 border-violet-300' },
+};
+
 const STATUS_LABEL_ES = {
   all: 'Todas',
   confirmed: 'Confirmadas',
@@ -74,11 +83,25 @@ export default function AdminBookingsHistoryTab({ language = 'es' }) {
     }
   };
 
-  const StatusBadge = ({ status }) => (
-    <Badge variant="outline" className={`${STATUS_COLORS[status] || STATUS_COLORS.pending} capitalize border`}>
-      {STATUS_LABEL_ES[status] || status || '—'}
-    </Badge>
-  );
+  const StatusBadge = ({ status, cancelledBy }) => {
+    // When cancelled, show WHO cancelled (color-coded) instead of generic "Cancelled"
+    if (status === 'cancelled') {
+      const variant = CANCEL_BY_VARIANT[(cancelledBy || '').toLowerCase()] || {
+        label: 'Canceladas',
+        cn: STATUS_COLORS.cancelled,
+      };
+      return (
+        <Badge variant="outline" className={`${variant.cn} border`}>
+          {variant.label}
+        </Badge>
+      );
+    }
+    return (
+      <Badge variant="outline" className={`${STATUS_COLORS[status] || STATUS_COLORS.pending} capitalize border`}>
+        {STATUS_LABEL_ES[status] || status || '—'}
+      </Badge>
+    );
+  };
 
   return (
     <div className="space-y-4" data-testid="admin-bookings-history-tab">
@@ -191,7 +214,7 @@ export default function AdminBookingsHistoryTab({ language = 'es' }) {
                   </td>
                   <td className="px-3 py-2.5 truncate max-w-[160px]">{b.service_name || '—'}</td>
                   <td className="px-3 py-2.5 text-right font-mono">{formatMxn(b.client_paid)}</td>
-                  <td className="px-3 py-2.5"><StatusBadge status={b.status} /></td>
+                  <td className="px-3 py-2.5"><StatusBadge status={b.status} cancelledBy={b.cancelled_by} /></td>
                 </tr>
               ))}
             </tbody>
