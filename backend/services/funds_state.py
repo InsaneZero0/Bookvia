@@ -180,13 +180,29 @@ async def auto_clear_after_grace() -> int:
     """
     Cron task: any transaction in AVAILABLE state where funds_clears_at <= now
     should be moved to CLEARED. Returns count of transactions cleared.
+
+    Includes:
+      - status='paid' (normal happy path)
+      - status='refund_partial' with refund_amount=0 (late-cancel marker:
+        client cancelled past the cutoff and the business retains the deposit
+        as penalty — the funds still belong to the business and must clear).
     """
     now_iso = _now_iso()
     candidates = await db.transactions.find(
         {
             "funds_state": FundsState.AVAILABLE.value,
             "funds_clears_at": {"$ne": None, "$lte": now_iso},
-            "status": TransactionStatus.PAID,
+            "$or": [
+                {"status": TransactionStatus.PAID},
+                {
+                    "status": TransactionStatus.REFUND_PARTIAL,
+                    "$or": [
+                        {"refund_amount": 0},
+                        {"refund_amount": None},
+                        {"refund_amount": {"$exists": False}},
+                    ],
+                },
+            ],
         },
         {"_id": 0, "id": 1}
     ).to_list(2000)
