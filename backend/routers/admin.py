@@ -2769,7 +2769,8 @@ async def generate_settlements_day20(
             results.append({"business_id": bid, "skipped": True, "reason": "payout_hold"})
             continue
 
-        net_payout = round(sum(float(t.get("business_amount") or 0) for t in items), 2)
+        # Fallback to legacy `payout_amount` for older transactions that didn't store business_amount
+        net_payout = round(sum(float(t.get("business_amount") or t.get("payout_amount") or 0) for t in items), 2)
         if net_payout <= 0:
             continue
 
