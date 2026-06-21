@@ -2729,7 +2729,67 @@ export default function AdminDashboardPage() {
               </Button>
             </div>
 
-            <p className="text-sm text-muted-foreground">{citiesTotal} {t('ciudades', 'cities')}</p>
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <p className="text-sm text-muted-foreground">{citiesTotal} {t('ciudades', 'cities')}</p>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  data-testid="sync-cities-from-source-btn"
+                  onClick={async () => {
+                    try {
+                      const res = await fetch(`${process.env.REACT_APP_BACKEND_URL}/api/admin/cities/sync-from-source`, {
+                        method: 'POST',
+                        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
+                      });
+                      const data = await res.json();
+                      if (res.ok) {
+                        toast.success(`${data.added_count} ciudades agregadas (${data.skipped_count} ya existian)`);
+                        loadCities(1);
+                      } else {
+                        toast.error(data.detail || 'Error');
+                      }
+                    } catch { toast.error('Error de red'); }
+                  }}>
+                  {t('Sincronizar catalogo', 'Sync catalog')}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="text-amber-700 border-amber-300 hover:bg-amber-50"
+                  data-testid="normalize-business-cities-btn"
+                  onClick={async () => {
+                    try {
+                      const preview = await fetch(
+                        `${process.env.REACT_APP_BACKEND_URL}/api/admin/businesses/normalize-cities?dry_run=true`,
+                        { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } },
+                      );
+                      const pd = await preview.json();
+                      if (!preview.ok) { toast.error(pd.detail || 'Error'); return; }
+                      if (pd.changes_count === 0) {
+                        toast.success('Todos los negocios ya tienen su ciudad normalizada');
+                        return;
+                      }
+                      const ok = window.confirm(`Se actualizaran ${pd.changes_count} negocios. Confirmas?\n\nEjemplos:\n` +
+                        pd.changes.slice(0, 5).map((c) => `• ${c.business_name}: "${c.from}" → "${c.to}"`).join('\n'));
+                      if (!ok) return;
+                      const exec = await fetch(
+                        `${process.env.REACT_APP_BACKEND_URL}/api/admin/businesses/normalize-cities`,
+                        { method: 'POST', headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } },
+                      );
+                      const ed = await exec.json();
+                      if (exec.ok) {
+                        toast.success(`${ed.changes_count} negocios actualizados`);
+                        loadCities(1);
+                      } else {
+                        toast.error(ed.detail || 'Error');
+                      }
+                    } catch { toast.error('Error de red'); }
+                  }}>
+                  {t('Normalizar ciudades de negocios', 'Normalize business cities')}
+                </Button>
+              </div>
+            </div>
 
             {citiesLoading ? (
               <div className="space-y-2">{[1,2,3,4].map(i => <Skeleton key={i} className="h-14" />)}</div>

@@ -46,6 +46,7 @@ export default function AdminSettlementsTab() {
   const [breakdown, setBreakdown] = useState({ open: false, loading: false, data: null });
 
   const [stuckDiag, setStuckDiag] = useState({ open: false, loading: false, items: [] });
+  const [txInspect, setTxInspect] = useState({ open: false, loading: false, data: null });
 
   const loadStuckCancellations = async () => {
     setStuckDiag({ open: true, loading: true, items: [] });
@@ -58,15 +59,40 @@ export default function AdminSettlementsTab() {
     }
   };
 
+  const inspectTransaction = async (txId) => {
+    setTxInspect({ open: true, loading: true, data: null });
+    try {
+      const res = await api.get(`/admin/finance/transactions/${txId}/full-detail`);
+      setTxInspect({ open: true, loading: false, data: res.data });
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || 'Error');
+      setTxInspect({ open: false, loading: false, data: null });
+    }
+  };
+
   const forceClearSingleTx = async (txId) => {
     try {
       const res = await api.post(`/admin/finance/transactions/${txId}/force-clear-single`);
       toast.success(`Transaccion liberada (estaba en ${res.data.previous_state})`);
-      // refresh diagnostic + outer list
       await loadStuckCancellations();
       await load();
+      setTxInspect({ open: false, loading: false, data: null });
     } catch (e) {
       toast.error(e?.response?.data?.detail || 'No se pudo forzar');
+    }
+  };
+
+  const deleteAbandonedTx = async (txId) => {
+    try {
+      const res = await api.delete(
+        `/admin/finance/transactions/${txId}/delete-abandoned?confirm=DELETE-${txId}`
+      );
+      toast.success(`Eliminada (tx=${res.data.deleted_transaction}, booking=${res.data.deleted_booking})`);
+      await loadStuckCancellations();
+      await load();
+      setTxInspect({ open: false, loading: false, data: null });
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || 'No se pudo eliminar');
     }
   };
 
@@ -764,7 +790,36 @@ export default function AdminSettlementsTab() {
           {!stuckDiag.loading && stuckDiag.items.length > 0 && (
             <StuckCancellationsView
               items={stuckDiag.items}
-              onForce={forceClearSingleTx}
+              onInspect={inspectTransaction}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal: Inspeccionar transaccion con info de Stripe */}
+      <Dialog
+        open={txInspect.open}
+        onOpenChange={(open) => !open && setTxInspect({ open: false, loading: false, data: null })}
+      >
+        <DialogContent
+          className="max-w-2xl max-h-[90vh] overflow-y-auto"
+          data-testid="tx-inspect-modal"
+        >
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Eye className="h-5 w-5 text-amber-600" />
+              Investigar transaccion atascada
+            </DialogTitle>
+            <DialogDescription>
+              Revisa el estado real en Stripe antes de actuar.
+            </DialogDescription>
+          </DialogHeader>
+          {txInspect.loading && <Skeleton className="h-48 w-full" />}
+          {txInspect.data && (
+            <TxInspectView
+              data={txInspect.data}
+              onForceClear={forceClearSingleTx}
+              onDeleteAbandoned={deleteAbandonedTx}
             />
           )}
         </DialogContent>
@@ -940,7 +995,7 @@ const SITUATION_BADGES = {
   ya_liquidado: { label: 'Ya liquidada', cn: 'bg-slate-100 text-slate-700 border-slate-300' },
 };
 
-function StuckCancellationsView({ items, onForce }) {
+function StuckCancellationsView({ items, onInspect }) {
   const stuck = items.filter((i) => i.situation === 'ATASCADO');
   const waiting = items.filter((i) => i.situation === 'esperando_grace_24h');
   const ready = items.filter((i) => i.situation === 'listo_para_proximo_corte');
@@ -993,15 +1048,121 @@ function StuckCancellationsView({ items, onForce }) {
               </div>
               {it.situation === 'ATASCADO' && (
                 <Button size="sm" variant="outline"
-                        className="shrink-0 text-rose-700 border-rose-300 hover:bg-rose-50"
-                        onClick={() => onForce(it.transaction_id)}
-                        data-testid={`force-clear-single-${it.transaction_id}`}>
-                  <Zap className="h-3 w-3 mr-1" /> Forzar esta
+                        className="shrink-0 text-amber-700 border-amber-300 hover:bg-amber-50"
+                        onClick={() => onInspect(it.transaction_id)}
+                        data-testid={`inspect-tx-${it.transaction_id}`}>
+                  <Eye className="h-3 w-3 mr-1" /> Investigar
                 </Button>
               )}
             </div>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+
+const RECOMMENDATION_STYLE = {
+  FIX_LOCAL_STATE: { color: 'emerald', label: 'SEGURO: Stripe confirma que SI se pago' },
+  DELETE_ABANDONED_BOOKING: { color: 'rose', label: 'BORRAR: cliente nunca completo el pago' },
+  WAIT_OR_ASK_CLIENT: { color: 'amber', label: 'ESPERAR: pago aun puede completarse' },
+  ADMIN_REVIEW: { color: 'slate', label: 'REVISION MANUAL' },
+};
+
+function TxInspectView({ data, onForceClear, onDeleteAbandoned }) {
+  const { transaction, booking, business, user, stripe, recommendation } = data;
+  const recStyle = RECOMMENDATION_STYLE[recommendation?.action] || RECOMMENDATION_STYLE.ADMIN_REVIEW;
+  const cn = {
+    emerald: 'bg-emerald-50 border-emerald-300 text-emerald-900',
+    rose: 'bg-rose-50 border-rose-300 text-rose-900',
+    amber: 'bg-amber-50 border-amber-300 text-amber-900',
+    slate: 'bg-slate-50 border-slate-300 text-slate-900',
+  }[recStyle.color];
+
+  return (
+    <div className="space-y-4 text-sm">
+      {/* Recommendation banner */}
+      <div className={`rounded-lg border-2 p-4 ${cn}`}>
+        <div className="font-bold text-base mb-1">{recStyle.label}</div>
+        <div className="text-xs leading-relaxed">{recommendation?.explanation}</div>
+      </div>
+
+      {/* Context */}
+      <div className="rounded-lg border p-3 space-y-1">
+        <div><strong>Cliente:</strong> {user?.full_name || '—'} ({user?.email || '—'})</div>
+        <div><strong>Negocio:</strong> {business?.name || '—'}</div>
+        <div><strong>Cita:</strong> {booking?.date} {booking?.time} · {booking?.service_name || ''}</div>
+        <div><strong>Monto adeudado:</strong> ${transaction?.business_amount || transaction?.payout_amount || 0}</div>
+      </div>
+
+      {/* Local state */}
+      <div className="rounded-lg border p-3 space-y-1 bg-slate-50">
+        <div className="font-semibold text-slate-700 mb-1">Estado en Bookvia (DB)</div>
+        <div className="font-mono text-xs">tx_status: <strong>{transaction?.status || '(none)'}</strong></div>
+        <div className="font-mono text-xs">funds_state: <strong>{transaction?.funds_state || '(none)'}</strong></div>
+        <div className="font-mono text-xs">stripe_payment_intent_id: <strong>{transaction?.stripe_payment_intent_id || transaction?.payment_intent_id || '(none)'}</strong></div>
+        <div className="font-mono text-xs">booking_status: <strong>{booking?.status || '(none)'}</strong></div>
+      </div>
+
+      {/* Stripe state */}
+      <div className={`rounded-lg border p-3 space-y-1 ${stripe?.present ? 'bg-violet-50' : 'bg-slate-50'}`}>
+        <div className="font-semibold mb-1">Estado en Stripe</div>
+        {!stripe?.present && (
+          <div className="text-xs text-slate-600">
+            {stripe?.error ? `Error consultando Stripe: ${stripe.error}` : 'Sin payment_intent_id — el checkout nunca se inicio en Stripe.'}
+          </div>
+        )}
+        {stripe?.present && (
+          <>
+            <div className="font-mono text-xs">id: <strong>{stripe.id}</strong></div>
+            <div className="font-mono text-xs">status: <strong>{stripe.status || (stripe.paid ? 'paid' : 'unpaid')}</strong></div>
+            <div className="font-mono text-xs">amount: ${stripe.amount} · received: ${stripe.amount_received ?? '—'}</div>
+            {stripe.last_payment_error && (
+              <div className="text-xs text-rose-700">Error del cliente: {stripe.last_payment_error}</div>
+            )}
+            <div className="text-xs mt-2 font-semibold">{stripe.interpretation}</div>
+          </>
+        )}
+      </div>
+
+      {/* Action buttons */}
+      <div className="flex gap-2 justify-end">
+        {recommendation?.safe_to_force_clear && (
+          <Button
+            onClick={() => onForceClear(transaction.id)}
+            className="bg-emerald-600 hover:bg-emerald-700"
+            data-testid="confirm-force-clear">
+            <Zap className="h-4 w-4 mr-1" /> Forzar a CLEARED
+          </Button>
+        )}
+        {recommendation?.action === 'DELETE_ABANDONED_BOOKING' && (
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="outline" className="text-rose-700 border-rose-300 hover:bg-rose-50"
+                      data-testid="confirm-delete-abandoned">
+                <XCircle className="h-4 w-4 mr-1" /> Eliminar cita abandonada
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Eliminar cita y transaccion abandonadas</AlertDialogTitle>
+                <AlertDialogDescription>
+                  El cliente nunca completo el pago en Stripe. Esta cita y su transaccion
+                  son basura y NO representan dinero real. Se borraran ambas definitivamente.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                <AlertDialogAction
+                  className="bg-rose-600 hover:bg-rose-700"
+                  onClick={() => onDeleteAbandoned(transaction.id)}>
+                  Eliminar
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        )}
       </div>
     </div>
   );

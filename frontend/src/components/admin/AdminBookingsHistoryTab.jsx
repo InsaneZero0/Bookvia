@@ -17,6 +17,59 @@ const STATUS_COLORS = {
   pending: 'bg-slate-100 text-slate-700 border-slate-200',
 };
 
+// Sub-status by who cancelled (only when status === 'cancelled')
+const CANCEL_BY_VARIANT = {
+  user: { label: 'Cancelo cliente', cn: 'bg-amber-100 text-amber-800 border-amber-300' },
+  client: { label: 'Cancelo cliente', cn: 'bg-amber-100 text-amber-800 border-amber-300' },
+  business: { label: 'Cancelo negocio', cn: 'bg-rose-100 text-rose-800 border-rose-400' },
+  admin: { label: 'Cancelo admin', cn: 'bg-slate-100 text-slate-700 border-slate-300' },
+  system: { label: 'Cancelo sistema', cn: 'bg-violet-100 text-violet-800 border-violet-300' },
+};
+
+// Refund destination badges
+const REFUND_VARIANTS = {
+  wallet: { label: 'Saldo Bookvia', cn: 'bg-violet-100 text-violet-800 border-violet-300' },
+  card: { label: 'Tarjeta', cn: 'bg-blue-100 text-blue-800 border-blue-300' },
+  stripe: { label: 'Tarjeta', cn: 'bg-blue-100 text-blue-800 border-blue-300' },
+  pending: { label: 'Esperando eleccion', cn: 'bg-amber-100 text-amber-800 border-amber-300' },
+  none: { label: '—', cn: 'text-muted-foreground' },
+};
+
+function RefundBadge({ booking }) {
+  // Decide which state to show
+  const refundAmount = Number(booking?.refund_amount || 0);
+  const choice = (booking?.refund_destination_choice || '').toLowerCase();
+  const isPending = !!booking?.refund_pending;
+
+  // No refund at all (most common case for completed bookings)
+  if (refundAmount === 0 && !isPending) {
+    return <span className="text-muted-foreground text-xs">—</span>;
+  }
+
+  // Pending: cancellation processed but client hasn't picked yet
+  if (isPending && (choice === '' || choice === 'pending')) {
+    const v = REFUND_VARIANTS.pending;
+    return (
+      <Badge variant="outline" className={`${v.cn} border`}>
+        {v.label} ${refundAmount.toFixed(2)}
+      </Badge>
+    );
+  }
+
+  // Client picked
+  const v = REFUND_VARIANTS[choice] || REFUND_VARIANTS.none;
+  return (
+    <div className="flex flex-col gap-0.5">
+      <Badge variant="outline" className={`${v.cn} border w-fit`}>
+        {v.label}
+      </Badge>
+      {refundAmount > 0 && (
+        <span className="text-[10px] text-muted-foreground">${refundAmount.toFixed(2)}</span>
+      )}
+    </div>
+  );
+}
+
 const STATUS_LABEL_ES = {
   all: 'Todas',
   confirmed: 'Confirmadas',
@@ -74,11 +127,25 @@ export default function AdminBookingsHistoryTab({ language = 'es' }) {
     }
   };
 
-  const StatusBadge = ({ status }) => (
-    <Badge variant="outline" className={`${STATUS_COLORS[status] || STATUS_COLORS.pending} capitalize border`}>
-      {STATUS_LABEL_ES[status] || status || '—'}
-    </Badge>
-  );
+  const StatusBadge = ({ status, cancelledBy }) => {
+    // When cancelled, show WHO cancelled (color-coded) instead of generic "Cancelled"
+    if (status === 'cancelled') {
+      const variant = CANCEL_BY_VARIANT[(cancelledBy || '').toLowerCase()] || {
+        label: 'Canceladas',
+        cn: STATUS_COLORS.cancelled,
+      };
+      return (
+        <Badge variant="outline" className={`${variant.cn} border`}>
+          {variant.label}
+        </Badge>
+      );
+    }
+    return (
+      <Badge variant="outline" className={`${STATUS_COLORS[status] || STATUS_COLORS.pending} capitalize border`}>
+        {STATUS_LABEL_ES[status] || status || '—'}
+      </Badge>
+    );
+  };
 
   return (
     <div className="space-y-4" data-testid="admin-bookings-history-tab">
@@ -157,14 +224,15 @@ export default function AdminBookingsHistoryTab({ language = 'es' }) {
                 <th className="text-left px-3 py-2 font-semibold">{t('Servicio', 'Service')}</th>
                 <th className="text-right px-3 py-2 font-semibold">{t('Pagado', 'Paid')}</th>
                 <th className="text-left px-3 py-2 font-semibold">{t('Estado', 'Status')}</th>
+                <th className="text-left px-3 py-2 font-semibold">{t('Reembolso', 'Refund')}</th>
               </tr>
             </thead>
             <tbody>
               {loading && (
-                <tr><td colSpan="6" className="text-center py-12 text-muted-foreground">{t('Cargando...', 'Loading...')}</td></tr>
+                <tr><td colSpan="7" className="text-center py-12 text-muted-foreground">{t('Cargando...', 'Loading...')}</td></tr>
               )}
               {!loading && data.items.length === 0 && (
-                <tr><td colSpan="6" className="text-center py-12 text-muted-foreground">{t('Sin resultados', 'No results')}</td></tr>
+                <tr><td colSpan="7" className="text-center py-12 text-muted-foreground">{t('Sin resultados', 'No results')}</td></tr>
               )}
               {!loading && data.items.map((b) => (
                 <tr
@@ -191,7 +259,8 @@ export default function AdminBookingsHistoryTab({ language = 'es' }) {
                   </td>
                   <td className="px-3 py-2.5 truncate max-w-[160px]">{b.service_name || '—'}</td>
                   <td className="px-3 py-2.5 text-right font-mono">{formatMxn(b.client_paid)}</td>
-                  <td className="px-3 py-2.5"><StatusBadge status={b.status} /></td>
+                  <td className="px-3 py-2.5"><StatusBadge status={b.status} cancelledBy={b.cancelled_by} /></td>
+                  <td className="px-3 py-2.5"><RefundBadge booking={b} /></td>
                 </tr>
               ))}
             </tbody>

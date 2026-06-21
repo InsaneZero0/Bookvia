@@ -1444,6 +1444,19 @@ async def update_my_business(update: BusinessUpdate, token_data: TokenData = Dep
     if not update_data:
         raise HTTPException(status_code=400, detail="No data to update")
     
+    # Normalize `city` against the master catalog so casing/spacing variants
+    # never create duplicate "cities" (e.g. "NUEVO LAREDO" vs "Nuevo Laredo").
+    if "city" in update_data and update_data["city"]:
+        raw_city = str(update_data["city"]).strip()
+        match = await db.cities.find_one(
+            {"name": {"$regex": f"^{re.escape(raw_city)}$", "$options": "i"}},
+            {"_id": 0, "name": 1},
+        )
+        if match:
+            update_data["city"] = match["name"]  # canonical Title Case from catalog
+        else:
+            update_data["city"] = raw_city.title()  # Title Case fallback
+
     if "deposit_amount" in update_data:
         # If also disabling requires_deposit in the same update, allow zero
         requires_dep_in_update = update_data.get("requires_deposit")

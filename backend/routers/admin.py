@@ -2681,6 +2681,111 @@ async def toggle_city_active(city_slug: str, request: Request, active: bool = Tr
     return {"message": f"City {'activated' if active else 'deactivated'}", "slug": city_slug, "active": active}
 
 
+@router.post("/cities/sync-from-source")
+async def admin_sync_cities_from_source(
+    request: Request,
+    token_data: TokenData = Depends(require_admin),
+):
+    """Add any city defined in `data/cities.py` that is missing from the DB.
+
+    Idempotent — existing cities are left untouched. Use after extending the
+    cities catalog source file to roll the new entries into production.
+    """
+    from data.cities import CITIES
+    added = []
+    skipped = []
+    for c in CITIES:
+        existing = await db.cities.find_one({"slug": c["slug"]}, {"_id": 0, "id": 1})
+        if existing:
+            skipped.append(c["slug"])
+            continue
+        doc = {
+            "id": generate_id(),
+            "country_code": c["country_code"],
+            "name": c["name"],
+            "slug": c["slug"],
+            "state": c.get("state"),
+            "timezone": c.get("timezone"),
+            "active": True,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        await db.cities.insert_one(doc)
+        added.append(c["slug"])
+
+    await create_audit_log(
+        admin_id=token_data.user_id, admin_email=token_data.email,
+        action=AuditAction.CITY_ACTIVATE, target_type="cities", target_id="sync_from_source",
+        details={"added": added, "skipped_count": len(skipped)}, request=request,
+    )
+    return {"added": added, "added_count": len(added), "skipped_count": len(skipped)}
+
+
+@router.post("/businesses/normalize-cities")
+async def admin_normalize_business_cities(
+    request: Request,
+    dry_run: bool = False,
+    token_data: TokenData = Depends(require_admin),
+):
+    """Normalize the `city` field of every business to canonical Title Case
+    and merge duplicates that only differ in casing/spacing.
+
+    For every business, looks up the closest city in the catalog by
+    case-insensitive comparison and rewrites `city` to the canonical
+    catalog name. Returns a per-business change list.
+
+    Pass `dry_run=true` to preview without writing.
+    """
+    cities = await db.cities.find({}, {"_id": 0, "name": 1, "slug": 1}).to_list(2000)
+    # Build lookup: lowercase/stripped name -> canonical name
+    canonical_by_lower = {(c["name"] or "").strip().lower(): c["name"] for c in cities}
+    canonical_by_slug = {(c["slug"] or "").strip().lower(): c["name"] for c in cities}
+
+    businesses = await db.businesses.find({}, {"_id": 0, "id": 1, "name": 1, "city": 1}).to_list(10000)
+
+    changes = []
+    for b in businesses:
+        original = (b.get("city") or "").strip()
+        if not original:
+            continue
+        key = original.lower()
+        # First try direct lookup by name (case-insensitive)
+        canonical = canonical_by_lower.get(key)
+        if not canonical:
+            # Try slugified form (e.g. "Nuevo-Laredo" or "nuevo laredo")
+            slug_like = key.replace(" ", "-")
+            canonical = canonical_by_slug.get(slug_like)
+        if not canonical:
+            # Try Title Case fallback (still preserves original if no catalog match)
+            canonical = original.title() if original.isupper() or original.islower() else None
+        if canonical and canonical != original:
+            changes.append({
+                "business_id": b["id"], "business_name": b.get("name"),
+                "from": original, "to": canonical,
+                "matched_catalog": canonical in canonical_by_lower.values(),
+            })
+
+    if not dry_run and changes:
+        for ch in changes:
+            await db.businesses.update_one(
+                {"id": ch["business_id"]}, {"$set": {"city": ch["to"]}}
+            )
+
+    if changes and not dry_run:
+        await create_audit_log(
+            admin_id=token_data.user_id, admin_email=token_data.email,
+            action=AuditAction.CITY_ACTIVATE, target_type="businesses",
+            target_id="normalize_cities",
+            details={"updated": len(changes), "samples": changes[:20]}, request=request,
+        )
+
+    return {
+        "dry_run": dry_run,
+        "total_businesses": len(businesses),
+        "changes_count": len(changes),
+        "changes": changes,
+    }
+
+
 
 # ============ CUSTOM REPORTS ============
 
@@ -5920,6 +6025,231 @@ async def admin_force_clear_available(
         "error_count": len(errors),
         "errors": errors[:30],
         "skip_grace": skip_grace,
+    }
+
+
+@router.get("/finance/transactions/{transaction_id}/full-detail")
+async def admin_transaction_full_detail(
+    transaction_id: str,
+    token_data: TokenData = Depends(require_admin),
+):
+    """Return EVERY field of a transaction + linked booking + linked Stripe
+    PaymentIntent/Charge status when possible. Use to decide whether a
+    `created`-status transaction was actually paid or abandoned.
+    """
+    tx = await db.transactions.find_one({"id": transaction_id}, {"_id": 0})
+    if not tx:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+
+    booking = None
+    if tx.get("booking_id"):
+        booking = await db.bookings.find_one({"id": tx["booking_id"]}, {"_id": 0})
+
+    user = None
+    if booking and booking.get("user_id"):
+        user = await db.users.find_one(
+            {"id": booking["user_id"]}, {"_id": 0, "full_name": 1, "email": 1, "id": 1}
+        )
+
+    biz = None
+    if tx.get("business_id"):
+        biz = await db.businesses.find_one(
+            {"id": tx["business_id"]}, {"_id": 0, "id": 1, "name": 1}
+        )
+
+    # Look up Stripe status if a PaymentIntent id is present
+    stripe_status: Dict[str, Any] = {"present": False}
+    pi_id = tx.get("stripe_payment_intent_id") or tx.get("payment_intent_id")
+    charge_id = tx.get("stripe_charge_id") or tx.get("charge_id")
+    if pi_id or charge_id:
+        try:
+            import stripe  # type: ignore
+            stripe.api_key = os.environ.get("STRIPE_SECRET_KEY") or os.environ.get("STRIPE_API_KEY")
+            if pi_id:
+                pi = stripe.PaymentIntent.retrieve(pi_id)
+                stripe_status = {
+                    "present": True,
+                    "kind": "payment_intent",
+                    "id": pi_id,
+                    "status": pi.get("status"),
+                    "amount": (pi.get("amount") or 0) / 100,
+                    "amount_received": (pi.get("amount_received") or 0) / 100,
+                    "currency": pi.get("currency"),
+                    "created": pi.get("created"),
+                    "last_payment_error": (pi.get("last_payment_error") or {}).get("message"),
+                    "interpretation": _interpret_stripe_pi_status(pi.get("status")),
+                }
+            elif charge_id:
+                ch = stripe.Charge.retrieve(charge_id)
+                stripe_status = {
+                    "present": True,
+                    "kind": "charge",
+                    "id": charge_id,
+                    "paid": ch.get("paid"),
+                    "captured": ch.get("captured"),
+                    "amount": (ch.get("amount") or 0) / 100,
+                    "amount_refunded": (ch.get("amount_refunded") or 0) / 100,
+                    "status": ch.get("status"),
+                    "interpretation": "PAGADO" if ch.get("paid") else "NO PAGADO",
+                }
+        except Exception as e:
+            stripe_status = {"present": False, "error": str(e)[:300]}
+
+    # Build a human-readable recommendation
+    recommendation = _build_tx_recommendation(tx, booking, stripe_status)
+
+    return {
+        "transaction": tx,
+        "booking": booking,
+        "user": user,
+        "business": biz,
+        "stripe": stripe_status,
+        "recommendation": recommendation,
+    }
+
+
+def _interpret_stripe_pi_status(status: Optional[str]) -> str:
+    """Plain-language interpretation of a Stripe PaymentIntent status."""
+    return {
+        "succeeded": "PAGADO — el cliente completo el cobro exitosamente",
+        "requires_payment_method": "ABANDONADO — el cliente nunca eligio metodo de pago",
+        "requires_confirmation": "PENDIENTE — falta confirmar el pago",
+        "requires_action": "PENDIENTE — requiere 3D Secure u otra accion del cliente",
+        "processing": "PROCESANDO — Stripe esta validando el cobro",
+        "canceled": "CANCELADO — el pago fue cancelado antes de completarse",
+        "requires_capture": "AUTORIZADO PERO NO CAPTURADO — fondos reservados pero no cobrados",
+    }.get(status or "", f"Estado desconocido: {status}")
+
+
+def _build_tx_recommendation(tx: dict, booking: Optional[dict], stripe_status: dict) -> dict:
+    """Return action + explanation based on tx + stripe state."""
+    tx_status = tx.get("status")
+    funds_state = tx.get("funds_state")
+    pi_status = stripe_status.get("status") if stripe_status.get("present") else None
+
+    # Case 1: Stripe confirms it was paid → safe to fix locally
+    if pi_status == "succeeded" or stripe_status.get("paid"):
+        return {
+            "action": "FIX_LOCAL_STATE",
+            "explanation": (
+                "Stripe confirma que el cliente SI pago. La transaccion local quedo "
+                "atascada en estado 'created' por un webhook fallido. Es seguro "
+                "forzar la transaccion a CLEARED — el dinero ya esta en tu saldo de Stripe."
+            ),
+            "safe_to_force_clear": True,
+        }
+
+    # Case 2: Stripe says it never paid → delete the orphan booking
+    if pi_status in ("requires_payment_method", "canceled") or (stripe_status.get("present") and stripe_status.get("paid") is False):
+        return {
+            "action": "DELETE_ABANDONED_BOOKING",
+            "explanation": (
+                "Stripe confirma que el cliente NUNCA completo el pago (checkout abandonado "
+                "o cancelado). Esta cita y su transaccion son basura — NO debes liquidar "
+                "dinero al negocio porque ese dinero nunca llego a Bookvia."
+            ),
+            "safe_to_force_clear": False,
+        }
+
+    # Case 3: Pending → wait
+    if pi_status in ("requires_confirmation", "requires_action", "processing", "requires_capture"):
+        return {
+            "action": "WAIT_OR_ASK_CLIENT",
+            "explanation": (
+                f"El cobro esta en estado '{pi_status}'. El cliente aun puede completarlo. "
+                "No fuerces ni borres todavia — espera 24h o contacta al cliente."
+            ),
+            "safe_to_force_clear": False,
+        }
+
+    # Case 4: No Stripe info, but tx_status=created locally → probably abandoned
+    if tx_status in ("created", "pending") and not stripe_status.get("present"):
+        return {
+            "action": "DELETE_ABANDONED_BOOKING",
+            "explanation": (
+                "La transaccion local quedo en estado 'created' y no hay informacion en "
+                "Stripe (sin payment_intent_id). Probable checkout abandonado. Recomiendo "
+                "ELIMINAR esta cita y transaccion."
+            ),
+            "safe_to_force_clear": False,
+        }
+
+    # Case 5: Anything else, ask admin
+    return {
+        "action": "ADMIN_REVIEW",
+        "explanation": (
+            f"Estado mixto (tx_status={tx_status}, funds_state={funds_state}, "
+            f"pi_status={pi_status}). Revisa manualmente antes de actuar."
+        ),
+        "safe_to_force_clear": False,
+    }
+
+
+@router.delete("/finance/transactions/{transaction_id}/delete-abandoned")
+async def admin_delete_abandoned_transaction(
+    transaction_id: str,
+    request: Request,
+    confirm: str = "",
+    delete_booking: bool = True,
+    token_data: TokenData = Depends(require_admin),
+):
+    """Delete a transaction (and optionally its booking) that was never paid.
+
+    Use after `full-detail` confirms the action `DELETE_ABANDONED_BOOKING`.
+    Requires `?confirm=DELETE-{transaction_id}` to avoid accidents.
+    """
+    tx = await db.transactions.find_one({"id": transaction_id}, {"_id": 0})
+    if not tx:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+
+    expected = f"DELETE-{transaction_id}"
+    if confirm != expected:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Para confirmar, llama con ?confirm={expected}",
+        )
+
+    # Safety: refuse if Stripe says it was paid
+    pi_id = tx.get("stripe_payment_intent_id") or tx.get("payment_intent_id")
+    if pi_id:
+        try:
+            import stripe  # type: ignore
+            stripe.api_key = os.environ.get("STRIPE_SECRET_KEY") or os.environ.get("STRIPE_API_KEY")
+            pi = stripe.PaymentIntent.retrieve(pi_id)
+            if pi.get("status") == "succeeded" or (pi.get("amount_received") or 0) > 0:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Stripe confirma que el cliente SI pago — no se puede borrar. Usa force-clear-single en su lugar.",
+                )
+        except HTTPException:
+            raise
+        except Exception:
+            pass  # If Stripe is unreachable, allow delete (admin's choice)
+
+    booking_id = tx.get("booking_id")
+    tx_del = await db.transactions.delete_one({"id": transaction_id})
+    booking_del = 0
+    if delete_booking and booking_id:
+        bk_res = await db.bookings.delete_one({"id": booking_id})
+        booking_del = bk_res.deleted_count
+
+    await create_audit_log(
+        admin_id=token_data.user_id, admin_email=token_data.email,
+        action=AuditAction.PAYMENT_RELEASE,
+        target_type="transaction", target_id=transaction_id,
+        details={
+            "action": "delete_abandoned",
+            "deleted_transaction": tx_del.deleted_count,
+            "deleted_booking": booking_del,
+            "booking_id": booking_id,
+            "amount": tx.get("business_amount") or tx.get("payout_amount") or 0,
+        },
+        request=request,
+    )
+
+    return {
+        "deleted_transaction": tx_del.deleted_count,
+        "deleted_booking": booking_del,
     }
 
 
