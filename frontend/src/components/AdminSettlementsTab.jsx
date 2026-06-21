@@ -45,6 +45,31 @@ export default function AdminSettlementsTab() {
   const [previewResult, setPreviewResult] = useState(null);
   const [breakdown, setBreakdown] = useState({ open: false, loading: false, data: null });
 
+  const [stuckDiag, setStuckDiag] = useState({ open: false, loading: false, items: [] });
+
+  const loadStuckCancellations = async () => {
+    setStuckDiag({ open: true, loading: true, items: [] });
+    try {
+      const res = await api.get('/admin/finance/stuck-late-cancellations');
+      setStuckDiag({ open: true, loading: false, items: res.data?.items || [] });
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || 'Error');
+      setStuckDiag({ open: false, loading: false, items: [] });
+    }
+  };
+
+  const forceClearSingleTx = async (txId) => {
+    try {
+      const res = await api.post(`/admin/finance/transactions/${txId}/force-clear-single`);
+      toast.success(`Transaccion liberada (estaba en ${res.data.previous_state})`);
+      // refresh diagnostic + outer list
+      await loadStuckCancellations();
+      await load();
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || 'No se pudo forzar');
+    }
+  };
+
   const openBreakdown = async (settlementId) => {
     setBreakdown({ open: true, loading: true, data: null });
     try {
@@ -560,30 +585,7 @@ export default function AdminSettlementsTab() {
 
               <Button variant="outline" size="sm" disabled={busy}
                 data-testid="diagnose-stuck-cancellations-btn"
-                onClick={async () => {
-                  setBusy(true);
-                  try {
-                    const res = await api.get('/admin/finance/stuck-late-cancellations');
-                    const items = res.data?.items || [];
-                    if (items.length === 0) {
-                      toast.success('Ninguna cancelacion tardia atascada — todo limpio');
-                      return;
-                    }
-                    const stuck = items.filter(i => i.situation === 'ATASCADO');
-                    const waiting = items.filter(i => i.situation === 'esperando_grace_24h');
-                    const ready = items.filter(i => i.situation === 'listo_para_proximo_corte');
-                    const paid = items.filter(i => i.situation === 'ya_liquidado');
-                    const lines = [];
-                    if (stuck.length) lines.push(`${stuck.length} ATASCADAS (necesitan Forzar liberacion)`);
-                    if (waiting.length) lines.push(`${waiting.length} esperando 24h`);
-                    if (ready.length) lines.push(`${ready.length} listas para proximo corte`);
-                    if (paid.length) lines.push(`${paid.length} ya liquidadas`);
-                    toast(lines.join(' · '), { duration: 15000 });
-                    console.log('Cancelaciones tardias:', items);
-                  } catch (e) {
-                    toast.error(e?.response?.data?.detail || 'Error');
-                  } finally { setBusy(false); }
-                }}>
+                onClick={loadStuckCancellations}>
                 Diagnostico cancelaciones tardias
               </Button>
 
@@ -733,6 +735,40 @@ export default function AdminSettlementsTab() {
           )}
         </CardContent>
       </Card>
+
+      {/* Modal: Diagnostico cancelaciones tardias */}
+      <Dialog
+        open={stuckDiag.open}
+        onOpenChange={(open) => !open && setStuckDiag({ open: false, loading: false, items: [] })}
+      >
+        <DialogContent
+          className="max-w-3xl max-h-[90vh] overflow-y-auto"
+          data-testid="stuck-cancellations-modal"
+        >
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-amber-600" />
+              Diagnostico de cancelaciones tardias
+            </DialogTitle>
+            <DialogDescription>
+              Cada cancelacion del cliente cuya plata pertenece al negocio y su estado actual.
+            </DialogDescription>
+          </DialogHeader>
+          {stuckDiag.loading && <Skeleton className="h-40 w-full" />}
+          {!stuckDiag.loading && stuckDiag.items.length === 0 && (
+            <div className="text-center py-8 text-emerald-700 text-sm" data-testid="stuck-empty">
+              <CheckCircle2 className="h-8 w-8 mx-auto mb-2" />
+              Ninguna cancelacion tardia atascada — todo limpio
+            </div>
+          )}
+          {!stuckDiag.loading && stuckDiag.items.length > 0 && (
+            <StuckCancellationsView
+              items={stuckDiag.items}
+              onForce={forceClearSingleTx}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Modal: Desglose del settlement */}
       <Dialog
@@ -893,6 +929,80 @@ function BreakdownView({ data }) {
           Esta liquidacion no tiene transacciones asociadas.
         </div>
       )}
+    </div>
+  );
+}
+
+const SITUATION_BADGES = {
+  ATASCADO: { label: 'ATASCADA', cn: 'bg-rose-100 text-rose-800 border-rose-300' },
+  esperando_grace_24h: { label: 'Esperando 24h', cn: 'bg-amber-100 text-amber-800 border-amber-300' },
+  listo_para_proximo_corte: { label: 'Lista para corte', cn: 'bg-emerald-100 text-emerald-800 border-emerald-300' },
+  ya_liquidado: { label: 'Ya liquidada', cn: 'bg-slate-100 text-slate-700 border-slate-300' },
+};
+
+function StuckCancellationsView({ items, onForce }) {
+  const stuck = items.filter((i) => i.situation === 'ATASCADO');
+  const waiting = items.filter((i) => i.situation === 'esperando_grace_24h');
+  const ready = items.filter((i) => i.situation === 'listo_para_proximo_corte');
+  const paid = items.filter((i) => i.situation === 'ya_liquidado');
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-center">
+        <div className="rounded-lg bg-rose-50 border border-rose-200 p-2">
+          <div className="text-2xl font-bold text-rose-700">{stuck.length}</div>
+          <div className="text-[10px] text-rose-700 uppercase">ATASCADAS</div>
+        </div>
+        <div className="rounded-lg bg-amber-50 border border-amber-200 p-2">
+          <div className="text-2xl font-bold text-amber-700">{waiting.length}</div>
+          <div className="text-[10px] text-amber-700 uppercase">Esperando 24h</div>
+        </div>
+        <div className="rounded-lg bg-emerald-50 border border-emerald-200 p-2">
+          <div className="text-2xl font-bold text-emerald-700">{ready.length}</div>
+          <div className="text-[10px] text-emerald-700 uppercase">Listas para corte</div>
+        </div>
+        <div className="rounded-lg bg-slate-50 border border-slate-200 p-2">
+          <div className="text-2xl font-bold text-slate-700">{paid.length}</div>
+          <div className="text-[10px] text-slate-700 uppercase">Ya liquidadas</div>
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        {[...stuck, ...waiting, ...ready, ...paid].map((it) => {
+          const badge = SITUATION_BADGES[it.situation] || SITUATION_BADGES.ATASCADO;
+          return (
+            <div key={it.transaction_id}
+                 className="rounded-lg border p-3 flex items-start justify-between gap-3"
+                 data-testid={`stuck-item-${it.transaction_id}`}>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 mb-1">
+                  <Badge variant="outline" className={badge.cn}>{badge.label}</Badge>
+                  <div className="font-medium truncate">{it.client_name || '—'}</div>
+                  <div className="text-sm font-semibold text-emerald-700">${it.amount_owed}</div>
+                </div>
+                <div className="text-xs text-muted-foreground space-y-0.5">
+                  <div>Negocio: <strong>{it.business_name}</strong></div>
+                  <div>Cita: {it.date} {it.time} · {it.service_name}</div>
+                  <div className="font-mono text-[10px]">
+                    tx_status={it.transaction_status} · funds_state={it.funds_state || '(none)'} · settlement_id={it.settlement_id || '—'}
+                  </div>
+                  {it.funds_clears_at && (
+                    <div>Libera automatico: <strong>{it.funds_clears_at.slice(0, 16).replace('T', ' ')}</strong></div>
+                  )}
+                </div>
+              </div>
+              {it.situation === 'ATASCADO' && (
+                <Button size="sm" variant="outline"
+                        className="shrink-0 text-rose-700 border-rose-300 hover:bg-rose-50"
+                        onClick={() => onForce(it.transaction_id)}
+                        data-testid={`force-clear-single-${it.transaction_id}`}>
+                  <Zap className="h-3 w-3 mr-1" /> Forzar esta
+                </Button>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
