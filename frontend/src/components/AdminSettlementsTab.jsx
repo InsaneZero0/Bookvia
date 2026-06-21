@@ -231,6 +231,23 @@ export default function AdminSettlementsTab() {
         </div>
       </div>
 
+      {/* Aviso de huerfanos detectados */}
+      {(totals.orphan_count || 0) > 0 && (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 flex items-start gap-3"
+             data-testid="orphan-settlements-notice">
+          <AlertTriangle className="h-5 w-5 text-amber-700 mt-0.5 shrink-0" />
+          <div className="flex-1 min-w-0">
+            <div className="font-semibold text-amber-900 text-sm">
+              {totals.orphan_count} liquidacion(es) de negocios ya eliminados ({fmt(totals.orphan_amount)})
+            </div>
+            <div className="text-xs text-amber-800 mt-0.5">
+              Se ocultan automaticamente del listado. Para borrarlas definitivamente, abre
+              &quot;Herramientas avanzadas&quot; abajo y usa <strong>Limpiar negocios borrados</strong>.
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* KPIs del periodo */}
       <div className="grid md:grid-cols-4 gap-4">
         <Card>
@@ -481,6 +498,62 @@ export default function AdminSettlementsTab() {
                         await load();
                       } catch (e) { toast.error(e?.response?.data?.detail || 'Error'); } finally { setBusy(false); }
                     }}>Confirmar</AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="outline" size="sm" disabled={busy}
+                          className="text-red-700 border-red-300 hover:bg-red-50"
+                          data-testid="cleanup-orphans-btn">
+                    Limpiar negocios borrados
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Eliminar liquidaciones de negocios borrados</AlertDialogTitle>
+                    <AlertDialogDescription asChild>
+                      <div>
+                        Borra definitivamente las liquidaciones cuyo negocio ya no existe en la
+                        plataforma (negocios de prueba o duplicados eliminados). Sus transacciones
+                        quedan liberadas para futuros cortes.
+                        <p className="text-xs text-amber-700 mt-2">
+                          Solo afecta liquidaciones <strong>pendientes</strong>. Las ya pagadas
+                          se conservan para historial.
+                        </p>
+                      </div>
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                    <AlertDialogAction
+                      className="bg-red-600 hover:bg-red-700"
+                      onClick={async () => {
+                        setBusy(true);
+                        try {
+                          // 1) Preview
+                          const pre = await api.post('/admin/settlements/cleanup-orphans?dry_run=true');
+                          const wouldDelete = pre.data?.would_delete || 0;
+                          if (wouldDelete === 0) {
+                            toast('No hay liquidaciones huerfanas que limpiar');
+                            return;
+                          }
+                          // 2) Real cleanup
+                          const res = await api.post('/admin/settlements/cleanup-orphans');
+                          toast.success(
+                            `${res.data.deleted} liquidaciones eliminadas · $${res.data.amount_freed} liberados`,
+                            { duration: 6000 }
+                          );
+                          await load();
+                        } catch (e) {
+                          toast.error(e?.response?.data?.detail || 'Error');
+                        } finally {
+                          setBusy(false);
+                        }
+                      }}>
+                      Eliminar
+                    </AlertDialogAction>
                   </AlertDialogFooter>
                 </AlertDialogContent>
               </AlertDialog>
