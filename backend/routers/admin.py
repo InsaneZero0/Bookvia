@@ -4079,6 +4079,331 @@ async def admin_settlement_period_detail(
     }
 
 
+
+@router.get("/settlements/{settlement_id}/breakdown")
+async def admin_settlement_breakdown(
+    settlement_id: str,
+    token_data: TokenData = Depends(require_admin),
+):
+    """Detailed breakdown of a single settlement.
+
+    Groups every transaction included in the settlement by the underlying
+    booking outcome:
+      - completed: client showed up, business delivered the service
+      - late_cancel_penalty: client cancelled past the cutoff window → biz keeps deposit
+      - no_show_penalty: client never showed up → biz keeps deposit
+      - other: any other status (defensive bucket)
+
+    Returns per-bucket totals plus a per-booking list with client name, date,
+    service, gross amount paid by the client, business net and Stripe/Bookvia
+    fees so the admin can audit each peso.
+    """
+    settlement = await db.settlements.find_one({"id": settlement_id}, {"_id": 0})
+    if not settlement:
+        raise HTTPException(status_code=404, detail="Settlement not found")
+
+    tx_ids: List[str] = settlement.get("transaction_ids") or []
+    txs = await db.transactions.find({"id": {"$in": tx_ids}}, {"_id": 0}).to_list(len(tx_ids) or 1)
+
+    # Batched lookups for bookings, users, services
+    booking_ids = list({t.get("booking_id") for t in txs if t.get("booking_id")})
+    bookings = await db.bookings.find({"id": {"$in": booking_ids}}, {"_id": 0}).to_list(len(booking_ids) or 1)
+    booking_map = {b["id"]: b for b in bookings}
+
+    user_ids = list({b.get("user_id") for b in bookings if b.get("user_id")})
+    users = await db.users.find(
+        {"id": {"$in": user_ids}}, {"_id": 0, "id": 1, "full_name": 1, "email": 1}
+    ).to_list(len(user_ids) or 1)
+    user_map = {u["id"]: u for u in users}
+
+    service_ids = list({b.get("service_id") for b in bookings if b.get("service_id")})
+    services = await db.services.find(
+        {"id": {"$in": service_ids}}, {"_id": 0, "id": 1, "name": 1, "price": 1}
+    ).to_list(len(service_ids) or 1)
+    service_map = {s["id"]: s for s in services}
+
+    BUCKET_LABELS = {
+        "completed": {"label_es": "Citas completadas", "label_en": "Completed bookings"},
+        "late_cancel_penalty": {"label_es": "Cancelacion tardia del cliente (penalizacion al negocio)", "label_en": "Late client cancellation (penalty to business)"},
+        "no_show_penalty": {"label_es": "No-show del cliente (penalizacion al negocio)", "label_en": "Client no-show (penalty to business)"},
+        "other": {"label_es": "Otros", "label_en": "Other"},
+    }
+    buckets: Dict[str, Dict[str, Any]] = {
+        k: {**v, "count": 0, "amount": 0.0, "items": []} for k, v in BUCKET_LABELS.items()
+    }
+
+    grand_client_paid = 0.0
+    grand_business_net = 0.0
+    grand_stripe_fee = 0.0
+    grand_bookvia_fee = 0.0
+    grand_wallet_applied = 0.0
+    grand_stripe_charged = 0.0
+    hybrid_count = 0
+
+    for tx in txs:
+        booking = booking_map.get(tx.get("booking_id")) or {}
+        bk_status = (booking.get("status") or "").lower()
+        cancelled_by = (booking.get("cancelled_by") or "").lower()
+
+        # Classify the bucket
+        if bk_status == "completed":
+            key = "completed"
+        elif bk_status == "no_show":
+            key = "no_show_penalty"
+        elif bk_status == "cancelled" and cancelled_by in ("user", "client"):
+            key = "late_cancel_penalty"
+        else:
+            key = "other"
+
+        business_net = float(tx.get("business_amount") or tx.get("payout_amount") or 0)
+        client_paid = float(tx.get("client_paid") or tx.get("amount_total") or 0)
+        stripe_fee = float(tx.get("stripe_fee_actual") or tx.get("stripe_fee_amount") or 0)
+        bookvia_fee = max(0.0, round(client_paid - business_net - stripe_fee, 2))
+        wallet_applied = float(tx.get("wallet_applied") or 0)
+        stripe_charged = float(tx.get("stripe_charge_amount") or 0)
+        is_hybrid_payment = wallet_applied > 0
+
+        user = user_map.get(booking.get("user_id")) or {}
+        svc = service_map.get(booking.get("service_id")) or {}
+
+        item = {
+            "booking_id": booking.get("id"),
+            "transaction_id": tx.get("id"),
+            "date": booking.get("date"),
+            "time": booking.get("time"),
+            "client_name": user.get("full_name") or booking.get("client_name") or "—",
+            "client_email": user.get("email") or booking.get("client_email"),
+            "service_name": svc.get("name") or booking.get("service_name") or "—",
+            "booking_status": bk_status,
+            "cancelled_by": cancelled_by or None,
+            "cancellation_reason": booking.get("cancellation_reason"),
+            "client_paid": round(client_paid, 2),
+            "stripe_fee": round(stripe_fee, 2),
+            "bookvia_fee": round(bookvia_fee, 2),
+            "business_net": round(business_net, 2),
+            "wallet_applied": round(wallet_applied, 2),
+            "stripe_charged": round(stripe_charged, 2),
+            "is_hybrid_payment": is_hybrid_payment,
+        }
+        buckets[key]["items"].append(item)
+        buckets[key]["count"] += 1
+        buckets[key]["amount"] += business_net
+
+        grand_client_paid += client_paid
+        grand_business_net += business_net
+        grand_stripe_fee += stripe_fee
+        grand_bookvia_fee += bookvia_fee
+        grand_wallet_applied += wallet_applied
+        grand_stripe_charged += stripe_charged
+        if is_hybrid_payment:
+            hybrid_count += 1
+
+    # Round bucket amounts at the end to avoid float drift
+    for k in buckets:
+        buckets[k]["amount"] = round(buckets[k]["amount"], 2)
+        # Sort items by date desc inside each bucket for nicer UX
+        buckets[k]["items"].sort(key=lambda x: (x.get("date") or "", x.get("time") or ""), reverse=True)
+
+    # Drop empty buckets from the returned list so the UI stays clean
+    breakdown = [
+        {"key": k, **v} for k, v in buckets.items() if v["count"] > 0
+    ]
+
+    return {
+        "settlement_id": settlement_id,
+        "business_id": settlement.get("business_id"),
+        "business_name": settlement.get("business_name"),
+        "period_key": settlement.get("period_key"),
+        "status": settlement.get("status"),
+        "net_payout": float(settlement.get("net_payout") or 0),
+        "booking_count": settlement.get("booking_count", 0),
+        "transactions_count": len(tx_ids),
+        "totals": {
+            "client_paid": round(grand_client_paid, 2),
+            "stripe_fee": round(grand_stripe_fee, 2),
+            "bookvia_fee": round(grand_bookvia_fee, 2),
+            "business_net": round(grand_business_net, 2),
+            "wallet_applied": round(grand_wallet_applied, 2),
+            "stripe_charged": round(grand_stripe_charged, 2),
+            "hybrid_count": hybrid_count,
+        },
+        "breakdown": breakdown,
+    }
+
+
+@router.get("/settlements/{settlement_id}/breakdown.xlsx")
+async def admin_settlement_breakdown_excel(
+    settlement_id: str,
+    token_data: TokenData = Depends(require_admin),
+):
+    """Download the settlement breakdown as a .xlsx file for accounting.
+
+    Includes a summary sheet (totals + counts per bucket) plus a detail sheet
+    with one row per booking covering: client, date, service, status, payment
+    type (card / hybrid), gross amounts, fees and business net.
+    """
+    from io import BytesIO
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+
+    # Reuse the breakdown computation so the Excel matches the modal 1:1
+    data = await admin_settlement_breakdown(settlement_id, token_data)  # type: ignore[arg-type]
+
+    wb = Workbook()
+    # === Sheet 1: Resumen ===
+    ws1 = wb.active
+    ws1.title = "Resumen"
+
+    title_font = Font(bold=True, size=14, color="FFFFFF")
+    header_font = Font(bold=True, color="FFFFFF")
+    coral_fill = PatternFill("solid", fgColor="F05D5E")
+    light_fill = PatternFill("solid", fgColor="FFF1F1")
+    bold_font = Font(bold=True)
+    border_thin = Border(
+        left=Side(style="thin", color="DDDDDD"),
+        right=Side(style="thin", color="DDDDDD"),
+        top=Side(style="thin", color="DDDDDD"),
+        bottom=Side(style="thin", color="DDDDDD"),
+    )
+
+    ws1["A1"] = f"Liquidacion - {data['business_name']}"
+    ws1["A1"].font = title_font
+    ws1["A1"].fill = coral_fill
+    ws1["A1"].alignment = Alignment(horizontal="left", vertical="center")
+    ws1.merge_cells("A1:D1")
+    ws1.row_dimensions[1].height = 28
+
+    ws1["A2"] = "Periodo"
+    ws1["B2"] = data["period_key"] or "—"
+    ws1["A3"] = "Estado"
+    ws1["B3"] = data["status"] or "—"
+    ws1["A4"] = "Settlement ID"
+    ws1["B4"] = data["settlement_id"]
+    ws1["A5"] = "Generado"
+    ws1["B5"] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    for r in range(2, 6):
+        ws1.cell(row=r, column=1).font = bold_font
+
+    # KPIs
+    ws1["A7"] = "TOTALES"
+    ws1["A7"].font = header_font
+    ws1["A7"].fill = coral_fill
+    ws1.merge_cells("A7:D7")
+
+    t = data["totals"]
+    kpis = [
+        ("Total neto al negocio (MXN)", data["net_payout"]),
+        ("Cobrado al cliente (MXN)", t["client_paid"]),
+        ("Comisiones Bookvia (MXN)", t["bookvia_fee"]),
+        ("Fees Stripe (MXN)", t["stripe_fee"]),
+        ("Saldo Bookvia aplicado (MXN)", t.get("wallet_applied", 0.0)),
+        ("Cobrado a tarjeta (MXN)", t.get("stripe_charged", 0.0)),
+        ("Citas (total)", data["booking_count"]),
+        ("Citas hibridas (saldo+tarjeta)", t.get("hybrid_count", 0)),
+    ]
+    row = 8
+    for label, val in kpis:
+        ws1.cell(row=row, column=1, value=label).font = bold_font
+        c = ws1.cell(row=row, column=2, value=val)
+        if isinstance(val, float):
+            c.number_format = "#,##0.00"
+        row += 1
+
+    # Bucket totals
+    row += 1
+    ws1.cell(row=row, column=1, value="POR TIPO DE CITA").font = header_font
+    ws1.cell(row=row, column=1).fill = coral_fill
+    ws1.merge_cells(start_row=row, start_column=1, end_row=row, end_column=4)
+    row += 1
+    ws1.cell(row=row, column=1, value="Tipo").font = bold_font
+    ws1.cell(row=row, column=2, value="Cantidad").font = bold_font
+    ws1.cell(row=row, column=3, value="Monto (MXN)").font = bold_font
+    for col in (1, 2, 3):
+        ws1.cell(row=row, column=col).fill = light_fill
+    row += 1
+    for bucket in data["breakdown"]:
+        ws1.cell(row=row, column=1, value=bucket["label_es"])
+        ws1.cell(row=row, column=2, value=bucket["count"])
+        c = ws1.cell(row=row, column=3, value=bucket["amount"])
+        c.number_format = "#,##0.00"
+        row += 1
+
+    # Column widths
+    ws1.column_dimensions["A"].width = 38
+    ws1.column_dimensions["B"].width = 22
+    ws1.column_dimensions["C"].width = 18
+    ws1.column_dimensions["D"].width = 18
+
+    # === Sheet 2: Detalle ===
+    ws2 = wb.create_sheet("Detalle por cita")
+    headers = [
+        "Tipo", "Fecha", "Hora", "Cliente", "Email cliente",
+        "Servicio", "Estado cita", "Cancelada por", "Motivo cancelacion",
+        "Cliente pago (MXN)", "Saldo Bookvia (MXN)", "Tarjeta (MXN)",
+        "Fee Stripe (MXN)", "Comision Bookvia (MXN)", "Neto al negocio (MXN)",
+        "Pago hibrido", "Booking ID", "Transaction ID",
+    ]
+    for col_idx, h in enumerate(headers, 1):
+        c = ws2.cell(row=1, column=col_idx, value=h)
+        c.font = header_font
+        c.fill = coral_fill
+        c.alignment = Alignment(horizontal="center", vertical="center")
+        c.border = border_thin
+    ws2.row_dimensions[1].height = 28
+    ws2.freeze_panes = "A2"
+
+    money_cols = {10, 11, 12, 13, 14, 15}
+    row = 2
+    for bucket in data["breakdown"]:
+        for it in bucket["items"]:
+            values = [
+                bucket["label_es"],
+                it.get("date"),
+                it.get("time"),
+                it.get("client_name"),
+                it.get("client_email") or "",
+                it.get("service_name"),
+                it.get("booking_status"),
+                it.get("cancelled_by") or "",
+                it.get("cancellation_reason") or "",
+                it.get("client_paid"),
+                it.get("wallet_applied"),
+                it.get("stripe_charged"),
+                it.get("stripe_fee"),
+                it.get("bookvia_fee"),
+                it.get("business_net"),
+                "SI" if it.get("is_hybrid_payment") else "NO",
+                it.get("booking_id"),
+                it.get("transaction_id"),
+            ]
+            for col_idx, val in enumerate(values, 1):
+                c = ws2.cell(row=row, column=col_idx, value=val)
+                if col_idx in money_cols:
+                    c.number_format = "#,##0.00"
+                c.border = border_thin
+            row += 1
+
+    # Auto-width based on header length (approx)
+    widths = [22, 12, 8, 22, 28, 26, 14, 14, 30, 14, 14, 14, 14, 16, 16, 12, 30, 30]
+    for col_idx, w in enumerate(widths, 1):
+        ws2.column_dimensions[ws2.cell(row=1, column=col_idx).column_letter].width = w
+
+    # === Output ===
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    filename = f"bookvia-liquidacion-{data['business_name'] or 'sin_nombre'}-{data['period_key'] or settlement_id}.xlsx".replace(" ", "_")
+    return Response(
+        content=buf.read(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store",
+        },
+    )
+
+
 @router.get("/finance/dashboard")
 async def admin_finance_dashboard(
     months: int = 6,
@@ -5075,26 +5400,73 @@ async def admin_force_clear_available(
     completed (or whose booking does not exist) to `funds_state=cleared`.
 
     Covers all stuck states: `uninitialized`, `pending_hold`, `available`.
+    Also includes `cancelled` and `no_show` bookings whose transaction
+    has a positive `business_amount`/`payout_amount` (late-cancel penalty
+    retained for the business).
     Skips already cleared or paid_out. By default ignores the 24h grace
     window (skip_grace=True) so the day-20 corte can include them now.
     """
     from services.funds_state import FundsState
-    # 1. Find completed bookings
-    completed_booking_ids: List[str] = []
+    # 1. Find bookings whose funds should be eligible for clearing:
+    #    - completed bookings (normal happy path)
+    #    - cancelled / no_show bookings where the business retained money
+    #      as penalty (late cancellation policy)
+    eligible_booking_ids: List[str] = []
     async for b in db.bookings.find({"status": "completed"}, {"_id": 0, "id": 1}):
-        completed_booking_ids.append(b["id"])
+        eligible_booking_ids.append(b["id"])
+    # Add cancelled / no_show bookings where their transaction has positive
+    # business_amount or payout_amount (means a penalty was kept for the biz).
+    # Transactions for late-cancel bookings carry status="refund_partial" with
+    # refund_amount=0 — they must be included alongside "paid" ones.
+    async for b in db.bookings.find(
+        {"status": {"$in": ["cancelled", "no_show"]}},
+        {"_id": 0, "id": 1},
+    ):
+        tx_with_money = await db.transactions.find_one(
+            {
+                "booking_id": b["id"],
+                "$and": [
+                    {"$or": [
+                        {"status": "paid"},
+                        {"status": "refund_partial", "$or": [{"refund_amount": 0}, {"refund_amount": None}, {"refund_amount": {"$exists": False}}]},
+                    ]},
+                    {"$or": [
+                        {"business_amount": {"$gt": 0}},
+                        {"payout_amount": {"$gt": 0}},
+                    ]},
+                ],
+            },
+            {"_id": 0, "id": 1},
+        )
+        if tx_with_money:
+            eligible_booking_ids.append(b["id"])
     # 2. Find paid transactions linked to those bookings whose funds_state
-    #    is NOT yet cleared or paid_out
+    #    is NOT yet cleared or paid_out.
+    #    Accept status="paid" (normal) OR status="refund_partial" with no
+    #    actual refund (refund_amount=0, used as a marker when client
+    #    cancels past the cutoff and the business retains the deposit).
     valid_states = [None, "", FundsState.PENDING_HOLD.value, FundsState.AVAILABLE.value]
+    status_clauses = [
+        {"status": "paid"},
+        {"status": "refund_partial", "$or": [{"refund_amount": 0}, {"refund_amount": None}, {"refund_amount": {"$exists": False}}]},
+    ]
     query: Dict[str, Any] = {
-        "status": "paid",
-        "booking_id": {"$in": completed_booking_ids},
-        "$or": [{"funds_state": {"$in": valid_states}}, {"funds_state": {"$exists": False}}],
+        "$and": [
+            {"$or": status_clauses},
+            {"booking_id": {"$in": eligible_booking_ids}},
+            {"$or": [{"funds_state": {"$in": valid_states}}, {"funds_state": {"$exists": False}}]},
+        ],
     }
     if not skip_grace:
+        # When honoring the grace window, narrow the funds_state criterion
+        # to AVAILABLE only and require funds_clears_at <= now. We replace
+        # the last clause of the $and (which holds the funds_state OR) so
+        # the status / booking_id filters above are preserved.
         now_iso = datetime.now(timezone.utc).isoformat()
-        query["funds_state"] = FundsState.AVAILABLE.value
-        query["funds_clears_at"] = {"$ne": None, "$lte": now_iso}
+        query["$and"][-1] = {
+            "funds_state": FundsState.AVAILABLE.value,
+            "funds_clears_at": {"$ne": None, "$lte": now_iso},
+        }
     candidates = await db.transactions.find(query, {"_id": 0, "id": 1, "funds_state": 1}).to_list(2000)
     if dry_run:
         return {"dry_run": True, "would_clear": len(candidates)}

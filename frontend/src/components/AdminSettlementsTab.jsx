@@ -9,11 +9,15 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
+} from '@/components/ui/dialog';
 import api from '@/lib/api';
 import { toast } from 'sonner';
 import {
   Banknote, Zap, FileDown, Play, AlertTriangle, CheckCircle2,
-  Clock, XCircle, Lock, RefreshCcw, Calendar,
+  Clock, XCircle, Lock, RefreshCcw, Calendar, Eye, UserX, CalendarX,
+  FileSpreadsheet,
 } from 'lucide-react';
 
 const fmt = (n) => `$${Number(n || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -39,6 +43,42 @@ export default function AdminSettlementsTab() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [previewResult, setPreviewResult] = useState(null);
+  const [breakdown, setBreakdown] = useState({ open: false, loading: false, data: null });
+
+  const openBreakdown = async (settlementId) => {
+    setBreakdown({ open: true, loading: true, data: null });
+    try {
+      const res = await api.get(`/admin/settlements/${settlementId}/breakdown`);
+      setBreakdown({ open: true, loading: false, data: res.data });
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || 'No se pudo cargar el desglose');
+      setBreakdown({ open: false, loading: false, data: null });
+    }
+  };
+
+  const exportBreakdownExcel = async (settlementId, businessName) => {
+    const tId = toast.loading('Generando archivo Excel...');
+    try {
+      const res = await api.get(
+        `/admin/settlements/${settlementId}/breakdown.xlsx`,
+        { responseType: 'blob' }
+      );
+      const blob = new Blob([res.data], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `bookvia-liquidacion-${(businessName || 'negocio').replace(/\s+/g, '_')}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success('Excel descargado', { id: tId });
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || 'No se pudo generar el Excel', { id: tId });
+    }
+  };
 
   const load = async () => {
     setLoading(true);
@@ -130,9 +170,35 @@ export default function AdminSettlementsTab() {
     }
   };
 
-  const exportSpei = (bank = 'generic') => {
-    const url = `${process.env.REACT_APP_BACKEND_URL}/api/admin/settlements/${period}/export-spei.csv?bank=${bank}`;
-    window.open(url, '_blank');
+  const exportSpei = async (bank = 'generic') => {
+    setBusy(true);
+    try {
+      const res = await api.get(
+        `/admin/settlements/${period}/export-spei.csv?bank=${bank}`,
+        { responseType: 'blob' }
+      );
+      const blob = new Blob([res.data], { type: 'text/csv;charset=utf-8' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `bookvia-spei-${period}-${bank}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success(`CSV ${bank.toUpperCase()} descargado`);
+    } catch (e) {
+      const status = e?.response?.status;
+      if (status === 401) {
+        toast.error('Sesion expirada, vuelve a iniciar sesion');
+      } else if (status === 404) {
+        toast.error('No hay liquidaciones para este periodo todavia');
+      } else {
+        toast.error(e?.response?.data?.detail || 'No se pudo generar el CSV');
+      }
+    } finally {
+      setBusy(false);
+    }
   };
 
   const totals = data?.totals || {};
@@ -454,10 +520,15 @@ export default function AdminSettlementsTab() {
                     const sb = STATUS_BADGE[row.status] || STATUS_BADGE.pending;
                     const SBIcon = sb.icon;
                     return (
-                      <tr key={row.settlement_id} className="border-b hover:bg-muted/30"
+                      <tr key={row.settlement_id}
+                          className="border-b hover:bg-muted/30 cursor-pointer"
+                          onClick={() => openBreakdown(row.settlement_id)}
                           data-testid={`settlement-row-${row.settlement_id}`}>
                         <td className="py-3">
-                          <div className="font-medium">{row.business_name}</div>
+                          <div className="font-medium flex items-center gap-2">
+                            {row.business_name}
+                            <Eye className="h-3 w-3 text-muted-foreground" />
+                          </div>
                           {row.clabe ? <div className="text-xs text-muted-foreground">CLABE ****{String(row.clabe).slice(-4)}</div> : null}
                         </td>
                         <td className="py-3 text-right">{row.booking_count}</td>
@@ -478,7 +549,7 @@ export default function AdminSettlementsTab() {
                             <Badge variant="outline">{row.preferred_method}</Badge>
                           )}
                         </td>
-                        <td className="py-3 text-right">
+                        <td className="py-3 text-right" onClick={(e) => e.stopPropagation()}>
                           {row.status === 'pending' && row.connect_ready && !row.payout_hold ? (
                             <Button size="sm" variant="ghost" disabled={busy}
                                     onClick={() => executeOne(row.settlement_id, row.business_name)}
@@ -507,6 +578,166 @@ export default function AdminSettlementsTab() {
           )}
         </CardContent>
       </Card>
+
+      {/* Modal: Desglose del settlement */}
+      <Dialog
+        open={breakdown.open}
+        onOpenChange={(open) => !open && setBreakdown({ open: false, loading: false, data: null })}
+      >
+        <DialogContent
+          className="max-w-3xl max-h-[90vh] overflow-y-auto"
+          data-testid="settlement-breakdown-modal"
+        >
+          <DialogHeader>
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <DialogTitle className="flex items-center gap-2">
+                  <Banknote className="h-5 w-5 text-[#F05D5E]" />
+                  Desglose de la liquidacion
+                </DialogTitle>
+                <DialogDescription>
+                  {breakdown.data?.business_name} · Periodo {breakdown.data?.period_key}
+                </DialogDescription>
+              </div>
+              {breakdown.data && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => exportBreakdownExcel(breakdown.data.settlement_id, breakdown.data.business_name)}
+                  data-testid="export-breakdown-excel-btn"
+                  className="shrink-0"
+                >
+                  <FileSpreadsheet className="h-4 w-4 mr-1.5 text-emerald-700" />
+                  Excel
+                </Button>
+              )}
+            </div>
+          </DialogHeader>
+          {breakdown.loading && <Skeleton className="h-40 w-full" />}
+          {breakdown.data && <BreakdownView data={breakdown.data} />}
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+const BUCKET_ICONS = {
+  completed: CheckCircle2,
+  late_cancel_penalty: CalendarX,
+  no_show_penalty: UserX,
+  other: AlertTriangle,
+};
+const BUCKET_COLORS = {
+  completed: 'text-emerald-600 bg-emerald-50',
+  late_cancel_penalty: 'text-amber-700 bg-amber-50',
+  no_show_penalty: 'text-rose-700 bg-rose-50',
+  other: 'text-slate-600 bg-slate-50',
+};
+
+function BreakdownView({ data }) {
+  const t = data.totals || {};
+  const hasHybrid = (t.hybrid_count || 0) > 0;
+  return (
+    <div className="space-y-5" data-testid="breakdown-view">
+      {/* KPIs globales */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="rounded-lg border bg-muted/20 p-3">
+          <div className="text-xs text-muted-foreground">Total a pagar al negocio</div>
+          <div className="text-xl font-bold text-emerald-700 mt-1">{fmt(data.net_payout)}</div>
+          <div className="text-xs text-muted-foreground mt-1">{data.booking_count} cita(s)</div>
+        </div>
+        <div className="rounded-lg border bg-muted/20 p-3">
+          <div className="text-xs text-muted-foreground">Cobrado al cliente</div>
+          <div className="text-lg font-semibold mt-1">{fmt(t.client_paid)}</div>
+        </div>
+        <div className="rounded-lg border bg-muted/20 p-3">
+          <div className="text-xs text-muted-foreground">Comisiones Bookvia</div>
+          <div className="text-lg font-semibold text-[#F05D5E] mt-1">{fmt(t.bookvia_fee)}</div>
+        </div>
+        <div className="rounded-lg border bg-muted/20 p-3">
+          <div className="text-xs text-muted-foreground">Fees de Stripe</div>
+          <div className="text-lg font-semibold text-slate-700 mt-1">{fmt(t.stripe_fee)}</div>
+        </div>
+      </div>
+
+      {/* Aviso de pagos hibridos */}
+      {hasHybrid && (
+        <div className="rounded-lg border border-violet-200 bg-violet-50 p-3 text-sm" data-testid="hybrid-payment-notice">
+          <div className="flex items-start gap-2">
+            <Banknote className="h-4 w-4 text-violet-700 mt-0.5 shrink-0" />
+            <div className="flex-1">
+              <div className="font-semibold text-violet-900">
+                {t.hybrid_count} cita(s) pagada(s) con saldo Bookvia + tarjeta
+              </div>
+              <div className="text-xs text-violet-800 mt-1">
+                Saldo aplicado: {fmt(t.wallet_applied)} · Cobrado a tarjeta: {fmt(t.stripe_charged)}.
+                El negocio recibe el monto completo de cada cita; los fondos del saldo Bookvia
+                vienen del saldo agregado en Stripe.
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Buckets */}
+      {(data.breakdown || []).map((bucket) => {
+        const Icon = BUCKET_ICONS[bucket.key] || AlertTriangle;
+        const colorCn = BUCKET_COLORS[bucket.key] || BUCKET_COLORS.other;
+        return (
+          <div key={bucket.key} className="rounded-lg border" data-testid={`bucket-${bucket.key}`}>
+            <div className={`flex items-center justify-between px-4 py-3 ${colorCn} rounded-t-lg`}>
+              <div className="flex items-center gap-2 font-semibold">
+                <Icon className="h-4 w-4" />
+                <span>{bucket.label_es}</span>
+                <Badge variant="outline" className="ml-2">{bucket.count}</Badge>
+              </div>
+              <div className="font-bold text-lg">{fmt(bucket.amount)}</div>
+            </div>
+            <div className="divide-y">
+              {bucket.items.map((it) => (
+                <div key={it.transaction_id} className="px-4 py-2 text-sm flex items-center justify-between gap-3"
+                     data-testid={`bucket-item-${it.transaction_id}`}>
+                  <div className="min-w-0 flex-1">
+                    <div className="font-medium truncate flex items-center gap-2">
+                      {it.client_name}
+                      {it.is_hybrid_payment && (
+                        <Badge variant="outline" className="text-violet-700 border-violet-300 bg-violet-50 text-[10px] gap-1">
+                          <Banknote className="h-2.5 w-2.5" /> Saldo + Tarjeta
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="text-xs text-muted-foreground truncate">
+                      {it.date} {it.time} · {it.service_name}
+                    </div>
+                    {it.cancellation_reason && (
+                      <div className="text-xs text-amber-700 mt-0.5">
+                        Motivo: {it.cancellation_reason}
+                      </div>
+                    )}
+                    {it.is_hybrid_payment && (
+                      <div className="text-[10px] text-violet-700 mt-0.5">
+                        Saldo Bookvia aplicado: {fmt(it.wallet_applied)} · Tarjeta: {fmt(it.stripe_charged)}
+                      </div>
+                    )}
+                  </div>
+                  <div className="text-right shrink-0">
+                    <div className="font-semibold">{fmt(it.business_net)}</div>
+                    <div className="text-[10px] text-muted-foreground">
+                      Cliente pago {fmt(it.client_paid)} · Bookvia {fmt(it.bookvia_fee)} · Stripe {fmt(it.stripe_fee)}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+
+      {(!data.breakdown || data.breakdown.length === 0) && (
+        <div className="text-center py-6 text-muted-foreground text-sm">
+          Esta liquidacion no tiene transacciones asociadas.
+        </div>
+      )}
     </div>
   );
 }
