@@ -3982,6 +3982,7 @@ async def admin_execute_stripe_batch(
 @router.get("/settlements/period/{period_key}/detail")
 async def admin_settlement_period_detail(
     period_key: str,
+    include_orphans: bool = False,
     token_data: TokenData = Depends(require_admin),
 ):
     """Per-period breakdown for the admin Liquidacion Mensual dashboard.
@@ -3989,6 +3990,10 @@ async def admin_settlement_period_detail(
     For every settlement in the period, returns the totals plus the business'
     Connect status so the UI can show whether each row can be paid via Stripe
     Transfer or needs to fall back to manual SPEI.
+
+    Settlements whose `business_id` no longer exists in the `businesses`
+    collection (deleted/test businesses) are filtered out by default. Pass
+    `include_orphans=true` to surface them — useful for forensic audit.
     """
     settlements = await db.settlements.find(
         {"period_key": period_key}, {"_id": 0}
@@ -4006,6 +4011,24 @@ async def admin_settlement_period_detail(
         },
     ).to_list(len(biz_ids) or 1)
     biz_map = {b["id"]: b for b in biz_docs}
+
+    # Filter out settlements whose business has been deleted
+    orphan_count = 0
+    orphan_amount = 0.0
+    if not include_orphans:
+        kept: List[Dict[str, Any]] = []
+        for s in settlements:
+            if s.get("business_id") in biz_map:
+                kept.append(s)
+            else:
+                orphan_count += 1
+                orphan_amount += float(s.get("net_payout") or 0)
+        settlements = kept
+    else:
+        for s in settlements:
+            if s.get("business_id") not in biz_map:
+                orphan_count += 1
+                orphan_amount += float(s.get("net_payout") or 0)
 
     items = []
     totals = {
@@ -4075,7 +4098,102 @@ async def admin_settlement_period_detail(
         "period_key": period_key,
         "items": items,
         "totals": {**totals,
-                   "total_net": round(sum(float(s.get("net_payout") or 0) for s in settlements), 2)},
+                   "total_net": round(sum(float(s.get("net_payout") or 0) for s in settlements), 2),
+                   "orphan_count": orphan_count,
+                   "orphan_amount": round(orphan_amount, 2)},
+    }
+
+
+@router.post("/settlements/cleanup-orphans")
+async def admin_settlements_cleanup_orphans(
+    dry_run: bool = False,
+    only_pending: bool = True,
+    token_data: TokenData = Depends(require_admin),
+):
+    """Delete settlements whose business has been removed from the platform.
+
+    These appear after a test/duplicate business is deleted but its
+    settlements were already generated. They clutter the Liquidacion panel
+    and inflate the period total with money nobody will ever claim.
+
+    Safety:
+      * `only_pending=True` (default) skips settlements already paid out
+        — those should be reviewed manually to avoid hiding real history.
+      * Each deleted settlement releases its tagged transactions
+        (`settlement_id` -> None) so the next corte ignores them.
+      * Audit log is created.
+
+    Pass `dry_run=True` to preview what would be removed.
+    """
+    # 1) Find all settlements
+    query: Dict[str, Any] = {}
+    if only_pending:
+        query["status"] = {"$in": [SettlementStatus.PENDING, "pending", None]}
+    all_settlements = await db.settlements.find(query, {"_id": 0}).to_list(5000)
+
+    if not all_settlements:
+        return {"scanned": 0, "deleted": 0, "amount_freed": 0.0, "dry_run": dry_run}
+
+    # 2) Find which business_ids actually exist
+    biz_ids = list({s["business_id"] for s in all_settlements if s.get("business_id")})
+    existing_biz = await db.businesses.find(
+        {"id": {"$in": biz_ids}}, {"_id": 0, "id": 1}
+    ).to_list(len(biz_ids) or 1)
+    existing_ids = {b["id"] for b in existing_biz}
+
+    # 3) Pick orphans
+    orphans = [s for s in all_settlements if s.get("business_id") not in existing_ids]
+    orphan_ids = [s["id"] for s in orphans]
+    tx_ids_to_release: List[str] = []
+    amount_freed = 0.0
+    for s in orphans:
+        amount_freed += float(s.get("net_payout") or 0)
+        for tx_id in (s.get("transaction_ids") or []):
+            tx_ids_to_release.append(tx_id)
+
+    if dry_run:
+        return {
+            "dry_run": True,
+            "scanned": len(all_settlements),
+            "would_delete": len(orphans),
+            "would_release_transactions": len(tx_ids_to_release),
+            "amount_freed": round(amount_freed, 2),
+            "samples": [
+                {"id": s["id"], "business_id": s.get("business_id"),
+                 "business_name": s.get("business_name"), "amount": s.get("net_payout"),
+                 "period_key": s.get("period_key")}
+                for s in orphans[:10]
+            ],
+        }
+
+    # 4) Release transactions (so they don't keep ghost settlement_id)
+    if tx_ids_to_release:
+        await db.transactions.update_many(
+            {"id": {"$in": tx_ids_to_release}},
+            {"$unset": {"settlement_id": "", "settlement_period": ""}},
+        )
+
+    # 5) Delete the orphan settlements
+    delete_result = await db.settlements.delete_many({"id": {"$in": orphan_ids}})
+
+    await create_audit_log(
+        admin_id=token_data.user_id, admin_email=token_data.email,
+        action=AuditAction.SETTLEMENT_GENERATE, target_type="settlements",
+        target_id="cleanup_orphans",
+        details={
+            "deleted": delete_result.deleted_count,
+            "amount_freed": round(amount_freed, 2),
+            "released_transactions": len(tx_ids_to_release),
+            "only_pending": only_pending,
+        },
+    )
+
+    return {
+        "scanned": len(all_settlements),
+        "deleted": delete_result.deleted_count,
+        "released_transactions": len(tx_ids_to_release),
+        "amount_freed": round(amount_freed, 2),
+        "dry_run": False,
     }
 
 
