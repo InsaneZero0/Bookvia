@@ -5923,6 +5923,79 @@ async def admin_force_clear_available(
     }
 
 
+@router.post("/finance/transactions/{transaction_id}/force-clear-single")
+async def admin_force_clear_single_transaction(
+    transaction_id: str,
+    request: Request,
+    token_data: TokenData = Depends(require_admin),
+):
+    """Force a SPECIFIC transaction to funds_state=CLEARED, bypassing ALL filters.
+
+    Use this when the bulk sweeps don't capture a transaction due to unusual
+    state combinations (e.g. status="refunded" but business_amount>0, or
+    funds_state in some legacy value). Only safe for admin manual remediation.
+    """
+    tx = await db.transactions.find_one({"id": transaction_id}, {"_id": 0})
+    if not tx:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+
+    previous_state = tx.get("funds_state")
+    if previous_state == FundsState.CLEARED.value:
+        return {
+            "message": "Ya estaba en CLEARED",
+            "transaction_id": transaction_id,
+            "previous_state": previous_state,
+            "new_state": previous_state,
+        }
+    if previous_state == FundsState.PAID_OUT.value:
+        raise HTTPException(
+            status_code=409,
+            detail="Ya esta en PAID_OUT — no se puede regresar a CLEARED",
+        )
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    await db.transactions.update_one(
+        {"id": transaction_id},
+        {
+            "$set": {
+                "funds_state": FundsState.CLEARED.value,
+                "funds_cleared_at": now_iso,
+                "funds_clears_at": now_iso,
+                "updated_at": now_iso,
+            },
+            "$push": {
+                "funds_state_history": {
+                    "id": generate_id(),
+                    "from": previous_state,
+                    "to": FundsState.CLEARED.value,
+                    "at": now_iso,
+                    "actor": f"admin:{token_data.email}",
+                    "reason": "Force-cleared individually by admin (bypass filters)",
+                }
+            },
+        },
+    )
+
+    await create_audit_log(
+        admin_id=token_data.user_id, admin_email=token_data.email,
+        action=AuditAction.PAYMENT_RELEASE,
+        target_type="transaction", target_id=transaction_id,
+        details={
+            "action": "force_clear_single",
+            "previous_state": previous_state,
+            "amount": tx.get("business_amount") or tx.get("payout_amount") or 0,
+        },
+        request=request,
+    )
+
+    return {
+        "message": "Transaccion movida a CLEARED",
+        "transaction_id": transaction_id,
+        "previous_state": previous_state,
+        "new_state": FundsState.CLEARED.value,
+    }
+
+
 @router.get("/finance/funds-state-summary")
 async def admin_funds_state_summary(token_data: TokenData = Depends(require_admin)):
     """Snapshot of how many transactions are in each funds_state. Used by the
