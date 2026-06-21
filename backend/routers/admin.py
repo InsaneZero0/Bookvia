@@ -1309,6 +1309,307 @@ async def decommission_business(
     }
 
 
+@router.get("/finance/stuck-late-cancellations")
+async def admin_stuck_late_cancellations(
+    token_data: TokenData = Depends(require_admin),
+):
+    """Diagnostic: list every late-cancelled booking whose money should
+    have gone to the business but hasn't been settled yet.
+
+    Use this to spot any pending cancellation-penalty that is still in
+    funds_state=PENDING_HOLD or AVAILABLE without a settlement_id.
+
+    Returns the booking, the transaction state, the amount owed and the
+    expected `funds_clears_at` so you can decide whether to wait or
+    force-clear it now.
+    """
+    # 1) Cancelled bookings where the client cancelled (penalty to business)
+    cancelled_bookings = await db.bookings.find(
+        {"status": "cancelled", "cancelled_by": {"$in": ["user", "client"]}},
+        {"_id": 0, "id": 1, "business_id": 1, "date": 1, "time": 1,
+         "cancelled_at": 1, "user_id": 1, "service_id": 1},
+    ).to_list(2000)
+
+    if not cancelled_bookings:
+        return {"count": 0, "items": [], "total_amount_owed": 0.0}
+
+    booking_ids = [b["id"] for b in cancelled_bookings]
+    biz_ids = list({b["business_id"] for b in cancelled_bookings if b.get("business_id")})
+    user_ids = list({b["user_id"] for b in cancelled_bookings if b.get("user_id")})
+    svc_ids = list({b["service_id"] for b in cancelled_bookings if b.get("service_id")})
+
+    # 2) Their transactions that have money for the business but are NOT yet settled
+    txs = await db.transactions.find(
+        {
+            "booking_id": {"$in": booking_ids},
+            "$or": [
+                {"business_amount": {"$gt": 0}},
+                {"payout_amount": {"$gt": 0}},
+            ],
+        },
+        {"_id": 0},
+    ).to_list(2000)
+
+    # 3) Batched lookups
+    biz_map = {b["id"]: b async for b in db.businesses.find(
+        {"id": {"$in": biz_ids}}, {"_id": 0, "id": 1, "name": 1}
+    )}
+    user_map = {u["id"]: u async for u in db.users.find(
+        {"id": {"$in": user_ids}}, {"_id": 0, "id": 1, "full_name": 1, "email": 1}
+    )}
+    svc_map = {s["id"]: s async for s in db.services.find(
+        {"id": {"$in": svc_ids}}, {"_id": 0, "id": 1, "name": 1}
+    )}
+    booking_map = {b["id"]: b for b in cancelled_bookings}
+
+    items = []
+    total = 0.0
+    for tx in txs:
+        bk = booking_map.get(tx.get("booking_id")) or {}
+        biz = biz_map.get(bk.get("business_id")) or {}
+        user = user_map.get(bk.get("user_id")) or {}
+        svc = svc_map.get(bk.get("service_id")) or {}
+        amount = float(tx.get("business_amount") or tx.get("payout_amount") or 0)
+        funds_state = tx.get("funds_state")
+        settlement_id = tx.get("settlement_id")
+
+        # Classify the situation
+        if settlement_id:
+            situation = "ya_liquidado"  # In a settlement (paid or pending)
+        elif funds_state == "cleared":
+            situation = "listo_para_proximo_corte"  # Will be picked up day 20
+        elif funds_state == "available":
+            situation = "esperando_grace_24h"  # Cron will move to cleared automatically
+        elif funds_state in ("pending_hold", None, "uninitialized"):
+            situation = "ATASCADO"  # Needs force-clear
+        else:
+            situation = f"otro:{funds_state}"
+
+        if situation != "ya_liquidado":
+            total += amount
+
+        items.append({
+            "booking_id": bk.get("id"),
+            "transaction_id": tx.get("id"),
+            "date": bk.get("date"),
+            "time": bk.get("time"),
+            "cancelled_at": bk.get("cancelled_at"),
+            "client_name": user.get("full_name"),
+            "client_email": user.get("email"),
+            "business_name": biz.get("name"),
+            "service_name": svc.get("name"),
+            "amount_owed": round(amount, 2),
+            "transaction_status": tx.get("status"),
+            "funds_state": funds_state,
+            "funds_clears_at": tx.get("funds_clears_at"),
+            "settlement_id": settlement_id,
+            "situation": situation,
+        })
+
+    # Sort: most urgent first (ATASCADO) then by date desc
+    SITUATION_ORDER = {
+        "ATASCADO": 0,
+        "esperando_grace_24h": 1,
+        "listo_para_proximo_corte": 2,
+        "ya_liquidado": 3,
+    }
+    items.sort(key=lambda x: (SITUATION_ORDER.get(x["situation"], 9), -(int((x["cancelled_at"] or "").replace("-", "").replace(":", "").replace("T", "").replace(".", "")[:14] or 0))))
+
+    return {
+        "count": len(items),
+        "total_amount_pending_settlement": round(total, 2),
+        "items": items,
+    }
+
+
+@router.post("/businesses/bulk-hard-delete-test")
+async def bulk_hard_delete_test_businesses(
+    request: Request,
+    confirm: str = "",
+    only_without_stripe_connect: bool = True,
+    only_with_test_clabes: bool = False,
+    business_ids: Optional[List[str]] = None,
+    token_data: TokenData = Depends(require_admin),
+):
+    """Bulk hard-delete test businesses (no Stripe Connect + no paid settlements).
+
+    Safety: must pass `confirm=DELETE-TEST-BUSINESSES` and the targets must:
+      - have NO paid settlements (financial history is sacred)
+      - by default: have NO Stripe Connect account configured
+      - optionally: also restrict to test-looking CLABE values
+
+    Pass `business_ids=[...]` to restrict to specific IDs.
+    """
+    if confirm != "DELETE-TEST-BUSINESSES":
+        raise HTTPException(
+            status_code=400,
+            detail="Para confirmar, llama con ?confirm=DELETE-TEST-BUSINESSES",
+        )
+
+    # Build query for candidate businesses
+    query: Dict[str, Any] = {}
+    if business_ids:
+        query["id"] = {"$in": business_ids}
+    if only_without_stripe_connect:
+        query["$or"] = [
+            {"stripe_connect_account_id": {"$in": [None, ""]}},
+            {"stripe_connect_account_id": {"$exists": False}},
+        ]
+
+    candidates = await db.businesses.find(query, {"_id": 0, "id": 1, "name": 1, "clabe": 1}).to_list(500)
+
+    if only_with_test_clabes:
+        # Filter to keep only those whose CLABE looks fake (ends in repeated digits)
+        candidates = [b for b in candidates if (b.get("clabe") or "").endswith(("9879", "7867", "6546", "7979", "0000"))]
+
+    results = []
+    for biz in candidates:
+        bid = biz["id"]
+        # Skip if has paid settlements
+        paid = await db.settlements.count_documents(
+            {"business_id": bid, "status": SettlementStatus.PAID}
+        )
+        if paid > 0:
+            results.append({
+                "id": bid, "name": biz.get("name"), "skipped": True,
+                "reason": f"{paid} liquidaciones pagadas",
+            })
+            continue
+
+        # Delete cascade
+        deleted: Dict[str, int] = {}
+        for coll in [
+            "services", "workers", "branches", "business_categories", "business_hours",
+            "bookings", "transactions", "settlements", "refund_events", "strikes",
+            "reviews", "business_photos", "funds_state_history",
+        ]:
+            r = await db[coll].delete_many({"business_id": bid})
+            if r.deleted_count > 0:
+                deleted[coll] = r.deleted_count
+        bres = await db.businesses.delete_one({"id": bid})
+        deleted["business"] = bres.deleted_count
+
+        results.append({
+            "id": bid, "name": biz.get("name"), "skipped": False,
+            "deleted_counts": deleted,
+        })
+
+    deleted_count = sum(1 for r in results if not r["skipped"])
+    await create_audit_log(
+        admin_id=token_data.user_id,
+        admin_email=token_data.email,
+        action=AuditAction.BUSINESS_DELETE if hasattr(AuditAction, "BUSINESS_DELETE") else AuditAction.BUSINESS_APPROVE,
+        target_type="businesses",
+        target_id="bulk_test_cleanup",
+        details={
+            "scanned": len(candidates),
+            "deleted": deleted_count,
+            "skipped": len(candidates) - deleted_count,
+            "only_without_stripe_connect": only_without_stripe_connect,
+            "only_with_test_clabes": only_with_test_clabes,
+        },
+        request=request,
+    )
+
+    return {
+        "scanned": len(candidates),
+        "deleted": deleted_count,
+        "skipped": len(candidates) - deleted_count,
+        "results": results,
+    }
+
+
+@router.delete("/businesses/{business_id}/hard-delete")
+async def hard_delete_business(
+    business_id: str,
+    request: Request,
+    confirm: str = "",
+    token_data: TokenData = Depends(require_admin),
+):
+    """Permanently delete a business and ALL its data from the database.
+
+    This is irreversible. Use only for test businesses or duplicates that
+    should never have existed. For real businesses use `decommission` (soft).
+
+    Deletes:
+      * business document
+      * services, workers, branches, business_categories, business_hours
+      * bookings, transactions, settlements, refund_events, strikes
+      * reviews, photos, push_tokens for the owner if the business is the
+        only one they had
+      * funds_state history is removed alongside the transactions
+
+    Caller MUST pass `?confirm=DELETE-{business_id}` to avoid accidents.
+    """
+    business = await db.businesses.find_one({"id": business_id})
+    if not business:
+        raise HTTPException(status_code=404, detail="Business not found")
+
+    expected = f"DELETE-{business_id}"
+    if confirm != expected:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Para confirmar, vuelve a llamar con ?confirm={expected}",
+        )
+
+    # Block hard-delete of businesses with PAID settlements to preserve
+    # financial history. Pending settlements are deleted alongside.
+    paid_settlements = await db.settlements.count_documents(
+        {"business_id": business_id, "status": SettlementStatus.PAID}
+    )
+    if paid_settlements > 0:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Este negocio tiene {paid_settlements} liquidaciones pagadas. "
+                "Usa /decommission en lugar de hard-delete para preservar historial."
+            ),
+        )
+
+    biz_name = business.get("name", "")
+    deleted: Dict[str, int] = {}
+
+    async def _del(collection_name: str, filt: Dict[str, Any]) -> int:
+        res = await db[collection_name].delete_many(filt)
+        return res.deleted_count
+
+    # Order matters: child docs first, business last
+    deleted["services"] = await _del("services", {"business_id": business_id})
+    deleted["workers"] = await _del("workers", {"business_id": business_id})
+    deleted["branches"] = await _del("branches", {"business_id": business_id})
+    deleted["business_categories"] = await _del("business_categories", {"business_id": business_id})
+    deleted["business_hours"] = await _del("business_hours", {"business_id": business_id})
+    deleted["bookings"] = await _del("bookings", {"business_id": business_id})
+    deleted["transactions"] = await _del("transactions", {"business_id": business_id})
+    deleted["settlements"] = await _del("settlements", {"business_id": business_id})
+    deleted["refund_events"] = await _del("refund_events", {"business_id": business_id})
+    deleted["strikes"] = await _del("strikes", {"business_id": business_id})
+    deleted["reviews"] = await _del("reviews", {"business_id": business_id})
+    deleted["business_photos"] = await _del("business_photos", {"business_id": business_id})
+    deleted["funds_state_history"] = await _del("funds_state_history", {"business_id": business_id})
+    deleted["business"] = await _del("businesses", {"id": business_id})
+
+    await create_audit_log(
+        admin_id=token_data.user_id,
+        admin_email=token_data.email,
+        action=AuditAction.BUSINESS_DELETE if hasattr(AuditAction, "BUSINESS_DELETE") else AuditAction.BUSINESS_APPROVE,
+        target_type="business",
+        target_id=business_id,
+        details={
+            "business_name": biz_name,
+            "hard_delete": True,
+            "deleted_counts": deleted,
+        },
+        request=request,
+    )
+
+    return {
+        "message": f"Negocio '{biz_name}' eliminado definitivamente",
+        "business_id": business_id,
+        "deleted": deleted,
+    }
+
+
 @router.post("/businesses/{business_id}/reactivate")
 async def reactivate_business(business_id: str, request: Request, token_data: TokenData = Depends(require_admin)):
     """Reactivate a decommissioned or suspended business (status -> APPROVED).
