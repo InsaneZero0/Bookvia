@@ -24,6 +24,11 @@ CITIES = [
     {"country_code": "MX", "name": "Tuxtla Gutiérrez", "slug": "tuxtla-gutierrez", "state": "Chiapas", "timezone": "America/Mexico_City"},
     {"country_code": "MX", "name": "Oaxaca", "slug": "oaxaca", "state": "Oaxaca", "timezone": "America/Mexico_City"},
     {"country_code": "MX", "name": "Veracruz", "slug": "veracruz", "state": "Veracruz", "timezone": "America/Mexico_City"},
+    {"country_code": "MX", "name": "Nuevo Laredo", "slug": "nuevo-laredo", "state": "Tamaulipas", "timezone": "America/Matamoros"},
+    {"country_code": "MX", "name": "Reynosa", "slug": "reynosa", "state": "Tamaulipas", "timezone": "America/Matamoros"},
+    {"country_code": "MX", "name": "Matamoros", "slug": "matamoros", "state": "Tamaulipas", "timezone": "America/Matamoros"},
+    {"country_code": "MX", "name": "Tampico", "slug": "tampico", "state": "Tamaulipas", "timezone": "America/Mexico_City"},
+    {"country_code": "MX", "name": "Ciudad Victoria", "slug": "ciudad-victoria", "state": "Tamaulipas", "timezone": "America/Mexico_City"},
     # United States (US)
     {"country_code": "US", "name": "New York", "slug": "new-york", "state": "New York", "timezone": "America/New_York"},
     {"country_code": "US", "name": "Los Angeles", "slug": "los-angeles", "state": "California", "timezone": "America/Los_Angeles"},

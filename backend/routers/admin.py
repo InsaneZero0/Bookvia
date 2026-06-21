@@ -2681,6 +2681,111 @@ async def toggle_city_active(city_slug: str, request: Request, active: bool = Tr
     return {"message": f"City {'activated' if active else 'deactivated'}", "slug": city_slug, "active": active}
 
 
+@router.post("/cities/sync-from-source")
+async def admin_sync_cities_from_source(
+    request: Request,
+    token_data: TokenData = Depends(require_admin),
+):
+    """Add any city defined in `data/cities.py` that is missing from the DB.
+
+    Idempotent — existing cities are left untouched. Use after extending the
+    cities catalog source file to roll the new entries into production.
+    """
+    from data.cities import CITIES
+    added = []
+    skipped = []
+    for c in CITIES:
+        existing = await db.cities.find_one({"slug": c["slug"]}, {"_id": 0, "id": 1})
+        if existing:
+            skipped.append(c["slug"])
+            continue
+        doc = {
+            "id": generate_id(),
+            "country_code": c["country_code"],
+            "name": c["name"],
+            "slug": c["slug"],
+            "state": c.get("state"),
+            "timezone": c.get("timezone"),
+            "active": True,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        await db.cities.insert_one(doc)
+        added.append(c["slug"])
+
+    await create_audit_log(
+        admin_id=token_data.user_id, admin_email=token_data.email,
+        action=AuditAction.CITY_ACTIVATE, target_type="cities", target_id="sync_from_source",
+        details={"added": added, "skipped_count": len(skipped)}, request=request,
+    )
+    return {"added": added, "added_count": len(added), "skipped_count": len(skipped)}
+
+
+@router.post("/businesses/normalize-cities")
+async def admin_normalize_business_cities(
+    request: Request,
+    dry_run: bool = False,
+    token_data: TokenData = Depends(require_admin),
+):
+    """Normalize the `city` field of every business to canonical Title Case
+    and merge duplicates that only differ in casing/spacing.
+
+    For every business, looks up the closest city in the catalog by
+    case-insensitive comparison and rewrites `city` to the canonical
+    catalog name. Returns a per-business change list.
+
+    Pass `dry_run=true` to preview without writing.
+    """
+    cities = await db.cities.find({}, {"_id": 0, "name": 1, "slug": 1}).to_list(2000)
+    # Build lookup: lowercase/stripped name -> canonical name
+    canonical_by_lower = {(c["name"] or "").strip().lower(): c["name"] for c in cities}
+    canonical_by_slug = {(c["slug"] or "").strip().lower(): c["name"] for c in cities}
+
+    businesses = await db.businesses.find({}, {"_id": 0, "id": 1, "name": 1, "city": 1}).to_list(10000)
+
+    changes = []
+    for b in businesses:
+        original = (b.get("city") or "").strip()
+        if not original:
+            continue
+        key = original.lower()
+        # First try direct lookup by name (case-insensitive)
+        canonical = canonical_by_lower.get(key)
+        if not canonical:
+            # Try slugified form (e.g. "Nuevo-Laredo" or "nuevo laredo")
+            slug_like = key.replace(" ", "-")
+            canonical = canonical_by_slug.get(slug_like)
+        if not canonical:
+            # Try Title Case fallback (still preserves original if no catalog match)
+            canonical = original.title() if original.isupper() or original.islower() else None
+        if canonical and canonical != original:
+            changes.append({
+                "business_id": b["id"], "business_name": b.get("name"),
+                "from": original, "to": canonical,
+                "matched_catalog": canonical in canonical_by_lower.values(),
+            })
+
+    if not dry_run and changes:
+        for ch in changes:
+            await db.businesses.update_one(
+                {"id": ch["business_id"]}, {"$set": {"city": ch["to"]}}
+            )
+
+    if changes and not dry_run:
+        await create_audit_log(
+            admin_id=token_data.user_id, admin_email=token_data.email,
+            action=AuditAction.CITY_ACTIVATE, target_type="businesses",
+            target_id="normalize_cities",
+            details={"updated": len(changes), "samples": changes[:20]}, request=request,
+        )
+
+    return {
+        "dry_run": dry_run,
+        "total_businesses": len(businesses),
+        "changes_count": len(changes),
+        "changes": changes,
+    }
+
+
 
 # ============ CUSTOM REPORTS ============
 
