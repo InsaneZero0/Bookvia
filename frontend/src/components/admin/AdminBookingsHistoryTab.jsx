@@ -273,9 +273,19 @@ function BookingDetailView({ data, t }) {
       </Section>
 
       <Section title={t('Cliente', 'Client')} testid="bd-section-client">
-        <Row label={t('Nombre', 'Name')} value={client.full_name} />
-        <Row label={t('Email', 'Email')} value={client.email} copy />
-        <Row label={t('Telefono', 'Phone')} value={client.phone} />
+        <Row label={t('ID cuenta', 'Account ID')} value={client.id} mono copy />
+        <Row label={t('Nombre cuenta', 'Account name')} value={client.full_name} />
+        <Row label={t('Email cuenta', 'Account email')} value={client.email} copy />
+        <Row label={t('Telefono cuenta', 'Account phone')} value={client.phone} />
+        {booking.client_name && booking.client_name !== client.full_name && (
+          <Row label={t('Nombre en reserva', 'Name on booking')} value={booking.client_name} />
+        )}
+        {booking.client_email && booking.client_email !== client.email && (
+          <Row label={t('Email en reserva', 'Email on booking')} value={booking.client_email} copy />
+        )}
+        {booking.client_phone && booking.client_phone !== client.phone && (
+          <Row label={t('Telefono en reserva', 'Phone on booking')} value={booking.client_phone} />
+        )}
       </Section>
 
       <Section title={t('Negocio', 'Business')} testid="bd-section-business">
