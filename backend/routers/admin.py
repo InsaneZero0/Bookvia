@@ -4136,6 +4136,9 @@ async def admin_settlement_breakdown(
     grand_business_net = 0.0
     grand_stripe_fee = 0.0
     grand_bookvia_fee = 0.0
+    grand_wallet_applied = 0.0
+    grand_stripe_charged = 0.0
+    hybrid_count = 0
 
     for tx in txs:
         booking = booking_map.get(tx.get("booking_id")) or {}
@@ -4156,6 +4159,9 @@ async def admin_settlement_breakdown(
         client_paid = float(tx.get("client_paid") or tx.get("amount_total") or 0)
         stripe_fee = float(tx.get("stripe_fee_actual") or tx.get("stripe_fee_amount") or 0)
         bookvia_fee = max(0.0, round(client_paid - business_net - stripe_fee, 2))
+        wallet_applied = float(tx.get("wallet_applied") or 0)
+        stripe_charged = float(tx.get("stripe_charge_amount") or 0)
+        is_hybrid_payment = wallet_applied > 0
 
         user = user_map.get(booking.get("user_id")) or {}
         svc = service_map.get(booking.get("service_id")) or {}
@@ -4175,6 +4181,9 @@ async def admin_settlement_breakdown(
             "stripe_fee": round(stripe_fee, 2),
             "bookvia_fee": round(bookvia_fee, 2),
             "business_net": round(business_net, 2),
+            "wallet_applied": round(wallet_applied, 2),
+            "stripe_charged": round(stripe_charged, 2),
+            "is_hybrid_payment": is_hybrid_payment,
         }
         buckets[key]["items"].append(item)
         buckets[key]["count"] += 1
@@ -4184,6 +4193,10 @@ async def admin_settlement_breakdown(
         grand_business_net += business_net
         grand_stripe_fee += stripe_fee
         grand_bookvia_fee += bookvia_fee
+        grand_wallet_applied += wallet_applied
+        grand_stripe_charged += stripe_charged
+        if is_hybrid_payment:
+            hybrid_count += 1
 
     # Round bucket amounts at the end to avoid float drift
     for k in buckets:
@@ -4210,6 +4223,9 @@ async def admin_settlement_breakdown(
             "stripe_fee": round(grand_stripe_fee, 2),
             "bookvia_fee": round(grand_bookvia_fee, 2),
             "business_net": round(grand_business_net, 2),
+            "wallet_applied": round(grand_wallet_applied, 2),
+            "stripe_charged": round(grand_stripe_charged, 2),
+            "hybrid_count": hybrid_count,
         },
         "breakdown": breakdown,
     }

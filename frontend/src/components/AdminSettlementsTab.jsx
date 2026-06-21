@@ -569,6 +569,7 @@ const BUCKET_COLORS = {
 
 function BreakdownView({ data }) {
   const t = data.totals || {};
+  const hasHybrid = (t.hybrid_count || 0) > 0;
   return (
     <div className="space-y-5" data-testid="breakdown-view">
       {/* KPIs globales */}
@@ -592,6 +593,25 @@ function BreakdownView({ data }) {
         </div>
       </div>
 
+      {/* Aviso de pagos hibridos */}
+      {hasHybrid && (
+        <div className="rounded-lg border border-violet-200 bg-violet-50 p-3 text-sm" data-testid="hybrid-payment-notice">
+          <div className="flex items-start gap-2">
+            <Banknote className="h-4 w-4 text-violet-700 mt-0.5 shrink-0" />
+            <div className="flex-1">
+              <div className="font-semibold text-violet-900">
+                {t.hybrid_count} cita(s) pagada(s) con saldo Bookvia + tarjeta
+              </div>
+              <div className="text-xs text-violet-800 mt-1">
+                Saldo aplicado: {fmt(t.wallet_applied)} · Cobrado a tarjeta: {fmt(t.stripe_charged)}.
+                El negocio recibe el monto completo de cada cita; los fondos del saldo Bookvia
+                vienen del saldo agregado en Stripe.
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Buckets */}
       {(data.breakdown || []).map((bucket) => {
         const Icon = BUCKET_ICONS[bucket.key] || AlertTriangle;
@@ -611,13 +631,25 @@ function BreakdownView({ data }) {
                 <div key={it.transaction_id} className="px-4 py-2 text-sm flex items-center justify-between gap-3"
                      data-testid={`bucket-item-${it.transaction_id}`}>
                   <div className="min-w-0 flex-1">
-                    <div className="font-medium truncate">{it.client_name}</div>
+                    <div className="font-medium truncate flex items-center gap-2">
+                      {it.client_name}
+                      {it.is_hybrid_payment && (
+                        <Badge variant="outline" className="text-violet-700 border-violet-300 bg-violet-50 text-[10px] gap-1">
+                          <Banknote className="h-2.5 w-2.5" /> Saldo + Tarjeta
+                        </Badge>
+                      )}
+                    </div>
                     <div className="text-xs text-muted-foreground truncate">
                       {it.date} {it.time} · {it.service_name}
                     </div>
                     {it.cancellation_reason && (
                       <div className="text-xs text-amber-700 mt-0.5">
                         Motivo: {it.cancellation_reason}
+                      </div>
+                    )}
+                    {it.is_hybrid_payment && (
+                      <div className="text-[10px] text-violet-700 mt-0.5">
+                        Saldo Bookvia aplicado: {fmt(it.wallet_applied)} · Tarjeta: {fmt(it.stripe_charged)}
                       </div>
                     )}
                   </div>
