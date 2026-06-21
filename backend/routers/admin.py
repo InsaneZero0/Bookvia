@@ -5923,6 +5923,231 @@ async def admin_force_clear_available(
     }
 
 
+@router.get("/finance/transactions/{transaction_id}/full-detail")
+async def admin_transaction_full_detail(
+    transaction_id: str,
+    token_data: TokenData = Depends(require_admin),
+):
+    """Return EVERY field of a transaction + linked booking + linked Stripe
+    PaymentIntent/Charge status when possible. Use to decide whether a
+    `created`-status transaction was actually paid or abandoned.
+    """
+    tx = await db.transactions.find_one({"id": transaction_id}, {"_id": 0})
+    if not tx:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+
+    booking = None
+    if tx.get("booking_id"):
+        booking = await db.bookings.find_one({"id": tx["booking_id"]}, {"_id": 0})
+
+    user = None
+    if booking and booking.get("user_id"):
+        user = await db.users.find_one(
+            {"id": booking["user_id"]}, {"_id": 0, "full_name": 1, "email": 1, "id": 1}
+        )
+
+    biz = None
+    if tx.get("business_id"):
+        biz = await db.businesses.find_one(
+            {"id": tx["business_id"]}, {"_id": 0, "id": 1, "name": 1}
+        )
+
+    # Look up Stripe status if a PaymentIntent id is present
+    stripe_status: Dict[str, Any] = {"present": False}
+    pi_id = tx.get("stripe_payment_intent_id") or tx.get("payment_intent_id")
+    charge_id = tx.get("stripe_charge_id") or tx.get("charge_id")
+    if pi_id or charge_id:
+        try:
+            import stripe  # type: ignore
+            stripe.api_key = os.environ.get("STRIPE_SECRET_KEY") or os.environ.get("STRIPE_API_KEY")
+            if pi_id:
+                pi = stripe.PaymentIntent.retrieve(pi_id)
+                stripe_status = {
+                    "present": True,
+                    "kind": "payment_intent",
+                    "id": pi_id,
+                    "status": pi.get("status"),
+                    "amount": (pi.get("amount") or 0) / 100,
+                    "amount_received": (pi.get("amount_received") or 0) / 100,
+                    "currency": pi.get("currency"),
+                    "created": pi.get("created"),
+                    "last_payment_error": (pi.get("last_payment_error") or {}).get("message"),
+                    "interpretation": _interpret_stripe_pi_status(pi.get("status")),
+                }
+            elif charge_id:
+                ch = stripe.Charge.retrieve(charge_id)
+                stripe_status = {
+                    "present": True,
+                    "kind": "charge",
+                    "id": charge_id,
+                    "paid": ch.get("paid"),
+                    "captured": ch.get("captured"),
+                    "amount": (ch.get("amount") or 0) / 100,
+                    "amount_refunded": (ch.get("amount_refunded") or 0) / 100,
+                    "status": ch.get("status"),
+                    "interpretation": "PAGADO" if ch.get("paid") else "NO PAGADO",
+                }
+        except Exception as e:
+            stripe_status = {"present": False, "error": str(e)[:300]}
+
+    # Build a human-readable recommendation
+    recommendation = _build_tx_recommendation(tx, booking, stripe_status)
+
+    return {
+        "transaction": tx,
+        "booking": booking,
+        "user": user,
+        "business": biz,
+        "stripe": stripe_status,
+        "recommendation": recommendation,
+    }
+
+
+def _interpret_stripe_pi_status(status: Optional[str]) -> str:
+    """Plain-language interpretation of a Stripe PaymentIntent status."""
+    return {
+        "succeeded": "PAGADO — el cliente completo el cobro exitosamente",
+        "requires_payment_method": "ABANDONADO — el cliente nunca eligio metodo de pago",
+        "requires_confirmation": "PENDIENTE — falta confirmar el pago",
+        "requires_action": "PENDIENTE — requiere 3D Secure u otra accion del cliente",
+        "processing": "PROCESANDO — Stripe esta validando el cobro",
+        "canceled": "CANCELADO — el pago fue cancelado antes de completarse",
+        "requires_capture": "AUTORIZADO PERO NO CAPTURADO — fondos reservados pero no cobrados",
+    }.get(status or "", f"Estado desconocido: {status}")
+
+
+def _build_tx_recommendation(tx: dict, booking: Optional[dict], stripe_status: dict) -> dict:
+    """Return action + explanation based on tx + stripe state."""
+    tx_status = tx.get("status")
+    funds_state = tx.get("funds_state")
+    pi_status = stripe_status.get("status") if stripe_status.get("present") else None
+
+    # Case 1: Stripe confirms it was paid → safe to fix locally
+    if pi_status == "succeeded" or stripe_status.get("paid"):
+        return {
+            "action": "FIX_LOCAL_STATE",
+            "explanation": (
+                "Stripe confirma que el cliente SI pago. La transaccion local quedo "
+                "atascada en estado 'created' por un webhook fallido. Es seguro "
+                "forzar la transaccion a CLEARED — el dinero ya esta en tu saldo de Stripe."
+            ),
+            "safe_to_force_clear": True,
+        }
+
+    # Case 2: Stripe says it never paid → delete the orphan booking
+    if pi_status in ("requires_payment_method", "canceled") or (stripe_status.get("present") and stripe_status.get("paid") is False):
+        return {
+            "action": "DELETE_ABANDONED_BOOKING",
+            "explanation": (
+                "Stripe confirma que el cliente NUNCA completo el pago (checkout abandonado "
+                "o cancelado). Esta cita y su transaccion son basura — NO debes liquidar "
+                "dinero al negocio porque ese dinero nunca llego a Bookvia."
+            ),
+            "safe_to_force_clear": False,
+        }
+
+    # Case 3: Pending → wait
+    if pi_status in ("requires_confirmation", "requires_action", "processing", "requires_capture"):
+        return {
+            "action": "WAIT_OR_ASK_CLIENT",
+            "explanation": (
+                f"El cobro esta en estado '{pi_status}'. El cliente aun puede completarlo. "
+                "No fuerces ni borres todavia — espera 24h o contacta al cliente."
+            ),
+            "safe_to_force_clear": False,
+        }
+
+    # Case 4: No Stripe info, but tx_status=created locally → probably abandoned
+    if tx_status in ("created", "pending") and not stripe_status.get("present"):
+        return {
+            "action": "DELETE_ABANDONED_BOOKING",
+            "explanation": (
+                "La transaccion local quedo en estado 'created' y no hay informacion en "
+                "Stripe (sin payment_intent_id). Probable checkout abandonado. Recomiendo "
+                "ELIMINAR esta cita y transaccion."
+            ),
+            "safe_to_force_clear": False,
+        }
+
+    # Case 5: Anything else, ask admin
+    return {
+        "action": "ADMIN_REVIEW",
+        "explanation": (
+            f"Estado mixto (tx_status={tx_status}, funds_state={funds_state}, "
+            f"pi_status={pi_status}). Revisa manualmente antes de actuar."
+        ),
+        "safe_to_force_clear": False,
+    }
+
+
+@router.delete("/finance/transactions/{transaction_id}/delete-abandoned")
+async def admin_delete_abandoned_transaction(
+    transaction_id: str,
+    request: Request,
+    confirm: str = "",
+    delete_booking: bool = True,
+    token_data: TokenData = Depends(require_admin),
+):
+    """Delete a transaction (and optionally its booking) that was never paid.
+
+    Use after `full-detail` confirms the action `DELETE_ABANDONED_BOOKING`.
+    Requires `?confirm=DELETE-{transaction_id}` to avoid accidents.
+    """
+    tx = await db.transactions.find_one({"id": transaction_id}, {"_id": 0})
+    if not tx:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+
+    expected = f"DELETE-{transaction_id}"
+    if confirm != expected:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Para confirmar, llama con ?confirm={expected}",
+        )
+
+    # Safety: refuse if Stripe says it was paid
+    pi_id = tx.get("stripe_payment_intent_id") or tx.get("payment_intent_id")
+    if pi_id:
+        try:
+            import stripe  # type: ignore
+            stripe.api_key = os.environ.get("STRIPE_SECRET_KEY") or os.environ.get("STRIPE_API_KEY")
+            pi = stripe.PaymentIntent.retrieve(pi_id)
+            if pi.get("status") == "succeeded" or (pi.get("amount_received") or 0) > 0:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Stripe confirma que el cliente SI pago — no se puede borrar. Usa force-clear-single en su lugar.",
+                )
+        except HTTPException:
+            raise
+        except Exception:
+            pass  # If Stripe is unreachable, allow delete (admin's choice)
+
+    booking_id = tx.get("booking_id")
+    tx_del = await db.transactions.delete_one({"id": transaction_id})
+    booking_del = 0
+    if delete_booking and booking_id:
+        bk_res = await db.bookings.delete_one({"id": booking_id})
+        booking_del = bk_res.deleted_count
+
+    await create_audit_log(
+        admin_id=token_data.user_id, admin_email=token_data.email,
+        action=AuditAction.PAYMENT_RELEASE,
+        target_type="transaction", target_id=transaction_id,
+        details={
+            "action": "delete_abandoned",
+            "deleted_transaction": tx_del.deleted_count,
+            "deleted_booking": booking_del,
+            "booking_id": booking_id,
+            "amount": tx.get("business_amount") or tx.get("payout_amount") or 0,
+        },
+        request=request,
+    )
+
+    return {
+        "deleted_transaction": tx_del.deleted_count,
+        "deleted_booking": booking_del,
+    }
+
+
 @router.post("/finance/transactions/{transaction_id}/force-clear-single")
 async def admin_force_clear_single_transaction(
     transaction_id: str,
