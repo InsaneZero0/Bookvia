@@ -557,6 +557,88 @@ export default function AdminSettlementsTab() {
                   </AlertDialogFooter>
                 </AlertDialogContent>
               </AlertDialog>
+
+              <Button variant="outline" size="sm" disabled={busy}
+                data-testid="diagnose-stuck-cancellations-btn"
+                onClick={async () => {
+                  setBusy(true);
+                  try {
+                    const res = await api.get('/admin/finance/stuck-late-cancellations');
+                    const items = res.data?.items || [];
+                    if (items.length === 0) {
+                      toast.success('Ninguna cancelacion tardia atascada — todo limpio');
+                      return;
+                    }
+                    const stuck = items.filter(i => i.situation === 'ATASCADO');
+                    const waiting = items.filter(i => i.situation === 'esperando_grace_24h');
+                    const ready = items.filter(i => i.situation === 'listo_para_proximo_corte');
+                    const paid = items.filter(i => i.situation === 'ya_liquidado');
+                    const lines = [];
+                    if (stuck.length) lines.push(`${stuck.length} ATASCADAS (necesitan Forzar liberacion)`);
+                    if (waiting.length) lines.push(`${waiting.length} esperando 24h`);
+                    if (ready.length) lines.push(`${ready.length} listas para proximo corte`);
+                    if (paid.length) lines.push(`${paid.length} ya liquidadas`);
+                    toast(lines.join(' · '), { duration: 15000 });
+                    console.log('Cancelaciones tardias:', items);
+                  } catch (e) {
+                    toast.error(e?.response?.data?.detail || 'Error');
+                  } finally { setBusy(false); }
+                }}>
+                Diagnostico cancelaciones tardias
+              </Button>
+
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="outline" size="sm" disabled={busy}
+                          className="text-red-700 border-red-300 hover:bg-red-50"
+                          data-testid="bulk-delete-test-biz-btn">
+                    Borrar negocios de prueba (DB)
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>⚠️ Borrar negocios SIN Stripe Connect</AlertDialogTitle>
+                    <AlertDialogDescription asChild>
+                      <div>
+                        Elimina <strong>permanentemente</strong> de la base de datos todos los
+                        negocios que NO tienen Stripe Connect configurado (tipicamente negocios
+                        de prueba o demos). Borra tambien sus servicios, citas, transacciones
+                        y liquidaciones pendientes.
+                        <p className="text-xs text-amber-700 mt-2">
+                          Se conservan los que tienen liquidaciones <strong>ya pagadas</strong>
+                          (proteccion contra borrar historial financiero). Esta accion es
+                          irreversible.
+                        </p>
+                      </div>
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                    <AlertDialogAction
+                      className="bg-red-600 hover:bg-red-700"
+                      onClick={async () => {
+                        setBusy(true);
+                        try {
+                          const res = await api.post(
+                            '/admin/businesses/bulk-hard-delete-test?confirm=DELETE-TEST-BUSINESSES'
+                          );
+                          toast.success(
+                            `${res.data.deleted} negocios borrados, ${res.data.skipped} preservados`,
+                            { duration: 8000 }
+                          );
+                          console.log('Resultados del borrado:', res.data.results);
+                          await load();
+                        } catch (e) {
+                          toast.error(e?.response?.data?.detail || 'Error');
+                        } finally {
+                          setBusy(false);
+                        }
+                      }}>
+                      Borrar definitivamente
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             </div>
           </details>
         </CardContent>
