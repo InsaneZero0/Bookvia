@@ -17,6 +17,7 @@ import { toast } from 'sonner';
 import {
   Banknote, Zap, FileDown, Play, AlertTriangle, CheckCircle2,
   Clock, XCircle, Lock, RefreshCcw, Calendar, Eye, UserX, CalendarX,
+  FileSpreadsheet,
 } from 'lucide-react';
 
 const fmt = (n) => `$${Number(n || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -52,6 +53,30 @@ export default function AdminSettlementsTab() {
     } catch (e) {
       toast.error(e?.response?.data?.detail || 'No se pudo cargar el desglose');
       setBreakdown({ open: false, loading: false, data: null });
+    }
+  };
+
+  const exportBreakdownExcel = async (settlementId, businessName) => {
+    const tId = toast.loading('Generando archivo Excel...');
+    try {
+      const res = await api.get(
+        `/admin/settlements/${settlementId}/breakdown.xlsx`,
+        { responseType: 'blob' }
+      );
+      const blob = new Blob([res.data], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `bookvia-liquidacion-${(businessName || 'negocio').replace(/\s+/g, '_')}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success('Excel descargado', { id: tId });
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || 'No se pudo generar el Excel', { id: tId });
     }
   };
 
@@ -564,13 +589,29 @@ export default function AdminSettlementsTab() {
           data-testid="settlement-breakdown-modal"
         >
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Banknote className="h-5 w-5 text-[#F05D5E]" />
-              Desglose de la liquidacion
-            </DialogTitle>
-            <DialogDescription>
-              {breakdown.data?.business_name} · Periodo {breakdown.data?.period_key}
-            </DialogDescription>
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <DialogTitle className="flex items-center gap-2">
+                  <Banknote className="h-5 w-5 text-[#F05D5E]" />
+                  Desglose de la liquidacion
+                </DialogTitle>
+                <DialogDescription>
+                  {breakdown.data?.business_name} · Periodo {breakdown.data?.period_key}
+                </DialogDescription>
+              </div>
+              {breakdown.data && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => exportBreakdownExcel(breakdown.data.settlement_id, breakdown.data.business_name)}
+                  data-testid="export-breakdown-excel-btn"
+                  className="shrink-0"
+                >
+                  <FileSpreadsheet className="h-4 w-4 mr-1.5 text-emerald-700" />
+                  Excel
+                </Button>
+              )}
+            </div>
           </DialogHeader>
           {breakdown.loading && <Skeleton className="h-40 w-full" />}
           {breakdown.data && <BreakdownView data={breakdown.data} />}

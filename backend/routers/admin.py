@@ -4231,6 +4231,179 @@ async def admin_settlement_breakdown(
     }
 
 
+@router.get("/settlements/{settlement_id}/breakdown.xlsx")
+async def admin_settlement_breakdown_excel(
+    settlement_id: str,
+    token_data: TokenData = Depends(require_admin),
+):
+    """Download the settlement breakdown as a .xlsx file for accounting.
+
+    Includes a summary sheet (totals + counts per bucket) plus a detail sheet
+    with one row per booking covering: client, date, service, status, payment
+    type (card / hybrid), gross amounts, fees and business net.
+    """
+    from io import BytesIO
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+
+    # Reuse the breakdown computation so the Excel matches the modal 1:1
+    data = await admin_settlement_breakdown(settlement_id, token_data)  # type: ignore[arg-type]
+
+    wb = Workbook()
+    # === Sheet 1: Resumen ===
+    ws1 = wb.active
+    ws1.title = "Resumen"
+
+    title_font = Font(bold=True, size=14, color="FFFFFF")
+    header_font = Font(bold=True, color="FFFFFF")
+    coral_fill = PatternFill("solid", fgColor="F05D5E")
+    light_fill = PatternFill("solid", fgColor="FFF1F1")
+    bold_font = Font(bold=True)
+    border_thin = Border(
+        left=Side(style="thin", color="DDDDDD"),
+        right=Side(style="thin", color="DDDDDD"),
+        top=Side(style="thin", color="DDDDDD"),
+        bottom=Side(style="thin", color="DDDDDD"),
+    )
+
+    ws1["A1"] = f"Liquidacion - {data['business_name']}"
+    ws1["A1"].font = title_font
+    ws1["A1"].fill = coral_fill
+    ws1["A1"].alignment = Alignment(horizontal="left", vertical="center")
+    ws1.merge_cells("A1:D1")
+    ws1.row_dimensions[1].height = 28
+
+    ws1["A2"] = "Periodo"
+    ws1["B2"] = data["period_key"] or "—"
+    ws1["A3"] = "Estado"
+    ws1["B3"] = data["status"] or "—"
+    ws1["A4"] = "Settlement ID"
+    ws1["B4"] = data["settlement_id"]
+    ws1["A5"] = "Generado"
+    ws1["B5"] = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    for r in range(2, 6):
+        ws1.cell(row=r, column=1).font = bold_font
+
+    # KPIs
+    ws1["A7"] = "TOTALES"
+    ws1["A7"].font = header_font
+    ws1["A7"].fill = coral_fill
+    ws1.merge_cells("A7:D7")
+
+    t = data["totals"]
+    kpis = [
+        ("Total neto al negocio (MXN)", data["net_payout"]),
+        ("Cobrado al cliente (MXN)", t["client_paid"]),
+        ("Comisiones Bookvia (MXN)", t["bookvia_fee"]),
+        ("Fees Stripe (MXN)", t["stripe_fee"]),
+        ("Saldo Bookvia aplicado (MXN)", t.get("wallet_applied", 0.0)),
+        ("Cobrado a tarjeta (MXN)", t.get("stripe_charged", 0.0)),
+        ("Citas (total)", data["booking_count"]),
+        ("Citas hibridas (saldo+tarjeta)", t.get("hybrid_count", 0)),
+    ]
+    row = 8
+    for label, val in kpis:
+        ws1.cell(row=row, column=1, value=label).font = bold_font
+        c = ws1.cell(row=row, column=2, value=val)
+        if isinstance(val, float):
+            c.number_format = "#,##0.00"
+        row += 1
+
+    # Bucket totals
+    row += 1
+    ws1.cell(row=row, column=1, value="POR TIPO DE CITA").font = header_font
+    ws1.cell(row=row, column=1).fill = coral_fill
+    ws1.merge_cells(start_row=row, start_column=1, end_row=row, end_column=4)
+    row += 1
+    ws1.cell(row=row, column=1, value="Tipo").font = bold_font
+    ws1.cell(row=row, column=2, value="Cantidad").font = bold_font
+    ws1.cell(row=row, column=3, value="Monto (MXN)").font = bold_font
+    for col in (1, 2, 3):
+        ws1.cell(row=row, column=col).fill = light_fill
+    row += 1
+    for bucket in data["breakdown"]:
+        ws1.cell(row=row, column=1, value=bucket["label_es"])
+        ws1.cell(row=row, column=2, value=bucket["count"])
+        c = ws1.cell(row=row, column=3, value=bucket["amount"])
+        c.number_format = "#,##0.00"
+        row += 1
+
+    # Column widths
+    ws1.column_dimensions["A"].width = 38
+    ws1.column_dimensions["B"].width = 22
+    ws1.column_dimensions["C"].width = 18
+    ws1.column_dimensions["D"].width = 18
+
+    # === Sheet 2: Detalle ===
+    ws2 = wb.create_sheet("Detalle por cita")
+    headers = [
+        "Tipo", "Fecha", "Hora", "Cliente", "Email cliente",
+        "Servicio", "Estado cita", "Cancelada por", "Motivo cancelacion",
+        "Cliente pago (MXN)", "Saldo Bookvia (MXN)", "Tarjeta (MXN)",
+        "Fee Stripe (MXN)", "Comision Bookvia (MXN)", "Neto al negocio (MXN)",
+        "Pago hibrido", "Booking ID", "Transaction ID",
+    ]
+    for col_idx, h in enumerate(headers, 1):
+        c = ws2.cell(row=1, column=col_idx, value=h)
+        c.font = header_font
+        c.fill = coral_fill
+        c.alignment = Alignment(horizontal="center", vertical="center")
+        c.border = border_thin
+    ws2.row_dimensions[1].height = 28
+    ws2.freeze_panes = "A2"
+
+    money_cols = {10, 11, 12, 13, 14, 15}
+    row = 2
+    for bucket in data["breakdown"]:
+        for it in bucket["items"]:
+            values = [
+                bucket["label_es"],
+                it.get("date"),
+                it.get("time"),
+                it.get("client_name"),
+                it.get("client_email") or "",
+                it.get("service_name"),
+                it.get("booking_status"),
+                it.get("cancelled_by") or "",
+                it.get("cancellation_reason") or "",
+                it.get("client_paid"),
+                it.get("wallet_applied"),
+                it.get("stripe_charged"),
+                it.get("stripe_fee"),
+                it.get("bookvia_fee"),
+                it.get("business_net"),
+                "SI" if it.get("is_hybrid_payment") else "NO",
+                it.get("booking_id"),
+                it.get("transaction_id"),
+            ]
+            for col_idx, val in enumerate(values, 1):
+                c = ws2.cell(row=row, column=col_idx, value=val)
+                if col_idx in money_cols:
+                    c.number_format = "#,##0.00"
+                c.border = border_thin
+            row += 1
+
+    # Auto-width based on header length (approx)
+    widths = [22, 12, 8, 22, 28, 26, 14, 14, 30, 14, 14, 14, 14, 16, 16, 12, 30, 30]
+    for col_idx, w in enumerate(widths, 1):
+        ws2.column_dimensions[ws2.cell(row=1, column=col_idx).column_letter].width = w
+
+    # === Output ===
+    buf = BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    filename = f"bookvia-liquidacion-{data['business_name'] or 'sin_nombre'}-{data['period_key'] or settlement_id}.xlsx".replace(" ", "_")
+    return Response(
+        content=buf.read(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store",
+        },
+    )
+
+
 @router.get("/finance/dashboard")
 async def admin_finance_dashboard(
     months: int = 6,
