@@ -5075,26 +5075,73 @@ async def admin_force_clear_available(
     completed (or whose booking does not exist) to `funds_state=cleared`.
 
     Covers all stuck states: `uninitialized`, `pending_hold`, `available`.
+    Also includes `cancelled` and `no_show` bookings whose transaction
+    has a positive `business_amount`/`payout_amount` (late-cancel penalty
+    retained for the business).
     Skips already cleared or paid_out. By default ignores the 24h grace
     window (skip_grace=True) so the day-20 corte can include them now.
     """
     from services.funds_state import FundsState
-    # 1. Find completed bookings
-    completed_booking_ids: List[str] = []
+    # 1. Find bookings whose funds should be eligible for clearing:
+    #    - completed bookings (normal happy path)
+    #    - cancelled / no_show bookings where the business retained money
+    #      as penalty (late cancellation policy)
+    eligible_booking_ids: List[str] = []
     async for b in db.bookings.find({"status": "completed"}, {"_id": 0, "id": 1}):
-        completed_booking_ids.append(b["id"])
+        eligible_booking_ids.append(b["id"])
+    # Add cancelled / no_show bookings where their transaction has positive
+    # business_amount or payout_amount (means a penalty was kept for the biz).
+    # Transactions for late-cancel bookings carry status="refund_partial" with
+    # refund_amount=0 — they must be included alongside "paid" ones.
+    async for b in db.bookings.find(
+        {"status": {"$in": ["cancelled", "no_show"]}},
+        {"_id": 0, "id": 1},
+    ):
+        tx_with_money = await db.transactions.find_one(
+            {
+                "booking_id": b["id"],
+                "$and": [
+                    {"$or": [
+                        {"status": "paid"},
+                        {"status": "refund_partial", "$or": [{"refund_amount": 0}, {"refund_amount": None}, {"refund_amount": {"$exists": False}}]},
+                    ]},
+                    {"$or": [
+                        {"business_amount": {"$gt": 0}},
+                        {"payout_amount": {"$gt": 0}},
+                    ]},
+                ],
+            },
+            {"_id": 0, "id": 1},
+        )
+        if tx_with_money:
+            eligible_booking_ids.append(b["id"])
     # 2. Find paid transactions linked to those bookings whose funds_state
-    #    is NOT yet cleared or paid_out
+    #    is NOT yet cleared or paid_out.
+    #    Accept status="paid" (normal) OR status="refund_partial" with no
+    #    actual refund (refund_amount=0, used as a marker when client
+    #    cancels past the cutoff and the business retains the deposit).
     valid_states = [None, "", FundsState.PENDING_HOLD.value, FundsState.AVAILABLE.value]
+    status_clauses = [
+        {"status": "paid"},
+        {"status": "refund_partial", "$or": [{"refund_amount": 0}, {"refund_amount": None}, {"refund_amount": {"$exists": False}}]},
+    ]
     query: Dict[str, Any] = {
-        "status": "paid",
-        "booking_id": {"$in": completed_booking_ids},
-        "$or": [{"funds_state": {"$in": valid_states}}, {"funds_state": {"$exists": False}}],
+        "$and": [
+            {"$or": status_clauses},
+            {"booking_id": {"$in": eligible_booking_ids}},
+            {"$or": [{"funds_state": {"$in": valid_states}}, {"funds_state": {"$exists": False}}]},
+        ],
     }
     if not skip_grace:
+        # When honoring the grace window, narrow the funds_state criterion
+        # to AVAILABLE only and require funds_clears_at <= now. We replace
+        # the last clause of the $and (which holds the funds_state OR) so
+        # the status / booking_id filters above are preserved.
         now_iso = datetime.now(timezone.utc).isoformat()
-        query["funds_state"] = FundsState.AVAILABLE.value
-        query["funds_clears_at"] = {"$ne": None, "$lte": now_iso}
+        query["$and"][-1] = {
+            "funds_state": FundsState.AVAILABLE.value,
+            "funds_clears_at": {"$ne": None, "$lte": now_iso},
+        }
     candidates = await db.transactions.find(query, {"_id": 0, "id": 1, "funds_state": 1}).to_list(2000)
     if dry_run:
         return {"dry_run": True, "would_clear": len(candidates)}
