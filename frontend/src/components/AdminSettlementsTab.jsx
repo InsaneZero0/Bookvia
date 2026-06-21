@@ -145,9 +145,35 @@ export default function AdminSettlementsTab() {
     }
   };
 
-  const exportSpei = (bank = 'generic') => {
-    const url = `${process.env.REACT_APP_BACKEND_URL}/api/admin/settlements/${period}/export-spei.csv?bank=${bank}`;
-    window.open(url, '_blank');
+  const exportSpei = async (bank = 'generic') => {
+    setBusy(true);
+    try {
+      const res = await api.get(
+        `/admin/settlements/${period}/export-spei.csv?bank=${bank}`,
+        { responseType: 'blob' }
+      );
+      const blob = new Blob([res.data], { type: 'text/csv;charset=utf-8' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `bookvia-spei-${period}-${bank}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success(`CSV ${bank.toUpperCase()} descargado`);
+    } catch (e) {
+      const status = e?.response?.status;
+      if (status === 401) {
+        toast.error('Sesion expirada, vuelve a iniciar sesion');
+      } else if (status === 404) {
+        toast.error('No hay liquidaciones para este periodo todavia');
+      } else {
+        toast.error(e?.response?.data?.detail || 'No se pudo generar el CSV');
+      }
+    } finally {
+      setBusy(false);
+    }
   };
 
   const totals = data?.totals || {};
