@@ -4079,6 +4079,142 @@ async def admin_settlement_period_detail(
     }
 
 
+
+@router.get("/settlements/{settlement_id}/breakdown")
+async def admin_settlement_breakdown(
+    settlement_id: str,
+    token_data: TokenData = Depends(require_admin),
+):
+    """Detailed breakdown of a single settlement.
+
+    Groups every transaction included in the settlement by the underlying
+    booking outcome:
+      - completed: client showed up, business delivered the service
+      - late_cancel_penalty: client cancelled past the cutoff window → biz keeps deposit
+      - no_show_penalty: client never showed up → biz keeps deposit
+      - other: any other status (defensive bucket)
+
+    Returns per-bucket totals plus a per-booking list with client name, date,
+    service, gross amount paid by the client, business net and Stripe/Bookvia
+    fees so the admin can audit each peso.
+    """
+    settlement = await db.settlements.find_one({"id": settlement_id}, {"_id": 0})
+    if not settlement:
+        raise HTTPException(status_code=404, detail="Settlement not found")
+
+    tx_ids: List[str] = settlement.get("transaction_ids") or []
+    txs = await db.transactions.find({"id": {"$in": tx_ids}}, {"_id": 0}).to_list(len(tx_ids) or 1)
+
+    # Batched lookups for bookings, users, services
+    booking_ids = list({t.get("booking_id") for t in txs if t.get("booking_id")})
+    bookings = await db.bookings.find({"id": {"$in": booking_ids}}, {"_id": 0}).to_list(len(booking_ids) or 1)
+    booking_map = {b["id"]: b for b in bookings}
+
+    user_ids = list({b.get("user_id") for b in bookings if b.get("user_id")})
+    users = await db.users.find(
+        {"id": {"$in": user_ids}}, {"_id": 0, "id": 1, "full_name": 1, "email": 1}
+    ).to_list(len(user_ids) or 1)
+    user_map = {u["id"]: u for u in users}
+
+    service_ids = list({b.get("service_id") for b in bookings if b.get("service_id")})
+    services = await db.services.find(
+        {"id": {"$in": service_ids}}, {"_id": 0, "id": 1, "name": 1, "price": 1}
+    ).to_list(len(service_ids) or 1)
+    service_map = {s["id"]: s for s in services}
+
+    BUCKET_LABELS = {
+        "completed": {"label_es": "Citas completadas", "label_en": "Completed bookings"},
+        "late_cancel_penalty": {"label_es": "Cancelacion tardia del cliente (penalizacion al negocio)", "label_en": "Late client cancellation (penalty to business)"},
+        "no_show_penalty": {"label_es": "No-show del cliente (penalizacion al negocio)", "label_en": "Client no-show (penalty to business)"},
+        "other": {"label_es": "Otros", "label_en": "Other"},
+    }
+    buckets: Dict[str, Dict[str, Any]] = {
+        k: {**v, "count": 0, "amount": 0.0, "items": []} for k, v in BUCKET_LABELS.items()
+    }
+
+    grand_client_paid = 0.0
+    grand_business_net = 0.0
+    grand_stripe_fee = 0.0
+    grand_bookvia_fee = 0.0
+
+    for tx in txs:
+        booking = booking_map.get(tx.get("booking_id")) or {}
+        bk_status = (booking.get("status") or "").lower()
+        cancelled_by = (booking.get("cancelled_by") or "").lower()
+
+        # Classify the bucket
+        if bk_status == "completed":
+            key = "completed"
+        elif bk_status == "no_show":
+            key = "no_show_penalty"
+        elif bk_status == "cancelled" and cancelled_by in ("user", "client"):
+            key = "late_cancel_penalty"
+        else:
+            key = "other"
+
+        business_net = float(tx.get("business_amount") or tx.get("payout_amount") or 0)
+        client_paid = float(tx.get("client_paid") or tx.get("amount_total") or 0)
+        stripe_fee = float(tx.get("stripe_fee_actual") or tx.get("stripe_fee_amount") or 0)
+        bookvia_fee = max(0.0, round(client_paid - business_net - stripe_fee, 2))
+
+        user = user_map.get(booking.get("user_id")) or {}
+        svc = service_map.get(booking.get("service_id")) or {}
+
+        item = {
+            "booking_id": booking.get("id"),
+            "transaction_id": tx.get("id"),
+            "date": booking.get("date"),
+            "time": booking.get("time"),
+            "client_name": user.get("full_name") or booking.get("client_name") or "—",
+            "client_email": user.get("email") or booking.get("client_email"),
+            "service_name": svc.get("name") or booking.get("service_name") or "—",
+            "booking_status": bk_status,
+            "cancelled_by": cancelled_by or None,
+            "cancellation_reason": booking.get("cancellation_reason"),
+            "client_paid": round(client_paid, 2),
+            "stripe_fee": round(stripe_fee, 2),
+            "bookvia_fee": round(bookvia_fee, 2),
+            "business_net": round(business_net, 2),
+        }
+        buckets[key]["items"].append(item)
+        buckets[key]["count"] += 1
+        buckets[key]["amount"] += business_net
+
+        grand_client_paid += client_paid
+        grand_business_net += business_net
+        grand_stripe_fee += stripe_fee
+        grand_bookvia_fee += bookvia_fee
+
+    # Round bucket amounts at the end to avoid float drift
+    for k in buckets:
+        buckets[k]["amount"] = round(buckets[k]["amount"], 2)
+        # Sort items by date desc inside each bucket for nicer UX
+        buckets[k]["items"].sort(key=lambda x: (x.get("date") or "", x.get("time") or ""), reverse=True)
+
+    # Drop empty buckets from the returned list so the UI stays clean
+    breakdown = [
+        {"key": k, **v} for k, v in buckets.items() if v["count"] > 0
+    ]
+
+    return {
+        "settlement_id": settlement_id,
+        "business_id": settlement.get("business_id"),
+        "business_name": settlement.get("business_name"),
+        "period_key": settlement.get("period_key"),
+        "status": settlement.get("status"),
+        "net_payout": float(settlement.get("net_payout") or 0),
+        "booking_count": settlement.get("booking_count", 0),
+        "transactions_count": len(tx_ids),
+        "totals": {
+            "client_paid": round(grand_client_paid, 2),
+            "stripe_fee": round(grand_stripe_fee, 2),
+            "bookvia_fee": round(grand_bookvia_fee, 2),
+            "business_net": round(grand_business_net, 2),
+        },
+        "breakdown": breakdown,
+    }
+
+
 @router.get("/finance/dashboard")
 async def admin_finance_dashboard(
     months: int = 6,
