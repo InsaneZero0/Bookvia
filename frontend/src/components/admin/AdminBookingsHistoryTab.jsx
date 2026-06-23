@@ -36,10 +36,26 @@ const REFUND_VARIANTS = {
 };
 
 function RefundBadge({ booking }) {
-  // Decide which state to show
   const refundAmount = Number(booking?.refund_amount || 0);
   const choice = (booking?.refund_destination_choice || '').toLowerCase();
   const isPending = !!booking?.refund_pending;
+  const cancelledBy = (booking?.cancelled_by || '').toLowerCase();
+  const isLateCancelByClient =
+    booking?.status === 'cancelled' &&
+    (cancelledBy === 'user' || cancelledBy === 'client') &&
+    !isPending &&
+    choice !== 'card' && choice !== 'wallet' && choice !== 'stripe';
+
+  // Late cancel by client → no real refund (business kept the money).
+  // The refund_amount field may hold the penalty for internal accounting,
+  // but it should NOT be displayed as a "refund to client" here.
+  if (isLateCancelByClient) {
+    return (
+      <Badge variant="outline" className="bg-slate-50 text-slate-600 border-slate-200 text-[10px]">
+        Sin reembolso
+      </Badge>
+    );
+  }
 
   // No refund at all (most common case for completed bookings)
   if (refundAmount === 0 && !isPending) {
