@@ -3176,8 +3176,38 @@ async def generate_settlements_day20(
             continue
 
         # Fallback to legacy `payout_amount` for older transactions that didn't store business_amount
-        net_payout = round(sum(float(t.get("business_amount") or t.get("payout_amount") or 0) for t in items), 2)
+        gross_payout = round(sum(float(t.get("business_amount") or t.get("payout_amount") or 0) for t in items), 2)
+        if gross_payout <= 0:
+            continue
+
+        # Deduct any outstanding penalty debt accumulated from past business
+        # cancellations. The debt is consumed up to the gross payout amount
+        # so the net never goes below $0; any leftover stays as debt for the
+        # next period.
+        biz_full = await db.businesses.find_one({"id": bid}, {"_id": 0, "penalty_balance": 1}) or {}
+        penalty_debt = round(float(biz_full.get("penalty_balance") or 0.0), 2)
+        penalty_consumed = round(min(penalty_debt, gross_payout), 2)
+        net_payout = round(gross_payout - penalty_consumed, 2)
         if net_payout <= 0:
+            # All gross consumed by debt — do NOT create settlement to avoid
+            # zero-amount entries; just record the consumption and leave the
+            # remaining debt for next period.
+            if penalty_consumed > 0:
+                await db.businesses.update_one(
+                    {"id": bid},
+                    {"$inc": {"penalty_balance": -penalty_consumed}},
+                )
+                # Still tag transactions so they are not re-included next run
+                tx_ids_skip = [t["id"] for t in items]
+                await db.transactions.update_many(
+                    {"id": {"$in": tx_ids_skip}},
+                    {"$set": {"settlement_period_consumed_by_debt": period_key,
+                              "settlement_period": period_key}},
+                )
+            results.append({"business_id": bid, "skipped": True,
+                            "reason": "fully_consumed_by_penalty_debt",
+                            "gross": gross_payout, "debt_consumed": penalty_consumed,
+                            "remaining_debt": round(penalty_debt - penalty_consumed, 2)})
             continue
 
         booking_ids = list({t.get("booking_id") for t in items if t.get("booking_id")})
@@ -3190,10 +3220,13 @@ async def generate_settlements_day20(
             "business_name": business.get("name"),
             "period_key": period_key,
             "idempotency_key": f"day20-{period_key}",
-            "total_amount": net_payout,
+            "total_amount": gross_payout,
             "fee_amount": 0.0,  # Fees already deducted in business_amount
             "payout_amount": net_payout,
             "net_payout": net_payout,
+            "gross_payout": gross_payout,
+            "penalty_debt_consumed": penalty_consumed,
+            "penalty_debt_remaining": round(penalty_debt - penalty_consumed, 2),
             "booking_count": len(booking_ids),
             "booking_ids": booking_ids,
             "transaction_ids": tx_ids,
@@ -3205,6 +3238,12 @@ async def generate_settlements_day20(
             "created_by": admin_id or "cron_day20",
         }
         await db.settlements.insert_one(settlement)
+        # Decrement the business penalty_balance by what we consumed
+        if penalty_consumed > 0:
+            await db.businesses.update_one(
+                {"id": bid},
+                {"$inc": {"penalty_balance": -penalty_consumed}},
+            )
         # Tag transactions so they are not re-included
         await db.transactions.update_many(
             {"id": {"$in": tx_ids}},
@@ -4740,6 +4779,9 @@ async def admin_settlement_breakdown(
         "period_key": settlement.get("period_key"),
         "status": settlement.get("status"),
         "net_payout": float(settlement.get("net_payout") or 0),
+        "gross_payout": float(settlement.get("gross_payout") or settlement.get("total_amount") or 0),
+        "penalty_debt_consumed": float(settlement.get("penalty_debt_consumed") or 0),
+        "penalty_debt_remaining": float(settlement.get("penalty_debt_remaining") or 0),
         "booking_count": settlement.get("booking_count", 0),
         "transactions_count": len(tx_ids),
         "totals": {
@@ -4753,6 +4795,248 @@ async def admin_settlement_breakdown(
         },
         "breakdown": breakdown,
     }
+
+
+@router.get("/businesses/{business_id}/period-overview")
+async def admin_business_period_overview(
+    business_id: str,
+    period_key: Optional[str] = None,
+    token_data: TokenData = Depends(require_admin),
+):
+    """FULL TRANSPARENCY view: every booking touching this business in a period.
+
+    Unlike `/settlements/{id}/breakdown` which only shows bookings INCLUDED in
+    the payout, this view shows **everything that happened** in the period:
+
+      A. citas pagadas al negocio (completadas, late-cancel, no-show)
+      B. citas que el cliente cancelo a tiempo (cliente recibio refund, negocio no cobra)
+      C. citas que el negocio cancelo (cliente recibio refund + penalizacion al negocio)
+      D. citas hibridas (parte wallet + parte tarjeta) y como se procesaron
+
+    Returns a per-bucket list plus a complete financial reconciliation:
+        total cobrado a clientes,
+        total devuelto a clientes (tarjeta + wallet),
+        total a pagar al negocio,
+        deuda acumulada (penalty_balance),
+        ingreso real Bookvia (comisiones - fees Stripe absorbidas).
+    """
+    biz = await db.businesses.find_one(
+        {"id": business_id},
+        {"_id": 0, "id": 1, "name": 1, "penalty_balance": 1, "pending_balance": 1},
+    )
+    if not biz:
+        raise HTTPException(status_code=404, detail="Business not found")
+
+    # Period parsing: accept YYYY-MM-20, YYYY-MM, or default current month
+    now = datetime.now(timezone.utc)
+    if period_key:
+        try:
+            parts = period_key.split("-")
+            year = int(parts[0])
+            month = int(parts[1])
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid period_key (expected YYYY-MM or YYYY-MM-20)")
+    else:
+        year, month = now.year, now.month
+
+    # Day-20 cycle: from day 20 of previous month to day 19 of current month
+    from datetime import timedelta
+    period_end = datetime(year, month, 20, tzinfo=timezone.utc)
+    if month == 1:
+        period_start = datetime(year - 1, 12, 20, tzinfo=timezone.utc)
+    else:
+        period_start = datetime(year, month - 1, 20, tzinfo=timezone.utc)
+    period_label = f"{year}-{str(month).zfill(2)}-20"
+
+    # Fetch every booking for this business that touched the period
+    # (created_at between start and end OR cancelled_at between start and end)
+    start_iso = period_start.isoformat()
+    end_iso = period_end.isoformat()
+    bookings_q = {
+        "business_id": business_id,
+        "$or": [
+            {"created_at": {"$gte": start_iso, "$lt": end_iso}},
+            {"cancelled_at": {"$gte": start_iso, "$lt": end_iso}},
+            {"date": {"$gte": period_start.strftime("%Y-%m-%d"),
+                      "$lt": period_end.strftime("%Y-%m-%d")}},
+        ],
+    }
+    bookings = await db.bookings.find(bookings_q, {"_id": 0}).to_list(2000)
+    booking_ids = [b["id"] for b in bookings]
+
+    # All transactions touching these bookings
+    txs = await db.transactions.find(
+        {"booking_id": {"$in": booking_ids}}, {"_id": 0}
+    ).to_list(5000)
+    tx_by_booking: Dict[str, List[Dict[str, Any]]] = {}
+    for t in txs:
+        tx_by_booking.setdefault(t.get("booking_id"), []).append(t)
+
+    # User and service lookups
+    user_ids = list({b.get("user_id") for b in bookings if b.get("user_id")})
+    users = await db.users.find(
+        {"id": {"$in": user_ids}}, {"_id": 0, "id": 1, "full_name": 1, "email": 1}
+    ).to_list(len(user_ids) or 1)
+    user_map = {u["id"]: u for u in users}
+    service_ids = list({b.get("service_id") for b in bookings if b.get("service_id")})
+    services = await db.services.find(
+        {"id": {"$in": service_ids}}, {"_id": 0, "id": 1, "name": 1}
+    ).to_list(len(service_ids) or 1)
+    service_map = {s["id"]: s for s in services}
+
+    # Bucket classification
+    BUCKETS = {
+        "paid_to_business_completed":   {"label_es": "Citas completadas (pago al negocio)",
+                                          "icon": "check"},
+        "paid_to_business_late_cancel": {"label_es": "Cliente cancelo TARDE (penalizacion al negocio)",
+                                          "icon": "clock"},
+        "paid_to_business_no_show":     {"label_es": "Cliente NO se presento (penalizacion al negocio)",
+                                          "icon": "user-x"},
+        "client_cancel_within_grace":   {"label_es": "Cliente cancelo a tiempo (refund al cliente)",
+                                          "icon": "rotate"},
+        "business_cancelled_refund":    {"label_es": "NEGOCIO cancelo (cliente refunded + penalizacion al negocio)",
+                                          "icon": "ban"},
+        "pending_or_other":             {"label_es": "Pendientes / Otros",
+                                          "icon": "help"},
+    }
+    buckets = {k: {**v, "count": 0, "items": []} for k, v in BUCKETS.items()}
+
+    sums = {
+        "client_paid_total": 0.0,         # lo que el cliente puso (todos los métodos)
+        "card_charged_total": 0.0,        # lo que paso por Stripe
+        "wallet_applied_total": 0.0,      # lo que se uso de wallet
+        "refunded_to_card_total": 0.0,    # devuelto al cliente via Stripe
+        "refunded_to_wallet_total": 0.0,  # devuelto al cliente via wallet
+        "to_business_total": 0.0,         # bruto al negocio (antes de descontar deuda)
+        "business_penalty_total": 0.0,    # cobros al negocio por cancelaciones
+        "stripe_fees_total": 0.0,         # fees Stripe (todos)
+        "stripe_fees_absorbed_by_bookvia": 0.0,  # fees Stripe no recuperadas en refunds
+        "bookvia_commission_total": 0.0,  # comisiones brutas Bookvia
+    }
+
+    for b in bookings:
+        related_txs = tx_by_booking.get(b["id"], [])
+        if not related_txs:
+            continue
+        # Use the PAID transaction as the canonical one; ignore penalty txs here
+        main_tx = next((t for t in related_txs if t.get("status") in ("paid", "refund_partial")), None)
+        penalty_tx = next((t for t in related_txs if t.get("status") == TransactionStatus.BUSINESS_CANCEL_FEE), None)
+        if not main_tx:
+            continue
+
+        bk_status = (b.get("status") or "").lower()
+        cancelled_by = (b.get("cancelled_by") or "").lower()
+        refund_amount = float(main_tx.get("refund_amount") or 0)
+        refund_to = (main_tx.get("refund_to") or "").lower()
+        client_paid = float(main_tx.get("client_paid") or main_tx.get("amount_total") or 0)
+        business_net = float(main_tx.get("business_amount") or main_tx.get("payout_amount") or 0)
+        wallet_applied = float(main_tx.get("wallet_applied") or 0)
+        card_charged = float(main_tx.get("stripe_charge_amount") or 0)
+        stripe_fee = float(main_tx.get("stripe_fee_actual") or main_tx.get("stripe_fee_amount") or 0)
+        bookvia_fee = max(0.0, round(client_paid - business_net - stripe_fee, 2))
+
+        # Classify
+        if bk_status == "completed":
+            key = "paid_to_business_completed"
+            sums["to_business_total"] += business_net
+            sums["bookvia_commission_total"] += bookvia_fee
+        elif bk_status == "no_show":
+            key = "paid_to_business_no_show"
+            sums["to_business_total"] += business_net
+            sums["bookvia_commission_total"] += bookvia_fee
+        elif bk_status == "cancelled" and cancelled_by in ("user", "client"):
+            if refund_amount > 0:
+                key = "client_cancel_within_grace"
+                if refund_to == "wallet":
+                    sums["refunded_to_wallet_total"] += refund_amount
+                else:
+                    sums["refunded_to_card_total"] += refund_amount
+                    # Stripe keeps its fee even on refund
+                    sums["stripe_fees_absorbed_by_bookvia"] += stripe_fee
+            else:
+                key = "paid_to_business_late_cancel"
+                sums["to_business_total"] += business_net
+                sums["bookvia_commission_total"] += bookvia_fee
+        elif bk_status == "cancelled" and cancelled_by == "business":
+            key = "business_cancelled_refund"
+            # Refund issued to client
+            if refund_to == "wallet":
+                sums["refunded_to_wallet_total"] += (refund_amount or client_paid)
+            else:
+                sums["refunded_to_card_total"] += (refund_amount or client_paid)
+                sums["stripe_fees_absorbed_by_bookvia"] += stripe_fee
+            # Penalty deducted from business (separate penalty_tx)
+            if penalty_tx:
+                penalty_amount = abs(float(penalty_tx.get("payout_amount") or 0))
+                sums["business_penalty_total"] += penalty_amount
+        else:
+            key = "pending_or_other"
+
+        sums["client_paid_total"] += client_paid
+        sums["card_charged_total"] += card_charged or client_paid
+        sums["wallet_applied_total"] += wallet_applied
+        sums["stripe_fees_total"] += stripe_fee
+
+        user = user_map.get(b.get("user_id")) or {}
+        svc = service_map.get(b.get("service_id")) or {}
+        item = {
+            "booking_id": b["id"],
+            "date": b.get("date"),
+            "time": b.get("time"),
+            "client_name": user.get("full_name") or b.get("client_name") or "—",
+            "client_email": user.get("email") or b.get("client_email"),
+            "service_name": svc.get("name") or b.get("service_name") or "—",
+            "status": bk_status,
+            "cancelled_by": cancelled_by or None,
+            "cancelled_at": b.get("cancelled_at"),
+            "client_paid": round(client_paid, 2),
+            "card_charged": round(card_charged, 2),
+            "wallet_applied": round(wallet_applied, 2),
+            "is_hybrid": wallet_applied > 0 and card_charged > 0,
+            "refund_amount": round(refund_amount, 2),
+            "refund_to": refund_to or None,
+            "business_net": round(business_net, 2) if key.startswith("paid_to_business") else 0.0,
+            "business_penalty": round(abs(float((penalty_tx or {}).get("payout_amount") or 0)), 2) if penalty_tx else 0.0,
+            "stripe_fee": round(stripe_fee, 2),
+            "bookvia_fee": round(bookvia_fee, 2),
+        }
+        buckets[key]["items"].append(item)
+        buckets[key]["count"] += 1
+
+    # Sort each bucket by date desc
+    for k in buckets:
+        buckets[k]["items"].sort(key=lambda x: (x.get("date") or "", x.get("time") or ""), reverse=True)
+
+    # Drop empty buckets for clean UI
+    out_buckets = [{"key": k, **v} for k, v in buckets.items() if v["count"] > 0]
+
+    # Round all sums
+    for k in sums:
+        sums[k] = round(sums[k], 2)
+
+    # Bookvia net for this business in this period
+    sums["bookvia_net"] = round(
+        sums["bookvia_commission_total"]
+        + sums["business_penalty_total"]
+        - sums["stripe_fees_absorbed_by_bookvia"],
+        2,
+    )
+
+    return {
+        "business_id": business_id,
+        "business_name": biz.get("name"),
+        "period_key": period_label,
+        "period_start": period_start.isoformat(),
+        "period_end": period_end.isoformat(),
+        "business_current": {
+            "pending_balance": float(biz.get("pending_balance") or 0),
+            "penalty_balance": float(biz.get("penalty_balance") or 0),
+        },
+        "totals": sums,
+        "buckets": out_buckets,
+    }
+
+
 
 
 @router.get("/settlements/{settlement_id}/breakdown.xlsx")

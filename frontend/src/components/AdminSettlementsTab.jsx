@@ -47,6 +47,18 @@ export default function AdminSettlementsTab() {
 
   const [stuckDiag, setStuckDiag] = useState({ open: false, loading: false, items: [] });
   const [txInspect, setTxInspect] = useState({ open: false, loading: false, data: null });
+  const [overview, setOverview] = useState({ open: false, loading: false, data: null, businessName: '' });
+
+  const openPeriodOverview = async (businessId, businessName) => {
+    setOverview({ open: true, loading: true, data: null, businessName });
+    try {
+      const res = await api.get(`/admin/businesses/${businessId}/period-overview?period_key=${period}`);
+      setOverview({ open: true, loading: false, data: res.data, businessName });
+    } catch (e) {
+      toast.error(e?.response?.data?.detail || 'No se pudo cargar el panorama');
+      setOverview({ open: false, loading: false, data: null, businessName: '' });
+    }
+  };
 
   const loadStuckCancellations = async () => {
     setStuckDiag({ open: true, loading: true, items: [] });
@@ -733,7 +745,14 @@ export default function AdminSettlementsTab() {
                           )}
                         </td>
                         <td className="py-3 text-right" onClick={(e) => e.stopPropagation()}>
-                          {row.status === 'pending' && row.connect_ready && !row.payout_hold ? (
+                          <div className="flex items-center justify-end gap-1">
+                            <Button size="sm" variant="ghost" disabled={busy}
+                                    onClick={() => openPeriodOverview(row.business_id, row.business_name)}
+                                    data-testid={`overview-${row.settlement_id}`}
+                                    title="Ver TODAS las citas del periodo (transparencia total)">
+                              <Eye className="h-3 w-3 mr-1" /> TODO
+                            </Button>
+                            {row.status === 'pending' && row.connect_ready && !row.payout_hold ? (
                             <Button size="sm" variant="ghost" disabled={busy}
                                     onClick={() => executeOne(row.settlement_id, row.business_name)}
                                     data-testid={`execute-one-${row.settlement_id}`}>
@@ -751,6 +770,7 @@ export default function AdminSettlementsTab() {
                               <AlertTriangle className="h-3 w-3 inline mr-1" />Error
                             </span>
                           ) : null}
+                          </div>
                         </td>
                       </tr>
                     );
@@ -861,6 +881,26 @@ export default function AdminSettlementsTab() {
           </DialogHeader>
           {breakdown.loading && <Skeleton className="h-40 w-full" />}
           {breakdown.data && <BreakdownView data={breakdown.data} />}
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal: Panorama Completo del Periodo (TRANSPARENCIA TOTAL) */}
+      <Dialog
+        open={overview.open}
+        onOpenChange={(open) => !open && setOverview({ open: false, loading: false, data: null, businessName: '' })}
+      >
+        <DialogContent className="max-w-5xl max-h-[92vh] overflow-y-auto" data-testid="period-overview-modal">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Eye className="h-5 w-5 text-[#F05D5E]" />
+              Panorama COMPLETO del período — {overview.businessName}
+            </DialogTitle>
+            <DialogDescription>
+              TODAS las citas que tocaron a este negocio en el período, con explicación de qué pasó con cada peso.
+            </DialogDescription>
+          </DialogHeader>
+          {overview.loading && <Skeleton className="h-60 w-full" />}
+          {overview.data && <PeriodOverviewView data={overview.data} />}
         </DialogContent>
       </Dialog>
     </div>
@@ -987,6 +1027,151 @@ function BreakdownView({ data }) {
     </div>
   );
 }
+
+// ============================================================================
+// PERIOD OVERVIEW — Vista de TRANSPARENCIA TOTAL del periodo para un negocio.
+// Muestra TODAS las citas (no solo las del settlement) clasificadas por
+// situacion (pago al negocio / refund cliente / cancelacion del negocio), con
+// reconciliacion financiera completa para auditoria.
+// ============================================================================
+
+const OVERVIEW_BUCKET_STYLES = {
+  paid_to_business_completed:   { color: 'border-emerald-300 bg-emerald-50',  text: 'text-emerald-900', icon: CheckCircle2, accent: 'text-emerald-700' },
+  paid_to_business_late_cancel: { color: 'border-amber-300 bg-amber-50',      text: 'text-amber-900',   icon: Clock,        accent: 'text-amber-700'   },
+  paid_to_business_no_show:     { color: 'border-rose-300 bg-rose-50',        text: 'text-rose-900',    icon: UserX,        accent: 'text-rose-700'    },
+  client_cancel_within_grace:   { color: 'border-blue-300 bg-blue-50',        text: 'text-blue-900',    icon: RefreshCcw,   accent: 'text-blue-700'    },
+  business_cancelled_refund:    { color: 'border-violet-300 bg-violet-50',    text: 'text-violet-900',  icon: XCircle,      accent: 'text-violet-700'  },
+  pending_or_other:             { color: 'border-slate-300 bg-slate-50',      text: 'text-slate-900',   icon: AlertTriangle,accent: 'text-slate-700'   },
+};
+
+function PeriodOverviewView({ data }) {
+  const t = data.totals || {};
+  const cur = data.business_current || {};
+
+  return (
+    <div className="space-y-4">
+      {/* Cabecera con resumen */}
+      <Card className="border-2 border-[#F05D5E]/30">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm uppercase text-muted-foreground">
+            Resumen del período {data.period_key}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+            <div>
+              <div className="text-xs text-muted-foreground">Cliente pagó (total)</div>
+              <div className="font-semibold text-base">{fmt(t.client_paid_total)}</div>
+              <div className="text-[10px] text-muted-foreground">Stripe: {fmt(t.card_charged_total)} · Wallet: {fmt(t.wallet_applied_total)}</div>
+            </div>
+            <div>
+              <div className="text-xs text-muted-foreground">A pagar al NEGOCIO (bruto)</div>
+              <div className="font-semibold text-base text-emerald-700">{fmt(t.to_business_total)}</div>
+              <div className="text-[10px] text-muted-foreground">Penalty acumulada: {fmt(cur.penalty_balance)}</div>
+            </div>
+            <div>
+              <div className="text-xs text-muted-foreground">Devuelto al CLIENTE</div>
+              <div className="font-semibold text-base text-blue-700">{fmt(Number(t.refunded_to_card_total||0) + Number(t.refunded_to_wallet_total||0))}</div>
+              <div className="text-[10px] text-muted-foreground">Tarjeta: {fmt(t.refunded_to_card_total)} · Wallet: {fmt(t.refunded_to_wallet_total)}</div>
+            </div>
+            <div>
+              <div className="text-xs text-muted-foreground">INGRESO BOOKVIA (neto)</div>
+              <div className="font-semibold text-base text-[#F05D5E]">{fmt(t.bookvia_net)}</div>
+              <div className="text-[10px] text-muted-foreground">Com: {fmt(t.bookvia_commission_total)} · Penalty: +{fmt(t.business_penalty_total)} · Fees abs: -{fmt(t.stripe_fees_absorbed_by_bookvia)}</div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Buckets */}
+      {(data.buckets || []).map((bucket) => {
+        const sty = OVERVIEW_BUCKET_STYLES[bucket.key] || OVERVIEW_BUCKET_STYLES.pending_or_other;
+        const Icon = sty.icon;
+        return (
+          <div key={bucket.key} className={`border-2 rounded-lg ${sty.color}`}>
+            <div className={`px-4 py-2 flex items-center justify-between ${sty.text}`}>
+              <div className="flex items-center gap-2 font-semibold text-sm">
+                <Icon className={`h-4 w-4 ${sty.accent}`} />
+                {bucket.label_es}
+              </div>
+              <Badge variant="outline" className="bg-white/70">{bucket.count} cita{bucket.count !== 1 ? 's' : ''}</Badge>
+            </div>
+            <div className="bg-white rounded-b-lg">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b text-[10px] uppercase text-muted-foreground">
+                    <th className="text-left py-1.5 pl-3">Fecha</th>
+                    <th className="text-left py-1.5">Cliente</th>
+                    <th className="text-left py-1.5">Servicio</th>
+                    <th className="text-right py-1.5">Cliente pagó</th>
+                    <th className="text-right py-1.5">Refund</th>
+                    <th className="text-right py-1.5">Al negocio</th>
+                    <th className="text-right py-1.5 pr-3">Detalle</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {bucket.items.map((item, idx) => (
+                    <tr key={item.booking_id || idx} className="border-b last:border-0 hover:bg-muted/30">
+                      <td className="py-1.5 pl-3 font-mono text-[10px]">{item.date} {item.time}</td>
+                      <td className="py-1.5">{item.client_name}</td>
+                      <td className="py-1.5">{item.service_name}</td>
+                      <td className="py-1.5 text-right">
+                        {fmt(item.client_paid)}
+                        {item.is_hybrid && <Badge variant="outline" className="ml-1 text-[9px] bg-violet-100">híbrido</Badge>}
+                      </td>
+                      <td className="py-1.5 text-right">
+                        {item.refund_amount > 0 ? (
+                          <span className={item.refund_to === 'wallet' ? 'text-violet-700' : 'text-blue-700'}>
+                            {fmt(item.refund_amount)}
+                            <span className="text-[9px] block opacity-75">→{item.refund_to || '—'}</span>
+                          </span>
+                        ) : <span className="text-muted-foreground">—</span>}
+                      </td>
+                      <td className="py-1.5 text-right">
+                        {item.business_net > 0 ? (
+                          <span className="text-emerald-700 font-semibold">+{fmt(item.business_net)}</span>
+                        ) : item.business_penalty > 0 ? (
+                          <span className="text-rose-700 font-semibold">-{fmt(item.business_penalty)}</span>
+                        ) : <span className="text-muted-foreground">—</span>}
+                      </td>
+                      <td className="py-1.5 pr-3 text-right">
+                        <span className="text-[10px] text-muted-foreground">
+                          Stripe: {fmt(item.stripe_fee)} · Bookvia: {fmt(item.bookvia_fee)}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        );
+      })}
+
+      {(!data.buckets || data.buckets.length === 0) && (
+        <div className="text-center py-8 text-muted-foreground text-sm">
+          No hay actividad en este período para este negocio.
+        </div>
+      )}
+
+      {/* Estado actual del negocio */}
+      <div className="bg-slate-50 border rounded-lg p-3 text-xs">
+        <div className="font-semibold mb-1">Estado actual del negocio:</div>
+        <div className="grid grid-cols-2 gap-2">
+          <div>Saldo pendiente (próximo settlement): <span className="font-mono">{fmt(cur.pending_balance)}</span></div>
+          <div>Deuda acumulada por cancelaciones (penalty): <span className="font-mono text-rose-700">{fmt(cur.penalty_balance)}</span></div>
+        </div>
+        {cur.penalty_balance > 0 && (
+          <div className="mt-2 text-rose-700 flex items-start gap-1.5">
+            <AlertTriangle className="h-3 w-3 mt-0.5 flex-shrink-0" />
+            <span>Este monto se descontará automáticamente del próximo settlement antes de pagarle al negocio.</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 
 const SITUATION_BADGES = {
   ATASCADO: { label: 'ATASCADA', cn: 'bg-rose-100 text-rose-800 border-rose-300' },
