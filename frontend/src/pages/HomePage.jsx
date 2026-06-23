@@ -487,7 +487,8 @@ export default function HomePage() {
       )}
 
       {/* ═══ Testimonials ═════════════════════════════ */}
-      <Testimonials />
+      {/* Sección quitada temporalmente — esperando testimonios reales de beta users */}
+      {/* <Testimonials /> */}
 
       {/* ═══ Business CTA ═════════════════════════════ */}
       <section className="section-padding bg-[#fcf7ba] text-slate-900 relative overflow-hidden" data-testid="business-cta-section">
