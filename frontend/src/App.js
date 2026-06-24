@@ -9,6 +9,7 @@ import { Navbar } from '@/components/Navbar';
 import { Footer } from '@/components/Footer';
 import TermsReAcceptModal from '@/components/TermsReAcceptModal';
 import { WhatsAppFloatingButton } from '@/components/WhatsAppSupport';
+import { openExternalBookviaFlow } from '@/lib/capacitor';
 
 // Pages
 import HomePage from '@/pages/HomePage';
@@ -312,7 +313,7 @@ function ForBusinessPage() {
                   : 'Manage your schedule, reduce cancellations and let your clients book 24/7. All from one platform.'}
               </p>
               <div className="flex flex-col sm:flex-row gap-3 justify-center lg:justify-start pt-4">
-                <button onClick={() => navigate('/business/register')}
+                <button onClick={() => openExternalBookviaFlow(navigate, '/business/register')}
                   className="btn-coral px-8 py-4 rounded-xl text-base font-semibold flex items-center justify-center gap-2">
                   {language === 'es' ? 'Registrar mi negocio gratis' : 'Register my business free'}
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" /></svg>
@@ -365,7 +366,7 @@ function ForBusinessPage() {
                   </div>
 
                   <button
-                    onClick={() => navigate('/business/register')}
+                    onClick={() => openExternalBookviaFlow(navigate, '/business/register')}
                     className="w-full btn-coral px-6 py-3.5 rounded-xl text-base font-semibold"
                     data-testid="hero-pricing-cta"
                   >
@@ -476,7 +477,7 @@ function ForBusinessPage() {
                   </div>
                 ))}
               </div>
-              <button onClick={() => navigate('/business/register')}
+              <button onClick={() => openExternalBookviaFlow(navigate, '/business/register')}
                 className="w-full btn-coral px-6 py-3.5 rounded-xl text-base font-semibold">
                 {language === 'es' ? 'Empezar ahora' : 'Start now'}
               </button>
@@ -498,7 +499,7 @@ function ForBusinessPage() {
               ? 'Unete a Bookvia y empieza a recibir reservas en linea hoy mismo.'
               : 'Join Bookvia and start receiving online bookings today.'}
           </p>
-          <button onClick={() => navigate('/business/register')}
+          <button onClick={() => openExternalBookviaFlow(navigate, '/business/register')}
             className="btn-coral px-8 py-4 rounded-xl text-base font-semibold">
             {language === 'es' ? 'Registrar mi negocio' : 'Register my business'}
           </button>

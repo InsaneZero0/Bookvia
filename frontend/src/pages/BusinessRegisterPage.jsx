@@ -13,6 +13,7 @@ import { useAuth } from '@/lib/auth';
 import { useI18n } from '@/lib/i18n';
 import { categoriesAPI, businessesAPI, authAPI } from '@/lib/api';
 import apiInstance from '@/lib/api';
+import { isNativeApp, openExternalUrl, PUBLIC_WEB_URL } from '@/lib/capacitor';
 import { countries, getCountryByCode } from '@/lib/countries';
 import { getDetectedCountry } from '@/lib/detectCountry';
 import { AgeVerification } from '@/components/AgeVerification';
@@ -496,6 +497,16 @@ export default function BusinessRegisterPage() {
   };
 
   const handleSubscribe = async () => {
+    // ── Apple/Google commission avoidance ──
+    // Defensive guard: if somehow the user reaches this page from within the
+    // native app (deep link, etc.), redirect to the web flow before opening
+    // Stripe Checkout. Apple's review team rejects in-app subscription flows
+    // that route through external payment processors.
+    if (isNativeApp()) {
+      await openExternalUrl(`${PUBLIC_WEB_URL}/business/register?from=app`);
+      return;
+    }
+
     setLoading(true);
     try {
       const originUrl = window.location.origin;

@@ -14,6 +14,7 @@ import { useI18n } from '@/lib/i18n';
 import { useAuth } from '@/lib/auth';
 import { useCountry } from '@/lib/countryContext';
 import { businessesAPI, categoriesAPI, usersAPI } from '@/lib/api';
+import { openExternalBookviaFlow } from '@/lib/capacitor';
 import { Search, SlidersHorizontal, MapPin, X, Filter, List, Map as MapIcon, Star, ArrowRight, ChevronRight } from 'lucide-react';
 import { SearchLeafletMap } from '@/components/SearchLeafletMap';
 import { CityWaitlistCard } from '@/components/CityWaitlistCard';
@@ -732,7 +733,7 @@ export default function SearchPage() {
                             </Button>
                           )}
                           <Button
-                            onClick={() => navigate('/business/register')}
+                            onClick={() => openExternalBookviaFlow(navigate, '/business/register')}
                             size="sm"
                             className="btn-coral"
                             data-testid="register-business-empty-cta"

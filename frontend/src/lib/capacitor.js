@@ -12,12 +12,75 @@
  */
 import { Capacitor } from '@capacitor/core';
 import { App } from '@capacitor/app';
+import { Browser } from '@capacitor/browser';
 import { SplashScreen } from '@capacitor/splash-screen';
 import { StatusBar, Style } from '@capacitor/status-bar';
 import { PushNotifications } from '@capacitor/push-notifications';
 
 export const isNativeApp = () => Capacitor.isNativePlatform();
 export const getPlatform = () => Capacitor.getPlatform(); // 'ios' | 'android' | 'web'
+
+/**
+ * Public-facing web URL of Bookvia. Used to redirect from the native app to
+ * the website when we DON'T want to process a payment / subscription inside
+ * the app (avoids Apple's 30% + Google's 15-30% in-app commission).
+ *
+ * Reads from REACT_APP_PUBLIC_WEB_URL with a sensible production fallback.
+ */
+export const PUBLIC_WEB_URL = (
+  process.env.REACT_APP_PUBLIC_WEB_URL || 'https://bookvia.app'
+).replace(/\/$/, '');
+
+/**
+ * Open a URL.
+ *   - In the native app -> launches an in-app browser (Capacitor Browser
+ *     plugin). The user can close it and come back to Bookvia.
+ *   - On the web -> regular window.open / navigation.
+ *
+ * Use this for any flow that involves payment, subscription, or any action
+ * that Apple/Google might consider "digital purchase" — sending users to the
+ * website avoids the store commission.
+ */
+export const openExternalUrl = async (url, { newTab = true } = {}) => {
+  if (!url) return;
+  if (isNativeApp()) {
+    try {
+      await Browser.open({
+        url,
+        presentationStyle: 'popover',
+        toolbarColor: '#F05D5E',
+      });
+      return;
+    } catch (e) {
+      console.warn('[Capacitor] Browser.open failed, falling back', e);
+    }
+  }
+  if (newTab) {
+    window.open(url, '_blank', 'noopener,noreferrer');
+  } else {
+    window.location.href = url;
+  }
+};
+
+/**
+ * Convenience helper for business onboarding / paid flows.
+ * On native -> opens https://bookvia.app/<path> in the in-app browser.
+ * On web    -> calls navigate('/<path>') normally (no redirect needed).
+ *
+ * Example:
+ *   handleBusinessRegister(navigate);
+ *   handlePaidFlow(navigate, '/business/upgrade');
+ */
+export const openExternalBookviaFlow = async (navigate, path) => {
+  const cleanPath = path.startsWith('/') ? path : `/${path}`;
+  if (isNativeApp()) {
+    await openExternalUrl(`${PUBLIC_WEB_URL}${cleanPath}`);
+  } else if (typeof navigate === 'function') {
+    navigate(cleanPath);
+  } else {
+    window.location.href = cleanPath;
+  }
+};
 
 /**
  * Called once during app boot. Safe to call on web - it short-circuits.
