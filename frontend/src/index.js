@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import * as Sentry from "@sentry/react";
 import "@/index.css";
 import App from "@/App";
+import { initCapacitor } from "@/lib/capacitor";
 
 // Sentry — frontend error monitoring and performance tracing.
 // Initialized before React renders so any error in the tree is captured.
@@ -31,6 +32,10 @@ if (SENTRY_DSN) {
 }
 
 const root = ReactDOM.createRoot(document.getElementById("root"));
+
+// Initialize Capacitor (status bar, splash, hardware back button) — no-op on web.
+initCapacitor();
+
 root.render(
   <React.StrictMode>
     <Sentry.ErrorBoundary
