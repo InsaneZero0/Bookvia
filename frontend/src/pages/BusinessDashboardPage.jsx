@@ -17,6 +17,7 @@ import { Switch } from '@/components/ui/switch';
 import { useAuth } from '@/lib/auth';
 import { useI18n } from '@/lib/i18n';
 import { businessesAPI, bookingsAPI, servicesAPI, notificationsAPI } from '@/lib/api';
+import { isNativeApp, openExternalUrl, PUBLIC_WEB_URL } from '@/lib/capacitor';
 import { formatDate, formatTime, formatCurrency, getStatusColor, getInitials } from '@/lib/utils';
 import { format } from 'date-fns';
 import { es, enUS } from 'date-fns/locale';
@@ -1446,6 +1447,14 @@ export default function BusinessDashboardPage() {
                     <CreditCard className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
                     <p className="text-sm text-muted-foreground mb-4">{language === 'es' ? 'No tienes una suscripcion activa' : 'You have no active subscription'}</p>
                     <Button className="btn-coral" onClick={async () => {
+                      // ── Apple/Google commission avoidance ──
+                      // On the native app we send the merchant to the web to
+                      // subscribe. Stripe Checkout never runs inside the app,
+                      // so the store does NOT take a 15-30% cut.
+                      if (isNativeApp()) {
+                        await openExternalUrl(`${PUBLIC_WEB_URL}/business/dashboard?tab=subscription&from=app`);
+                        return;
+                      }
                       try {
                         const res = await businessesAPI.createSubscription(window.location.origin);
                         if (res.data?.url) window.location.href = res.data.url;
