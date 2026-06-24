@@ -7,7 +7,7 @@ import { BusinessCard } from '@/components/BusinessCard';
 import { HowItWorksModal } from '@/components/HowItWorksModal';
 import { JsonLd, organizationSchema, websiteSchema } from '@/components/JsonLd';
 import { PlatformStatsBar } from '@/components/PlatformStatsBar';
-import { Testimonials } from '@/components/Testimonials';
+// Testimonials section removed — pending real beta-user reviews to replace
 import { useI18n } from '@/lib/i18n';
 import { useCountry } from '@/lib/countryContext';
 import { categoriesAPI, businessesAPI, utilityAPI } from '@/lib/api';
@@ -487,7 +487,7 @@ export default function HomePage() {
       )}
 
       {/* ═══ Testimonials ═════════════════════════════ */}
-      <Testimonials />
+      {/* Removed — esperando testimonios reales de beta users */}
 
       {/* ═══ Business CTA ═════════════════════════════ */}
       <section className="section-padding bg-[#fcf7ba] text-slate-900 relative overflow-hidden" data-testid="business-cta-section">
