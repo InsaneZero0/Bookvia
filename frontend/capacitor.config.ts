@@ -21,34 +21,32 @@ const config: CapacitorConfig = {
   android: {
     // App-level settings
     allowMixedContent: false,
-    // Make Android use the system status bar color from styles.xml
-    backgroundColor: '#FFFFFF',
+    // Match the splash background so there's no flash between native splash
+    // and the WebView mounting.
+    backgroundColor: '#000000',
   },
 
   ios: {
     // iOS-specific safe-area / scheme handling
     contentInset: 'always',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#000000',
   },
 
   plugins: {
     SplashScreen: {
-      // Bookvia red brand color while loading
+      // Bookvia: black background with logo centered (matches launch icon)
       launchShowDuration: 1500,
       launchAutoHide: true,
-      backgroundColor: '#F05D5E',
+      backgroundColor: '#000000',
       androidScaleType: 'CENTER_CROP',
-      showSpinner: true,
-      androidSpinnerStyle: 'large',
-      iosSpinnerStyle: 'large',
-      spinnerColor: '#FFFFFF',
+      showSpinner: false,
       splashFullScreen: true,
       splashImmersive: true,
     },
     StatusBar: {
-      // Light text on Bookvia red header
+      // Light text on black header
       style: 'LIGHT',
-      backgroundColor: '#F05D5E',
+      backgroundColor: '#000000',
       overlaysWebView: false,
     },
     Keyboard: {
