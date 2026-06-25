@@ -2,33 +2,52 @@
 
 Registro cronológico de cambios significativos (post-refactor base PRD).
 
-## 2026-06-25 – Capacitor Android: assets + UX móvil
+## 2026-06-25 (tarde) – Fix bugs APK: CORS + Fotos + UX móvil
 
-### Generación de íconos y splash screen Android
-- Instalado `@capacitor/assets` como dev-dependency.
-- Generados desde el logo oficial de Bookvia (1024×1024) en `/app/frontend/resources/`:
-  - `icon.png`
-  - `icon-foreground.png` (logo centrado al 65% para zona segura de adaptive icons)
-  - `icon-background.png` (sólido `#F05D5E`)
-  - `splash.png` / `splash-dark.png` (2732×2732, logo centrado sobre rojo Bookvia)
-- Ejecutado `npx capacitor-assets generate --android` → 136 archivos creados/sobrescritos en:
-  - `android/app/src/main/res/mipmap-{ldpi…xxxhdpi}/ic_launcher*.png`
-  - `android/app/src/main/res/mipmap-anydpi-v26/ic_launcher{,_round}.xml`
-  - `android/app/src/main/res/drawable*/splash.png` (port/land + night variants)
+### Bug crítico: skeleton loaders eternos en APK (no cargan negocios)
+- **Root cause**: `allow_origins=["*"]` combinado con `allow_credentials=True` viola la spec CORS. El Chrome WebView de Capacitor (Android) rechaza silenciosamente las respuestas.
+- **Fix**: `backend/server.py` y `backend/main.py` ahora usan `allow_origin_regex=".*"` cuando `CORS_ORIGINS=*`, así Starlette eco-a el origen específico de la petición en lugar de devolver `*`. Cuando hay una lista explícita, se agregan automáticamente los orígenes nativos de Capacitor: `https://localhost`, `capacitor://localhost`, `http://localhost`.
+- **Verificado**: 9/9 tests en `/app/backend/tests/test_cors_and_businesses_fix.py` pasan.
+
+### Bug crítico: las fotos de negocios no se ven (404)
+- **Root cause**: (1) URLs almacenadas con host obsoleto (`reserve-stripe-test.preview...`) heredado de forks anteriores; (2) `serve_file` en `routers/system.py` buscaba por `public_id` pero la DB tiene `storage_path` poblado; (3) fotos soft-deleted (`is_deleted=true`) seguían apareciendo en el array `businesses.photos`.
+- **Fix**:
+  - `routers/system.py::serve_file` ahora busca por `storage_path` OR `public_id`, excluyendo `is_deleted=true`.
+  - Nuevo helper `_sanitize_business_photos` en `routers/businesses.py:52-108` que: (a) reescribe el hostname al `BASE_URL` actual, (b) filtra URLs cuyo doc está soft-deleted o ausente.
+  - Aplicado en: `GET /api/businesses` (search), `/api/businesses/featured`, `/api/businesses/{id}`, `/api/businesses/by-code/{code}`, `/api/businesses/slug/{slug}`.
+- **Verificado**: 10/10 tests en `/app/backend/tests/test_business_photos_fix.py` pasan; HEAD a URLs reales devuelve `200 image/jpeg`.
+
+### UX: "Cerca de ti" mostraba "0 resultados"
+- Cuando el usuario tenía `Abierto ahora` activado al pedir geolocalización y ningún negocio reportaba `is_open_now=true`, el frontend filtraba todo a 0. Ahora `requestLocation()` desactiva también `openNow` además de los otros filtros restrictivos.
+
+### Íconos y splash con fondo NEGRO (cambio solicitado por usuario)
+- Regenerados todos los assets desde el logo en `/app/frontend/resources/`:
+  - `icon.png`, `icon-foreground.png` (logo al 92%), `icon-background.png` (negro sólido).
+  - `splash.png`/`splash-dark.png` (2732×2732, logo centrado sobre negro).
+- `capacitor.config.ts` → `backgroundColor: '#000000'` para `android`, `ios`, `SplashScreen`, `StatusBar`. `showSpinner: false`.
+- `android/app/src/main/res/values/ic_launcher_background.xml` → color `#000000`.
+- Re-ejecutado `npx capacitor-assets generate --android` → 136 archivos regenerados.
+- `versionCode 1 → 2`, `versionName 1.0 → 1.0.1` para forzar update en Android.
+
+## 2026-06-25 (mañana) – Capacitor Android: assets + UX móvil (deprecado por fix de la tarde)
+
+### Generación inicial de íconos y splash (fondo rojo)
+- Instalado `@capacitor/assets`.
+- Generación inicial con fondo `#F05D5E` rojo Bookvia (luego cambiado a negro a pedido del usuario).
 
 ### Bypass SSL temporal del apex domain
-- `frontend/src/lib/capacitor.js` → `PUBLIC_WEB_URL` ahora apunta a `https://www.bookvia.app` (en lugar de `https://bookvia.app`) para evitar `ERR_CERT_AUTHORITY_INVALID` mientras Vercel termina de aprovisionar el certificado del apex domain.
+- `PUBLIC_WEB_URL` en `frontend/src/lib/capacitor.js` ahora apunta a `https://www.bookvia.app` para evitar `ERR_CERT_AUTHORITY_INVALID`.
 
-### Fix: la app móvil mostraba pantalla vacía cuando el usuario rechazaba permisos de ubicación
-- `frontend/src/pages/SearchPage.jsx` → `requestLocation()`:
-  - Si `navigator.geolocation` no existe **o** el usuario rechaza el permiso, y la app corre en native (`isNativeApp()`), se aplica `setCity('Nuevo Laredo')` + `setSortBy('relevance')` como fallback y se notifica al usuario con un toast informativo.
-  - En web, mantiene el comportamiento previo (toast de error sin cambiar ciudad) para no degradar la UX desktop.
-- Importado `isNativeApp` desde `@/lib/capacitor`.
+### Fix: pantalla vacía sin permiso de ubicación
+- `SearchPage.jsx::requestLocation()` ahora hace fallback a `Nuevo Laredo` cuando se está en native (`isNativeApp()`) y se rechaza el permiso.
 
-### Acción pendiente del usuario (compilación local)
-1. `cd /app/frontend && yarn build`
-2. `npx cap sync android`
-3. Abrir `android/` en Android Studio y generar APK firmado.
+### Acción del usuario para aplicar todos los cambios
+1. **Save to GitHub** desde Emergent (botón en el chat).
+2. En PowerShell: `git pull`.
+3. `cd frontend && yarn build && npx cap sync android`.
+4. Android Studio → Build → Clean Project → Rebuild → Build APK(s).
+5. En celular: desinstalar versión actual + reiniciar + instalar nuevo APK.
+6. **Para backend Railway**: hacer deploy del código actualizado y verificar que la env var `BASE_URL` apunte a la URL pública del backend (sin slash final).
 
 ## 2026-06-24 – Auditoría financiera y app móvil base
 
