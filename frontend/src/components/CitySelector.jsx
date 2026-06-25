@@ -44,13 +44,21 @@ export function CitySelector({ countryCode, value, onChange, onCityData, placeho
     }).finally(() => setLoading(false));
   }, [countryCode, showDemand]);
 
+  // Normalize for matching: lowercase + strip diacritics (Mexico vs México)
+  const matchKey = (s) => (s || '')
+    .toString()
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+
   const filtered = useMemo(() => {
     let list = cities;
     if (search.trim()) {
-      const q = search.toLowerCase();
+      const q = matchKey(search);
       list = list.filter(c =>
-        c.name.toLowerCase().includes(q) ||
-        (c.state || '').toLowerCase().includes(q)
+        matchKey(c.name).includes(q) ||
+        matchKey(c.state).includes(q)
       );
     }
     // If showDemand, sort cities with businesses first
