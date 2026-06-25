@@ -1133,16 +1133,24 @@ async def upload_image_endpoint(
 
 @router.get("/files/{path:path}")
 async def serve_file(path: str):
-    """Serve uploaded files from Emergent object storage (fallback)."""
-    # Check business_photos collection first
-    record = await db.business_photos.find_one({"public_id": path, "is_deleted": False})
-    
+    """Serve uploaded files from Emergent object storage (fallback).
+
+    Photos in `business_photos` are keyed by `storage_path` (the full object
+    key inside the bucket), not by `public_id`. We look up by either so
+    legacy records still work, but we MUST exclude soft-deleted records so
+    the marketplace never serves a deleted photo.
+    """
+    record = await db.business_photos.find_one({
+        "$or": [{"storage_path": path}, {"public_id": path}],
+        "is_deleted": {"$ne": True},
+    })
+
     # If not found in photos, check if it's a logo (stored in businesses collection)
     if not record:
         business = await db.businesses.find_one({"logo_public_id": path})
         if business:
             record = {"content_type": "image/jpeg"}  # Default for logos
-    
+
     if not record:
         raise HTTPException(status_code=404, detail="File not found")
 

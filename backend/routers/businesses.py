@@ -48,6 +48,67 @@ from models.schemas import *
 
 logger = logging.getLogger(__name__)
 
+
+async def _sanitize_business_photos(businesses: List[Dict[str, Any]]) -> None:
+    """In-place clean `photos` arrays on business dicts before serializing.
+
+    - Rewrites the hostname portion of stored photo URLs to the current
+      `BASE_URL` (env). Migrating between Emergent forks/Railway leaves
+      stale absolute URLs in the array pointing at obsolete preview hosts
+      that 404; we only swap the host while keeping `/api/files/{path}`.
+    - Filters out URLs whose underlying `business_photos` doc is
+      soft-deleted (`is_deleted=true`) or missing entirely, so the
+      marketplace never exposes a deleted photo.
+    """
+    if not businesses:
+        return
+    biz_ids = [b["id"] for b in businesses if b.get("id") and b.get("photos")]
+    if not biz_ids:
+        return
+    # Fetch all live storage_paths in one round-trip
+    live_paths_by_biz: Dict[str, set] = {}
+    cursor = db.business_photos.find(
+        {"business_id": {"$in": biz_ids}, "is_deleted": {"$ne": True}},
+        {"_id": 0, "business_id": 1, "storage_path": 1, "public_id": 1},
+    )
+    async for doc in cursor:
+        biz_id = doc["business_id"]
+        live_paths_by_biz.setdefault(biz_id, set())
+        if doc.get("storage_path"):
+            live_paths_by_biz[biz_id].add(doc["storage_path"])
+        if doc.get("public_id"):
+            live_paths_by_biz[biz_id].add(doc["public_id"])
+
+    base_url = (os.environ.get("BASE_URL") or "").rstrip("/")
+    for b in businesses:
+        raw_photos = b.get("photos") or []
+        if not raw_photos:
+            continue
+        live = live_paths_by_biz.get(b["id"], set())
+        cleaned: List[str] = []
+        for url in raw_photos:
+            if not isinstance(url, str):
+                continue
+            # Extract storage path after `/api/files/`
+            marker = "/api/files/"
+            idx = url.find(marker)
+            if idx == -1:
+                # External URL (e.g. Cloudinary), trust as-is
+                cleaned.append(url)
+                continue
+            path = url[idx + len(marker):]
+            # Drop if the doc has been soft-deleted (or no longer exists)
+            if live and path not in live:
+                continue
+            # Rewrite host to current BASE_URL if defined and different
+            if base_url:
+                cleaned.append(f"{base_url}/api/files/{path}")
+            else:
+                cleaned.append(url)
+        b["photos"] = cleaned
+
+
+
 import stripe as stripe_lib
 from core.stripe_config import STRIPE_API_KEY, get_or_create_stripe_price
 stripe_lib.api_key = STRIPE_API_KEY
@@ -964,6 +1025,7 @@ async def get_business_by_public_code(code: str):
     business.setdefault("country", "MX")
     business.setdefault("zip_code", "")
     business.setdefault("subscription_status", "none")
+    await _sanitize_business_photos([business])
     return BusinessResponse(**business)
 
 
@@ -1218,6 +1280,7 @@ async def search_businesses(
         businesses = expanded
     # ───────────────────────────────────────────────────────────────────────
     
+    await _sanitize_business_photos(businesses)
     return [BusinessResponse(**b) for b in businesses]
 
 
@@ -1308,6 +1371,7 @@ async def get_featured_businesses(limit: int = 8, country_code: Optional[str] = 
                 if found:
                     break
     
+    await _sanitize_business_photos(businesses)
     return [BusinessResponse(**b) for b in businesses]
 
 
@@ -1355,6 +1419,7 @@ async def get_business_by_slug(
             })
         except Exception:
             pass
+    await _sanitize_business_photos([business])
     return BusinessResponse(**business)
 
 
@@ -1420,6 +1485,7 @@ async def get_business(
     if current_user and await is_user_blacklisted(business["id"], user_id=current_user.user_id):
         raise HTTPException(status_code=404, detail="Business not found")
     await _track_profile_view(business["id"], request, current_user, business.get("user_id"))
+    await _sanitize_business_photos([business])
     return BusinessResponse(**business)
 
 
