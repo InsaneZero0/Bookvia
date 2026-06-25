@@ -2,6 +2,37 @@
 
 Registro cronológico de cambios significativos (post-refactor base PRD).
 
+## 2026-06-25 (madrugada) – Normalización de ciudades (anti-duplicados)
+
+### Bug del usuario: ciudades duplicadas + buscador sin autocompletado
+- **Problema**: El dropdown de ciudades mostraba "Nuevo Laredo" y "NUEVO LAREDO" como dos entradas separadas; lo mismo "Ciudad de México" vs "Ciudad de Mexico" (con/sin acento).
+- **Root cause**: `businesses.city` se guardaba como free-text sin normalización; el endpoint `/api/cities` agrupaba por valor exacto.
+
+### Fix en 3 capas
+1. **Helper `services/city_normalize.py`** (nuevo)
+   - `city_match_key(s)`: produce key dedup → lowercase + collapse whitespace + strip diacritics (NFKD).
+   - `normalize_city_name(raw, db)`: busca match accent + case-insensitive en `db.cities`; devuelve nombre canónico del catálogo o Title Case fallback.
+
+2. **Write paths normalizados**
+   - `routers/auth.py::register_business`: aplica `normalize_city_name` antes de guardar.
+   - `routers/businesses.py::update_business`: refactorizado para usar el mismo helper.
+
+3. **Read path dedup**
+   - `routers/system.py::get_cities` con `with_businesses=true`: agrupa por `city_match_key` en Python, prefiere ortografía del catálogo, suma counts de variantes.
+
+4. **Frontend autocomplete accent-insensitive**
+   - `components/CitySelector.jsx`: filtro normaliza diacritics (Mexico ≡ México).
+   - `pages/HomePage.jsx`: dropdown hero también accent-insensitive.
+
+### Migración de datos existentes
+Ejecutado manualmente: 30 businesses de 55 actualizados ("NUEVO LAREDO" → "Nuevo Laredo", etc.).
+Para producción (Railway): llamar al endpoint admin existente `POST /api/admin/businesses/normalize-cities` con token de admin.
+
+### Verificación
+- 24/24 nuevos tests `/app/backend/tests/test_city_normalization.py` ✅
+- 19/19 tests de regresión (iteration_107) siguen ✅
+- Live test: `/api/cities?country_code=MX&with_businesses=true` retorna 1 sola entrada "Ciudad de México" (antes había 4+ variantes).
+
 ## 2026-06-25 (noche) – Resolución final: APK funcionando
 
 ### Root cause definitivo del "skeleton loaders" en APK
