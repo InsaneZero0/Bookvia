@@ -1,0 +1,50 @@
+{
+  "summary": "Validated the photo sanitization fix end-to-end. 10/10 new tests pass and the iteration_106 regression suite (9/9) still passes. The bug surfaced in iteration_106 (stale photo host + serve_file looking up by public_id + soft-deleted photos surfaced in detail) is resolved at the API level. GET /api/businesses/{id} for fbb3d0e3-37f2-417b-8cfa-b7fbf24f1ee0 now returns 8 photos with host marketplace-test-21.preview.emergentagent.com (no `reserve-stripe-test` leak), each URL fetches HTTP 200 with image/* content type, and a known soft-deleted storage_path (7a99b07f...jfif) correctly returns 404 from /api/files/. Featured/list endpoints are also sanitized.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "DB state (informational, not a code bug)",
+        "issue": "Request stated `2 photos restored, 8 deleted` but actual DB has 9 docs with is_deleted=false and only 1 doc with is_deleted=true (7a99b07f-...). The 8 URLs in businesses.photos all map to live docs, so sanitize returns 8 not 2. If the user wanted only the 2 manually-restored photos visible, the businesses.photos array on the document needs to be pruned (or the other docs re-flagged as deleted). The helper itself behaves correctly given the current DB state."
+      },
+      {
+        "endpoint": "GET /api/businesses (write-path)",
+        "issue": "Stored photo URLs in businesses.photos still embed an absolute host at write time. The sanitize helper masks this at read time, but the root cause (writing absolute preview URLs into Mongo) remains. Long-term fix: store only storage_path and build the URL at response time."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_business_photos_fix.py",
+    "/app/backend/tests/test_cors_and_businesses_fix.py",
+    "/app/test_reports/pytest/business_photos_fix.xml"
+  ],
+  "action_items": [
+    "(Optional) Decide on canonical visible-photo source: either prune businesses.photos array, or make the marketplace render directly from business_photos collection (where is_deleted filtering is already authoritative).",
+    "(Optional) Migrate persistence to store only storage_path, removing the need for runtime host rewriting in _sanitize_business_photos."
+  ],
+  "critical_code_review_comments": [
+    "Fix in routers/system.py:1134 serve_file is correct: it now looks up by storage_path OR public_id and excludes is_deleted=true. Verified live (storage_path-keyed) photo returns 200 and soft-deleted one returns 404.",
+    "_sanitize_business_photos (routers/businesses.py:52-108) correctly rewrites host and filters deleted paths. It uses a single bulk query keyed by business_id which is efficient. It also gracefully handles external URLs (e.g. Cloudinary) without /api/files/ by passing them through unchanged.",
+    "Edge case: when BASE_URL env is unset, the helper preserves the original URL (no rewrite). Confirmed by code reading; not tested live since BASE_URL is set in this env. This is acceptable but means production must ensure BASE_URL is configured.",
+    "Edge case considered: if live_paths_by_biz lookup for a biz is empty (no docs at all) the helper currently still falls through to `if live and path not in live: continue` — when `live` is an empty set, `live and ...` short-circuits to False, so the photo URL is kept. Mild inconsistency: a business with zero live docs but legacy URLs in businesses.photos will still expose those URLs. In practice this matches a `we have no metadata, trust the array` posture. Worth a doc comment if intentional.",
+    "Minor: BASE_URL is read via os.environ.get at call time, which is correct (not cached), so changing env + restart picks it up immediately."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_business_photos_fix.py (new, 10 tests)"
+  ],
+  "success_rate": {
+    "backend": "100% (10/10 new tests + 9/9 regression)",
+    "frontend": "not tested (testing_type=backend only)"
+  },
+  "test_credentials": "none required (all endpoints public)",
+  "seed_data_creation": "none — relies on existing data for business fbb3d0e3-37f2-417b-8cfa-b7fbf24f1ee0",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Run: pytest /app/backend/tests/test_business_photos_fix.py /app/backend/tests/test_cors_and_businesses_fix.py -v. Both must hit http://localhost:8001 directly to bypass Cloudflare. BASE_URL is read from /app/backend/.env at test import via python-dotenv. The known live-but-different-host photo is the first 0854a886 storage_path (uses `storage_path` field, not public_id), and the known soft-deleted one is 7a99b07f.",
+  "rca of the issue": "Iteration_106 RCA stands. The fix in iteration_107 is: (1) serve_file now matches business_photos via storage_path OR public_id and excludes is_deleted=true; (2) _sanitize_business_photos rewrites the host of stored absolute URLs to current BASE_URL and drops URLs whose underlying photo doc is soft-deleted. Applied to detail, by-code, by-slug, search and featured endpoints. Validated end-to-end via 10 new pytest cases, all green. The original user complaint (fotos no se ven in APK) should be resolved once the APK is rebuilt — the photo URLs returned by the API are now reachable HTTP 200 image responses."
+}
