@@ -14,7 +14,7 @@ import { useI18n } from '@/lib/i18n';
 import { useAuth } from '@/lib/auth';
 import { useCountry } from '@/lib/countryContext';
 import { businessesAPI, categoriesAPI, usersAPI } from '@/lib/api';
-import { openExternalBookviaFlow } from '@/lib/capacitor';
+import { openExternalBookviaFlow, isNativeApp } from '@/lib/capacitor';
 import { Search, SlidersHorizontal, MapPin, X, Filter, List, Map as MapIcon, Star, ArrowRight, ChevronRight } from 'lucide-react';
 import { SearchLeafletMap } from '@/components/SearchLeafletMap';
 import { CityWaitlistCard } from '@/components/CityWaitlistCard';
@@ -160,8 +160,23 @@ export default function SearchPage() {
       setOnlyFeatured(false);
       return;
     }
+    // Fallback when location is denied or unavailable: in native app, default
+    // to "Nuevo Laredo" so users who reject location permission still see
+    // businesses instead of an empty screen.
+    const applyDefaultCityFallback = () => {
+      if (isNativeApp()) {
+        setCity('Nuevo Laredo');
+        setSortBy('relevance');
+        toast.message(
+          language === 'es'
+            ? 'Mostrando negocios en Nuevo Laredo. Cambia la ciudad cuando quieras.'
+            : 'Showing businesses in Nuevo Laredo. Change the city anytime.'
+        );
+      }
+    };
     if (!navigator.geolocation) {
       toast.error(language === 'es' ? 'Tu navegador no soporta geolocalizacion' : 'Your browser does not support geolocation');
+      applyDefaultCityFallback();
       return;
     }
     setLocatingUser(true);
@@ -180,6 +195,7 @@ export default function SearchPage() {
       () => {
         toast.error(language === 'es' ? 'No pudimos obtener tu ubicacion. Permite el acceso en tu navegador.' : 'Could not get your location. Allow access in your browser.');
         setLocatingUser(false);
+        applyDefaultCityFallback();
       },
       { timeout: 10000 }
     );

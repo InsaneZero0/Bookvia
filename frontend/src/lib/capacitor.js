@@ -26,9 +26,15 @@ export const getPlatform = () => Capacitor.getPlatform(); // 'ios' | 'android' |
  * the app (avoids Apple's 30% + Google's 15-30% in-app commission).
  *
  * Reads from REACT_APP_PUBLIC_WEB_URL with a sensible production fallback.
+ *
+ * We use the `www.` subdomain explicitly because Vercel is currently
+ * provisioning the SSL certificate for the apex domain (bookvia.app) and the
+ * apex returns ERR_CERT_AUTHORITY_INVALID, breaking external payment flows on
+ * the native app. Once Vercel finishes apex SSL provisioning we can switch
+ * back to the bare apex if desired.
  */
 export const PUBLIC_WEB_URL = (
-  process.env.REACT_APP_PUBLIC_WEB_URL || 'https://bookvia.app'
+  process.env.REACT_APP_PUBLIC_WEB_URL || 'https://www.bookvia.app'
 ).replace(/\/$/, '');
 
 /**
