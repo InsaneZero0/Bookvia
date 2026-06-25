@@ -512,7 +512,11 @@ async def register_business(business: BusinessCreate, request: Request):
     user_id = generate_id()
     business_id = generate_id()
     slug = generate_slug(business.name) + "-" + business_id[:8]
-    city_slug = generate_slug(business.city)
+    # Normalize city against the master catalog so "NUEVO LAREDO" and
+    # "nuevo laredo" never spawn duplicate entries.
+    from services.city_normalize import normalize_city_name
+    canonical_city = await normalize_city_name(business.city, db)
+    city_slug = generate_slug(canonical_city) if canonical_city else ""
     
     # Generate unique public code (BV-XXXXX)
     from services.public_code import generate_unique_public_code
@@ -549,7 +553,7 @@ async def register_business(business: BusinessCreate, request: Request):
         "colony": business.colony or "",
         "interior_number": business.interior_number or "",
         "building_name": business.building_name or "",
-        "city": business.city,
+        "city": canonical_city,
         "city_slug": city_slug,
         "state": business.state,
         "country": business.country,

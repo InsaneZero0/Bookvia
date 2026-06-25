@@ -209,7 +209,7 @@ export default function HomePage() {
                             <span className="text-slate-700">{language === 'es' ? 'Todas las ciudades' : 'All cities'}</span>
                           </button>
                           {heroCities
-                            .filter(c => !citySearch || c.name.toLowerCase().includes(citySearch.toLowerCase()))
+                            .filter(c => !citySearch || (c.name || '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().includes(citySearch.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase()))
                             .map(c => (
                             <button key={c.slug || c.name} type="button"
                               onClick={() => { setCity(c.name); setCityOpen(false); setCitySearch(''); setSearchQuery(''); }}
@@ -220,7 +220,7 @@ export default function HomePage() {
                               <span className="text-xs text-slate-400">{c.business_count} {language === 'es' ? 'negocios' : 'biz'}</span>
                             </button>
                           ))}
-                          {heroCities.filter(c => !citySearch || c.name.toLowerCase().includes(citySearch.toLowerCase())).length === 0 && (
+                          {heroCities.filter(c => !citySearch || (c.name || '').normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase().includes(citySearch.normalize('NFKD').replace(/[\u0300-\u036f]/g, '').toLowerCase())).length === 0 && (
                             <div className="py-4 text-center text-sm text-slate-400">{language === 'es' ? 'No se encontraron ciudades' : 'No cities found'}</div>
                           )}
                         </div>

@@ -930,36 +930,61 @@ async def get_cities(country_code: str = "MX", with_businesses: bool = False, q:
     country_upper = country_code.upper()
 
     if with_businesses:
-        # Aggregate: count approved businesses per city in this country
-        pipeline = [
-            {"$match": {**VISIBLE_BUSINESS_FILTER, "country_code": country_upper}},
-            {"$group": {"_id": "$city", "count": {"$sum": 1}}},
-            {"$match": {"_id": {"$ne": None}}},
-            {"$sort": {"count": -1}},
-        ]
+        # Aggregate: count approved businesses per city in this country.
+        # Group by accent + case-insensitive, whitespace-trimmed city key so
+        # variants ("NUEVO LAREDO", "Ciudad de México" vs "Ciudad de Mexico")
+        # collapse into one row.
+        from services.city_normalize import city_match_key
+
+        match_stage: Dict[str, Any] = {**VISIBLE_BUSINESS_FILTER, "country_code": country_upper}
         if q:
-            pipeline[0]["$match"]["city"] = {"$regex": q, "$options": "i"}
+            match_stage["city"] = {"$regex": q, "$options": "i"}
+        raw_rows = await db.businesses.aggregate([
+            {"$match": match_stage},
+            {"$match": {"city": {"$ne": None, "$type": "string"}}},
+            {"$group": {"_id": "$city", "count": {"$sum": 1}}},
+        ]).to_list(500)
 
-        agg_results = await db.businesses.aggregate(pipeline).to_list(200)
+        # Group case + diacritic-insensitively in Python (mongo can't do
+        # NFKD diacritic stripping natively).
+        grouped: Dict[str, Dict[str, Any]] = {}
+        for row in raw_rows:
+            city_raw = (row.get("_id") or "").strip()
+            if not city_raw:
+                continue
+            key = city_match_key(city_raw)
+            entry = grouped.setdefault(key, {"count": 0, "raw_names": {}})
+            entry["count"] += row["count"]
+            entry["raw_names"][city_raw] = entry["raw_names"].get(city_raw, 0) + row["count"]
 
-        cities_out = []
-        for r in agg_results:
-            city_name = r["_id"]
-            # Try to enrich with seeded city data (state, slug)
-            seeded = await db.cities.find_one(
-                {"name": city_name, "country_code": country_upper},
-                {"_id": 0}
-            )
+        cities_out: List[Dict[str, Any]] = []
+        for key, data in grouped.items():
+            # Prefer catalog spelling; lookup by either raw variant or key.
+            seeded = None
+            for variant in data["raw_names"].keys():
+                seeded = await db.cities.find_one(
+                    {
+                        "name": {"$regex": f"^{re.escape(variant)}$", "$options": "i"},
+                        "country_code": country_upper,
+                    },
+                    {"_id": 0},
+                )
+                if seeded:
+                    break
             if seeded:
-                seeded["business_count"] = r["count"]
+                seeded["business_count"] = data["count"]
                 cities_out.append(seeded)
-            else:
-                cities_out.append({
-                    "name": city_name,
-                    "slug": city_name.lower().replace(" ", "-"),
-                    "country_code": country_upper,
-                    "business_count": r["count"],
-                })
+                continue
+            # Most-frequent raw spelling wins as display name.
+            display = max(data["raw_names"].items(), key=lambda kv: kv[1])[0]
+            cities_out.append({
+                "name": display,
+                "slug": key.replace(" ", "-"),
+                "country_code": country_upper,
+                "business_count": data["count"],
+            })
+
+        cities_out.sort(key=lambda c: c["business_count"], reverse=True)
         return cities_out
 
     # Default: return all seeded cities for the country
