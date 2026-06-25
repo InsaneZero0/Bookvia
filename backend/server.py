@@ -123,13 +123,36 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.middleware("http")(security_headers_middleware)
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_credentials=True,
-    allow_origins=os.environ.get('CORS_ORIGINS', '*').split(','),
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# CORS: in addition to whatever is set via CORS_ORIGINS env var, always
+# allow the origins used by the Capacitor native app on Android/iOS:
+#   - https://localhost          (Android default WebView scheme)
+#   - capacitor://localhost      (iOS default scheme)
+#   - http://localhost           (legacy / dev livereload)
+# IMPORTANT: when `allow_credentials=True`, the CORS spec forbids
+# `Access-Control-Allow-Origin: *`. Browsers (including the Chrome WebView
+# used by Capacitor) silently reject such responses. We therefore use
+# `allow_origin_regex=".*"` whenever the env value is the wildcard, which
+# lets Starlette echo the actual request origin back instead of `*`.
+_capacitor_origins = {"https://localhost", "capacitor://localhost", "http://localhost"}
+_env_origins_raw = os.environ.get('CORS_ORIGINS', '*').strip()
+if _env_origins_raw == '*' or _env_origins_raw == '':
+    app.add_middleware(
+        CORSMiddleware,
+        allow_credentials=True,
+        allow_origin_regex=".*",
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+else:
+    _env_origins = {o.strip() for o in _env_origins_raw.split(',') if o.strip()}
+    _allowed_origins = sorted(_env_origins | _capacitor_origins)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_credentials=True,
+        allow_origins=_allowed_origins,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 # ========================== LIFECYCLE EVENTS ==========================
 

@@ -31,13 +31,31 @@ app = FastAPI(
 
 # Middleware
 app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=["*"])
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"] if CORS_ORIGINS == "*" else CORS_ORIGINS.split(","),
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+
+# CORS: always allow Capacitor native app origins on top of CORS_ORIGINS env.
+# When CORS_ORIGINS is "*" we must NOT return `Access-Control-Allow-Origin: *`
+# alongside `Allow-Credentials: true` (the CORS spec forbids it and browsers
+# silently reject the response). We use `allow_origin_regex=".*"` in that case
+# so Starlette echoes the request origin instead.
+_capacitor_origins = {"https://localhost", "capacitor://localhost", "http://localhost"}
+_cors_raw = (CORS_ORIGINS or "*").strip()
+if _cors_raw == "*" or _cors_raw == "":
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origin_regex=".*",
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+else:
+    _origins = {o.strip() for o in _cors_raw.split(",") if o.strip()} | _capacitor_origins
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=sorted(_origins),
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
 # Import and include routers from legacy server.py
 # (will be migrated to individual router files gradually)

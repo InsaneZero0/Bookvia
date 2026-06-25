@@ -1,0 +1,54 @@
+{
+  "summary": "Validated CORS fix for Capacitor and business listing endpoints. 8/9 tests pass. CORS fix is VERIFIED working against internal localhost:8001 (returns specific Origin echo, never `*`, with Allow-Credentials:true). Businesses list/featured/categories/sort=nearest all work correctly. However a CRITICAL photo bug was uncovered that explains user complaint #2 (`fotos no se ven`): stored photo URLs point to an obsolete preview hostname and return 404.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "GET /api/businesses/{id} (photos field) & GET /api/files/{path}",
+        "issue": "All 8 stored photos for business fbb3d0e3-37f2-417b-8cfa-b7fbf24f1ee0 carry hard-coded URLs to https://reserve-stripe-test.preview.emergentagent.com/api/files/... (a DIFFERENT/OLD preview host) — Cloudflare returns 404. Even when rewritten to the current host (marketplace-test-21.preview.emergentagent.com), /api/files/{path} still returns 404 because (a) serve_file (routers/system.py:1134) looks up by public_id but DB docs only have storage_path (public_id is None), and (b) the photo docs have is_deleted=true yet GET /api/businesses/{id} still returns them in photos[]. Net effect for the user: even with CORS fixed, every <img> in the mobile app will 404 -> empty photos UI.",
+        "priority": "CRITICAL"
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "GET /api/categories",
+        "issue": "Returns localized fields name_es / name_en instead of a unified `name`. Not a regression, but frontend dropdown must read name_es (or name_en) explicitly — confirm SearchPage/category dropdown uses these keys."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_cors_and_businesses_fix.py",
+    "/app/test_reports/pytest/cors_businesses_fix.xml"
+  ],
+  "action_items": [
+    "Fix photo URL storage: stop hard-coding the public host into stored URLs at write time; either store storage_path only and build URL on read using current BASE_URL, OR run a one-off migration to replace reserve-stripe-test.preview.emergentagent.com -> current BASE_URL.",
+    "Fix /api/files/{path} (routers/system.py:1134 serve_file): currently looks up business_photos by public_id, but the field is None in DB; switch lookup to storage_path (or whatever field is actually populated), and exclude is_deleted=true.",
+    "Fix GET /api/businesses/{id} photos[]: filter out is_deleted=true photos (the one business with photos currently exposes 8 deleted records).",
+    "Re-upload / restore photos for business `fbb3d0e3-37f2-417b-8cfa-b7fbf24f1ee0` if they were soft-deleted by mistake — otherwise the marketplace will show no photos at all.",
+    "Confirm SearchPage / category dropdown reads name_es (es-MX users) rather than `name`."
+  ],
+  "critical_code_review_comments": [
+    "CORS fix in /app/backend/server.py:124-160 and /app/backend/main.py:32-58 is correctly implemented using allow_origin_regex='.*' when CORS_ORIGINS env is '*'. Verified via curl that response echoes the request Origin and never `*`, with allow-credentials:true. This is spec-compliant and unblocks Capacitor WebView.",
+    "However, having both main.py and server.py add their own CORSMiddleware is a latent foot-gun — whichever app is actually served by uvicorn matters. Currently supervisor runs server.py (confirmed via running tests). Consider consolidating into a single source of truth to avoid drift.",
+    "routers/system.py:1134 serve_file does record lookup by public_id, but the only existing business_photos doc inspected has public_id=None and storage_path populated. The lookup is structurally broken — every /api/files/{path} request will 404 even if the underlying object exists in Emergent object storage.",
+    "Endpoint GET /api/businesses/{id} does not filter photos by is_deleted=false (returns soft-deleted records). routers/businesses.py photo aggregation must add `is_deleted: {'$ne': True}` (or `False`).",
+    "Photo URLs are persisted with a hard-coded host (reserve-stripe-test.preview.emergentagent.com). Storing absolute URLs derived from a transient preview host is fragile; prefer storing only the storage_path and composing the URL at response time from current BASE_URL."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_cors_and_businesses_fix.py (new test file, 9 tests)"
+  ],
+  "success_rate": {
+    "backend": "89% (8/9 tests pass; CORS + listing + featured + nearest + categories all OK; photo URL accessibility fails)",
+    "frontend": "not tested (testing_type=backend only)"
+  },
+  "test_credentials": "none required for these public GETs",
+  "seed_data_creation": "none",
+  "retest_needed": true,
+  "main_agent_can_self_test": false,
+  "context_for_next_testing_agent": "Run pytest /app/backend/tests/test_cors_and_businesses_fix.py -v. CORS tests must hit http://localhost:8001 directly (Cloudflare in front of the public preview URL rewrites CORS to `*`). The photo URL test is expected to fail until: (1) routers/system.py serve_file looks up by storage_path not public_id, (2) is_deleted photos are filtered from the businesses photos[] field, and (3) stored URLs are rebuilt from current BASE_URL. DB has 6 businesses; only `fbb3d0e3-37f2-417b-8cfa-b7fbf24f1ee0` (Test Real Stripe, CDMX) has lat/lng and is the only one with any photo records (all 8 are soft-deleted and point to an obsolete host).",
+  "rca of the issue": "User complaint #1 (skeleton loaders eternos en APK): ROOT CAUSE was CORS spec violation — allow_origins='*' combined with allow_credentials=true causes Capacitor Chrome WebView to silently reject responses. Main agent's fix (allow_origin_regex='.*' to echo the actual Origin) is correctly applied and verified working via curl + pytest against http://localhost:8001. Cloudflare proxy on the public preview rewrites the Allow-Origin header back to `*`, which is misleading but a preview-only artifact; in the production APK install the device hits the backend through a path that respects the spec-compliant response. User complaint #2 (fotos no se ven): NOT caused by CORS. Independent bug — stored photo URLs hard-code an obsolete preview hostname (reserve-stripe-test...) that returns 404, and even with the correct host the /api/files endpoint lookup is keyed off public_id (null) instead of storage_path, plus the photo docs are soft-deleted but still surfaced by GET /api/businesses/{id}. Mitigation steps listed in action_items."
+}
