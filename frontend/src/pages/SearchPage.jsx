@@ -189,6 +189,7 @@ export default function SearchPage() {
         setCategoryId('');
         setMinRating([0]);
         setOnlyFeatured(false);
+        setOpenNow(false);
         setLocatingUser(false);
         toast.success(language === 'es' ? 'Ubicacion obtenida. Mostrando negocios cercanos.' : 'Location obtained. Showing nearby businesses.');
       },
