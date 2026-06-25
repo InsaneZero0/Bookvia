@@ -2,6 +2,31 @@
 
 Registro cronológico de cambios significativos (post-refactor base PRD).
 
+## 2026-06-25 (noche) – Resolución final: APK funcionando
+
+### Root cause definitivo del "skeleton loaders" en APK
+Después de aplicar todos los fixes anteriores (CORS, fotos, UX), el APK del
+usuario seguía mostrando solo skeleton loaders. La causa raíz era:
+
+- El archivo `frontend/.env` está en `.gitignore` (correcto, contiene secrets).
+- Cuando el usuario clonó el repo en su PC Windows con `git pull`, **NO recibió** ningún `.env`.
+- Al ejecutar `yarn build` localmente, `process.env.REACT_APP_BACKEND_URL` quedó `undefined`.
+- El bundle compilado intentó hacer fetch a `undefined/api/...` que se resolvió como path relativo → `https://localhost/api/...` en el WebView de Capacitor.
+- Resultado: todas las APIs fallaban silenciosamente → skeletons eternos.
+
+La web pública (Vercel) sí funcionaba porque Vercel inyecta `REACT_APP_BACKEND_URL` desde su dashboard de Environment Variables al hacer build.
+
+### Fix definitivo
+1. El usuario creó `frontend/.env` localmente con:
+   ```
+   REACT_APP_BACKEND_URL=https://bookvia-production.up.railway.app
+   ```
+2. Hizo rebuild completo (`yarn build && npx cap sync android` + Android Studio Clean+Rebuild+Build APK).
+3. APK final: funcional ✅ (negocios y fotos cargando correctamente).
+
+### Salvaguarda agregada al repo
+- Nuevo archivo `frontend/.env.example` con instrucciones claras y los valores correctos para producción APK. Así cualquier futuro clone/fork del repo tiene la plantilla lista para copiar a `.env`.
+
 ## 2026-06-25 (tarde) – Fix bugs APK: CORS + Fotos + UX móvil
 
 ### Bug crítico: skeleton loaders eternos en APK (no cargan negocios)
