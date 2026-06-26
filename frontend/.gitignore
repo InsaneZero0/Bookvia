@@ -39,3 +39,4 @@ yarn-error.log*
 /ios/DerivedData/
 /ios/App/Podfile.lock
 /ios/.xcode.env.local
+android/app/google-services.json

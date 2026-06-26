@@ -39,7 +39,11 @@ if not DB_NAME:
 # =============================================================================
 JWT_SECRET = os.environ.get("JWT_SECRET")
 JWT_ALGORITHM = "HS256"
-JWT_EXPIRATION_HOURS = 24
+# Mobile-first session: ~1 year so users don't have to re-login while using
+# the Capacitor APK. Equivalent to how Spotify/Netflix behave — session stays
+# alive until the user explicitly taps "Cerrar sesión" or wipes app data.
+# Can be tuned via JWT_EXPIRATION_HOURS env var if needed.
+JWT_EXPIRATION_HOURS = int(os.environ.get("JWT_EXPIRATION_HOURS", "8760"))  # 365 days
 
 # Production requires a proper JWT secret
 if IS_PRODUCTION and (not JWT_SECRET or JWT_SECRET == "change-me-in-production"):

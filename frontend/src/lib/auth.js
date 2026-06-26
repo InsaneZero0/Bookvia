@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 import { authAPI } from './api';
+import { enablePushForCurrentUser } from './capacitor';
 
 const AuthContext = createContext();
 
@@ -23,6 +24,9 @@ export function AuthProvider({ children }) {
           setBusiness(JSON.parse(savedBusiness));
         }
         setIsAuthenticated(true);
+        // Re-register the device for push notifications on every app launch
+        // so the token stays fresh (FCM rotates tokens occasionally).
+        enablePushForCurrentUser().catch(() => {});
       } catch (e) {
         logout();
       }
@@ -39,6 +43,7 @@ export function AuthProvider({ children }) {
     
     setUser(userData);
     setIsAuthenticated(true);
+    enablePushForCurrentUser().catch(() => {});
     
     return userData;
   };
@@ -61,6 +66,7 @@ export function AuthProvider({ children }) {
     setBusiness(businessData);
     setUser(userData);
     setIsAuthenticated(true);
+    enablePushForCurrentUser().catch(() => {});
     
     return businessData;
   };
@@ -79,6 +85,7 @@ export function AuthProvider({ children }) {
       setBusiness(businessData);
       setUser(userData);
       setIsAuthenticated(true);
+    enablePushForCurrentUser().catch(() => {});
       return { account_type: 'business', data: businessData };
     } else {
       const userData = response.data.user;
@@ -86,6 +93,7 @@ export function AuthProvider({ children }) {
       localStorage.setItem('bookvia-user', JSON.stringify(userData));
       setUser(userData);
       setIsAuthenticated(true);
+    enablePushForCurrentUser().catch(() => {});
       return { account_type: 'user', data: userData };
     }
   };
@@ -111,6 +119,7 @@ export function AuthProvider({ children }) {
     setBusiness(businessData);
     setUser(userData);
     setIsAuthenticated(true);
+    enablePushForCurrentUser().catch(() => {});
     
     return businessData;
   };
@@ -129,6 +138,7 @@ export function AuthProvider({ children }) {
     
     setUser(userData);
     setIsAuthenticated(true);
+    enablePushForCurrentUser().catch(() => {});
     
     return userData;
   };
@@ -148,6 +158,7 @@ export function AuthProvider({ children }) {
     
     setUser(userData);
     setIsAuthenticated(true);
+    enablePushForCurrentUser().catch(() => {});
     
     return userData;
   };

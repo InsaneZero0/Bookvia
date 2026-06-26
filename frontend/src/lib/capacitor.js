@@ -134,11 +134,11 @@ export const initCapacitor = async () => {
 };
 
 /**
- * Request push notification permission, register with FCM/APNS and send the
- * resulting token to our backend so we can target this device for events
- * (booking confirmations, payouts, business cancellations, etc.).
+ * Register the current device for push notifications and POST the FCM token
+ * to the backend so it can target this user. Safe to call multiple times
+ * (the backend upserts by token).
  *
- * Returns the token string on success, or null on web / denial / error.
+ * Called after every successful login. No-op on web.
  */
 export const registerPushNotifications = async (postTokenFn) => {
   if (!isNativeApp()) return null;
@@ -185,6 +185,31 @@ export const registerPushNotifications = async (postTokenFn) => {
     console.error('[Capacitor] registerPushNotifications failed', e);
     return null;
   }
+};
+
+/**
+ * Higher-level wrapper that wires the FCM token directly to our backend's
+ * /api/push/register endpoint using the user's stored auth token. Call this
+ * after every successful login.
+ */
+export const enablePushForCurrentUser = async () => {
+  if (!isNativeApp()) return null;
+  const backend = (process.env.REACT_APP_BACKEND_URL || '').replace(/\/$/, '');
+  const authToken = typeof localStorage !== 'undefined'
+    ? localStorage.getItem('bookvia-token')
+    : null;
+  if (!backend || !authToken) return null;
+
+  return registerPushNotifications(async ({ token, platform }) => {
+    await fetch(`${backend}/api/push/register`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${authToken}`,
+      },
+      body: JSON.stringify({ token, platform }),
+    });
+  });
 };
 
 /**

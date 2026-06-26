@@ -781,6 +781,25 @@ async def create_booking(booking: BookingCreate, token_data: TokenData = Depends
             "booking",
             {"booking_id": booking_doc["id"]}
         )
+
+    # Push notification to the business owner (mobile app)
+    try:
+        from services.push_notifications import notify_new_booking
+        customer_display_name = (
+            booking.client_name if is_biz_booking else (user.get("full_name") or "Cliente")
+        )
+        await notify_new_booking(
+            db,
+            business_owner_user_id=business["user_id"],
+            booking_id=booking_doc["id"],
+            customer_name=customer_display_name,
+            service_name=service["name"],
+            starts_at_human=f"{booking.date} a las {booking.time}",
+        )
+    except Exception as e:
+        # Push failures must not break booking creation
+        import logging
+        logging.getLogger(__name__).warning("Push notify_new_booking failed: %s", e)
     
     booking_doc["business_name"] = business["name"]
     booking_doc["service_name"] = service["name"]
