@@ -2,6 +2,48 @@
 
 Registro cronológico de cambios significativos (post-refactor base PRD).
 
+## 2026-06-26 – Phase 1+2 Push Notifications (FCM) — Setup base
+
+### Infraestructura
+- Instalado `firebase-admin==7.4.0` en `backend/requirements.txt`.
+- Nuevo `services/push_notifications.py` con:
+  - `init_firebase()` lazy + dual-source (env var `FIREBASE_ADMIN_SDK_JSON` o `secrets/firebase-admin.json`).
+  - 12 catálogos de notificación tipados (`NOTIFICATION_TYPES`).
+  - `send_to_user(user_id, type, title, body, deep_link)` con multi-device + auto-drop de tokens inválidos + opt-out por preferencias.
+  - 12 helpers high-level: `notify_new_booking`, `notify_booking_confirmed`, `notify_booking_canceled_by_business/customer`, `notify_booking_reminder`, `notify_refund_processed`, `notify_review_request`, `notify_settlement_sent`, `notify_business_approved`, `notify_subscription_expired`, `notify_trial_ending`.
+- Nuevo `routers/push.py`:
+  - `POST /api/push/register` (upsert token + platform)
+  - `DELETE /api/push/unregister`
+  - `GET /api/push/preferences` (devuelve 12 flags + labels español)
+  - `PATCH /api/push/preferences` (toggle individual)
+  - `POST /api/push/test` (auto-envío para verificar setup)
+- Router registrado en `server.py`.
+
+### Frontend
+- `frontend/src/lib/capacitor.js::enablePushForCurrentUser()`: helper alto-nivel que pide permiso, registra FCM token y lo POSTea a `/api/push/register` con el JWT del usuario.
+- `frontend/src/lib/auth.js`: invoca `enablePushForCurrentUser()` después de cada login y al reanudar sesión.
+
+### Trigger implementado: Nueva reserva → negocio
+- `routers/bookings.py::create_booking` ahora envía push al `business.user_id` cuando un cliente reserva. Tolerante a fallos (no rompe la creación si Firebase falla).
+
+### Archivos de credenciales
+- `frontend/android/app/google-services.json` (Firebase Android config, gitignored).
+- `backend/secrets/firebase-admin.json` (Service Account, gitignored).
+- Firebase project: `bookvia-537b7`. Package: `app.bookvia.bookvia`.
+
+### Verificación end-to-end
+- `init_firebase()` retorna OK.
+- Login → GET preferences devuelve 12 tipos correctos.
+- POST register acepta token + platform.
+- PATCH preferences actualiza flags individuales.
+- POST test ejecuta sin error.
+
+### Pendientes (siguiente sesión)
+- Triggers de las otras 11 notifications (cancelaciones, refunds, settlements, etc.).
+- Scheduler para recordatorios 1h y 24h antes de la cita.
+- UI de preferencias en perfil cliente.
+- Deep-link handler en App.js para que el tap navegue a `/bookings/:id`.
+
 ## 2026-06-25 (madrugada) – Normalización de ciudades (anti-duplicados)
 
 ### Bug del usuario: ciudades duplicadas + buscador sin autocompletado

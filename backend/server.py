@@ -60,6 +60,7 @@ from routers.categories import router as categories_router
 from routers.payments import router as payments_router
 from routers.admin import router as admin_router
 from routers.notifications import router as notifications_router
+from routers.push import router as push_router
 from routers.finance import router as finance_router
 from routers.system import router as system_router
 from routers.seo import seo_router
@@ -79,6 +80,7 @@ api_router.include_router(categories_router)
 api_router.include_router(payments_router)
 api_router.include_router(admin_router)
 api_router.include_router(notifications_router)
+api_router.include_router(push_router)
 api_router.include_router(finance_router)
 api_router.include_router(system_router)
 api_router.include_router(terms_router)
